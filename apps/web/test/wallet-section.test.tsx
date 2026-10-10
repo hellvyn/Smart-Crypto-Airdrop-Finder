@@ -98,6 +98,6 @@ describe("SiteHeader", () => {
     getUser.mockResolvedValue(null);
     render(await SiteHeader());
     expect(screen.queryByRole("link", { name: "Wallets" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Log in" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Login" })).toBeTruthy();
   });
 });

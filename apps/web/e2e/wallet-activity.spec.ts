@@ -160,6 +160,6 @@ test("a signed-in user without wallets is pointed to /wallets from the header an
 
 test("signed out, the header has no Wallets link", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("banner").getByRole("link", { name: "Log in" })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("link", { name: "Login" })).toBeVisible();
   await expect(page.getByRole("banner").getByRole("link", { name: "Wallets" })).toHaveCount(0);
 });
