@@ -448,6 +448,24 @@ Owner **gak menambahkan member berbayar** sebelum semua gerbang ini terpenuhi da
 | G9 | Isi list | ≥ 5 project lolos di tab "Live now", rata-rata 3 run | `curation_passed` |
 | G10 | Urutan worth disetujui owner | top 20 per tab di-review | prosedur §6.3 |
 
+**Hasil set uji scam, versi risk-only (2026-10-10; Task P4.T7, `pipeline/eval/scam-set/`).** `curate()` belum ada, jadi
+angka ini baru mengukur risk engine; Plan 5 mengulangnya dengan `curate()`. Set: 60 domain fake-airdrop dari daftar
+phishing publik (MetaMask `eth-phishing-detect`, ScamSniffer) yang memuat nama project dari 45 airdrop legit
+(`legit.json`, label kita sendiri). Daftar domain scam tidak di-commit.
+
+| Gerbang | Hasil (risk-only) | Catatan |
+|---|---|---|
+| G7 scam yang lolos | 0 dari 60 (level low/medium); 60 tertangkap high/critical | Hampir melingkar: semua 60 ada di daftar phishing dan `phishing_listed` kena 60/60. Tanpa jawaban GoPlus: 0 lolos, 6 `insufficient_data`, 54 tertangkap (lookalike). Set cuma berisi domain yang memuat nama project, jadi angka lookalike optimistis |
+| G8 legit yang tersembunyi | 2 dari 45 (4,4%) | Dua-duanya `lookalike_domain` pada domain klaim di luar domain resmi (domain foundation); jadi `insufficient_data` bila domain klaim = domain resmi |
+
+Cakupan cek di run ini: phishing 60/60 scam dan 49/49 legit; **umur domain hanya 2/60 scam dan 3/49 legit** karena crt.sh
+diblokir kebijakan jaringan container dan beberapa server RDAP tidak terjangkau. G2 gak bisa dinilai dari run ini.
+Temuan untuk Plan 5: (1) GoPlus menjawab HTTP 200 dengan `code 4029 "too many requests"` setelah ~30 request, dan
+`checkPhishingSite` hanya mengulang untuk HTTP 429/5xx, jadi jawaban itu jadi `null` tanpa retry; (2) lookalike gak
+cocok untuk nama 4 huruf yang menempel dengan kata lain dalam satu label (Jito, Lido, Ondo, Safe, Pyth); (3) domain
+foundation/klaim milik project harus masuk daftar domain resmi, kalau tidak aturan lookalike menyembunyikan project
+legit. Detail: `pipeline/eval/scam-set/README.md`.
+
 Kalau G7 gagal (ada scam yang lolos), penyebabnya diperbaiki di aturan risiko/kurasi dulu, lalu set uji dijalankan
 ulang. Kalau G9 gagal karena syarat cek kunci, perbaikannya di cakupan data (§5.0), bukan melonggarkan syarat.
 
