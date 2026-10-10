@@ -77,8 +77,8 @@ The hosted project must be configured differently. In the Supabase dashboard (Au
 
 1. **Sign In / Providers > Email:** turn on **Confirm email**. With it on, signup shows "Check your email to confirm
    your account, then log in." and no session exists until the link is opened.
-2. **Emails > SMTP Settings:** set up custom SMTP. The built-in sender is rate-limited and for testing only
-   (Plan 3 Task 6 sets up the email provider).
+2. **Emails > SMTP Settings:** set up custom SMTP. The built-in sender is rate-limited and for testing only;
+   the Brevo setup and the SMTP values are in [`docs/ops/email.md`](email.md).
 3. **URL Configuration:** Site URL = the production web URL (same value as `NEXT_PUBLIC_SITE_URL`); add
    `https://<web-host>/**` to Redirect URLs.
 4. **Emails > Templates:** use the link formats from `supabase/templates/` so links go through the web app's
@@ -115,7 +115,7 @@ Order matters: the web app expects the database objects of every migration, so t
 4. **Supabase Auth (dashboard), before the first real signup** (details in section 4):
    - URL Configuration: Site URL = `NEXT_PUBLIC_SITE_URL`; the Redirect URLs allowlist must include
      `<SITE_URL>/auth/callback` (or `<SITE_URL>/**`).
-   - Confirm email on, with custom SMTP set up.
+   - Confirm email on, with custom SMTP set up (see [`docs/ops/email.md`](email.md)).
    - Secure password change on (`secure_password_change = true`).
    - Email templates from `supabase/templates/`.
 5. **Check.** Every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`,

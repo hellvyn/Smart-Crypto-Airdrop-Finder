@@ -38,7 +38,8 @@ In **Settings > Secrets and variables > Actions**, add repository secrets:
 
 The workflow installs dependencies without these secrets and only passes them to the pipeline step.
 `EMAIL_FROM` and `SITE_URL` are required once `BREVO_API_KEY` is set; a missing or invalid one stops the run with
-`{"config_error":1}` before anything is collected.
+`{"config_error":1}` before anything is collected. Brevo setup, the Supabase Auth SMTP settings and the email
+verification checklist are in [`docs/ops/email.md`](email.md).
 
 ## 3. Run it
 
@@ -91,7 +92,8 @@ What to do:
 - `digests_failed` > 0: check the Brevo dashboard (Transactional > Logs) for rejected sends and that the API key and
   `EMAIL_FROM` sender are still valid. Failed digests go out on the next run.
 - `digests_skipped_quota` > 0: more users than the free Brevo quota; raise the plan and `email.dailyLimit` in
-  `pipeline/src/config.ts`.
+  `pipeline/src/config.ts` (upgrade after 3 consecutive days; details and edge cases in
+  [`docs/ops/email.md`](email.md)).
 
 ## 5. LLM eval (after changing the prompt or a model)
 
