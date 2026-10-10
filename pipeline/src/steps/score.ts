@@ -3,6 +3,7 @@ import { assessRisk, registrableDomain } from "@saf/core";
 import type { RiskInput } from "@saf/core";
 import type { Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
+import { firstCertificateAgeDays } from "../enrich/crtsh.js";
 import { checkPhishingSite } from "../enrich/goplus.js";
 import { countHacks, fetchHacks } from "../enrich/hacks.js";
 import { domainAgeDays } from "../enrich/rdap.js";
@@ -11,8 +12,10 @@ import type { PipelineRepo, ProjectForScoring } from "../store/repo.js";
 import { LINK_KINDS } from "./merge.js";
 import type { LinkKind } from "./merge.js";
 
-/** Maximum parallel enrichment requests (GoPlus, RDAP, DefiLlama hacks). */
+/** Maximum parallel enrichment requests (RDAP and crt.sh domain age, DefiLlama hacks). */
 const ENRICH_CONCURRENCY = 4;
+/** GoPlus rate-limits hard, so it has its own limiter and runs one request at a time. */
+const GOPLUS_CONCURRENCY = 1;
 
 function linkDomains(project: ProjectForScoring): RiskInput["linkDomains"] {
   const seen = new Set<string>();
@@ -32,10 +35,11 @@ function linkDomains(project: ProjectForScoring): RiskInput["linkDomains"] {
 /**
  * Scores every project seen within `scoreActiveSinceDays`. Enrichment is fetched once per registrable
  * domain per run (the job is daily, so this replaces a longer-lived cache), and hacks once per run.
+ * Domain age comes from RDAP, and from the first crt.sh certificate when RDAP has no answer.
  * One project failing to save counts as `score_failed` and does not stop the others.
  */
 export async function scoreProjects(
-  deps: { repo: PipelineRepo; http: Http },
+  deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void> },
   config: PipelineConfig,
   now: Date,
   stats: DailyStats,
@@ -51,15 +55,33 @@ export async function scoreProjects(
   const domains = [...new Set([...domainsByProject.values()].flatMap(enrichDomains))];
 
   const limit = pLimit(ENRICH_CONCURRENCY);
+  const goplusLimit = pLimit(GOPLUS_CONCURRENCY);
   const phishing = new Map<string, boolean | null>();
   const ages = new Map<string, number | null>();
+  const agesFromCrtsh = new Set<string>();
   const [hacks] = await Promise.all([
     limit(() => fetchHacks(http)),
     ...domains.flatMap((domain) => [
-      limit(async () => phishing.set(domain, await checkPhishingSite(http, `https://${domain}`))),
-      limit(async () => ages.set(domain, await domainAgeDays(http, domain, now))),
+      goplusLimit(async () => phishing.set(domain, await checkPhishingSite(http, `https://${domain}`, deps.sleep))),
+      limit(async () => {
+        let age = await domainAgeDays(http, domain, now);
+        if (age === null) {
+          age = await firstCertificateAgeDays(http, domain, now);
+          if (age !== null) agesFromCrtsh.add(domain);
+        }
+        ages.set(domain, age);
+      }),
     ]),
   ]);
+
+  stats.domain_age_from_crtsh = agesFromCrtsh.size;
+  stats.phishing_list_failed = domains.filter((d) => phishing.get(d) === null).length;
+  for (const project of projects) {
+    if (project.officialDomains.length === 0) continue;
+    stats.projects_with_official_domain += 1;
+    if (project.officialDomains.some((d) => ages.get(d) != null)) stats.domain_age_ran += 1;
+    if (project.officialDomains.some((d) => phishing.get(d) != null)) stats.phishing_list_ran += 1;
+  }
 
   for (const project of projects) {
     const projectLinks = domainsByProject.get(project.id) ?? [];

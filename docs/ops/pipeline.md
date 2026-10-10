@@ -75,6 +75,11 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `not_airdrop` | documents the model judged not about an airdrop |
 | `projects_created` / `projects_updated` | merge results |
 | `assessed` | projects that got a new risk assessment |
+| `projects_with_official_domain` | scored projects that have at least one official domain (the denominator for the two `*_ran` counters) |
+| `domain_age_ran` | of those, projects where the domain-age lookup (RDAP, else the first crt.sh certificate) answered for at least one official domain |
+| `domain_age_from_crtsh` | domains whose age came from crt.sh because RDAP had no answer (`.io` and some other TLDs have none) |
+| `phishing_list_ran` | of the projects with an official domain, those where the GoPlus phishing check answered for at least one |
+| `phishing_list_failed` | domains the GoPlus check gave no answer for, after one retry (429 or 5xx, 2 s pause); GoPlus is called one request at a time |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
@@ -91,6 +96,10 @@ What to do:
 - `merge_failed` > 0: the document is stored as `merge_failed` and is retried only when its content changes. Look at
   `documents` where `extraction_status = 'merge_failed'` in the Supabase SQL editor.
 - `extract_deferred` > 0 every day: lower `maxDocumentsPerRun` or check model latency in `extractions.latency_ms`.
+- `domain_age_ran` low compared to `projects_with_official_domain`: look at `domain_age_from_crtsh`. If it is 0, crt.sh
+  is probably unreachable or too slow from the runner (the check is then counted as not run, never as an error); if
+  it is above 0 but `domain_age_ran` is still low, the remaining TLDs have neither RDAP nor certificates.
+  `phishing_list_failed` high: GoPlus is rate-limiting; the domains stay unchecked until the next run.
 - `llm_models_tripped` > 0: a model endpoint failed repeatedly (see `extractions.error`, e.g. `http_0` = 180 s
   timeout). The run continues on the remaining models; if it repeats for days, reorder or replace the model in
   `pipeline/src/config.ts`.

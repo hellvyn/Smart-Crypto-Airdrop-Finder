@@ -385,7 +385,8 @@ describe("runDaily", () => {
     await runDaily(deps, { ...config, llmConcurrency: 2 });
     expect(chat.maxInFlight).toBeLessThanOrEqual(2);
     expect(chat.maxInFlight).toBeGreaterThan(1);
-    expect(http.maxInFlight).toBeLessThanOrEqual(4);
+    // 4 for RDAP/crt.sh/hacks plus GoPlus on its own limiter of 1.
+    expect(http.maxInFlight).toBeLessThanOrEqual(5);
   });
 
   it("enriches each registrable domain once per run", async () => {
@@ -1061,6 +1062,106 @@ describe("runDaily slugs, platforms and DefiLlama", () => {
     expect(rows[0]?.status).toBe("live");
     const changes = repo.projectChanges.filter((c) => c.field === "status" && c.projectId === rows[0]?.id);
     expect(changes.map((c) => [c.oldValue, c.newValue])).toEqual([["speculative", "live"]]);
+  });
+});
+
+describe("runDaily domain check coverage", () => {
+  type Reply = { status: number; body: string };
+  const RDAP = "https://rdap.org/domain/";
+  const GOPLUS = "https://api.gopluslabs.io/";
+  const CRT_INK = "https://crt.sh/?q=inkonchain.com&output=json";
+  const CRT_OK: Reply = { status: 200, body: JSON.stringify([{ not_before: "2023-05-01T00:00:00" }]) };
+
+  /** The standard fake network, with some URLs answered differently (`override` returns undefined to defer). */
+  function withOverride(override: (url: string) => Reply | undefined) {
+    const base = fakeHttp(basePages());
+    const gets: string[] = [];
+    const http: Http = {
+      resolveRedirect: base.resolveRedirect,
+      get: async (url) => {
+        gets.push(url);
+        return override(url) ?? base.get(url);
+      },
+    };
+    return { http, gets };
+  }
+
+  it("reports domain check coverage in the run stats", async () => {
+    const { deps, config } = setup();
+    const stats = await runDaily(deps, config);
+    expect(stats.projects_with_official_domain).toBe(3); // DeepBook, Ink and Hyperdrive Lend
+    expect(stats.domain_age_ran).toBe(3);
+    expect(stats.domain_age_from_crtsh).toBe(0);
+    expect(stats.phishing_list_ran).toBe(3);
+    expect(stats.phishing_list_failed).toBe(0);
+  });
+
+  it("asks crt.sh only for domains RDAP has no answer for, and counts the fallback", async () => {
+    const { http, gets } = withOverride((url) =>
+      url === `${RDAP}inkonchain.com` ? { status: 404, body: "" } : url === CRT_INK ? CRT_OK : undefined,
+    );
+    const { repo, deps, config } = setup();
+    const stats = await runDaily({ ...deps, http }, config);
+
+    expect(gets.filter((u) => u.startsWith("https://crt.sh/"))).toEqual([CRT_INK]);
+    expect(stats.domain_age_ran).toBe(3);
+    expect(stats.domain_age_from_crtsh).toBe(1);
+    expect((await latestRisk(repo, "ink"))?.checks.find((c) => c.id === "domain_age")?.ran).toBe(true);
+  });
+
+  it.each([
+    ["an error", { status: 502, body: "" }],
+    ["a timeout", { status: 0, body: "" }],
+    ["thousands of certificates", { status: 200, body: JSON.stringify(Array.from({ length: 140_000 }, () => ({ not_before: "2024-01-01T00:00:00" }))) }],
+  ])("finishes the run with the age check not run when RDAP has nothing and crt.sh returns %s", async (_n, crt) => {
+    const { http } = withOverride((url) =>
+      url === `${RDAP}inkonchain.com` ? { status: 404, body: "" } : url === CRT_INK ? crt : undefined,
+    );
+    const { repo, deps, config } = setup();
+    const stats = await runDaily({ ...deps, http }, config);
+
+    expect(stats.run_error).toBeUndefined();
+    expect(stats.assessed).toBe(3);
+    expect(stats.domain_age_ran).toBe(2);
+    expect(stats.domain_age_from_crtsh).toBe(0);
+    expect((await latestRisk(repo, "ink"))?.checks.find((c) => c.id === "domain_age")?.ran).toBe(false);
+  });
+
+  it("retries GoPlus once after a pause on 429, then counts the domain as failed", async () => {
+    const { http, gets } = withOverride((url) =>
+      url.startsWith(GOPLUS) && url.includes(encodeURIComponent("https://inkonchain.com")) ? { status: 429, body: "" } : undefined,
+    );
+    const { deps, config } = setup();
+    const sleeps: number[] = [];
+    const stats = await runDaily({ ...deps, http, sleep: async (ms) => void sleeps.push(ms) }, config);
+
+    expect(gets.filter((u) => u.includes(encodeURIComponent("https://inkonchain.com")))).toHaveLength(2);
+    expect(sleeps.filter((ms) => ms === 2000)).toHaveLength(1);
+    expect(stats.run_error).toBeUndefined();
+    expect(stats.phishing_list_failed).toBe(1);
+    expect(stats.phishing_list_ran).toBe(2);
+    expect(stats.assessed).toBe(3);
+  });
+
+  it("calls GoPlus one request at a time", async () => {
+    const { http } = withOverride(() => undefined);
+    let inFlight = 0;
+    let maxGoplus = 0;
+    const slow = {
+      ...http,
+      get: async (url: string) => {
+        const isGoplus = url.startsWith(GOPLUS);
+        if (isGoplus) maxGoplus = Math.max(maxGoplus, ++inFlight);
+        try {
+          return await http.get(url);
+        } finally {
+          if (isGoplus) inFlight--;
+        }
+      },
+    };
+    const { deps, config } = setup();
+    await runDaily({ ...deps, http: slow }, config);
+    expect(maxGoplus).toBe(1);
   });
 });
 
