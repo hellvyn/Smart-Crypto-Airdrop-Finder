@@ -2,7 +2,7 @@ import type { ModelConfig } from "./llm/nvidia.js";
 
 export interface PipelineConfig {
   telegramChannels: string[];
-  defillama: { minTvl: number; excludedCategories: string[]; limit: number };
+  defillama: { minTvl: number; excludedCategories: string[]; limit: number; newWithinDays: number };
   /** Tried in order until one returns a valid extraction. */
   models: ModelConfig[];
   llmConcurrency: number;
@@ -27,7 +27,7 @@ export const MODELS: ModelConfig[] = [
 
 export const defaultConfig: PipelineConfig = {
   telegramChannels: ["airdrops_io"],
-  defillama: { minTvl: 10_000_000, excludedCategories: ["CEX"], limit: 50 },
+  defillama: { minTvl: 1_000_000, excludedCategories: ["CEX"], limit: 80, newWithinDays: 180 },
   models: MODELS,
   llmConcurrency: 3,
   maxDocumentsPerRun: 150,

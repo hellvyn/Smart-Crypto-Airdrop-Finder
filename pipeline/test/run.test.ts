@@ -52,6 +52,7 @@ const PROTOCOL_LIST = [
     category: "Lending",
     gecko_id: null,
     symbol: "-",
+    listedAt: 1_760_000_000, // 2025-10-09
   },
   { name: "Big CEX", slug: "big-cex", url: "https://bigcex.com", chains: ["Ethereum"], tvl: 9e9, change_7d: 50, category: "CEX", gecko_id: null, symbol: "-" },
   { name: "Tokened", slug: "tokened", url: "https://tokened.xyz", chains: ["Ethereum"], tvl: 5e7, change_7d: 80, category: "Dexs", gecko_id: "tokened", symbol: "TOK" },
@@ -352,6 +353,8 @@ describe("runDaily", () => {
     expect(llama?.text).toContain("Hyperdrive Lend");
     // Volatile numbers stay out of the hashed text; they are only in the evidence quote.
     expect(llama?.text).not.toContain("25000000");
+    // The listing date is stable, so it may be hashed; the model uses it to tell new protocols from old ones.
+    expect(llama?.text).toContain("Listed on DefiLlama: 2025-10-09");
 
     const hyper = (await repo.findProjectsByNameKey("hyperdrivelend"))[0];
     expect(hyper?.status).toBe("speculative");
@@ -599,7 +602,12 @@ describe("config", () => {
     expect(defaultConfig.textRetentionDays).toBe(90);
     expect(defaultConfig.extractBudgetMinutes).toBe(35);
     expect(defaultConfig.telegramChannels).toEqual(["airdrops_io"]);
-    expect(defaultConfig.defillama).toEqual({ minTvl: 10_000_000, excludedCategories: ["CEX"], limit: 50 });
+    expect(defaultConfig.defillama).toEqual({
+      minTvl: 1_000_000,
+      excludedCategories: ["CEX"],
+      limit: 80,
+      newWithinDays: 180,
+    });
   });
 });
 
