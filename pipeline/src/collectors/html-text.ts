@@ -11,13 +11,14 @@ export function isAggregatorHost(hostname: string): boolean {
 
 /**
  * Appends ` [<cleaned url>] ` after every outbound anchor so the LLM can copy URLs verbatim.
- * Links to the aggregator itself are dropped; `onVisit` may turn `/visit/<code>/` links into a placeholder.
+ * Links to the aggregator itself are dropped; `onVisit` may turn `/visit/<code>/` links into a placeholder and
+ * receives the anchor's `data-outbound-host` (the destination host airdrops.io declares), if any.
  * Anchor text is always kept.
  */
 export function embedLinks(
   $: CheerioAPI,
   base: string,
-  onVisit?: (url: URL) => string | null,
+  onVisit?: (url: URL, outboundHost: string | null) => string | null,
 ): void {
   $("a[href]").each((_, el) => {
     const href = $(el).attr("href");
@@ -32,7 +33,7 @@ export function embedLinks(
     if (url.protocol !== "http:" && url.protocol !== "https:") return;
     if (url.hostname === "t.me" && url.pathname === "/") return;
     if (isAggregatorHost(url.hostname)) {
-      const placeholder = onVisit?.(url) ?? null;
+      const placeholder = onVisit?.(url, $(el).attr("data-outbound-host")?.trim() || null) ?? null;
       if (placeholder) $(el).after(` ${placeholder} `);
       return;
     }
