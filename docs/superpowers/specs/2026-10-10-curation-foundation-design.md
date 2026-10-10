@@ -1,7 +1,9 @@
 # Fondasi Kurasi (sub-proyek #1) — Desain
 
 Tanggal: 2026-10-10
-Status: **draft rev. 2, menunggu review owner** (rev. 2: perbaikan skor setelah simulasi terhadap data run pertama)
+Status: **draft rev. 3 (sebagian), menunggu review owner**. Rev. 2: perbaikan skor setelah simulasi terhadap data run
+pertama. Rev. 3: akar masalah domain, halaman project vs airdrops.io, fitur AI (§13, detail provider belum lengkap),
+Bahasa Indonesia.
 Dibangun di atas: `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md` (spec v1, sudah live)
 
 Label: **[FACT]** dari data/kode/run, **[INFERENCE]** kesimpulan dari bukti, **[UNKNOWN]** belum terverifikasi.
@@ -124,7 +126,17 @@ badge). Urutan default di §6.3.
 
 ### 4.6 Ekstraksi LLM (versi prompt naik)
 
-Field baru per project. LLM **cuma mengekstrak**, gak menilai:
+Field baru per project untuk menyamai isi halaman airdrops.io (§7.2). Ekstraksi tetap tugas LLM; penilaian ada di
+§13 (AI Analyst) dan aturan deterministik:
+- `key_parameters`: alokasi airdrop (mis. "5% dari total supply"), metode distribusi, tanggal TGE, masing-masing dengan
+  kutipan.
+- `steps`: langkah berurutan (menggantikan `tasks` yang datar), tiap langkah ditandai `recurring` (harian/mingguan, mis.
+  "check in daily") atau `once`.
+- `source_ratings`: penilaian editorial sumber kalau ada (airdrops.io: Difficulty, Cost to earn), disimpan sebagai klaim
+  sumber, bukan fakta.
+- `latest_update`: kalimat update terbaru dari sumber, dengan tanggalnya.
+
+Field yang sudah direncanakan di rev. 1:
 - `claimed_backers`: `[{investor, quote}]`. Nama investor yang disebut teks, plus kalimat aslinya. Kutipan wajib ada di
   teks sumber (aturan yang sama dengan field lain).
 - `capital_required`: `none` | `low` | `high` | `unknown`. Contoh: "deposit min. $1,000" = `high`.
@@ -144,9 +156,14 @@ Simulasi aturan rev. 1 terhadap run pertama menunjukkan kurasi dibangun di atas 
 
 Tanpa domain resmi, cek domain (umur, phishing, lookalike) dan semua sinyal terverifikasi gak bisa jalan. Jadi:
 
-1. **Cakupan domain resmi.** Cari di mana link website/sosmed project berada di HTML halaman detail airdrops.io
-   [INFERENCE: kemungkinan di luar blok `.airdrop-info`…`.airdrop-bottom` yang sekarang diambil] dan ikutkan ke dokumen,
-   tetap lewat aturan "URL harus ada di sumber". Target: **≥ 80%** project live/announced dari teks punya domain resmi.
+1. **Cakupan domain resmi.** Akar masalahnya sudah ketemu [FACT, screenshot halaman Arcus dari owner + teks DAC]:
+   - Link resmi (Website, Docs, X, Telegram, Blog) ada di kotak **"Overview" di bagian bawah** halaman detail, di luar
+     blok `.airdrop-info`…`.airdrop-bottom` yang sekarang diambil.
+   - Link eksternal **di dalam** blok juga hilang: collector cuma menyimpan link `/visit/`. Contoh: teks DAC berbunyi
+     "enter it on the Interstellar portal ." (kata "portal" tersisa, URL-nya hilang).
+   Perbaikan: ambil kotak Overview sebagai bagian dokumen, dan pertahankan URL eksternal di dalam blok (dalam bentuk teks
+   yang tetap lolos aturan "URL harus ada di sumber"). Target: **≥ 80%** project live/announced dari teks punya domain
+   resmi.
 2. **Cakupan cek domain.** Cari kenapa `domain_age` (RDAP) cuma jalan di 10 dan `phishing_list` (GoPlus) di 30 project
    (TLD gak didukung RDAP, rate limit, timeout, atau project tanpa domain). Perbaiki yang bisa; TLD yang memang gak punya
    RDAP dicatat sebagai keterbatasan. Target: **≥ 95%** project yang punya domain resmi menjalankan `domain_age` dan
@@ -276,11 +293,30 @@ Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall d
 - Filter: status, risiko, chain (sudah ada) + Worth it.
 - Kosong: "No airdrop passed curation today" + jumlah yang dicek.
 
-### 7.2 Halaman detail `/projects/<slug>`
-- Bagian **"Why it's listed"**: sinyal, sumber, label verified/claimed, tanggal cek.
-- Bagian **"Worth it"**: level + alasan.
-- Backer klaim: "Claimed by the project, not verified" + satu kalimat kenapa klaim VC palsu itu modus scam umum.
-- Status kedaluwarsa: "Ended (deadline passed)" + deadline dasarnya.
+### 7.2 Halaman detail `/projects/<slug>`: harus lebih berguna dari halaman airdrops.io
+
+Acuan pembanding [FACT, halaman Arcus di airdrops.io]: label status, vote, "Join now" (link referral, "Signing up through
+our link gives you 5% off"), detail, update terbaru, checklist 7 langkah, widget bridge, tips, istilah, FAQ, Difficulty
+"Easy" / Cost to earn "Medium" tanpa alasan, kotak Overview. Halaman mereka bertentangan sendiri: teks "dYdX Labs has
+confirmed that Arcus will launch its own token" vs label "Airdrop unconfirmed" (DAC kebalikannya).
+
+Urutan bagian halaman kita (atas ke bawah):
+
+| Bagian | Isi | Bergantung pada |
+|---|---|---|
+| Kepala | Nama, tab (Live now / Early bets), level Worth it, level risiko + "4/4 cek kunci jalan", link resmi terverifikasi, "Terakhir berubah: N hari lalu" | §5, §6 |
+| **Keputusan AI** | "Garap / Pantau / Skip" + tesis 3–5 poin (alokasi, backer, mekanisme poin, persaingan, modal & menit per hari), keyakinan, kutipan sumber per poin | §13 AI Analyst |
+| **Kontradiksi** | Fakta yang gak disepakati antar sumber atau di dalam satu sumber, dengan dua kutipannya | §13 |
+| **Progress lo** | Checklist per wallet; langkah `recurring` dipisah dari `once`; hitung mundur deadline | sub-proyek checklist (struktur data `steps` disiapkan di sini) |
+| **Timeline perubahan** | "1 Okt: program poin mulai · 30 Sep: Season 0 selesai" | §13 Change Detector |
+| **Keamanan** | Peringatan spesifik project (AI Scam Analyst + 4 cek kunci), tiap link diberi status cek domain | §6.2, §13 |
+| **Effort** | Estimasi AI "≈10 menit/hari · modal $100+", disandingkan dengan penilaian sumber ("airdrops.io: Easy") + alasan beda | §13 |
+| **Langkah** | Langkah diringkas dan diterjemahkan AI ke Bahasa Indonesia, tiap langkah dengan link bersih (tanpa referral) yang sudah dicek | §4.6 `steps`, §13 |
+| **Why it's listed** | Sinyal, sumber, label terverifikasi/diklaim, tanggal cek | §5.2 |
+| **Tanya AI** | Pintu ke AI Farming Coach dengan konteks project ini | §13 |
+
+Aturan yang tetap: backer klaim ditulis "Diklaim project, belum terverifikasi"; status kedaluwarsa ditulis "Berakhir
+(deadline lewat)" + deadline dasarnya; semua link keluar lewat pembersih referral yang sudah ada.
 
 ### 7.3 Project yang gak lolos / keluar dari kurasi
 - Halaman detail tetap bisa dibuka lewat link langsung (oleh yang punya akses), dengan peringatan di paling atas:
@@ -354,3 +390,41 @@ spec ini. Angka target adalah usulan [INFERENCE]; owner boleh mengubahnya, tapi 
 
 Kalau G7 gagal (ada scam yang lolos), penyebabnya diperbaiki di aturan risiko/kurasi dulu, lalu set uji dijalankan
 ulang. Kalau G9 gagal karena syarat cek kunci, perbaikannya di cakupan data (§5.0), bukan melonggarkan syarat.
+
+## 13. Fitur AI (rev. 3, detail provider belum lengkap)
+
+**Konteks keputusan:** nama produknya "Smart Airdrop Finder" karena owner mau AI jadi inti produk. Rev. 1–2 membatasi AI
+cuma sebagai pengekstrak; itu terlalu sempit. Rev. 3 memakai AI di mana AI paling kuat, dengan satu batas yang gak boleh
+dilanggar.
+
+**Batas keras (asimetris):** AI boleh **menambah** peringatan dan menurunkan rekomendasi; AI **gak boleh** menghapus
+peringatan, memberi badge "terverifikasi", atau meloloskan project yang gagal syarat §6.2. Alasan: teks project (termasuk
+"backed by a16z, 100% safe") ditulis pihak yang bisa saja scammer, dan AI bisa terbujuk. Teks sumber selalu diperlakukan
+sebagai data, bukan instruksi.
+
+**Aturan umum output AI:** tiap klaim faktual menyertakan kutipan sumber; ditampilkan berlabel "Analisis AI", terpisah
+dari "Data terverifikasi"; semua output Bahasa Indonesia (keputusan #29); hasil disimpan beserta versi prompt dan model.
+
+| # | Fitur | Isi | Masuk sub-proyek |
+|---|---|---|---|
+| A1 | **AI Analyst** | Tesis per airdrop: Garap / Pantau / Skip, keyakinan, 3–5 poin berkutipan. Menjadi masukan `worth()` (bobotnya dikalibrasi bersama §6.3) | #1 |
+| A2 | **AI Scam Analyst** | Membaca halaman klaim/pengumuman, menandai pola rekayasa sosial (desakan waktu, "connect wallet to check eligibility", admin palsu, minta seed phrase terselubung). Cuma bisa menaikkan risiko | #1 |
+| A3 | **Deteksi kontradiksi** | Membandingkan fakta antar sumber dan di dalam satu sumber (label vs teks) | #1 |
+| A4 | **Daily Briefing + Change Detector** | Membandingkan versi dokumen (hash konten sudah disimpan) dan merangkum perubahan yang penting; briefing pagi per member | #3 |
+| A5 | **Farming Coach (chat)** | Rencana farming personal dari modal, jumlah wallet, dan waktu member, berdasar data kurasi | #4 |
+| A6 | **Estimasi effort + terjemahan langkah** | Menit per hari, modal, gas; langkah diringkas ke Bahasa Indonesia | #1 |
+
+**Provider:** AI pribadi owner di `https://freellm.hellvyn.id/` sebagai model utama. [UNKNOWN] format API, daftar model,
+limit, biaya, streaming/JSON, dan kualitas Bahasa Indonesia. Adapter sekarang sudah OpenAI-compatible
+(`{base}/chat/completions`, streaming, `baseUrl` bisa diganti) [FACT, `pipeline/src/llm/nvidia.ts`]. Rencana: tiap model
+punya `baseUrl` + key sendiri, NVIDIA jadi cadangan lewat circuit breaker (menunggu keputusan owner). Kunci disimpan
+sebagai secret (`LLM_API_KEY` di GitHub Actions dan Vercel server-side), gak pernah di kode atau chat.
+
+**Gerbang kualitas tambahan (melengkapi §12):**
+
+| # | Gerbang | Target |
+|---|---|---|
+| G11 | Tesis AI Analyst direview owner | ≥ 20 sampel, ≥ 80% dinilai "masuk akal" |
+| G12 | AI Scam Analyst di set uji scam §10 | menandai ≥ 80% kasus scam; gak pernah menurunkan level risiko |
+| G13 | Kualitas Bahasa Indonesia output AI | owner review ≥ 20 sampel |
+| G14 | Kapasitas provider untuk Coach | diukur sebelum Coach dibuka; batas pemakaian per member ditentukan dari angka itu |
