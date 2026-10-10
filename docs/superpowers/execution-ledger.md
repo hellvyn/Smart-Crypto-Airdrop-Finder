@@ -258,3 +258,8 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 Ruling: `ProjectForScoring.signals` is loaded from `project_signals` — the plan has no other channel from signals to score — costs a query per run.
 Ruling: `curations.coingecko_listed` is added in 0011 for the track record — otherwise listing history is lost every run — costs one column.
 Ruling: AlphaDrops is capped at 120 requests per run — two caps that were never reconciled — costs up to 40 detail pages if raise pages crowd them out.
+- P8 Task 4: fix round 1/5 (1 addressed, 0 open — visitors saw a "Mulai garap" login link, but the brief says the button is for signed-in users only; commits 4c81c38..b0592b5)
+- Ruling: the brief wins over my dispatch note (I wrote that a signed-out click goes to login) — the brief carries the plan text — costs nothing, because visitors see no farm button.
+- P8 Task 4: complete (commits ecb57ac..b0592b5). FarmButton sits next to WatchButton in `projects/[slug]/page.tsx` (controller ruling). Ended cards keep "Berhenti garap" so they do not hold an active slot. A weekly task already done earlier this week shows its status without a checkbox. The 22023 error maps to `task_inactive`. Tasks are archive-only.
+- P8 Task 4: minor (deferred): FarmingCard uses a custom `.farm-card` instead of `Ticket`/`SectionCard` (looks the same). The page summary counts locked tasks of ended cards. A stale `?error=` stays after later success. A 42501 after a cascade delete hits the error boundary. The e2e was written after the code (no red run). About 490 lines were added to `globals.css`.
+- G3-3c merged. Tests: core 194, pipeline 369, web 348 unit · typecheck ok · pgTAP 218 · e2e 73/73.
