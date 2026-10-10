@@ -70,6 +70,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 26 | Alert Telegram | Gak dibikin |
 | 27 | Dua jenis peluang | List dipisah jadi tab **"Live now"** (live/announced) dan **"Early bets"** (speculative); `worth()` meranking di dalam tab |
 | 28 | Standar tampil | Project cuma tampil kalau cek keamanan kuncinya jalan; paywall baru dinyalakan setelah gerbang kualitas §12 terpenuhi |
+| 29 | Bahasa | **Bahasa Indonesia saja** untuk UI web, email, dan semua output AI (menggantikan asumsi v1 "UI bahasa Inggris dulu"). Konten sumber berbahasa Inggris diterjemahkan/diringkas AI |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
 penuh oleh owner (gak skalabel). API funding berbayar ditunda (lihat §11).
@@ -257,7 +258,10 @@ selesai dan minimal 3 run harian dengan data hasil perbaikan):
 **Urutan di dalam tab:** worth (`high` → `medium` → `low` → `insufficient_data`), lalu sinyal terkuat (VC → TVL →
 CoinGecko → sumber kurasi), lalu deadline terdekat, lalu `last_seen` terbaru.
 
-## 7. Tampilan (UI bahasa Inggris)
+## 7. Tampilan (UI Bahasa Indonesia, keputusan #29)
+
+Teks UI di bawah masih ditulis dalam bahasa Inggris sebagai acuan; implementasinya **Bahasa Indonesia**. Penerjemahan UI
+yang sudah ada (halaman v1, email digest, assertion e2e) masuk plan sebagai task tersendiri.
 
 Halaman di bawah ini nantinya **khusus member** (sub-proyek #2 yang menambah paywall, landing page, dan contoh terbatas).
 Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall dikerjakan di #2.
