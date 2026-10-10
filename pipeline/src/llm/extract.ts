@@ -78,7 +78,7 @@ export function cleanUrlsInText(text: string): string {
 /**
  * Applies the source-text rules to a schema-valid extraction: official URLs must appear in the source and lose
  * their referral parts; quoted v3 entries (`key_parameters`, `source_ratings`, `claimed_backers`, and
- * `latest_update` by its `text`) are dropped when the quote is not in the source, while the rest of the project
+ * `latest_update` by its `text`) are dropped when the quote is not in the source (a backer also when its `investor` is not in its own quote), while the rest of the project
  * stays. The quote check runs on the model's wording before referral parts are removed from URLs in free text.
  * `tasks` is filled from `steps` when the model left it empty.
  */
@@ -116,7 +116,7 @@ function postProcess(result: ExtractionResult, doc: CollectedDocument): Extracti
           .map((r) => ({ ...r, value: cleanUrlsInText(r.value), quote: cleanUrlsInText(r.quote) })),
         latest_update: latest !== null && inSource(latest.text) ? { ...latest, text: cleanUrlsInText(latest.text) } : null,
         claimed_backers: project.claimed_backers
-          .filter((b) => inSource(b.quote))
+          .filter((b) => inSource(b.quote) && quoteInSource(b.investor, b.quote))
           .map((b) => ({ ...b, quote: cleanUrlsInText(b.quote) })),
       };
     }),

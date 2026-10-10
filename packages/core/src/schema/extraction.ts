@@ -46,6 +46,11 @@ const sourceRatingSchema = z.object({ name: z.enum(SOURCE_RATING_NAMES), value: 
 const latestUpdateSchema = z.object({ text: z.string(), date: calendarDate.nullable() });
 const claimedBackerSchema = z.object({ investor: z.string(), quote: z.string() });
 
+/** Wraps a `.default(...)` schema so an explicit `null` (what the prompt asks for unstated fields) parses to the default. */
+function nullAsDefault<T extends z.ZodType>(schema: T) {
+  return z.preprocess((value) => value ?? undefined, schema);
+}
+
 const projectSchema = z.object({
   name: z.string().min(1),
   token_symbol: z.string().nullable(),
@@ -53,19 +58,20 @@ const projectSchema = z.object({
   status: z.enum(STATUSES),
   status_evidence: z.string(),
   /** Flat task list kept for compatibility; filled from `steps` after extraction when the model leaves it empty. */
-  tasks: z.array(z.string()).default([]),
+  tasks: nullAsDefault(z.array(z.string()).default([])),
   deadlines: z.array(deadlineSchema),
   official_urls: z.array(z.string()),
   confidence: z.number().min(0).max(1),
-  // v3 fields (spec §4.6). Optional in the model answer, so a v2-shaped answer still validates.
-  steps: z.array(stepSchema).default([]),
-  key_parameters: z.array(keyParameterSchema).default([]),
-  source_ratings: z.array(sourceRatingSchema).default([]),
-  latest_update: latestUpdateSchema.nullable().default(null),
-  claimed_backers: z.array(claimedBackerSchema).default([]),
-  capital_required: z.enum(CAPITAL_LEVELS).default("unknown"),
+  // v3 fields (spec §4.6). Optional in the model answer, so a v2-shaped answer still validates; an explicit
+  // `null` also falls back to the default, since the prompt tells the model to answer `null` or `[]` when unstated.
+  steps: nullAsDefault(z.array(stepSchema).default([])),
+  key_parameters: nullAsDefault(z.array(keyParameterSchema).default([])),
+  source_ratings: nullAsDefault(z.array(sourceRatingSchema).default([])),
+  latest_update: nullAsDefault(latestUpdateSchema.nullable().default(null)),
+  claimed_backers: nullAsDefault(z.array(claimedBackerSchema).default([])),
+  capital_required: nullAsDefault(z.enum(CAPITAL_LEVELS).default("unknown")),
   /** Minimum deposit in USD as stated by the text; never converted from other tokens (spec #52). */
-  capital_min_usd: z.number().positive().nullable().default(null),
+  capital_min_usd: nullAsDefault(z.number().positive().nullable().default(null)),
 });
 
 /** LLM extraction output contract (spec §4.3, §4.6). Unknown extra keys are stripped. */

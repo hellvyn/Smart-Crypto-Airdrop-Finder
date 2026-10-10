@@ -583,6 +583,54 @@ describe("extractWithFallback", () => {
       expect(got?.claimed_backers).toEqual([]);
     });
 
+    it("drops a backer whose investor is not in its own quote and keeps the others", async () => {
+      const p = project({
+        claimed_backers: [
+          { investor: "Paradigm", quote: "Backed by a16z and Coinbase Ventures" /* real sentence, invented investor */ },
+          { investor: "a16z", quote: "Backed by a16z and Coinbase Ventures" },
+          { investor: "Coinbase Ventures", quote: "Backed by a16z and Coinbase Ventures" },
+        ],
+      });
+      const out = await extractWithFallback(docWith("Ink airdrop. Backed by a16z and  Coinbase Ventures."), MODELS, {
+        chat: scripted([reply({ content: okJson([p]) })]).chat,
+        sleep,
+      });
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.projects[0]!.claimed_backers).toEqual([
+        { investor: "a16z", quote: "Backed by a16z and Coinbase Ventures" },
+        { investor: "Coinbase Ventures", quote: "Backed by a16z and Coinbase Ventures" },
+      ]);
+    });
+
+    it("accepts null for defaulted fields instead of failing over to the next model", async () => {
+      const p = project({
+        tasks: null,
+        steps: null,
+        key_parameters: null,
+        source_ratings: null,
+        latest_update: null,
+        claimed_backers: null,
+        capital_required: null,
+        capital_min_usd: null,
+      });
+      const { chat, calls } = scripted([reply({ content: okJson([p]) })]);
+      const out = await extractWithFallback(DOC, MODELS, { chat, sleep });
+      expect(calls).toEqual(["m/one"]);
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.result.projects[0]).toMatchObject({
+        tasks: [],
+        steps: [],
+        key_parameters: [],
+        source_ratings: [],
+        latest_update: null,
+        claimed_backers: [],
+        capital_required: "unknown",
+        capital_min_usd: null,
+      });
+    });
+
     it("drops a paraphrased source rating and latest update but keeps the project", async () => {
       const p = project({
         source_ratings: [
