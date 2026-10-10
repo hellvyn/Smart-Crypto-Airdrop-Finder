@@ -138,12 +138,83 @@ describe("parseDetail", () => {
     expect(detail?.visitLinks).toEqual([
       "https://airdrops.io/visit/53a3/?k=6efe1f6681",
       "https://airdrops.io/visit/dead/?k=1",
+      "https://airdrops.io/visit/9ea3/?k=11",
+      "https://airdrops.io/visit/aea3/?k=22",
+      "https://airdrops.io/visit/bea3/?k=33",
     ]);
   });
 
   it("returns null when the expected structure is missing", () => {
     expect(parseDetail("<html><body><h1>X</h1></body></html>", "https://airdrops.io/x/")).toBeNull();
     expect(parseDetail("", "https://airdrops.io/x/")).toBeNull();
+  });
+});
+
+describe("airdrops.io Overview box", () => {
+  const HOME = "https://airdrops.io/";
+  const DEEPBOOK = "https://airdrops.io/deepbook/";
+  const detailHtml = fixture("airdrops-detail.html");
+  const home = `<a href="/deepbook/">DeepBook</a>`;
+  const pagesFor = (body: string): Record<string, { status: number; body: string }> => ({
+    [HOME]: { status: 200, body: home },
+    [DEEPBOOK]: { status: 200, body },
+  });
+  const redirects = {
+    "https://airdrops.io/visit/9ea3/?k=11": "https://arcus.xyz/?ref=AB",
+    "https://airdrops.io/visit/bea3/?k=33": "https://bridge.airdrops.io/",
+  };
+  const withoutOverview = detailHtml.replace(/<div class="aidrop-info-wrapper">[\s\S]*?<\/div>/, "");
+
+  it("appends the Overview links with their resolved URLs", async () => {
+    const doc = (await collectAirdropsIo(fakeHttp(pagesFor(detailHtml), redirects), NOW)).documents[0]!;
+    expect(doc.text).toContain("Overview\nWebsite: [https://arcus.xyz/]");
+    expect(doc.text).toContain("Documentation: [https://docs.arcus.xyz/]"); // resolve failed, host fallback
+    expect(doc.text).toContain("X (Formerly Twitter): [https://x.com/arcus_xyz]");
+    expect(doc.text).not.toContain("Blog");
+    expect(doc.text).not.toContain("airdrops.io"); // aggregator target dropped
+    expect(doc.text).not.toContain("ref=AB");
+    expect(doc.text.endsWith("[https://x.com/arcus_xyz]")).toBe(true);
+  });
+
+  it("uses data-outbound-host when an in-body visit link cannot be resolved", async () => {
+    const body = detailHtml.replace(
+      "Claims are open for 30 days.",
+      'Open the <a href="/visit/5ea3/?k=1" data-outbound-host="app.arcus.xyz">portal</a>.',
+    );
+    const doc = (await collectAirdropsIo(fakeHttp(pagesFor(body)), NOW)).documents[0]!;
+    expect(doc.text).toContain("portal [https://app.arcus.xyz/]");
+  });
+
+  it("drops an unresolved visit link whose outbound host is an aggregator host", async () => {
+    const body = detailHtml.replace(
+      "Claims are open for 30 days.",
+      'Read <a href="/visit/7ea3/?k=1" data-outbound-host="bridge.airdrops.io">the bridge</a>.',
+    );
+    const doc = (await collectAirdropsIo(fakeHttp(pagesFor(body)), NOW)).documents[0]!;
+    expect(doc.text).toContain("the bridge");
+    expect(doc.text).not.toContain("airdrops.io");
+  });
+
+  it("accepts the correctly spelled wrapper class and pages without an Overview box", () => {
+    const spelled = detailHtml.replace("aidrop-info-wrapper", "airdrop-info-wrapper");
+    expect(parseDetail(spelled, DEEPBOOK)!.overview).toHaveLength(4);
+    expect(parseDetail(withoutOverview, DEEPBOOK)!.overview).toEqual([]);
+  });
+
+  it("reads label, absolute href and outbound host in page order", () => {
+    expect(parseDetail(detailHtml, DEEPBOOK)!.overview).toEqual([
+      { label: "Website", href: "https://airdrops.io/visit/9ea3/?k=11", outboundHost: "arcus.xyz" },
+      { label: "Documentation", href: "https://airdrops.io/visit/aea3/?k=22", outboundHost: "docs.arcus.xyz" },
+      { label: "X (Formerly Twitter)", href: "https://x.com/arcus_xyz?utm_source=x", outboundHost: null },
+      { label: "Blog", href: "https://airdrops.io/visit/bea3/?k=33", outboundHost: "bridge.airdrops.io" },
+    ]);
+    expect(parseDetail(detailHtml, DEEPBOOK)!.visitHosts.get("9ea3")).toBe("arcus.xyz");
+  });
+
+  it("still builds the document from the main block when there is no Overview box", async () => {
+    const doc = (await collectAirdropsIo(fakeHttp(pagesFor(withoutOverview), redirects), NOW)).documents[0]!;
+    expect(doc.text).toContain("Claims are open for 30 days.");
+    expect(doc.text).not.toContain("Overview");
   });
 });
 
