@@ -1,4 +1,4 @@
-import { cleanUrl, extractionSchema, filterUrlsInSource, normalizeDeadline } from "@saf/core";
+import { cleanUrl, extractionSchema, filterUrlsInSource, normalizeDeadline, quoteInSource } from "@saf/core";
 import type { ExtractionResult } from "@saf/core";
 import type { CollectedDocument } from "../collectors/types.js";
 import type { CircuitBreaker } from "./circuit-breaker.js";
@@ -75,7 +75,15 @@ export function cleanUrlsInText(text: string): string {
   });
 }
 
+/**
+ * Applies the source-text rules to a schema-valid extraction: official URLs must appear in the source and lose
+ * their referral parts; quoted v3 entries (`key_parameters`, `source_ratings`, `claimed_backers`, and
+ * `latest_update` by its `text`) are dropped when the quote is not in the source, while the rest of the project
+ * stays. The quote check runs on the model's wording before referral parts are removed from URLs in free text.
+ * `tasks` is filled from `steps` when the model left it empty.
+ */
 function postProcess(result: ExtractionResult, doc: CollectedDocument): ExtractionResult {
+  const inSource = (quote: string): boolean => quoteInSource(quote, doc.text);
   return {
     ...result,
     projects: result.projects.map((project) => {
@@ -87,15 +95,29 @@ function postProcess(result: ExtractionResult, doc: CollectedDocument): Extracti
           // Not a valid absolute URL: drop it.
         }
       }
+      const steps = project.steps.map((step) => ({ ...step, text: cleanUrlsInText(step.text) }));
+      const tasks = project.tasks.length > 0 ? project.tasks.map(cleanUrlsInText) : steps.map((step) => step.text);
+      const latest = project.latest_update;
       return {
         ...project,
         status_evidence: cleanUrlsInText(project.status_evidence),
-        tasks: project.tasks.map(cleanUrlsInText),
+        tasks,
+        steps,
         official_urls: [...urls],
         deadlines: project.deadlines.map((d) => {
           const normalized = normalizeDeadline(d, doc.publishedAt);
           return { ...normalized, text: cleanUrlsInText(normalized.text) };
         }),
+        key_parameters: project.key_parameters
+          .filter((k) => inSource(k.quote))
+          .map((k) => ({ ...k, value: cleanUrlsInText(k.value), quote: cleanUrlsInText(k.quote) })),
+        source_ratings: project.source_ratings
+          .filter((r) => inSource(r.quote))
+          .map((r) => ({ ...r, value: cleanUrlsInText(r.value), quote: cleanUrlsInText(r.quote) })),
+        latest_update: latest !== null && inSource(latest.text) ? { ...latest, text: cleanUrlsInText(latest.text) } : null,
+        claimed_backers: project.claimed_backers
+          .filter((b) => inSource(b.quote))
+          .map((b) => ({ ...b, quote: cleanUrlsInText(b.quote) })),
       };
     }),
   };
