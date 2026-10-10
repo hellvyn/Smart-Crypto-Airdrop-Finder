@@ -30,6 +30,7 @@ import {
   submitStopFarming,
 } from "../app/(app)/garapan/actions";
 import {
+  FARMING_ERROR_MESSAGES,
   FarmingError,
   addCustomTask,
   archiveTask,
@@ -366,6 +367,12 @@ describe("stopFarming, archiveTask, isFarming, setCheck", () => {
     expect(recs[0]).toEqual({ table: "rpc:toggle_farming_check", calls: [["rpc", { p_task_id: TID, p_done: false }]] });
   });
 
+  it("setCheck reports a task archived or a project stopped in another tab (22023) as task_inactive", async () => {
+    const { db } = fakeDb(() => fail("22023", "task is archived"));
+    await expect(setCheck(db, TID, true)).rejects.toMatchObject({ name: "FarmingError", code: "task_inactive" });
+    await expect(setCheck(fakeDb(() => fail("42501")).db, TID, true)).rejects.not.toBeInstanceOf(FarmingError);
+  });
+
   it("refuses ids that are not UUIDs without touching the database", async () => {
     const { db, recs } = fakeDb();
     await expect(stopFarming(db, "x")).rejects.toThrow(/invalid/i);
@@ -459,6 +466,7 @@ describe("getFarmingBoard", () => {
       projectId: PID,
       name: "Demo",
       slug: "demo",
+      today: "2026-10-11",
       nextDeadline: { kind: "claim", date: "2026-10-15", precision: "exact" },
       range: { start: "2026-10-06", end: "2026-10-20", endKind: "snapshot" },
       daysLeft: 10,
@@ -502,6 +510,7 @@ describe("getFarmingBoard", () => {
     for (const zone of [null, "Mars/Olympus_Mons"]) {
       const [demo] = await getFarmingBoard(board(zone).db, NOW);
       expect(demo!.range.start).toBe("2026-10-05");
+      expect(demo!.today).toBe("2026-10-10");
       expect(demo!.checkedToday).toEqual([T.once, T.d1, T.d2]); // 2026-10-10 in UTC
     }
   });
@@ -576,6 +585,12 @@ describe("garapan actions", () => {
       ["rpc", { p_task_id: TID, p_done: true }],
     ]);
     expect(revalidatePath).toHaveBeenCalledWith("/garapan");
+  });
+
+  it("submitCheck on a task archived in another tab sends the member to /garapan with a message", async () => {
+    serverDb = fakeDb(() => fail("22023", "task is archived")).db;
+    await expect(submitCheck(form({ taskId: TID, done: "1" }))).rejects.toMatchObject({ to: "/garapan?error=task_inactive" });
+    expect(FARMING_ERROR_MESSAGES.task_inactive).toMatch(/\S/);
   });
 
   it("startFarmingAction reports the project limit as a result for the AI Coach", async () => {

@@ -23,6 +23,7 @@ export async function SiteHeader() {
         {user ? (
           <nav className="site-nav site-nav-member" aria-label="Menu utama">
             <Link href={LIST_PATH}>Airdrop</Link>
+            <Link href="/garapan">Garapan saya</Link>
             <Link href="/watchlist">Watchlist</Link>
             <Link href="/wallets">Wallets</Link>
             <Link href="/settings">Settings</Link>

@@ -77,7 +77,7 @@ export async function seedProjects(): Promise<Seed> {
   const tag = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 
-  // Project 1: risk, deadline, evidence, links, tasks.
+  // Project 1: risk, deadline, evidence, links, tasks (once, daily and weekly steps).
   const main: SeededProject = {
     slug: `e2e-main-${tag}`,
     name: `E2E Main ${tag}`,
@@ -128,7 +128,13 @@ export async function seedProjects(): Promise<Seed> {
   must(
     await db
       .from("tasks")
-      .insert([{ project_id: mainId, document_id: mainDoc, description: "Bridge to the main chain" }])
+      .insert([
+        // Source steps in step order: one main (once) task, two daily ones and a weekly one (farming tracker).
+        { project_id: mainId, document_id: mainDoc, description: "Bridge to the main chain", cadence: "once", position: 0 },
+        { project_id: mainId, document_id: mainDoc, description: "Swap once on the DEX", cadence: "daily", position: 1 },
+        { project_id: mainId, document_id: mainDoc, description: "Check in on the points page", cadence: "daily", position: 2 },
+        { project_id: mainId, document_id: mainDoc, description: "Join the weekly quest", cadence: "weekly", position: 3 },
+      ])
       .select("id"),
     "tasks",
   );
@@ -169,7 +175,7 @@ export async function seedProjects(): Promise<Seed> {
     "evidence",
   );
 
-  // Project 2: conflicting status sources, no chains.
+  // Project 2: conflicting status sources, no chains, no steps.
   const conflicted: SeededProject = {
     slug: `e2e-conflict-${tag}`,
     name: `E2E Conflict ${tag}`,
