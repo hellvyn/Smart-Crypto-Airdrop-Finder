@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { createServerClient } from "@/lib/supabase/server";
-import { isUuid } from "@/lib/watchlist";
+import { isUuid } from "@/lib/uuid";
 import { isAddWalletError, listWallets, MAX_LABEL_LENGTH, shortAddress, WALLET_ERROR_MESSAGES } from "@/lib/wallets";
 import { submitAddWallet, submitDeleteWallet } from "./actions";
 

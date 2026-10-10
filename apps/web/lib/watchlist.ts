@@ -3,13 +3,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireUser } from "./auth";
 import { LIST_COLUMNS, toListItem } from "./queries";
+import { isUuid } from "./uuid";
 import type { ProjectListItem } from "./view";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function isUuid(v: unknown): v is string {
-  return typeof v === "string" && UUID.test(v);
-}
 
 function throwIf(error: { message: string } | null, what: string): void {
   if (error) throw new Error(`Failed to ${what}: ${error.message}`);

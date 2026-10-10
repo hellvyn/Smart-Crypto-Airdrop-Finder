@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { createServerClient } from "@/lib/supabase/server";
-import { isUuid, setWatching } from "@/lib/watchlist";
+import { isUuid } from "@/lib/uuid";
+import { setWatching } from "@/lib/watchlist";
 
 /**
  * Watch or unwatch a project for the signed-in user. With `desired` the call is idempotent (the watch button always

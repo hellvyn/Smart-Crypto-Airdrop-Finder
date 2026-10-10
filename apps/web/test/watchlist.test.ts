@@ -10,7 +10,9 @@ vi.mock("@/lib/supabase/server", () => ({ createServerClient: async () => server
 vi.mock("next/cache", () => ({ revalidatePath: (p: string) => revalidatePath(p) }));
 
 import { toggleWatch } from "../app/(app)/watchlist/actions";
-import { getWatchlist, isUuid, isWatching } from "../lib/watchlist";
+import * as watchlistModule from "../lib/watchlist";
+import { getWatchlist, isWatching } from "../lib/watchlist";
+import { isUuid } from "../lib/uuid";
 
 const USER = { id: "11111111-1111-4111-8111-111111111111" };
 const PID = "22222222-2222-4222-8222-222222222222";
@@ -59,6 +61,10 @@ describe("isUuid", () => {
     for (const bad of ["", "not-a-uuid", `${PID}x`, ` ${PID}`, "1; drop table watchlist", 5, null, undefined]) {
       expect(isUuid(bad)).toBe(false);
     }
+  });
+
+  it("has a single definition, in lib/uuid", () => {
+    expect("isUuid" in watchlistModule).toBe(false);
   });
 });
 

@@ -4,7 +4,7 @@
 import { isEvmAddress } from "@saf/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireUser } from "./auth";
-import { isUuid } from "./watchlist";
+import { isUuid } from "./uuid";
 
 export const MAX_LABEL_LENGTH = 64;
 export const MAX_WALLETS = 20;

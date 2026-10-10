@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireUser } from "./auth";
 import { chainIdFromName } from "./chains/config";
 import { parseSummary, serializeSummary } from "./activity-summary";
-import { isUuid } from "./watchlist";
+import { isUuid } from "./uuid";
 
 export const CACHE_TTL_MS = 6 * 3_600_000;
 /** A cached result stamped slightly in the future (clock skew between servers) still counts as fresh. */
