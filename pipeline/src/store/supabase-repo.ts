@@ -8,6 +8,7 @@ import type {
 } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
+import { FACT_FIELDS } from "./repo.js";
 import type {
   ExtractionStatus,
   NewEvidence,
@@ -16,6 +17,7 @@ import type {
   ProjectForScoring,
   ProjectRow,
   RunStats,
+  Step,
   StoredDocument,
 } from "./repo.js";
 
@@ -363,17 +365,23 @@ export class SupabaseRepo implements PipelineRepo {
     );
   }
 
-  async replaceTasks(projectId: string, documentId: string, tasks: string[]): Promise<void> {
+  async replaceTasks(projectId: string, documentId: string, steps: Step[]): Promise<void> {
     check(
       "replaceTasks.delete",
       await this.db.from("tasks").delete().eq("project_id", projectId).eq("document_id", documentId),
     );
-    if (tasks.length === 0) return;
+    if (steps.length === 0) return;
     check(
       "replaceTasks.insert",
-      await this.db
-        .from("tasks")
-        .insert(tasks.map((description) => ({ project_id: projectId, document_id: documentId, description }))),
+      await this.db.from("tasks").insert(
+        steps.map((step, position) => ({
+          project_id: projectId,
+          document_id: documentId,
+          description: step.text,
+          position,
+          cadence: step.cadence,
+        })),
+      ),
     );
   }
 
@@ -401,7 +409,7 @@ export class SupabaseRepo implements PipelineRepo {
   async listProjectsForScoring(activeSinceDays: number, now: Date): Promise<ProjectForScoring[]> {
     const cutoff = new Date(now.getTime() - activeSinceDays * DAY_MS).toISOString();
     type ScoringDb = ProjectDb & {
-      tasks: { description: string }[];
+      tasks: { description: string; cadence: string }[];
       links: { url: string; kind: string }[];
       evidence: { field: string; value: string; quote: string; documents: { source_key: string } | null }[];
       lookalike: { name: string; official_domains: string[] } | null;
@@ -410,12 +418,15 @@ export class SupabaseRepo implements PipelineRepo {
       this.db
         .from("projects")
         .select(
-          `${PROJECT_COLUMNS}, tasks(description), links(url, kind), ` +
+          `${PROJECT_COLUMNS}, tasks(description, cadence), links(url, kind), ` +
             "evidence(field, value, quote, documents(source_key)), lookalike:lookalike_of(name, official_domains)",
         )
         .gte("last_seen", cutoff)
         .order("id")
-        // Evidence in insertion order, so sourceAsks match MemoryRepo.
+        // Steps grouped by document, in step order; same as MemoryRepo.
+        .order("document_id", { referencedTable: "tasks" })
+        .order("position", { referencedTable: "tasks" })
+        // Evidence in insertion order, so sourceAsks and facts match MemoryRepo.
         .order("seq", { referencedTable: "evidence" })
         .range(from, to)
         .returns<ScoringDb[]>(),
@@ -423,6 +434,10 @@ export class SupabaseRepo implements PipelineRepo {
     return rows.map((r) => ({
       ...toProject(r),
       tasks: r.tasks.map((t) => t.description),
+      steps: r.tasks.map((t) => ({ text: t.description, cadence: t.cadence })),
+      facts: r.evidence
+        .filter((e) => FACT_FIELDS.includes(e.field))
+        .map((e) => ({ field: e.field, value: e.value, quote: e.quote })),
       links: r.links.map((l) => ({ url: l.url, kind: l.kind })),
       sourceCount: new Set(r.evidence.flatMap((e) => (e.documents ? [e.documents.source_key] : []))).size,
       lookalikeOfName: r.lookalike?.name ?? null,

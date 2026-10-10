@@ -283,9 +283,12 @@ describe("MemoryRepo projects", () => {
     const p = await repo.createProject(project(), T0);
     const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
     const d2 = await repo.upsertDocument(doc({ url: "https://x.test/2" }), "2");
-    await repo.replaceTasks(p.id, d1.id, ["Bridge", "Swap"]);
-    await repo.replaceTasks(p.id, d2.id, ["Stake"]);
-    await repo.replaceTasks(p.id, d1.id, ["Bridge only"]);
+    await repo.replaceTasks(p.id, d1.id, [
+      { text: "Bridge", cadence: "once" },
+      { text: "Swap", cadence: "daily" },
+    ]);
+    await repo.replaceTasks(p.id, d2.id, [{ text: "Stake", cadence: "weekly" }]);
+    await repo.replaceTasks(p.id, d1.id, [{ text: "Bridge only", cadence: "once" }]);
     await repo.upsertLinks(p.id, [{ url: "https://ink.test/", kind: "website", referralStripped: false }]);
     await repo.upsertLinks(p.id, [{ url: "https://ink.test/", kind: "claim", referralStripped: true }]);
     await repo.replaceDeadlines(p.id, d1.id, [
@@ -295,7 +298,58 @@ describe("MemoryRepo projects", () => {
     expect(repo.deadlines).toHaveLength(0);
     const [scored] = await repo.listProjectsForScoring(30, T0);
     expect(scored?.tasks.sort()).toEqual(["Bridge only", "Stake"]);
+    expect(scored?.steps).toHaveLength(2);
+    expect(scored?.steps).toEqual(
+      expect.arrayContaining([
+        { text: "Bridge only", cadence: "once" },
+        { text: "Stake", cadence: "weekly" },
+      ]),
+    );
     expect(scored?.links).toEqual([{ url: "https://ink.test/", kind: "claim" }]);
+  });
+
+  it("lists a document's steps in position order with their cadence", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    await repo.replaceTasks(p.id, d1.id, [
+      { text: "Check in", cadence: "daily" },
+      { text: "Bridge", cadence: "once" },
+      { text: "Vote", cadence: "weekly" },
+    ]);
+    const [scored] = await repo.listProjectsForScoring(30, T0);
+    expect(scored?.steps).toEqual([
+      { text: "Check in", cadence: "daily" },
+      { text: "Bridge", cadence: "once" },
+      { text: "Vote", cadence: "weekly" },
+    ]);
+    expect(scored?.tasks).toEqual(["Check in", "Bridge", "Vote"]);
+  });
+
+  it("returns v3 fact evidence as facts in insertion order, without status or ask evidence", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    const add = (field: string, value: string, quote: string) =>
+      repo.addEvidence({ projectId: p.id, documentId: d1.id, field, value, quote, at: T0 });
+    await add("status", "live", "Ink airdrop is live");
+    await add("claimed_backer", "Paradigm", "Backed by Paradigm.");
+    await add("dangerous_ask", "asks_secret", "Enter your seed phrase.");
+    await add("key_parameter:allocation", "5%", "5% of supply.");
+    await add("source_rating:cost", "$0", "Cost to earn: $0");
+    await add("latest_update", "", "New quests added.");
+    await add("capital_required", "low", "");
+    await add("capital_min_usd", "50", "");
+    await add("defillama_listing", "speculative", "TVL");
+    const [scored] = await repo.listProjectsForScoring(30, T0);
+    expect(scored?.facts).toEqual([
+      { field: "claimed_backer", value: "Paradigm", quote: "Backed by Paradigm." },
+      { field: "key_parameter:allocation", value: "5%", quote: "5% of supply." },
+      { field: "source_rating:cost", value: "$0", quote: "Cost to earn: $0" },
+      { field: "latest_update", value: "", quote: "New quests added." },
+      { field: "capital_required", value: "low", quote: "" },
+      { field: "capital_min_usd", value: "50", quote: "" },
+    ]);
   });
 
   it("scores only recently seen projects and counts distinct evidence source keys", async () => {

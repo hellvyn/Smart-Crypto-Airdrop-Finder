@@ -13,7 +13,7 @@ import { purgeOldText } from "./steps/purge.js";
 import { scoreProjects } from "./steps/score.js";
 import { emptyStats } from "./stats.js";
 import type { DailyStats } from "./stats.js";
-import type { PipelineRepo, StoredDocument } from "./store/repo.js";
+import type { Fact, PipelineRepo, StoredDocument } from "./store/repo.js";
 
 export type { PipelineConfig } from "./config.js";
 
@@ -33,6 +33,27 @@ export interface PipelineDeps {
  */
 const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6 } as const;
 
+type ExtractedProject = ExtractionResult["projects"][number];
+
+/**
+ * The v3 facts of one extracted project as evidence (see `FACT_FIELDS`). Entries whose quote was not in the
+ * source were already dropped by extraction; a `capital_required` of `unknown` and a null `capital_min_usd`
+ * are not facts.
+ */
+function extractedFacts(p: ExtractedProject): Fact[] {
+  const facts: Fact[] = [
+    ...p.key_parameters.map((k) => ({ field: `key_parameter:${k.name}`, value: k.value, quote: k.quote })),
+    ...p.source_ratings.map((r) => ({ field: `source_rating:${r.name}`, value: r.value, quote: r.quote })),
+  ];
+  if (p.latest_update !== null) {
+    facts.push({ field: "latest_update", value: p.latest_update.date ?? "", quote: p.latest_update.text });
+  }
+  facts.push(...p.claimed_backers.map((b) => ({ field: "claimed_backer", value: b.investor, quote: b.quote })));
+  if (p.capital_required !== "unknown") facts.push({ field: "capital_required", value: p.capital_required, quote: "" });
+  if (p.capital_min_usd !== null) facts.push({ field: "capital_min_usd", value: String(p.capital_min_usd), quote: "" });
+  return facts;
+}
+
 function extractionInputs(result: ExtractionResult): ProjectInput[] {
   return result.projects.map((p) => ({
     name: p.name,
@@ -40,7 +61,9 @@ function extractionInputs(result: ExtractionResult): ProjectInput[] {
     chains: p.chains,
     status: p.status,
     quote: p.status_evidence,
-    tasks: p.tasks,
+    // An answer without steps (v2 shape) keeps its flat task list, as one-time steps.
+    steps: p.steps.length > 0 ? p.steps : p.tasks.map((text) => ({ text, cadence: "once" as const })),
+    facts: extractedFacts(p),
     deadlines: p.deadlines,
     urls: p.official_urls,
     websiteUrl: null,
@@ -64,7 +87,8 @@ function speculativeInput(c: SpeculativeCandidate): ProjectInput {
     chains: c.chains,
     status: "speculative",
     quote: `No token listed; TVL $${Math.round(c.tvl)}, 7d change ${c.change7d === null ? "n/a" : `${c.change7d.toFixed(2)}%`} (DefiLlama)`,
-    tasks: [],
+    steps: [],
+    facts: [],
     deadlines: [],
     urls,
     websiteUrl,
