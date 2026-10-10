@@ -20,6 +20,9 @@ importers:
       tldts:
         specifier: ^7.4.18
         version: 7.4.18
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
 
   pipeline:
     dependencies:
@@ -583,6 +586,9 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+
 snapshots:
 
   '@esbuild/aix-ppc64@0.28.2':
@@ -1026,3 +1032,5 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  zod@4.6.5: {}
