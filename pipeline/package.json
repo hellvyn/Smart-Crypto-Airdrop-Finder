@@ -9,10 +9,12 @@
   },
   "dependencies": {
     "@saf/core": "workspace:*",
+    "@supabase/supabase-js": "^2.117.3",
     "cheerio": "^1.2.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^24.19.2"
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15"
   }
 }
