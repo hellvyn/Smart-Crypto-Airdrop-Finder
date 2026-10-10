@@ -80,6 +80,14 @@ export async function collectTelegram(
       return { sourceKey, documents: toDocuments(), failed: true, error: `page ${page} returned HTTP ${res.status}` };
     }
     const { messages, ids } = scanPage(res.body, channel);
+    if (page === 1 && ids.length > 0 && messages.length === 0) {
+      return {
+        sourceKey,
+        documents: [],
+        failed: true,
+        error: `telegram: ${ids.length} posts parsed but no text/time found (structure changed?)`,
+      };
+    }
     if (ids.length === 0) {
       // An empty first page means the HTML structure changed; an empty later page just ends the history.
       if (page === 1) {

@@ -21,7 +21,8 @@ export function embedLinks(
 ): void {
   $("a[href]").each((_, el) => {
     const href = $(el).attr("href");
-    if (!href) return;
+    // Query-only and fragment-only hrefs (e.g. Telegram hashtag links) carry no destination.
+    if (!href || href.startsWith("?") || href.startsWith("#")) return;
     let url: URL;
     try {
       url = new URL(href, base);
@@ -29,13 +30,21 @@ export function embedLinks(
       return;
     }
     if (url.protocol !== "http:" && url.protocol !== "https:") return;
+    if (url.hostname === "t.me" && url.pathname === "/") return;
     if (isAggregatorHost(url.hostname)) {
       const placeholder = onVisit?.(url) ?? null;
       if (placeholder) $(el).after(` ${placeholder} `);
       return;
     }
     try {
-      $(el).after(` [${cleanUrl(url.href).url}] `);
+      const clean = cleanUrl(url.href).url;
+      const label = $(el).text().trim();
+      if (label === href.trim() || label === url.href) {
+        // Raw autolink: the anchor text is the URL itself, so replace it to avoid leaking referral params.
+        $(el).replaceWith(` [${clean}] `);
+      } else {
+        $(el).after(` [${clean}] `);
+      }
     } catch {
       // Unusable link: keep the anchor text only.
     }

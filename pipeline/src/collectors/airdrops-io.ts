@@ -6,8 +6,8 @@ import type { CollectedDocument, CollectorResult, Http } from "./types.js";
 const ORIGIN = "https://airdrops.io";
 const SOURCE_KEY = "airdrops_io";
 const CONCURRENCY = 4;
-const START_MARK = "";
-const END_MARK = "";
+const START_MARK = "\uE000";
+const END_MARK = "\uE001";
 
 /** First path segments on airdrops.io that are not airdrop detail pages. */
 const NON_AIRDROP_SLUGS = new Set([
@@ -165,7 +165,8 @@ export async function collectAirdropsIo(http: Http, now: Date): Promise<Collecto
     };
   });
 
-  const result: CollectorResult = { sourceKey: SOURCE_KEY, documents, failed: false };
+  // Every listed page was skipped: the detail structure most likely changed.
+  const result: CollectorResult = { sourceKey: SOURCE_KEY, documents, failed: documents.length === 0 };
   if (skipped > 0) result.error = `${skipped} detail ${skipped === 1 ? "page" : "pages"} skipped`;
   return result;
 }

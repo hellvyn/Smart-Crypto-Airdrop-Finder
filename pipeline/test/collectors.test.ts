@@ -224,6 +224,19 @@ describe("collectAirdropsIo", () => {
     expect(result.error).toBe("2 detail pages skipped");
   });
 
+  it("fails when listings exist but every detail page is skipped", async () => {
+    const http = fakeHttp({
+      [HOME]: { status: 200, body: fixture("airdrops-home.html") },
+      "https://airdrops.io/deepbook/": { status: 200, body: "<html></html>" },
+      "https://airdrops.io/ink-chain/": { status: 500, body: "" },
+      "https://airdrops.io/mint-io/": { status: 200, body: "<html></html>" },
+    });
+    const result = await collectAirdropsIo(http, NOW);
+    expect(result.failed).toBe(true);
+    expect(result.documents).toEqual([]);
+    expect(result.error).toBe("3 detail pages skipped");
+  });
+
   it("never runs more than 4 requests at once", async () => {
     const slugs = Array.from({ length: 12 }, (_, i) => `p${i}`);
     const home = slugs.map((s) => `<a href="/${s}/">${s}</a>`).join("");
@@ -254,6 +267,29 @@ describe("parseTelegramPage", () => {
     expect(messages[0]?.text).not.toContain("[https://airdrops.io");
     expect(messages[0]?.text).toContain("Radar update\nVisit");
     expect(messages[1]?.text).toBe("Second message $TOKEN");
+  });
+});
+
+describe("telegram link handling", () => {
+  const wrap = (inner: string): string =>
+    `<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="chan/1">` +
+    `<div class="tgme_widget_message_text">${inner}</div>` +
+    `<time datetime="2026-10-01T00:00:00+00:00"></time></div></div>`;
+
+  it("skips query-only and t.me root links (hashtags)", () => {
+    const { messages } = parseTelegramPage(
+      wrap(`Hello <a href="?q=%23airdrop">#airdrop</a> <a href="https://t.me/?q=%23tag">#tag</a>`),
+      "chan",
+    );
+    expect(messages[0]?.text).toBe("Hello #airdrop #tag");
+  });
+
+  it("replaces raw autolink text with the cleaned URL, without duplicating it", () => {
+    const { messages } = parseTelegramPage(
+      wrap(`Go <a href="https://x.io/a?ref=AB">https://x.io/a?ref=AB</a> now`),
+      "chan",
+    );
+    expect(messages[0]?.text).toBe("Go [https://x.io/a] now");
   });
 });
 
@@ -340,6 +376,17 @@ describe("collectTelegram", () => {
     const result = await collectTelegram(http, "chan", 3, NOW);
     expect(result.failed).toBe(true);
     expect(result.documents).toEqual([]);
+  });
+
+  it("fails when posts parse but no text/time selector matches (structure changed)", async () => {
+    const body =
+      `<html><body><div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="chan/7">` +
+      `<div class="renamed_text">hello</div></div></div></body></html>`;
+    const http = fakeHttp({ [BASE]: { status: 200, body } });
+    const result = await collectTelegram(http, "chan", null, NOW);
+    expect(result.failed).toBe(true);
+    expect(result.documents).toEqual([]);
+    expect(result.error).toBe("telegram: 1 posts parsed but no text/time found (structure changed?)");
   });
 
   it("keeps collected documents but reports failure when a later page fails", async () => {
