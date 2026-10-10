@@ -140,6 +140,7 @@ describe("notifyStep", () => {
     expect(m.text).toContain(`${SITE}/projects/alpha`);
     expect(m.text).toContain(`${SITE}/unsubscribe?token=tok-alice`);
     expect(m.html).toContain(`${SITE}/unsubscribe?token=tok-alice`);
+    expect(m.listUnsubscribe).toBe(`${SITE}/unsubscribe?token=tok-alice`);
   });
 
   it("dates and windows everything by the run start, not by the clock at send time", async () => {

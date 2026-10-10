@@ -119,7 +119,8 @@ async function sendOne(
   try {
     const unsubscribeUrl = `${cfg.siteUrl}/unsubscribe?token=${encodeURIComponent(recipient.unsubscribeToken)}`;
     const email = renderDigestEmail(digest, { siteUrl: cfg.siteUrl, unsubscribeUrl });
-    ok = (await deps.sender.send({ to: recipient.email, subject: email.subject, html: email.html, text: email.text })).ok;
+    const message = { to: recipient.email, subject: email.subject, html: email.html, text: email.text, listUnsubscribe: unsubscribeUrl };
+    ok = (await deps.sender.send(message)).ok;
   } catch {
     ok = false;
   }

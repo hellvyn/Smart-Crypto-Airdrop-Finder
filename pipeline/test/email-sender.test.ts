@@ -44,6 +44,16 @@ describe("BrevoSender", () => {
     expect(call.init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("adds a List-Unsubscribe header when the message has an unsubscribe URL", async () => {
+    const { calls, fetchImpl } = fakeFetch(201);
+    const sender = new BrevoSender({ fetch: fetchImpl, apiKey: "k", from: FROM });
+    const url = "https://saf.test/unsubscribe?token=tok";
+    expect(await sender.send({ ...MESSAGE, listUnsubscribe: url })).toEqual({ ok: true, status: 201 });
+    const body = JSON.parse(String((calls[0] as Call).init.body));
+    expect(body.headers).toEqual({ "List-Unsubscribe": "<https://saf.test/unsubscribe?token=tok>" });
+    expect(body.textContent).toBe("hi");
+  });
+
   it("returns ok:false with the status for a non-201 answer", async () => {
     const { fetchImpl } = fakeFetch(400, '{"code":"invalid_parameter","message":"to is invalid: bob@example.test"}');
     const sender = new BrevoSender({ fetch: fetchImpl, apiKey: "k", from: FROM });

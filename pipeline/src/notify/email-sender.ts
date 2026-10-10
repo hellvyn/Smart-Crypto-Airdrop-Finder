@@ -6,6 +6,8 @@ export interface EmailMessage {
   subject: string;
   html: string;
   text: string;
+  /** Unsubscribe URL for the `List-Unsubscribe` header (mail clients show an unsubscribe button). */
+  listUnsubscribe?: string;
 }
 
 export interface SendResult {
@@ -40,6 +42,7 @@ export class BrevoSender implements EmailSender {
           subject: m.subject,
           htmlContent: m.html,
           textContent: m.text,
+          ...(m.listUnsubscribe === undefined ? {} : { headers: { "List-Unsubscribe": `<${m.listUnsubscribe}>` } }),
         }),
         signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       });
