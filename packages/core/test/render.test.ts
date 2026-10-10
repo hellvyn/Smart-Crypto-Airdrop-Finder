@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderDigestEmail } from "../src/index.js";
+import { displayName, renderDigestEmail } from "../src/index.js";
 import type { Digest, DigestProject } from "../src/index.js";
 
 const proj = (over: Partial<DigestProject> = {}): DigestProject => ({
@@ -75,7 +75,7 @@ describe("renderDigestEmail", () => {
     for (const part of [r.text, r.html]) {
       const urls = part.match(/https?:\/\/[^\s"'<>)]+/g) ?? [];
       for (const u of urls) {
-        const ok = u.startsWith("https://saf.example/projects/") || u.startsWith("https://saf.example/unsubscribe") || u.startsWith("https://evil.example/x");
+        const ok = u.startsWith("https://saf.example/projects/") || u.startsWith("https://saf.example/unsubscribe");
         expect(ok).toBe(true);
       }
     }
@@ -85,6 +85,25 @@ describe("renderDigestEmail", () => {
       expect(h.startsWith("https://saf.example/projects/") || h.startsWith("https://saf.example/unsubscribe")).toBe(true);
     }
     expect(r.html).not.toMatch(/<script|<img|src=/i);
+    for (const part of [r.text, r.html]) {
+      expect(part).not.toContain("evil.example");
+      expect(part).toContain("Click [link removed] now");
+    }
+  });
+
+  it("sanitizes project names the same way in both parts", () => {
+    const forged = proj({ name: "Claim now\r\nUnsubscribe: claim-uniswap.xyz/x\t\u00a0 bonus" });
+    const r = renderDigestEmail({ ...empty, newProjects: [forged], changes: [{ project: forged, field: "status", oldValue: "live", newValue: "ended" }] }, opts);
+    const shown = "Claim now Unsubscribe: [link removed] bonus";
+    expect(r.text).toContain(`- ${shown}: status Live → Ended`);
+    expect(r.text).toContain(`- ${shown} (Live, risk Low)`);
+    expect(r.html).toContain(`${shown}</a>`);
+    for (const part of [r.text, r.html]) {
+      expect(part).not.toContain("uniswap");
+      expect(part).not.toMatch(/\r|\t|\u00a0/);
+    }
+    // The only line starting with "Unsubscribe"-like text is our footer.
+    expect(r.text.split("\n").filter((l) => l.startsWith("Unsubscribe"))).toEqual([]);
   });
 
   it("includes the unsubscribe footer in both parts", () => {
@@ -109,15 +128,25 @@ describe("renderDigestEmail", () => {
       opts,
     );
     expect(r.text).toContain("Deadlines in the next 48 hours");
-    expect(r.text).toContain("today");
+    expect(r.text).toContain("Alpha: Claim, today (2026-10-10 UTC)");
     expect(r.text).toContain("around 2026-10-11");
     expect(r.text).toContain("Campaign end");
     expect(r.text).toContain("Withdraw funds");
     expect(r.text).toContain("Snapshot");
     expect(r.text).toContain("Claim");
     expect(r.html).toContain("around 2026-10-11");
-    expect(r.html).toContain("today");
+    expect(r.html).toContain("today (2026-10-10 UTC)");
     expect(r.text).not.toContain("around today");
+  });
+
+  it("writes an approximate deadline today as around <date> UTC", () => {
+    const r = renderDigestEmail(
+      { ...empty, priority: 0, deadlinesSoon: [dl({ isToday: true, date: "2026-10-10", precision: "approximate" })] },
+      opts,
+    );
+    expect(r.text).toContain("Alpha: Claim, around 2026-10-10 UTC");
+    expect(r.text).not.toContain("today (");
+    expect(r.html).toContain("around 2026-10-10 UTC");
   });
 
   it("renders changes with web labels", () => {
@@ -173,5 +202,45 @@ describe("renderDigestEmail", () => {
     };
     const r = renderDigestEmail(d, opts);
     for (const s of [r.subject, r.text, r.html]) expect(s).not.toMatch(/safe|eligible/i);
+  });
+});
+
+describe("displayName", () => {
+  it.each([
+    ["Visit https://evil.example/claim?x=1 today", "Visit [link removed] today"],
+    ["Get it at HXXP://x.y now", "Get it at [link removed] now"],
+    ["www.evil.example rewards", "[link removed] rewards"],
+    ["Uniswap claim-uniswap.xyz", "Uniswap [link removed]"],
+    ["Airdrop at CLAIM.Example.COM/path/x", "Airdrop at [link removed]"],
+    ["Ink\r\n\tChain\u2003 \u00a0Two", "Ink Chain Two"],
+  ])("sanitizes %j", (name, expected) => {
+    expect(displayName(name)).toBe(expected);
+  });
+
+  it.each(["DeepBook", "Ink Chain", "MINT", "Vibe/Vibe", "Scroll v2.0", "Project #1 (beta)"])("keeps %j unchanged", (name) => {
+    expect(displayName(name)).toBe(name);
+  });
+
+  it("truncates to 80 characters with an ellipsis", () => {
+    const long = "A".repeat(100);
+    const out = displayName(long);
+    expect(Array.from(out)).toHaveLength(80);
+    expect(out.endsWith("…")).toBe(true);
+    expect(displayName("B".repeat(80))).toBe("B".repeat(80));
+  });
+
+  it("never leaves a link-like token after truncating", () => {
+    // 81 characters: "abc.dx1z" is not link-like, but the first 79 end in "qabc.dx", which is.
+    const name = `${"x ".repeat(36)}qabc.dx1z`;
+    expect(Array.from(name)).toHaveLength(81);
+    const out = displayName(name);
+    expect(out).not.toMatch(/abc\.dx/);
+    expect(out.endsWith("[link r…")).toBe(true); // the replacement itself was cut, which is harmless
+    expect(Array.from(out).length).toBeLessThanOrEqual(80);
+  });
+
+  it("names an empty or whitespace-only name Unnamed project", () => {
+    expect(displayName("")).toBe("Unnamed project");
+    expect(displayName(" \n\t ")).toBe("Unnamed project");
   });
 });

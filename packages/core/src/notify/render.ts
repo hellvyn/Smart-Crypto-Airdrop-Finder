@@ -43,10 +43,52 @@ const kindLabel = (k: string): string => own(KIND_LABELS, k, k.replaceAll("_", "
 const esc = (s: string): string =>
   s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 
+const MAX_NAME = 80;
+const LINK_REMOVED = "[link removed]";
+// Anything a mail client could turn into a link: scheme URLs, www. hosts and bare domains (label(s) + a TLD of
+// two or more letters, with an optional path). Labels and TLDs may be non-ASCII (IDN look-alikes).
+const LINK_LIKE = new RegExp(
+  [
+    String.raw`[a-z][a-z0-9+.-]*:\/\/\S+`,
+    String.raw`www\.\S+`,
+    String.raw`(?<![\p{L}\p{N}_-])[\p{L}\p{N}_-]+(?:\.[\p{L}\p{N}_-]+)*\.\p{L}{2,}(?![\p{L}\p{N}_-])(?:\/\S*)?`,
+  ].join("|"),
+  "giu",
+);
+const stripLinks = (s: string): string => s.replace(LINK_LIKE, LINK_REMOVED);
+const truncate = (s: string): string => {
+  const chars = Array.from(s);
+  return chars.length <= MAX_NAME ? s : `${chars.slice(0, MAX_NAME - 1).join("").trimEnd()}…`;
+};
+
+/**
+ * A scraped project name made safe for an email: whitespace (including line breaks and Unicode spaces) collapsed
+ * to single spaces, anything URL-like replaced by "[link removed]" (mail clients auto-link plain URLs), at most 80
+ * characters (cut with "…"), and "Unnamed project" when nothing is left. Used for both the text and HTML parts;
+ * HTML escaping happens after this.
+ */
+export function displayName(name: string): string {
+  let s = name.replace(/\s+/gu, " ").trim();
+  // Cutting can turn a harmless token into a link-like one ("abc.dx1" -> "abc.dx…"), so repeat until stable.
+  for (let i = 0; i < 5; i += 1) {
+    const next = truncate(stripLinks(s));
+    if (next === s) break;
+    s = next;
+  }
+  s = s.trim();
+  return s === "" ? "Unnamed project" : s;
+}
+
 const T_DEADLINES = "Deadlines in the next 48 hours";
 const T_CHANGES = "Status and risk changes";
 const T_NEW = "New airdrops today";
 const FOOTER = "You get this email because daily digest is on.";
+
+/** "today (YYYY-MM-DD UTC)" for an exact deadline today; "around YYYY-MM-DD UTC" for any approximate one. */
+function deadlineWhen(x: Digest["deadlinesSoon"][number]): string {
+  if (x.precision === "approximate") return `around ${x.date} UTC`;
+  return x.isToday ? `today (${x.date} UTC)` : x.date;
+}
 
 interface Row {
   project: DigestProject;
@@ -67,9 +109,9 @@ export function renderDigestEmail(d: Digest, opts: RenderOptions): RenderedEmail
       title: T_DEADLINES,
       rows: d.deadlinesSoon.map((x) => ({
         project: x.project,
-        detail: `${kindLabel(x.kind)}, ${x.isToday ? "today" : `${x.precision === "approximate" ? "around " : ""}${x.date}`}`,
+        detail: `${kindLabel(x.kind)}, ${deadlineWhen(x)}`,
       })),
-      plain: (r) => `${r.project.name}: ${r.detail}`,
+      plain: (r) => `${displayName(r.project.name)}: ${r.detail}`,
     });
   }
   if (d.changes.length > 0) {
@@ -82,7 +124,7 @@ export function renderDigestEmail(d: Digest, opts: RenderOptions): RenderedEmail
             ? `status ${statusLabel(c.oldValue)} → ${statusLabel(c.newValue)}`
             : `risk ${riskLabel(c.oldValue)} → ${riskLabel(c.newValue)}`,
       })),
-      plain: (r) => `${r.project.name}: ${r.detail}`,
+      plain: (r) => `${displayName(r.project.name)}: ${r.detail}`,
     });
   }
   if (d.newProjects.length > 0) {
@@ -92,7 +134,7 @@ export function renderDigestEmail(d: Digest, opts: RenderOptions): RenderedEmail
         project: p,
         detail: `${statusLabel(p.status)}, risk ${riskLabel(p.riskLevel)}`,
       })),
-      plain: (r) => `${r.project.name} (${r.detail})`,
+      plain: (r) => `${displayName(r.project.name)} (${r.detail})`,
     });
   }
 
@@ -110,7 +152,7 @@ export function renderDigestEmail(d: Digest, opts: RenderOptions): RenderedEmail
     .map((s) => {
       const rows = s.rows
         .map((r) => {
-          const name = `<a href="${esc(link(r.project))}" ${A}>${esc(r.project.name)}</a>`;
+          const name = `<a href="${esc(link(r.project))}" ${A}>${esc(displayName(r.project.name))}</a>`;
           // Changes read "<Project>: status A → B"; other sections keep the name and detail in separate cells.
           if (s.title === T_CHANGES) return `<tr><td ${TD}>${name}: ${esc(r.detail)}</td></tr>`;
           return `<tr><td ${TD}>${name}</td><td ${TD}>${esc(r.detail)}</td></tr>`;

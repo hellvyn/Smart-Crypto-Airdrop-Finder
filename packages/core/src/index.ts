@@ -23,5 +23,5 @@ export type { CheckId, RiskCheck, RiskInput, RiskAssessment } from "./risk/asses
 export { buildDigest } from "./notify/digest.js";
 export type { Digest, DigestInput, DigestProject } from "./notify/digest.js";
 export { allocateQuota } from "./notify/quota.js";
-export { renderDigestEmail } from "./notify/render.js";
+export { displayName, renderDigestEmail } from "./notify/render.js";
 export type { RenderOptions, RenderedEmail } from "./notify/render.js";
