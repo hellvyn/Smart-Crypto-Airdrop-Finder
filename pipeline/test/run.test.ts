@@ -526,6 +526,27 @@ describe("runDaily extraction budget and merge queue", () => {
     expect(repo.extractions.filter((e) => e.documentId === ink?.id)).toHaveLength(1);
   });
 
+  it("stops calling a model for the rest of the run after 3 consecutive failures", async () => {
+    const first = defaultConfig.models[0]?.id;
+    const inner = fakeChat();
+    const byModel: string[] = [];
+    const chat: FakeChat = {
+      ...inner,
+      chat: async (model, messages) => {
+        byModel.push(model.id);
+        if (model.id === first) return { content: "", finishReason: null, latencyMs: 180_000, httpStatus: 0 };
+        return inner.chat(model, messages);
+      },
+    };
+    const { deps, config } = setup({ chat, config: { ...defaultConfig, llmConcurrency: 1 } });
+    const stats = await runDaily(deps, config);
+
+    // 4 LLM documents: the first 3 each time out on the first model, the 4th goes straight to the second.
+    expect(byModel.filter((id) => id === first)).toHaveLength(3);
+    expect(stats.extract_ok).toBe(4);
+    expect(stats.llm_models_tripped).toBe(1);
+  });
+
   it("merges a document right after its extraction, before later extractions finish", async () => {
     const repo = new MemoryRepo();
     const inner = fakeChat();
@@ -566,12 +587,12 @@ describe("runDaily extraction budget and merge queue", () => {
 describe("config", () => {
   it("uses the model order and limits from the global constraints", () => {
     expect(defaultConfig.models.map((m) => m.id)).toEqual([
-      "moonshotai/kimi-k3",
       "z-ai/glm-5.3-flash",
+      "moonshotai/kimi-k3",
       "google/gemma-4-31b-it",
     ]);
-    expect(defaultConfig.models[0]?.extraBody).toEqual({ chat_template_kwargs: { thinking: false } });
-    expect(defaultConfig.models[1]?.extraBody).toEqual({ reasoning_effort: "low" });
+    expect(defaultConfig.models[0]?.extraBody).toEqual({ reasoning_effort: "low" });
+    expect(defaultConfig.models[1]?.extraBody).toEqual({ chat_template_kwargs: { thinking: false } });
     expect(defaultConfig.models[2]?.extraBody).toEqual({});
     expect(defaultConfig.llmConcurrency).toBe(3);
     expect(defaultConfig.maxDocumentsPerRun).toBe(150);

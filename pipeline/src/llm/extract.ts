@@ -1,6 +1,7 @@
 import { cleanUrl, extractionSchema, filterUrlsInSource, normalizeDeadline } from "@saf/core";
 import type { ExtractionResult } from "@saf/core";
 import type { CollectedDocument } from "../collectors/types.js";
+import type { CircuitBreaker } from "./circuit-breaker.js";
 import type { ChatMessage, ChatResult, ModelConfig } from "./nvidia.js";
 import { buildMessages } from "./prompt.js";
 
@@ -17,7 +18,10 @@ export interface ExtractionAttempt {
 
 export type ExtractOutcome =
   | { ok: true; result: ExtractionResult; model: string; attempts: ExtractionAttempt[] }
-  /** `stopped`: `shouldStop` ended the chain before every model was tried. */
+  /**
+   * `stopped`: `shouldStop` ended the chain before every model was tried, or every model's circuit was open
+   * so no call was made. Either way the document is left for the next run.
+   */
   | { ok: false; attempts: ExtractionAttempt[]; stopped: boolean };
 
 /** `streamChat` with its transport deps (fetch, API key, base URL) already bound. */
@@ -96,16 +100,22 @@ function postProcess(result: ExtractionResult, doc: CollectedDocument): Extracti
  * Tries each model in order until one returns a complete, schema-valid extraction.
  * A 429 is retried on the same model after 2 s and then 4 s; any other failure moves on.
  * `shouldStop` is checked before every model call; once it returns true no further call starts.
+ * A model whose `breaker` circuit is open is skipped; every final non-200 reply counts against its model.
  */
 export async function extractWithFallback(
   doc: CollectedDocument,
   models: ModelConfig[],
-  deps: { chat: ChatFn; sleep: (ms: number) => Promise<void>; shouldStop?: () => boolean },
+  deps: { chat: ChatFn; sleep: (ms: number) => Promise<void>; shouldStop?: () => boolean; breaker?: CircuitBreaker },
 ): Promise<ExtractOutcome> {
   const messages = buildMessages(doc);
   const attempts: ExtractionAttempt[] = [];
 
+  let skipped = 0;
   for (const model of models) {
+    if (deps.breaker?.isOpen(model.id) === true) {
+      skipped += 1;
+      continue;
+    }
     for (let retry = 0; retry <= RATE_LIMIT_BACKOFF_MS.length; retry++) {
       if (deps.shouldStop?.() === true) return { ok: false, attempts, stopped: true };
       const chat = await deps.chat(model, messages);
@@ -129,8 +139,10 @@ export async function extractWithFallback(
           await deps.sleep(backoff);
           continue;
         }
+        deps.breaker?.recordFailure(model.id);
         break;
       }
+      deps.breaker?.recordSuccess(model.id);
       if (chat.finishReason !== "stop") {
         record(`finish_${chat.finishReason}`, chat.content);
         break;
@@ -154,5 +166,5 @@ export async function extractWithFallback(
     }
   }
 
-  return { ok: false, attempts, stopped: false };
+  return { ok: false, attempts, stopped: skipped === models.length };
 }

@@ -8,6 +8,8 @@ export interface DailyStats extends RunStats {
   extract_failed: number;
   /** Pending documents left for the next run because the extraction budget ran out. */
   extract_deferred: number;
+  /** Models skipped for part of the run after repeated failures (circuit breaker). */
+  llm_models_tripped: number;
   not_airdrop: number;
   projects_created: number;
   projects_updated: number;
@@ -30,6 +32,7 @@ export function emptyStats(): DailyStats {
     extract_ok: 0,
     extract_failed: 0,
     extract_deferred: 0,
+    llm_models_tripped: 0,
     not_airdrop: 0,
     projects_created: 0,
     projects_updated: 0,

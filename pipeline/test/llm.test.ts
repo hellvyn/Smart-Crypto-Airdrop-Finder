@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CollectedDocument } from "../src/collectors/types.js";
+import { createCircuitBreaker } from "../src/llm/circuit-breaker.js";
 import { extractWithFallback } from "../src/llm/extract.js";
 import type { ChatFn } from "../src/llm/extract.js";
 import type { ChatResult, ModelConfig } from "../src/llm/nvidia.js";
@@ -412,6 +413,52 @@ describe("extractWithFallback", () => {
     const { chat } = scripted([reply({ content: okJson([p]) })]);
     const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {} });
     expect(out.ok && out.result.projects[0]?.tasks).toEqual(["Open http://[bad/ now"]);
+  });
+
+  it("skips a model whose circuit is open", async () => {
+    const breaker = createCircuitBreaker(1);
+    breaker.recordFailure("m/one");
+    const { chat, calls } = scripted([reply()]);
+    const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {}, breaker });
+    expect(out.ok && out.model).toBe("m/two");
+    expect(calls).toEqual(["m/two"]);
+  });
+
+  it("records timeouts and server errors as failures and any 200 reply as a success", async () => {
+    const breaker = createCircuitBreaker(2);
+    const { chat, calls } = scripted([
+      // Document 1: m/one times out, m/two answers.
+      reply({ httpStatus: 0, content: "", finishReason: null }),
+      reply(),
+      // Document 2: m/one returns 503, m/two returns unparsable JSON, m/three answers.
+      reply({ httpStatus: 503, content: "", finishReason: null }),
+      reply({ content: "not json" }),
+      reply(),
+    ]);
+    await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {}, breaker });
+    await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {}, breaker });
+    expect(calls).toEqual(["m/one", "m/two", "m/one", "m/two", "m/three"]);
+    // m/one: timeout then 503 = two consecutive failures. m/two: a 200 with bad JSON is reachable, not a failure.
+    expect(breaker.isOpen("m/one")).toBe(true);
+    expect(breaker.isOpen("m/two")).toBe(false);
+  });
+
+  it("counts a rate-limited model as failed only after its retries run out", async () => {
+    const breaker = createCircuitBreaker(1);
+    const limited = reply({ httpStatus: 429, content: "", finishReason: null });
+    const { chat } = scripted([limited, limited, reply()]);
+    const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {}, breaker });
+    expect(out.ok && out.model).toBe("m/one");
+    expect(breaker.isOpen("m/one")).toBe(false);
+  });
+
+  it("defers the document without any call when every model's circuit is open", async () => {
+    const breaker = createCircuitBreaker(1);
+    for (const m of MODELS) breaker.recordFailure(m.id);
+    const { chat, calls } = scripted([]);
+    const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {}, breaker });
+    expect(out).toEqual({ ok: false, attempts: [], stopped: true });
+    expect(calls).toEqual([]);
   });
 
   it("passes system and user messages to the chat function", async () => {
