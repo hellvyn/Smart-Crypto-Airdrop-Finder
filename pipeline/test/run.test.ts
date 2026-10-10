@@ -1138,6 +1138,35 @@ describe("runDaily notify stage", () => {
     expect(repo.runs[0]?.finishedAt).not.toBeNull();
   });
 
+  it("uses the run start time for the digest date and windows, even when the run crosses 00:00 UTC", async () => {
+    const repo = new MemoryRepo();
+    repo.seedTestUser({ email: "fan@example.test", newAirdropsOptIn: true });
+    const start = new Date("2026-10-10T23:50:00Z");
+    const later = new Date("2026-10-11T00:20:00Z");
+    let calls = 0;
+    const clock = () => (calls++ === 0 ? start : later);
+    const seen: { newProjects: Date[]; context: Date[] } = { newProjects: [], context: [] };
+    const listNew = repo.listNewProjects.bind(repo);
+    repo.listNewProjects = async (...args: Parameters<typeof listNew>) => {
+      seen.newProjects.push(args[1]);
+      return listNew(...args);
+    };
+    const ctx = repo.getDigestContext.bind(repo);
+    repo.getDigestContext = async (userId, since, now) => {
+      seen.context.push(now);
+      return ctx(userId, since, now);
+    };
+    const { deps } = setup({ repo });
+    const mail = sender();
+    const stats = await runDaily({ ...deps, sender: mail, now: clock }, EMAIL_ON);
+
+    expect(calls).toBeGreaterThan(1); // the clock did move past midnight before notify
+    expect(stats.digests_sent).toBe(1);
+    expect(repo.notificationLog.map((l) => l.refDate)).toEqual(["2026-10-10"]);
+    expect(seen.newProjects).toEqual([start]);
+    expect(seen.context).toEqual([start]);
+  });
+
   it("fails the notify stage (not the run's other stages) when email is enabled without a sender", async () => {
     const repo = new MemoryRepo();
     const order = traced(repo);

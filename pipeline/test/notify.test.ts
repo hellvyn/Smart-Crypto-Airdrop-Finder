@@ -89,7 +89,7 @@ async function withRiskChange(repo: MemoryRepo, userId: string, slug: string): P
 }
 
 function deps(repo: MemoryRepo, sender: EmailSender, now: Date = NOW) {
-  return { repo, sender, now: () => now };
+  return { repo, sender, runStart: now, now: () => now };
 }
 
 /** Three recipients: alice (deadline), bob (status change), carol (watches a quiet project). */
@@ -139,6 +139,22 @@ describe("notifyStep", () => {
     expect(m.text).toContain(`${SITE}/projects/alpha`);
     expect(m.text).toContain(`${SITE}/unsubscribe?token=tok-alice`);
     expect(m.html).toContain(`${SITE}/unsubscribe?token=tok-alice`);
+  });
+
+  it("dates and windows everything by the run start, not by the clock at send time", async () => {
+    const repo = new MemoryRepo();
+    const alice = repo.seedTestUser({ email: "alice@example.test", newAirdropsOptIn: true });
+    // A deadline "today" at run start (2026-10-10) is yesterday by the time the clock passes midnight.
+    await withDeadline(repo, alice, "alpha", "2026-10-10");
+    await repo.createProject(np("fresh", { name: "Fresh" }), new Date(NOW.getTime() - 23 * HOUR));
+    const sentAt = new Date("2026-10-11T00:15:00Z");
+    const sender = fakeSender();
+    const stats = await notifyStep({ repo, sender, runStart: NOW, now: () => sentAt }, EMAIL);
+
+    expect(stats.digests_sent).toBe(1);
+    expect(sender.sent[0]?.text).toContain("ALPHA: Claim, today (2026-10-10 UTC)");
+    expect(sender.sent[0]?.text).toContain("Fresh (Announced");
+    expect(repo.notificationLog).toEqual([{ userId: alice, kind: "digest", refDate: "2026-10-10", sentAt }]);
   });
 
   it("does not send twice on a second run the same day", async () => {

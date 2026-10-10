@@ -31,12 +31,21 @@ export interface NotifyStats extends RunStats {
  * the others; there is no retry within a run. Reading the recipients, today's count or the new projects is
  * stage-level: it throws before anything is sent. Stats hold counts only, never addresses or user ids.
  */
-export async function notifyStep(
-  deps: { repo: PipelineRepo; sender: EmailSender; now: () => Date },
-  cfg: EmailConfig,
-): Promise<NotifyStats> {
+export interface NotifyDeps {
+  repo: PipelineRepo;
+  sender: EmailSender;
+  /**
+   * Start time of the run. The UTC send date (`ref_date`), the deadline window, the change window and the new
+   * projects window are all taken from it, so a run that crosses 00:00 UTC still sends under its start date.
+   */
+  runStart: Date;
+  /** Clock for `sent_at` only. */
+  now: () => Date;
+}
+
+export async function notifyStep(deps: NotifyDeps, cfg: EmailConfig): Promise<NotifyStats> {
   const { repo, sender } = deps;
-  const now = deps.now();
+  const now = deps.runStart;
   const refDate = now.toISOString().slice(0, 10);
   const stats: NotifyStats = {
     digests_sent: 0,
@@ -91,7 +100,7 @@ export async function notifyStep(
 
 /** Renders, sends and logs one digest. Never throws. */
 async function sendOne(
-  deps: { repo: PipelineRepo; sender: EmailSender; now: () => Date },
+  deps: NotifyDeps,
   cfg: EmailConfig,
   recipient: DigestRecipient,
   digest: Digest,

@@ -154,7 +154,8 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     await stage(STEP.notify, undefined, async () => {
       const { sender } = deps;
       if (!sender) throw new Error("email is enabled but no sender is configured");
-      Object.assign(stats, await notifyStep({ repo, sender, now: deps.now }, config.email));
+      // The run's start time, not the clock now: a run crossing 00:00 UTC keeps its start date (spec section 8).
+      Object.assign(stats, await notifyStep({ repo, sender, runStart: now, now: deps.now }, config.email));
     });
   }
   await stage(STEP.purge, undefined, () => purgeOldText(repo, config.textRetentionDays, now, stats));
