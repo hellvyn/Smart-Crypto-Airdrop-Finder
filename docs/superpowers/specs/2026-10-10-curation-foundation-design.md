@@ -78,7 +78,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 33 | Akses data | Semua data airdrop cuma untuk user login, dikunci di RLS **dan** routing; non-login cuma landing (`/`) + `/login`. Menggantikan rencana paywall berbayar di web |
 | 34 | Info perubahan | Ditampilkan di web ("Perubahan sejak kunjungan terakhir"), gak lewat email |
 | 35 | Tracker garapan | Checklist + heatmap **per project** (bukan per wallet), warna = % task harian dicentang (4 tingkat), streak hari 100% |
-| 39 | Rentang heatmap | Sesuai masa garap: dari "Mulai garap" sampai snapshot/akhir kampanye paling awal; tanpa deadline sampai hari ini (min. 4 minggu); maks. 52 minggu |
+| 39 | Rentang heatmap | Sesuai masa garap: dari "Mulai garap" sampai snapshot/akhir kampanye paling awal; tanpa tanggal selesai = 1 tahun (52 minggu) dari hari mulai; maks. 52 minggu |
 | 36 | Privasi tracker | Cuma member itu sendiri yang bisa melihat |
 | 37 | Asal task tracker | Langkah Harian/Mingguan dari sumber + task buatan member; centang cuma untuk hari ini (zona waktu member) |
 | 38 | Coach → tracker | Rekomendasi AI Farming Coach menampilkan tombol "Mulai garap" yang memakai aksi yang sama dengan halaman project |
@@ -472,8 +472,9 @@ konsistensinya sebagai heatmap sepanjang masa garap airdrop itu (seperti grafik 
 - Streak = jumlah hari berturut-turut 100%, berakhir hari ini (atau kemarin kalau hari ini belum 100%).
 - **Rentang heatmap (keputusan #39):** dari hari "Mulai garap" (tanggal lokal) sampai deadline `snapshot` atau
   `campaign_end` (presisi `exact`/`approximate`) paling awal yang ≥ hari mulai. Hari yang belum lewat sampai deadline
-  tampil sebagai kotak "akan datang" + teks "Sisa {n} hari sampai {snapshot|akhir kampanye}". Tanpa deadline: dari hari
-  mulai sampai hari ini, minimal 4 minggu. Maksimal 52 minggu (yang dipotong bagian paling awal).
+  tampil sebagai kotak "akan datang" + teks "Sisa {n} hari sampai {snapshot|akhir kampanye}". Tanpa tanggal selesai: 1 tahun
+  (364 hari) dari hari mulai, tanpa teks "Sisa n hari"; begitu sumber menyebut snapshot/akhir kampanye, rentang ikut
+  berubah (dihitung ulang tiap kali dibuka). Maksimal 52 minggu (yang dipotong bagian paling awal).
 - Task Mingguan gak masuk persentase harian; "sudah" kalau dicentang di minggu ISO yang sama (zona waktu member).
 - Task awal = langkah `daily`/`weekly` dari sumber (terjemahan AI kalau ada) saat "Mulai garap". Member bisa menambah dan
   mengarsipkan task sendiri. "Ambil ulang langkah dari sumber" menambah langkah baru (berdasar teks) dan mengarsipkan yang

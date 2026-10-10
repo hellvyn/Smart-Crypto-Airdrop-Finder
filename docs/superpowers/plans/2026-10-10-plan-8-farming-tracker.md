@@ -28,7 +28,7 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 - Streak = hari berturut-turut level `3`, berakhir hari ini atau kemarin (kalau hari ini belum `3`).
 - Rentang heatmap (spec #39): `start` = tanggal lokal `farming_projects.started_at`; `end` = deadline `snapshot` /
   `campaign_end` (presisi `exact`/`approximate`) paling awal yang ≥ `start`; tanpa deadline `end` =
-  `max(today, start + 27 hari)`. Maksimal 364 hari: kalau lebih, `start` dimajukan ke `end − 363 hari`.
+  `start + 364 hari` (1 tahun). Maksimal 364 hari: kalau lebih, `start` dimajukan ke `end − 363 hari`.
   Hari > `today` = sel `upcoming`.
 - Mingguan = minggu ISO (Senin–Minggu) di zona waktu member.
 - Batas: 50 project aktif per member, 30 task aktif per project (pelanggaran → error `23514`, pesan Bahasa Indonesia di UI).
@@ -121,8 +121,8 @@ it("spans from the start day to the earliest snapshot or campaign end", () => {
     { kind: "snapshot", date: "2026-11-15", precision: "approximate" }, { kind: "tge", date: "2026-10-20", precision: "exact" }], "2026-10-10"))
     .toEqual({ start: "2026-10-01", end: "2026-11-15", endKind: "snapshot" });
 });
-it("runs to today (at least 4 weeks) without a deadline and caps at 364 days", () => {
-  expect(heatmapRange("2026-10-08", [], "2026-10-10")).toEqual({ start: "2026-10-08", end: "2026-11-04", endKind: null });
+it("spans one year without an end date and caps at 364 days", () => {
+  expect(heatmapRange("2026-10-08", [], "2026-10-10")).toEqual({ start: "2026-10-08", end: "2027-10-07", endKind: null });
   expect(heatmapRange("2025-01-01", [{ kind: "campaign_end", date: "2026-12-31", precision: "exact" }], "2026-10-10").start).toBe("2026-01-02");
 });
 it("counts days left until the end", () => {
