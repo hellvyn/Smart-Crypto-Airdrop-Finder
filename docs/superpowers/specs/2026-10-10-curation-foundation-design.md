@@ -97,6 +97,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 47 | Nama produk | **AirdropIQ** (domain kandidat airdropiq.ai, belum dibeli; airdropiq.com dipakai pihak lain) (§16) |
 | 48 | Desain | Arah C **"Sertifikat inspeksi"**: terang, garis hitam tebal, oranye keselamatan, strip hazard, cap bundar "LOLOS 4/4 CEK". Mockup acuan `docs/design/airdropiq-c/` (§16) |
 | 49 | Gaya tulisan | Ditulis dengan skill humanizer: tanpa klise AI dan em dash, panjang kalimat bervariasi, nada santai dengan opini "kami", boleh campur istilah Inggris yang umum di crypto Indonesia. Teks final = glosarium Plan 6 (§16) |
+| 50 | Task utama di tracker | Langkah sekali jalan (`once`) ikut masuk "Garapan saya" sebagai "Task utama" (dicentang sekali, gak masuk heatmap/streak). "Tambah task" dikecilkan jadi link teks "+ Tambah task sendiri" |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -514,7 +515,7 @@ konsistensinya sebagai heatmap sepanjang masa garap airdrop itu (seperti grafik 
   berubah (dihitung ulang tiap kali dibuka). Maksimal 52 minggu (yang dipotong bagian paling awal). Project yang sudah
   berakhir (#40): rentang berhenti di `ended_on` kalau itu lebih awal, dengan teks "Berakhir {tanggal}".
 - Task Mingguan gak masuk persentase harian; "sudah" kalau dicentang di minggu ISO yang sama (zona waktu member).
-- Task awal = langkah `daily`/`weekly` dari sumber (terjemahan AI kalau ada) saat "Mulai garap". Member bisa menambah dan
+- Task awal = semua langkah dari sumber (terjemahan AI kalau ada) saat "Mulai garap": `once` jadi "Task utama" (#50), `daily`/`weekly` jadi checklist harian/mingguan. Member bisa menambah dan
   mengarsipkan task sendiri. "Ambil ulang langkah dari sumber" menambah langkah baru (berdasar teks) dan mengarsipkan yang
   sudah hilang; centang lama tetap tersimpan dengan teks task-nya.
 - Batas: 50 project aktif per member, 30 task aktif per project.

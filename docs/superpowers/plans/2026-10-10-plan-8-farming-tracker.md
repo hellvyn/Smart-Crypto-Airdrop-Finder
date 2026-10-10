@@ -42,7 +42,11 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
   bulat; tombol "Mulai garap" = `Button` primary. Warna sel heatmap: `null` `#E8E8E2`, level `0` `#FFFFFF` bergaris
   `#CFCFC8`, `1` `#BFE3CC`, `2` `#5FAE80`, `3` `#1F7A45`; sel `upcoming` bergaris putus-putus `#CFCFC8` tanpa isi. Level
   dibedakan juga dari terang-gelapnya (bukan cuma warna) dan tooltip.
-- Task awal cuma dari langkah `cadence` `daily`/`weekly`. Langkah `once` gak masuk tracker.
+- Task awal dari **semua** langkah source (keputusan #50): `once` tampil sebagai **"Task utama"** di atas "Hari ini",
+  dicentang sekali (gak terikat hari, gak masuk heatmap, persen harian, atau streak), progres "{x}/{y} selesai";
+  `daily`/`weekly` seperti sebelumnya.
+- Task buatan member tetap ada (#37), tapi tampil sebagai link teks kecil "+ Tambah task sendiri" di bawah checklist,
+  bukan tombol utama.
 
 ## Review Focus
 
@@ -65,7 +69,7 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 **Interfaces:**
 - Tabel:
   - `farming_projects (user_id uuid fk auth.users cascade, project_id uuid fk projects cascade, started_at timestamptz not null default now(), archived_at timestamptz, primary key (user_id, project_id))`
-  - `farming_tasks (id uuid pk, user_id uuid fk auth.users cascade, project_id uuid, text text not null check (char_length(text) between 1 and 200), cadence text not null check (cadence in ('daily','weekly')), origin text not null check (origin in ('source','custom')), position integer not null default 0, created_at timestamptz not null default now(), archived_at timestamptz, foreign key (user_id, project_id) references farming_projects on delete cascade)`
+  - `farming_tasks (id uuid pk, user_id uuid fk auth.users cascade, project_id uuid, text text not null check (char_length(text) between 1 and 200), cadence text not null check (cadence in ('once','daily','weekly')), origin text not null check (origin in ('source','custom')), position integer not null default 0, created_at timestamptz not null default now(), archived_at timestamptz, foreign key (user_id, project_id) references farming_projects on delete cascade)`
   - `farming_checks (task_id uuid fk farming_tasks cascade, user_id uuid not null, day date not null, checked_at timestamptz not null default now(), primary key (task_id, day))`
 - RLS on semua; policy select/insert/update/delete `to authenticated using/with check (user_id = (select auth.uid()))`.
   `farming_checks`: select + delete milik sendiri; **insert hanya lewat fungsi** (gak ada grant insert ke authenticated).
@@ -73,12 +77,14 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
   - `farming_today() returns date` — `(now() at time zone coalesce(p.timezone,'UTC'))::date` untuk profil pemanggil.
   - `toggle_farming_check(p_task_id uuid, p_done boolean) returns boolean` — task harus milik pemanggil dan gak
     diarsipkan; `p_done` true → insert `(task, farming_today())` `on conflict do nothing`; false → delete baris hari ini.
-    Mengembalikan state akhir.
+    Task `once`: true → insert hari ini kalau belum ada baris sama sekali untuk task itu; false → delete **semua** baris
+    task itu (selesai sekali, gak terikat tanggal). Mengembalikan state akhir.
   - Trigger batas: insert `farming_projects` aktif ke-51 → `23514`; insert `farming_tasks` aktif ke-31 untuk project
     yang sama → `23514` (advisory lock per user seperti `enforce_wallet_limit`).
 
 - [ ] **Step 1: Test pgTAP yang gagal** — user A gak bisa select/insert tracker user B; anon ditolak; `toggle_farming_check`
-  dua kali dengan `true` → satu baris; dengan `profiles.timezone = 'Asia/Jakarta'`, tanggal yang ditulis sama
+  dua kali dengan `true` → satu baris; task `once` dicentang di dua hari berbeda tetap satu baris dan uncentang
+  menghapusnya; dengan `profiles.timezone = 'Asia/Jakarta'`, tanggal yang ditulis sama
   dengan `(now() at time zone 'Asia/Jakarta')::date`;
   task milik user lain → `42501`; task diarsipkan → `22023`; project ke-51 → `23514`; hapus `projects` → baris tracker
   ikut terhapus.
@@ -97,7 +103,10 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 
 **Interfaces:**
 - `type HeatLevel = 0 | 1 | 2 | 3 | null`
-- `interface TrackerTask { id: string; cadence: "daily" | "weekly"; createdDay: string; archivedDay: string | null }`
+- `interface TrackerTask { id: string; cadence: "once" | "daily" | "weekly"; createdDay: string; archivedDay: string | null }`
+  (`buildHeatmap`, `streak`, dan `weeklyDone` mengabaikan task `once`)
+- `mainProgress(tasks: TrackerTask[], checks: { taskId: string; day: string }[]): { done: number; total: number }` — task
+  `once` aktif; selesai kalau punya baris check apa pun.
   (`createdDay`/`archivedDay` = tanggal lokal `YYYY-MM-DD`; task aktif di hari `d` kalau `createdDay <= d` dan
   (`archivedDay === null` atau `d < archivedDay`))
 - `heatmapRange(startedDay: string, deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[], today: string, endedOn: string | null = null): { start: string; end: string; endKind: "snapshot" | "campaign_end" | "ended" | null }`
@@ -172,25 +181,25 @@ it("computes the local day in a time zone", () => {
 **Interfaces:**
 - `lib/farming.ts`:
   - `startFarming(db, projectId: string): Promise<void>` — upsert `farming_projects` (hapus `archived_at` kalau ada), lalu
-    snapshot langkah sumber: `tasks` project dengan `cadence in ('daily','weekly')`, teks dari analisis AI `steps_id`
+    snapshot langkah sumber: `tasks` project dengan `cadence in ('once','daily','weekly')`, teks dari analisis AI `steps_id`
     kalau ada (setelah Plan 5; sebelum itu teks `tasks.description`), dedup teks (case-insensitive), `origin = 'source'`.
   - `stopFarming(db, projectId)` — set `archived_at = now()`.
-  - `addCustomTask(db, projectId, text: string, cadence: "daily" | "weekly")`, `archiveTask(db, taskId)`.
+  - `addCustomTask(db, projectId, text: string, cadence: "once" | "daily" | "weekly")`, `archiveTask(db, taskId)`.
   - `refreshFromSource(db, projectId): Promise<{ added: number; archived: number }>` — tambah langkah sumber baru (teks
     belum ada), arsipkan task `origin = 'source'` yang teksnya sudah gak ada di sumber.
   - `setCheck(db, taskId, done: boolean): Promise<boolean>` → RPC `toggle_farming_check`.
   - `getFarmingBoard(db, now: Date): Promise<FarmingCard[]>` — per project aktif: nama, slug, deadline terdekat, task
     aktif (urut `position`), `checkedToday`, `range` (dari `heatmapRange` dengan deadline project; `endedOn = null` di plan ini karena tabel `curations` baru
     dibuat di Plan 5, disambungkan di Plan 6 Task 3), `heatmap` (`buildHeatmap` atas rentang itu),
-    `daysLeft`, `streak`, `weeklyDone`. Tanggal
+    `daysLeft`, `streak`, `weeklyDone`, `mainProgress`. Tanggal
     lokal dari `profiles.timezone` + `localDay`.
   - `isFarming(db, projectId): Promise<boolean>`.
 - `actions.ts` (semua `requireUser`, validasi `isUuid`, `revalidatePath("/garapan")`): `submitStartFarming`,
   `submitStopFarming`, `submitAddTask`, `submitArchiveTask`, `submitRefresh`, `submitCheck` (form action, kirim state
   yang diinginkan seperti `submitWatch`). `startFarmingAction(projectId)` diekspor untuk dipakai AI Coach (spec #38).
 
-- [ ] **Step 1: Test yang gagal** (mock Supabase client seperti test watchlist yang ada) — `startFarming` cuma
-  mengambil langkah daily/weekly dan dedup teks; `refreshFromSource` menambah 1 dan mengarsipkan 1 pada skenario yang
+- [ ] **Step 1: Test yang gagal** (mock Supabase client seperti test watchlist yang ada) — `startFarming` mengambil
+  langkah once/daily/weekly dan dedup teks; `refreshFromSource` menambah 1 dan mengarsipkan 1 pada skenario yang
   disiapkan; `addCustomTask` menolak teks kosong / > 200 karakter sebelum ke DB.
 - [ ] **Step 2–4:** gagal → implementasi → `pnpm --filter web test && pnpm --filter web typecheck` lulus.
 - [ ] **Step 5:** commit `git commit -m "feat(web): farming tracker actions and board query"`
@@ -213,14 +222,17 @@ it("computes the local day in a time zone", () => {
   `aria-label`/`title` per sel sesuai teks Global Constraints; elemen grafis bukan satu-satunya informasi (ada
   ringkasan "Streak: {n} hari", "{x} dari {y} task hari ini", dan "Sisa {n} hari sampai snapshot" / "Sisa {n} hari sampai
   akhir campaign" kalau ada deadline).
-- `FarmingCard`: nama project (link ke detail), deadline terdekat, checklist Harian (checkbox form → `submitCheck`),
-  Mingguan dengan "Minggu ini udah", form "Tambah task", tombol "Ambil ulang step dari source", "Berhenti garap",
-  heatmap.
+- `FarmingCard` (mockup `docs/design/airdropiq-c/CGarapan.dc.html`): nama project (link ke detail), cap, hitung mundur,
+  streak; kolom kiri: "Task utama" ({x}/{y} selesai, checkbox → `submitCheck`), "Hari ini" (daily), "Weekly" dengan
+  "Minggu ini udah"/"Belum minggu ini", link teks "+ Tambah task sendiri" (membuka form kecil), tombol "Ambil ulang step
+  dari source", link "Berhenti garap"; kolom kanan: heatmap "Progres". Project ended: cap "ENDED", checklist dikunci,
+  teks "Campaign udah ended. Checklist dikunci, riwayat garapanmu tetap tersimpan di sini."
 - Kosong: "Kamu belum menggarap project apa pun. Buka sebuah airdrop dan klik Mulai garap."
 
 - [ ] **Step 1: Test yang gagal** — komponen: `Heatmap` merender satu sel per hari rentang dengan kelas level yang benar, sel `upcoming` bergaris, dan tooltip;
   `FarmingCard` tanpa task harian menampilkan "Belum ada daily task. Tambah task sendiri."; e2e: login → buka project →
-  "Mulai garap" → `/garapan` menampilkan kartu; centang satu task → sel hari ini naik level dan teks "1 dari N task
+  "Mulai garap" → `/garapan` menampilkan kartu dengan "Task utama"; centang task utama → "1/N selesai" dan sel heatmap
+  hari ini gak berubah; centang satu daily task → sel hari ini naik level dan teks "1 dari N task
   hari ini"; uncentang → turun; "Berhenti garap" → kartu hilang; user lain gak melihat apa pun di `/garapan`.
 - [ ] **Step 2–4:** gagal → implementasi → `pnpm --filter web test && pnpm --filter web e2e` lulus.
 - [ ] **Step 5:** commit `git commit -m "feat(web): Garapan saya page with daily checklist and heatmap"`
