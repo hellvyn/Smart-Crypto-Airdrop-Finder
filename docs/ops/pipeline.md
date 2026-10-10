@@ -79,7 +79,8 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 |---|---|
 | `docs_collected` / `docs_changed` | documents seen / new or changed (only these go to the LLM) |
 | `extract_ok` / `extract_failed` | extractions that passed the schema / documents where every model failed (retried next run) |
-| `extract_deferred` | pending documents left for the next run because the 35-minute budget ran out |
+| `extract_deferred` | pending documents left for the next run because the 35-minute budget ran out (or every model's circuit was open) |
+| `llm_models_tripped` | models skipped for the rest of the run after 3 consecutive failures (timeouts, 5xx, rate limits past their retries) |
 | `not_airdrop` | documents the model judged not about an airdrop |
 | `projects_created` / `projects_updated` | merge results |
 | `assessed` | projects that got a new risk assessment |
@@ -109,6 +110,9 @@ What to do:
 - `merge_failed` > 0: the document is stored as `merge_failed` and is retried only when its content changes. Look at
   `documents` where `extraction_status = 'merge_failed'` in the Supabase SQL editor.
 - `extract_deferred` > 0 every day: lower `maxDocumentsPerRun` or check model latency in `extractions.latency_ms`.
+- `llm_models_tripped` > 0: a model endpoint failed repeatedly (see `extractions.error`, e.g. `http_0` = 180 s
+  timeout). The run continues on the remaining models; if it repeats for days, reorder or replace the model in
+  `pipeline/src/config.ts`.
 - `digests_failed` > 0: check the Brevo dashboard (Transactional > Logs) for rejected sends and that the API key and
   `EMAIL_FROM` sender are still valid. Failed digests go out on the next run.
 - `digests_skipped_quota` > 0: more users than the free Brevo quota; raise the plan and `email.dailyLimit` in

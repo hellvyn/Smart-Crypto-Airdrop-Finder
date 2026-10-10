@@ -98,8 +98,8 @@ Semua URL dilewatin **pembersih URL** sebelum disimpan. Pembersih ini buang para
 
 | Urutan | Model | Parameter khusus |
 |---|---|---|
-| 1 | `moonshotai/kimi-k3` | `chat_template_kwargs: {thinking: false}` |
-| 2 | `z-ai/glm-5.3-flash` | `reasoning_effort: "low"` |
+| 1 | `z-ai/glm-5.3-flash` | `reasoning_effort: "low"` |
+| 2 | `moonshotai/kimi-k3` | `chat_template_kwargs: {thinking: false}` |
 | 3 | `google/gemma-4-31b-it` | – |
 
 **Aturan pemanggilan** (semua dari temuan Spike 3)
@@ -109,6 +109,10 @@ Semua URL dilewatin **pembersih URL** sebelum disimpan. Pembersih ini buang para
 - Kalau gagal (error, 429, konten kosong, `length`, atau skema gak valid), lanjut ke model berikutnya. Kalau semua model gagal,
   dokumen ditandai `pending` dan diulang di run berikutnya.
 - Maksimal 3 panggilan paralel. Kalau kena 429, tunggu dengan jeda yang makin panjang (backoff).
+- Circuit breaker per run: model yang gagal 3 kali berturut-turut (timeout, 5xx, atau 429 setelah retry habis) dilewati
+  sampai run selesai. Balasan HTTP 200 apa pun (termasuk JSON rusak) dihitung sukses, karena endpoint-nya hidup.
+- Urutan diubah 2026-10-10 (glm duluan): di run produksi pertama, kimi-k3 timeout 180 detik di semua panggilan sejak
+  14:53 UTC, sedangkan glm-5.3-flash menjawab 22 dari 22 panggilan dalam 2–31 detik.
 - Output yang gak lolos validasi **gak pernah** ditampilin ke user.
 - Tiap panggilan dicatat di tabel `extractions`: model, versi prompt, latensi, `finish_reason`, JSON mentah.
 

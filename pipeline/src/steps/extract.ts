@@ -1,6 +1,7 @@
 import pLimit from "p-limit";
 import type { ExtractionResult } from "@saf/core";
 import type { PipelineConfig } from "../config.js";
+import { createCircuitBreaker } from "../llm/circuit-breaker.js";
 import { extractWithFallback } from "../llm/extract.js";
 import type { ChatFn } from "../llm/extract.js";
 import { PROMPT_VERSION } from "../llm/prompt.js";
@@ -8,6 +9,9 @@ import type { DailyStats } from "../stats.js";
 import type { PipelineRepo, StoredDocument } from "../store/repo.js";
 
 const MINUTE_MS = 60_000;
+
+/** Consecutive failures after which a model is skipped for the rest of the run. */
+export const CIRCUIT_BREAKER_THRESHOLD = 3;
 
 /**
  * Extracts up to `maxDocumentsPerRun` pending documents, `llmConcurrency` at a time, and stores every attempt.
@@ -19,6 +23,8 @@ const MINUTE_MS = 60_000;
  *   `extract_failed`; it never stops the other documents.
  * - Time budget: `extractBudgetMinutes` after the stage starts (by `deps.now()`), no new LLM call starts. Documents
  *   not started yet, or stopped between fallback models, stay `pending` and count as `extract_deferred`.
+ * - Circuit breaker: a model that fails `CIRCUIT_BREAKER_THRESHOLD` times in a row is skipped for the rest of
+ *   the run (counted in `llm_models_tripped`). When every model is skipped, documents count as deferred.
  */
 export async function extractPending(
   deps: { repo: PipelineRepo; chat: ChatFn; sleep: (ms: number) => Promise<void>; now: () => Date },
@@ -31,6 +37,7 @@ export async function extractPending(
   const budgetSpent = (): boolean => deps.now().getTime() >= deadline;
   const pending = await repo.listPendingDocuments(config.maxDocumentsPerRun);
   const limit = pLimit(config.llmConcurrency);
+  const breaker = createCircuitBreaker(CIRCUIT_BREAKER_THRESHOLD);
 
   const extractOne = async (document: StoredDocument): Promise<void> => {
     try {
@@ -49,6 +56,7 @@ export async function extractPending(
         chat: deps.chat,
         sleep: deps.sleep,
         shouldStop: budgetSpent,
+        breaker,
       });
       for (const attempt of outcome.attempts) await repo.saveExtraction(document.id, attempt, PROMPT_VERSION);
       if (!outcome.ok) {
@@ -70,4 +78,5 @@ export async function extractPending(
   };
 
   await Promise.all(pending.map((document) => limit(() => extractOne(document))));
+  stats.llm_models_tripped = breaker.opened().length;
 }

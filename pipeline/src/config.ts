@@ -35,10 +35,12 @@ export interface EmailConfig {
   siteUrl: string;
 }
 
-/** Model fallback order from the global constraints. `max_tokens` and `temperature` are set by `streamChat`. */
+/** Model fallback order (spec 4.3). `max_tokens` and `temperature` are set by `streamChat`. */
 export const MODELS: ModelConfig[] = [
-  { id: "moonshotai/kimi-k3", extraBody: { chat_template_kwargs: { thinking: false } } },
+  // glm-5.3-flash first since 2026-10-10: in the first production run kimi-k3 timed out on every call
+  // after 14:53 UTC while glm answered all 22 calls in 2-31 s.
   { id: "z-ai/glm-5.3-flash", extraBody: { reasoning_effort: "low" } },
+  { id: "moonshotai/kimi-k3", extraBody: { chat_template_kwargs: { thinking: false } } },
   { id: "google/gemma-4-31b-it", extraBody: {} },
 ];
 
