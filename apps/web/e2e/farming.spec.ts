@@ -96,6 +96,50 @@ test("a member farms a project: main task, daily checks move today's cell, weekl
   await expect(page.getByText(EMPTY)).toBeVisible();
 });
 
+test("once a snapshot has passed, the heatmap still holds today and the streak counts it", async ({ page }) => {
+  const email = await signIn(page, "farm-passed");
+  await startFarming(page, seed.main.slug);
+
+  // Farming began five days ago and a snapshot fell yesterday; the seeded snapshot in ten days is still ahead.
+  const db = adminClient();
+  const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+  const project = await db.from("projects").select("id").eq("slug", seed.main.slug).single();
+  if (project.error) throw project.error;
+  const projectId = project.data.id as string;
+  const source = await db.from("deadlines").select("document_id").eq("project_id", projectId).limit(1).single();
+  if (source.error) throw source.error;
+  const moved = await db
+    .from("farming_projects")
+    .update({ started_at: `${day(-5)}T12:00:00Z` })
+    .eq("user_id", await userIdOf(email))
+    .eq("project_id", projectId);
+  if (moved.error) throw moved.error;
+  const added = await db
+    .from("deadlines")
+    .insert({ project_id: projectId, document_id: source.data.document_id, kind: "snapshot", date: day(-1), precision: "exact", text: "Snapshot yesterday" })
+    .select("id")
+    .single();
+  if (added.error) throw added.error;
+
+  try {
+    await page.goto("/garapan");
+    const card = cardFor(page, seed.main.name);
+    await expect(card.getByText("Sisa 11 hari sampai snapshot")).toBeVisible();
+    await expect(todayCell(card)).toHaveAttribute("data-day", day(0));
+    await expect(card.getByText("Streak: 0 hari")).toBeVisible();
+
+    const today = card.getByRole("region", { name: "Hari ini" });
+    await today.getByRole("checkbox", { name: "Swap once on the DEX" }).click();
+    await today.getByRole("checkbox", { name: "Check in on the points page" }).click();
+    await expect(today.getByText("2 dari 2 task hari ini")).toBeVisible();
+    await expect(todayCell(card)).toHaveClass(/heat-level-3/);
+    await expect(card.getByText("Streak: 1 hari")).toBeVisible();
+  } finally {
+    const removed = await db.from("deadlines").delete().eq("id", added.data.id);
+    if (removed.error) throw removed.error;
+  }
+});
+
 test("another member sees nothing of someone else's farming", async ({ page, browser }) => {
   await signIn(page, "farm-a");
   await startFarming(page, seed.main.slug);

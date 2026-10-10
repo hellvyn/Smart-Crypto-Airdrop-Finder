@@ -436,7 +436,7 @@ describe("getFarmingBoard", () => {
     { project_id: PID, started_at: START, projects: { name: "Demo", slug: "demo" } },
     { project_id: PID2, started_at: "2026-10-10T18:00:00+00:00", projects: { name: "Other", slug: "other" } },
   ];
-  const board = (timezone: string | null) =>
+  const board = (timezone: string | null, checks = CHECKS) =>
     fakeDb((rec) => {
       switch (rec.table) {
         case "profiles":
@@ -446,7 +446,7 @@ describe("getFarmingBoard", () => {
         case "farming_tasks":
           return ok(TASKS);
         case "farming_checks":
-          return ok(CHECKS);
+          return ok(checks);
         case "deadlines":
           return ok(DEADLINES);
         default:
@@ -468,7 +468,7 @@ describe("getFarmingBoard", () => {
       slug: "demo",
       today: "2026-10-11",
       nextDeadline: { kind: "claim", date: "2026-10-15", precision: "exact" },
-      range: { start: "2026-10-06", end: "2026-10-20", endKind: "snapshot" },
+      range: { start: "2026-10-06", end: "2026-10-20", endKind: "snapshot", endsOn: "2026-10-20" },
       daysLeft: 10,
       streak: 2,
       weeklyDone: { [T.weekly]: true },
@@ -495,7 +495,7 @@ describe("getFarmingBoard", () => {
     expect(other).toMatchObject({
       projectId: PID2,
       nextDeadline: null,
-      range: { start: "2026-10-11", end: "2027-10-10", endKind: null },
+      range: { start: "2026-10-11", end: "2027-10-10", endKind: null, endsOn: null },
       daysLeft: null,
       streak: 0,
       weeklyDone: {},
@@ -504,6 +504,20 @@ describe("getFarmingBoard", () => {
     });
     expect(other!.heatmap).toHaveLength(365);
     expect(other!.heatmap[0]).toEqual({ day: "2026-10-11", level: 0, done: 0, total: 1, upcoming: false });
+  });
+
+  it("keeps today and the streak in the card once the snapshot has passed", async () => {
+    // 2026-10-21T20:00Z is 2026-10-22 in Jakarta: the 10-20 snapshot passed, the 11-30 campaign end did not.
+    const later = new Date("2026-10-21T20:00:00Z");
+    const checks = [...CHECKS, ...["2026-10-21", "2026-10-22"].flatMap((d) => [check(T.d1, d), check(T.d2, d)])];
+    const [demo] = await getFarmingBoard(board("Asia/Jakarta", checks).db, later);
+    expect(demo).toMatchObject({
+      today: "2026-10-22",
+      range: { start: "2026-10-06", end: "2026-11-30", endKind: "campaign_end", endsOn: "2026-11-30" },
+      daysLeft: 40,
+      streak: 2,
+    });
+    expect(demo!.heatmap.find((c) => c.day === "2026-10-22")).toEqual({ day: "2026-10-22", level: 3, done: 2, total: 2, upcoming: false });
   });
 
   it("uses UTC days when the profile has no time zone or one this runtime does not know", async () => {

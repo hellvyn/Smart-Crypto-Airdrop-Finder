@@ -35,7 +35,7 @@ function card(projectId: string, name: string, daily: { id: string; done: boolea
     nextDeadline: null,
     tasks: daily.map((t) => ({ id: t.id, text: `Task ${t.id}`, cadence: "daily", origin: "source" })),
     checkedToday: daily.filter((t) => t.done).map((t) => t.id),
-    range: { start: "2026-10-10", end: "2027-10-09", endKind: null },
+    range: { start: "2026-10-10", end: "2027-10-09", endKind: null, endsOn: null },
     heatmap: [{ day: "2026-10-10", level: 0, done: 0, total: daily.length, upcoming: false }],
     daysLeft: null,
     streak: 0,

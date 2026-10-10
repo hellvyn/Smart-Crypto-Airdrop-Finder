@@ -28,10 +28,11 @@ function countdown(card: FarmingCardData): string | null {
   return `Sisa ${daysLeft} hari sampai ${END_LABELS[range.endKind]}`;
 }
 
+/** The span the heatmap covers, naming its end only when that end is the deadline or the ended day itself. */
 function rangeLabel(card: FarmingCardData): string {
-  const { start, end, endKind } = card.range;
+  const { start, end, endKind, endsOn } = card.range;
   const span = `${formatDay(start)} sampai ${formatDay(end)}`;
-  return endKind === null ? span : `${span} (${END_LABELS[endKind]})`;
+  return endKind === null || endsOn !== end ? span : `${span} (${END_LABELS[endKind]})`;
 }
 
 /** The task's box for today: the form always sends the wanted state, so a double submit cannot undo itself. */

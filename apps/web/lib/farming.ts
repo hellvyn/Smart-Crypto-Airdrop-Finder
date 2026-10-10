@@ -456,7 +456,7 @@ export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<Fa
       range,
       heatmap,
       daysLeft: daysLeft(range, today),
-      streak: streak(heatmap, today),
+      streak: streak(trackerTasks, trackerChecks, today),
       weeklyDone: weeklyDone(trackerTasks, trackerChecks, today),
       mainProgress: mainProgress(trackerTasks, trackerChecks),
     };

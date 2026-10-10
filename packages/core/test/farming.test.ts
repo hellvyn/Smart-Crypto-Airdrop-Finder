@@ -7,7 +7,6 @@ import {
   mainProgress,
   streak,
   weeklyDone,
-  type HeatLevel,
   type TrackerTask,
 } from "../src/index.js";
 
@@ -15,7 +14,6 @@ const daily = (id: string, createdDay: string): TrackerTask => ({ id, cadence: "
 const weekly = (id: string, createdDay: string): TrackerTask => ({ id, cadence: "weekly", createdDay, archivedDay: null });
 const once = (id: string, createdDay: string): TrackerTask => ({ id, cadence: "once", createdDay, archivedDay: null });
 const at = <T extends { day: string }>(cells: T[], day: string): T | undefined => cells.find((c) => c.day === day);
-const levels = (m: Record<string, HeatLevel>) => Object.entries(m).map(([day, level]) => ({ day, level }));
 
 describe("buildHeatmap", () => {
   it("grades a day by the share of active daily tasks checked", () => {
@@ -128,7 +126,7 @@ describe("heatmapRange", () => {
         ],
         "2026-10-10",
       ),
-    ).toEqual({ start: "2026-10-01", end: "2026-11-15", endKind: "snapshot" });
+    ).toEqual({ start: "2026-10-01", end: "2026-11-15", endKind: "snapshot", endsOn: "2026-11-15" });
   });
 
   it("reports campaign_end when it is the earliest", () => {
@@ -141,7 +139,7 @@ describe("heatmapRange", () => {
         ],
         "2026-10-10",
       ),
-    ).toEqual({ start: "2026-10-01", end: "2026-11-10", endKind: "campaign_end" });
+    ).toEqual({ start: "2026-10-01", end: "2026-11-10", endKind: "campaign_end", endsOn: "2026-11-10" });
   });
 
   it("reports a snapshot when it falls on the same day as a campaign end, in either order", () => {
@@ -164,19 +162,70 @@ describe("heatmapRange", () => {
         ],
         "2026-10-10",
       ),
-    ).toEqual({ start: "2026-10-08", end: "2026-11-20", endKind: "campaign_end" });
+    ).toEqual({ start: "2026-10-08", end: "2026-11-20", endKind: "campaign_end", endsOn: "2026-11-20" });
   });
 
-  it("accepts a deadline on the start day itself", () => {
-    expect(heatmapRange("2026-10-08", [{ kind: "snapshot", date: "2026-10-08", precision: "exact" }], "2026-10-10")).toEqual({
+  it("accepts a deadline on the start day itself, while it is still today", () => {
+    expect(heatmapRange("2026-10-08", [{ kind: "snapshot", date: "2026-10-08", precision: "exact" }], "2026-10-08")).toEqual({
       start: "2026-10-08",
       end: "2026-10-08",
       endKind: "snapshot",
+      endsOn: "2026-10-08",
     });
   });
 
+  it("moves on to the next deadline once the earliest has passed, keeping today in the range", () => {
+    const deadlines = [
+      { kind: "snapshot" as const, date: "2026-10-05", precision: "exact" as const },
+      { kind: "campaign_end" as const, date: "2026-12-31", precision: "exact" as const },
+    ];
+    expect(heatmapRange("2026-09-01", deadlines, "2026-10-10")).toEqual({
+      start: "2026-09-01",
+      end: "2026-12-31",
+      endKind: "campaign_end",
+      endsOn: "2026-12-31",
+    });
+  });
+
+  it("falls back to the one-year range once every deadline has passed", () => {
+    expect(heatmapRange("2026-09-01", [{ kind: "snapshot", date: "2026-10-05", precision: "exact" }], "2026-10-10")).toEqual({
+      start: "2026-09-01",
+      end: "2027-08-31",
+      endKind: null,
+      endsOn: null,
+    });
+  });
+
+  it("keeps today in the range when the deadline is more than a year away", () => {
+    const far = [{ kind: "campaign_end" as const, date: "2027-12-31", precision: "approximate" as const }];
+    // Cutting the earliest days would start the range after today: it runs 364 cells from the start day instead.
+    expect(heatmapRange("2026-10-01", far, "2026-10-10")).toEqual({
+      start: "2026-10-01",
+      end: "2027-09-29",
+      endKind: "campaign_end",
+      endsOn: "2027-12-31",
+    });
+    // Farmed for more than a year already: the 364 cells end today.
+    expect(heatmapRange("2025-01-01", [{ kind: "snapshot", date: "2028-01-01", precision: "exact" }], "2026-10-10")).toEqual({
+      start: "2025-10-12",
+      end: "2026-10-10",
+      endKind: "snapshot",
+      endsOn: "2028-01-01",
+    });
+  });
+
+  it("rolls the one-year range forward to end today after a year without a deadline", () => {
+    expect(heatmapRange("2025-09-01", [], "2026-10-10")).toEqual({ start: "2025-10-11", end: "2026-10-10", endKind: null, endsOn: null });
+  });
+
+  it("keeps a passed end for a project that ended", () => {
+    expect(
+      heatmapRange("2026-09-01", [{ kind: "snapshot", date: "2026-10-05", precision: "exact" }], "2026-10-10", "2026-10-05"),
+    ).toEqual({ start: "2026-09-01", end: "2026-10-05", endKind: "ended", endsOn: "2026-10-05" });
+  });
+
   it("spans one year without an end date and caps at 364 days", () => {
-    expect(heatmapRange("2026-10-08", [], "2026-10-10")).toEqual({ start: "2026-10-08", end: "2027-10-07", endKind: null });
+    expect(heatmapRange("2026-10-08", [], "2026-10-10")).toEqual({ start: "2026-10-08", end: "2027-10-07", endKind: null, endsOn: null });
     expect(
       heatmapRange("2025-01-01", [{ kind: "campaign_end", date: "2026-12-31", precision: "exact" }], "2026-10-10").start,
     ).toBe("2026-01-02");
@@ -191,7 +240,7 @@ describe("heatmapRange", () => {
   it("stops at the day the project ended", () => {
     expect(
       heatmapRange("2026-10-01", [{ kind: "campaign_end", date: "2026-11-30", precision: "exact" }], "2026-10-10", "2026-10-07"),
-    ).toEqual({ start: "2026-10-01", end: "2026-10-07", endKind: "ended" });
+    ).toEqual({ start: "2026-10-01", end: "2026-10-07", endKind: "ended", endsOn: "2026-10-07" });
     expect(heatmapRange("2026-10-08", [], "2026-10-10", "2026-10-01").endKind).toBeNull(); // ended before start: ignored
   });
 
@@ -203,33 +252,56 @@ describe("heatmapRange", () => {
       start: "2026-10-01",
       end: "2026-10-01",
       endKind: "ended",
+      endsOn: "2026-10-01",
     });
   });
 });
 
 describe("daysLeft", () => {
   it("counts days left until the end", () => {
-    expect(daysLeft({ start: "2026-10-01", end: "2026-10-20", endKind: "snapshot" }, "2026-10-10")).toBe(11);
+    expect(daysLeft({ start: "2026-10-01", end: "2026-10-20", endKind: "snapshot", endsOn: "2026-10-20" }, "2026-10-10")).toBe(11);
   });
   it("counts the end day itself and returns null once it has passed or there is no end", () => {
-    expect(daysLeft({ start: "2026-10-01", end: "2026-10-10", endKind: "campaign_end" }, "2026-10-10")).toBe(1);
-    expect(daysLeft({ start: "2026-10-01", end: "2026-10-09", endKind: "campaign_end" }, "2026-10-10")).toBeNull();
-    expect(daysLeft({ start: "2026-10-01", end: "2027-09-30", endKind: null }, "2026-10-10")).toBeNull();
+    expect(daysLeft({ start: "2026-10-01", end: "2026-10-10", endKind: "campaign_end", endsOn: "2026-10-10" }, "2026-10-10")).toBe(1);
+    expect(daysLeft({ start: "2026-10-01", end: "2026-10-09", endKind: "ended", endsOn: "2026-10-09" }, "2026-10-10")).toBeNull();
+    expect(daysLeft({ start: "2026-10-01", end: "2027-09-30", endKind: null, endsOn: null }, "2026-10-10")).toBeNull();
+  });
+  it("counts to a deadline that lies past the end of the range", () => {
+    expect(daysLeft({ start: "2026-10-01", end: "2027-09-29", endKind: "campaign_end", endsOn: "2027-12-31" }, "2026-10-10")).toBe(448);
   });
 });
 
 describe("streak", () => {
+  const pair = [daily("d1", "2026-10-01"), daily("d2", "2026-10-01")];
+  const full = (...days: string[]) => days.flatMap((day) => [{ taskId: "d1", day }, { taskId: "d2", day }]);
+
   it("ends the streak today or yesterday", () => {
-    expect(streak(levels({ "2026-10-08": 3, "2026-10-09": 3, "2026-10-10": 1 }), "2026-10-10")).toBe(2);
-    expect(streak(levels({ "2026-10-09": 3, "2026-10-10": 3 }), "2026-10-10")).toBe(2);
-    expect(streak(levels({ "2026-10-08": 3 }), "2026-10-10")).toBe(0);
+    expect(streak(pair, [...full("2026-10-08", "2026-10-09"), { taskId: "d1", day: "2026-10-10" }], "2026-10-10")).toBe(2);
+    expect(streak(pair, full("2026-10-09", "2026-10-10"), "2026-10-10")).toBe(2);
+    expect(streak(pair, full("2026-10-08"), "2026-10-10")).toBe(0);
   });
-  it("stops at the first day below level 3 or without a level", () => {
-    expect(streak(levels({ "2026-10-07": 3, "2026-10-08": 2, "2026-10-09": 3, "2026-10-10": 3 }), "2026-10-10")).toBe(2);
-    expect(streak(levels({ "2026-10-07": 3, "2026-10-08": null, "2026-10-09": 3, "2026-10-10": 3 }), "2026-10-10")).toBe(2);
+  it("stops at the first day below 100 percent", () => {
+    expect(streak(pair, [...full("2026-10-07"), { taskId: "d1", day: "2026-10-08" }, ...full("2026-10-09", "2026-10-10")], "2026-10-10")).toBe(2);
   });
-  it("is zero when yesterday broke the chain even if earlier days were 3", () => {
-    expect(streak(levels({ "2026-10-07": 3, "2026-10-08": 3, "2026-10-09": 0, "2026-10-10": 1 }), "2026-10-10")).toBe(0);
+  it("stops at a day without an active daily task", () => {
+    const swapped = [{ ...daily("d1", "2026-10-01"), archivedDay: "2026-10-08" }, daily("d2", "2026-10-09")];
+    const checks = ["2026-10-06", "2026-10-07"].map((day) => ({ taskId: "d1", day }));
+    expect(streak(swapped, [...checks, { taskId: "d2", day: "2026-10-09" }, { taskId: "d2", day: "2026-10-10" }], "2026-10-10")).toBe(2);
+  });
+  it("is zero when yesterday broke the chain even if earlier days were 100 percent", () => {
+    expect(streak(pair, [...full("2026-10-07", "2026-10-08"), { taskId: "d1", day: "2026-10-10" }], "2026-10-10")).toBe(0);
+  });
+  it("leaves once and weekly tasks out", () => {
+    const mixed = [daily("d1", "2026-10-01"), once("o1", "2026-10-01"), weekly("w1", "2026-10-01")];
+    expect(streak(mixed, [{ taskId: "d1", day: "2026-10-09" }, { taskId: "d1", day: "2026-10-10" }], "2026-10-10")).toBe(2);
+  });
+  it("counts back past the start of any heatmap range", () => {
+    const checks: { taskId: string; day: string }[] = [];
+    for (let ms = Date.UTC(2025, 0, 1); ms <= Date.UTC(2026, 9, 10); ms += 86_400_000) {
+      checks.push({ taskId: "d1", day: new Date(ms).toISOString().slice(0, 10) });
+    }
+    // 2025-01-01 to 2026-10-10: 365 days of 2025 and 283 days of 2026.
+    expect(streak([daily("d1", "2025-01-01")], checks, "2026-10-10")).toBe(648);
   });
 });
 

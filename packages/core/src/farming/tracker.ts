@@ -21,9 +21,16 @@ export interface TrackerCheck {
 }
 
 export interface HeatmapRange {
+  /** First cell of the heatmap. */
   start: string;
+  /** Last cell of the heatmap. */
   end: string;
   endKind: "snapshot" | "campaign_end" | "ended" | null;
+  /**
+   * The day `endKind` names (the deadline, or the day the project ended); null without an end kind.
+   * Equal to `end` unless the deadline is too far ahead to show in one window together with today.
+   */
+  endsOn: string | null;
 }
 
 export interface HeatmapCell {
@@ -54,25 +61,33 @@ export function mainProgress(tasks: TrackerTask[], checks: TrackerCheck[]): { do
 }
 
 /**
- * Heatmap window. `start` is the project's start day. `end` is the earliest snapshot or
- * campaign_end deadline (exact or approximate, dated, not before `start`); with none, `end` is
- * `start + 364` days (365 cells, one year). A deadline can make the window longer than 364 cells:
- * then `start` is moved up to `end - 363` days. The cap never applies to the no-deadline default.
- * A project that ended (`endedOn >= start` and before `end`) ends the window there as "ended".
- * `today` is accepted for call-site symmetry; the window itself does not depend on it.
+ * Heatmap window. While the project has not ended, the window always holds `today`.
+ *
+ * `start` is the project's start day. `end` is the earliest snapshot or campaign_end deadline
+ * (exact or approximate, dated) on or after both `start` and `today`, so a passed deadline gives
+ * way to the next one. With none, `end` is `start + 364` days (365 cells, one year), rolled forward
+ * to `today` after a year (`start` then follows, keeping 365 cells).
+ *
+ * A deadline can make the window longer than 364 cells: then `start` is moved up to `end - 363`
+ * days. When that would start after `today`, the 364 cells start at `start` instead (or end on
+ * `today` after a year of farming), so the window ends before the deadline; `endsOn` keeps it.
+ *
+ * A project that ended (`endedOn >= start` and before `end`) ends the window there as "ended",
+ * even when that is before today.
  */
 export function heatmapRange(
   startedDay: string,
   deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[],
-  _today: string,
+  today: string,
   endedOn: string | null = null,
 ): HeatmapRange {
   let end = addDays(startedDay, 364);
+  if (end < today) end = today;
   let endKind: HeatmapRange["endKind"] = null;
   for (const d of deadlines) {
     if (d.kind !== "snapshot" && d.kind !== "campaign_end") continue;
     if (d.precision !== "exact" && d.precision !== "approximate") continue;
-    if (d.date === null || d.date < startedDay) continue;
+    if (d.date === null || d.date < startedDay || d.date < today) continue;
     // Earliest date wins; on the same date a snapshot is reported over a campaign end.
     const wins = endKind === null || d.date < end || (d.date === end && d.kind === "snapshot");
     if (wins) {
@@ -84,9 +99,15 @@ export function heatmapRange(
     end = endedOn;
     endKind = "ended";
   }
-  let start = startedDay;
-  if (endKind !== null && diffDays(end, start) >= 364) start = addDays(end, -363);
-  return { start, end, endKind };
+  const endsOn = endKind === null ? null : end;
+  const notBeforeStart = (day: string): string => (day > startedDay ? day : startedDay);
+  if (endKind === null) return { start: notBeforeStart(addDays(end, -364)), end, endKind, endsOn };
+  let start = notBeforeStart(addDays(end, -363));
+  if (start > today) {
+    start = notBeforeStart(addDays(today, -363));
+    end = addDays(start, 363);
+  }
+  return { start, end, endKind, endsOn };
 }
 
 /** One cell per day from `range.start` to `range.end`; days after `today` are upcoming with no level. */
@@ -96,19 +117,10 @@ export function buildHeatmap(
   range: { start: string; end: string },
   today: string,
 ): HeatmapCell[] {
-  const dailies = tasks.filter((t) => t.cadence === "daily");
-  const checkedByDay = new Map<string, Set<string>>();
-  for (const c of checks) {
-    const set = checkedByDay.get(c.day) ?? new Set<string>();
-    set.add(c.taskId);
-    checkedByDay.set(c.day, set);
-  }
+  const progressOn = dailyProgress(tasks, checks);
   const cells: HeatmapCell[] = [];
   for (let day = range.start; day <= range.end; day = addDays(day, 1)) {
-    const active = dailies.filter((t) => isActiveOn(t, day));
-    const checked = checkedByDay.get(day);
-    const done = checked ? active.filter((t) => checked.has(t.id)).length : 0;
-    const total = active.length;
+    const { done, total } = progressOn(day);
     const upcoming = day > today;
     let level: HeatLevel = null;
     if (!upcoming && total > 0) level = done === 0 ? 0 : done === total ? 3 : done * 2 < total ? 1 : 2;
@@ -117,18 +129,42 @@ export function buildHeatmap(
   return cells;
 }
 
-/** Days from `today` to `range.end`, both inclusive. Null without an end kind or once the end passed. */
-export function daysLeft(range: HeatmapRange, today: string): number | null {
-  if (range.endKind === null || range.end < today) return null;
-  return diffDays(range.end, today) + 1;
+/** For a day: the daily tasks active on it (`total`) and how many of them have a check on it (`done`). */
+function dailyProgress(tasks: TrackerTask[], checks: TrackerCheck[]): (day: string) => { done: number; total: number } {
+  const dailies = tasks.filter((t) => t.cadence === "daily");
+  const checkedByDay = new Map<string, Set<string>>();
+  for (const c of checks) {
+    const set = checkedByDay.get(c.day) ?? new Set<string>();
+    set.add(c.taskId);
+    checkedByDay.set(c.day, set);
+  }
+  return (day) => {
+    const active = dailies.filter((t) => isActiveOn(t, day));
+    const checked = checkedByDay.get(day);
+    return { done: checked ? active.filter((t) => checked.has(t.id)).length : 0, total: active.length };
+  };
 }
 
-/** Consecutive level-3 days ending today, or yesterday when today is not level 3 yet. */
-export function streak(heat: { day: string; level: HeatLevel }[], today: string): number {
-  const byDay = new Map(heat.map((h) => [h.day, h.level]));
-  let day = byDay.get(today) === 3 ? today : addDays(today, -1);
+/** Days from `today` to `range.endsOn`, both inclusive. Null without an end kind or once the end passed. */
+export function daysLeft(range: HeatmapRange, today: string): number | null {
+  if (range.endsOn === null || range.endsOn < today) return null;
+  return diffDays(range.endsOn, today) + 1;
+}
+
+/**
+ * Consecutive days with every active daily task checked (level 3), ending today, or yesterday when
+ * today is not complete yet. Counted from the tasks and checks themselves, so the heatmap window
+ * never cuts it short.
+ */
+export function streak(tasks: TrackerTask[], checks: TrackerCheck[], today: string): number {
+  const progressOn = dailyProgress(tasks, checks);
+  const complete = (day: string): boolean => {
+    const { done, total } = progressOn(day);
+    return total > 0 && done === total;
+  };
+  let day = complete(today) ? today : addDays(today, -1);
   let n = 0;
-  while (byDay.get(day) === 3) {
+  while (complete(day)) {
     n++;
     day = addDays(day, -1);
   }

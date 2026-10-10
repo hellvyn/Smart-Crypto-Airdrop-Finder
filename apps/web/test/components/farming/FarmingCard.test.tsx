@@ -56,7 +56,7 @@ function card(overrides: Partial<FarmingCardData> = {}): FarmingCardData {
       { id: ID.recap, text: "Baca recap", cadence: "weekly", origin: "custom" },
     ],
     checkedToday: [ID.bridge, ID.swap, ID.quest],
-    range: { start: "2026-10-08", end: "2026-10-12", endKind: "snapshot" },
+    range: { start: "2026-10-08", end: "2026-10-12", endKind: "snapshot", endsOn: "2026-10-12" },
     heatmap: [heat("2026-10-08", 3), heat("2026-10-09", 3), heat("2026-10-10", 1), heat("2026-10-11", null, true), heat("2026-10-12", null, true)],
     daysLeft: 3,
     streak: 2,
@@ -84,11 +84,11 @@ describe("FarmingCard", () => {
   });
 
   it("counts down to the end of the campaign, and shows no countdown without a deadline", () => {
-    render(<FarmingCard card={card({ range: { start: "2026-10-08", end: "2026-10-12", endKind: "campaign_end" } })} />);
+    render(<FarmingCard card={card({ range: { start: "2026-10-08", end: "2026-10-12", endKind: "campaign_end", endsOn: "2026-10-12" } })} />);
     expect(screen.getByText("Sisa 3 hari sampai akhir campaign")).toBeTruthy();
     cleanup();
     const { container } = render(
-      <FarmingCard card={card({ range: { start: "2026-10-08", end: "2027-10-07", endKind: null }, daysLeft: null, nextDeadline: null })} />,
+      <FarmingCard card={card({ range: { start: "2026-10-08", end: "2027-10-07", endKind: null, endsOn: null }, daysLeft: null, nextDeadline: null })} />,
     );
     expect(container.textContent).not.toMatch(/Sisa \d+ hari/);
   });
@@ -186,10 +186,17 @@ describe("FarmingCard", () => {
     expect(container.querySelector('[data-day="2026-10-10"]')!.classList.contains("heat-today")).toBe(true);
   });
 
+  it("counts down to a deadline beyond the heatmap without naming it as the range's end", () => {
+    const range = { start: "2026-10-01", end: "2027-09-29", endKind: "campaign_end" as const, endsOn: "2027-12-31" };
+    render(<FarmingCard card={card({ range, daysLeft: 448 })} />);
+    expect(screen.getByText("Sisa 448 hari sampai akhir campaign")).toBeTruthy();
+    expect(screen.getByText("1 Okt 2026 sampai 29 Sep 2027")).toBeTruthy();
+  });
+
   it("locks the checklist of a project whose campaign ended, keeping its history", () => {
     render(
       <FarmingCard
-        card={card({ range: { start: "2026-09-01", end: "2026-10-05", endKind: "ended" }, daysLeft: null, nextDeadline: null })}
+        card={card({ range: { start: "2026-09-01", end: "2026-10-05", endKind: "ended", endsOn: "2026-10-05" }, daysLeft: null, nextDeadline: null })}
       />,
     );
     expect(screen.getByRole("img", { name: "ENDED" })).toBeTruthy();
