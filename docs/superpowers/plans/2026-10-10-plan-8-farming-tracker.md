@@ -180,7 +180,11 @@ it("computes the local day in a time zone", () => {
 
 **Interfaces:**
 - `lib/farming.ts`:
-  - `startFarming(db, projectId: string): Promise<void>` — upsert `farming_projects` (hapus `archived_at` kalau ada), lalu
+  - `startFarming(db, projectId: string): Promise<void>` — **bukan upsert**: grant kolom di `0010` cuma kasih insert
+    `(user_id, project_id)` dan update `archived_at` (`started_at` selalu `now()` server), jadi upsert supabase-js →
+    `42501`. Baca baris `farming_projects` milik user untuk project itu: gak ada → `insert({ user_id, project_id })`
+    (`23505` dari tab lain yang menang duluan dianggap sukses); ada dan diarsipkan → `update({ archived_at: null })`;
+    ada dan aktif → gak diubah. `23514` (batas 50 project aktif) diteruskan sebagai error. Lalu
     snapshot langkah sumber: `tasks` project dengan `cadence in ('once','daily','weekly')`, teks dari analisis AI `steps_id`
     kalau ada (setelah Plan 5; sebelum itu teks `tasks.description`), dedup teks (case-insensitive), `origin = 'source'`.
   - `stopFarming(db, projectId)` — set `archived_at = now()`.

@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(71);
+select plan(73);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS).
 -- user A: 55555555-..., user B: 66666666-..., user C: 77777777-... (limits only)
@@ -270,6 +270,19 @@ select results_eq(
   $$ values ('fb000000-0000-0000-0000-000000000001'::text, date '2026-10-01') $$,
   'B''s check is unchanged');
 
+-- ---------- starting to farm again: the startFarming contract of Plan 8 Task 3 ----------
+-- A new project is a plain insert of (user_id, project_id), covered by the limit tests below. Resuming a stopped one
+-- is update(archived_at = null): the column grants refuse an upsert, which also writes archived_at and the key columns.
+-- 57-58.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"55555555-5555-5555-5555-555555555555","role":"authenticated"}';
+select lives_ok(
+  $$ update farming_projects set archived_at = null where project_id = 'eeeeeeee-0000-0000-0000-000000000002' $$,
+  'A can resume a stopped farming project');
+select ok(public.toggle_farming_check('fa000000-0000-0000-0000-000000000004', true),
+  'a task of the resumed project can be checked again');
+reset role;
+
 -- ---------- limits: 50 active projects per member, 30 active tasks per project ----------
 insert into projects (id, slug, name, name_key, first_seen, last_seen)
 select ('dddddddd-0000-0000-0000-' || lpad(i::text, 12, '0'))::uuid, 'limit-' || i, 'Limit ' || i, 'limit' || i, now(), now()
@@ -278,7 +291,7 @@ from generate_series(1, 52) i;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"77777777-7777-7777-7777-777777777777","role":"authenticated"}';
 
--- 57-62. Projects.
+-- 59-64. Projects.
 select lives_ok(
   $$ insert into farming_projects (user_id, project_id)
      select '77777777-7777-7777-7777-777777777777', ('dddddddd-0000-0000-0000-' || lpad(i::text, 12, '0'))::uuid
@@ -302,7 +315,7 @@ select throws_ok(
   $$ update farming_projects set started_at = now() - interval '30 days' where project_id = 'dddddddd-0000-0000-0000-000000000001' $$,
   '42501', null, 'C cannot rewrite started_at');
 
--- 63-68. Tasks.
+-- 65-70. Tasks.
 select lives_ok(
   $$ insert into farming_tasks (user_id, project_id, text, cadence, origin, position)
      select '77777777-7777-7777-7777-777777777777', 'dddddddd-0000-0000-0000-000000000001', 'Task ' || i, 'daily', 'source', i
@@ -331,7 +344,7 @@ select throws_ok(
 reset role;
 
 -- ---------- cascade: a project deleted from the database takes its trackers along (review focus 5) ----------
--- 69-71.
+-- 71-73.
 select is((select count(*)::int from farming_checks c join farming_tasks t on t.id = c.task_id
            where t.project_id = 'eeeeeeee-0000-0000-0000-000000000001'), 3,
   'fixtures: p1 has checks from A and B before the delete');
