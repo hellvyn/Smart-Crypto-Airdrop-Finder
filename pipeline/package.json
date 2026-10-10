@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "tsx src/main.ts",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
@@ -11,10 +12,11 @@
     "@saf/core": "workspace:*",
     "@supabase/supabase-js": "^2.117.3",
     "cheerio": "^1.2.0",
+    "p-limit": "^7.1.1",
+    "tsx": "^4.23.15",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^24.19.2",
-    "tsx": "^4.23.15"
+    "@types/node": "^24.19.2"
   }
 }

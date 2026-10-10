@@ -1,0 +1,85 @@
+import pLimit from "p-limit";
+import { assessRisk, registrableDomain } from "@saf/core";
+import type { RiskInput } from "@saf/core";
+import type { Http } from "../collectors/types.js";
+import type { PipelineConfig } from "../config.js";
+import { checkPhishingSite } from "../enrich/goplus.js";
+import { countHacks, fetchHacks } from "../enrich/hacks.js";
+import { domainAgeDays } from "../enrich/rdap.js";
+import type { DailyStats } from "../stats.js";
+import type { PipelineRepo, ProjectForScoring } from "../store/repo.js";
+import { LINK_KINDS } from "./merge.js";
+import type { LinkKind } from "./merge.js";
+
+/** Maximum parallel enrichment requests (GoPlus, RDAP, DefiLlama hacks). */
+const ENRICH_CONCURRENCY = 4;
+
+function linkDomains(project: ProjectForScoring): RiskInput["linkDomains"] {
+  const seen = new Set<string>();
+  const out: RiskInput["linkDomains"] = [];
+  for (const link of project.links) {
+    const domain = registrableDomain(link.url);
+    if (domain === null) continue;
+    const kind: LinkKind = (LINK_KINDS as readonly string[]).includes(link.kind) ? (link.kind as LinkKind) : "website";
+    const key = `${domain} ${kind}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ domain, kind });
+  }
+  return out;
+}
+
+/**
+ * Scores every project seen within `scoreActiveSinceDays`. Enrichment is fetched once per registrable
+ * domain per run (the job is daily, so this replaces a longer-lived cache), and hacks once per run.
+ */
+export async function scoreProjects(
+  deps: { repo: PipelineRepo; http: Http },
+  config: PipelineConfig,
+  now: Date,
+  stats: DailyStats,
+): Promise<void> {
+  const { repo, http } = deps;
+  const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
+  if (projects.length === 0) return;
+
+  const domainsByProject = new Map(projects.map((p) => [p.id, linkDomains(p)]));
+  const domains = [...new Set([...domainsByProject.values()].flat().map((d) => d.domain))];
+
+  const limit = pLimit(ENRICH_CONCURRENCY);
+  const phishing = new Map<string, boolean | null>();
+  const ages = new Map<string, number | null>();
+  const [hacks] = await Promise.all([
+    limit(() => fetchHacks(http)),
+    ...domains.flatMap((domain) => [
+      limit(async () => phishing.set(domain, await checkPhishingSite(http, `https://${domain}`))),
+      limit(async () => ages.set(domain, await domainAgeDays(http, domain, now))),
+    ]),
+  ]);
+
+  for (const project of projects) {
+    const projectLinks = domainsByProject.get(project.id) ?? [];
+    const projectDomains = [...new Set(projectLinks.map((l) => l.domain))];
+    const input: RiskInput = {
+      project: {
+        name: project.name,
+        officialDomains: project.officialDomains,
+        status: project.status,
+        tokenSymbol: project.tokenSymbol,
+        conflict: project.conflict,
+        sourceCount: project.sourceCount,
+        hasOfficialSocial: projectLinks.some((l) => l.kind === "social"),
+        lookalikeOf: project.lookalikeOf,
+      },
+      tasks: project.tasks,
+      linkDomains: projectLinks,
+      domainAgeDays: Object.fromEntries(projectDomains.map((d) => [d, ages.get(d) ?? null])),
+      phishingFlags: Object.fromEntries(projectDomains.map((d) => [d, phishing.get(d) ?? null])),
+      token: null,
+      contractVerified: null,
+      hackCount: hacks ? countHacks(hacks, project.name) : null,
+    };
+    await repo.saveRiskAssessment(project.id, assessRisk(input), now);
+    stats.assessed += 1;
+  }
+}

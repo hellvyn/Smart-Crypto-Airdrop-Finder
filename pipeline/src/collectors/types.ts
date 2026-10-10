@@ -1,4 +1,4 @@
-export type SourceKind = "airdrops_io" | "telegram";
+export type SourceKind = "airdrops_io" | "telegram" | "defillama";
 
 export interface CollectedDocument {
   sourceKind: SourceKind;

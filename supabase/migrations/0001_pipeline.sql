@@ -3,7 +3,7 @@
 
 create table documents (
   id uuid primary key default gen_random_uuid(),
-  source_kind text not null check (source_kind in ('airdrops_io', 'telegram')),
+  source_kind text not null check (source_kind in ('airdrops_io', 'telegram', 'defillama')),
   source_key text not null,
   -- C collation: byte-order sorting, so ORDER BY url matches the in-memory repo whatever the database locale.
   url text collate "C" not null unique,
