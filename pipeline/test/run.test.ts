@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Http } from "../src/collectors/types.js";
 import type { ChatFn } from "../src/llm/extract.js";
-import { defaultConfig, sourceCount } from "../src/config.js";
+import { defaultConfig } from "../src/config.js";
 import type { PipelineConfig } from "../src/config.js";
 import { runDaily } from "../src/run.js";
 import { classifyLink, pickSlug } from "../src/steps/merge.js";
@@ -431,7 +431,7 @@ describe("runDaily", () => {
     expect(repo.runs[0]?.finishedAt).not.toBeNull();
   });
 
-  it("still scores and purges when collection fails at stage level, then rethrows", async () => {
+  it("still scores and purges when every document ingest fails", async () => {
     const repo = new MemoryRepo();
     // A project from an earlier run, so there is something to score.
     await repo.createProject(
@@ -448,12 +448,12 @@ describe("runDaily", () => {
       return purge(days, now);
     };
     const { deps, config } = setup({ repo });
-    await expect(runDaily(deps, config)).rejects.toThrow("db read failed");
-    const stats = repo.runs[0]?.stats;
-    expect(stats?.failed_step).toBe(1);
-    expect(stats?.run_error).toBe(1);
-    expect(stats?.assessed).toBe(1);
+    const stats = await runDaily(deps, config);
+    expect(stats.ingest_failed).toBe(5);
+    expect(stats.run_error).toBeUndefined();
+    expect(stats.assessed).toBe(1);
     expect(purgeCalls).toBe(1);
+    expect(repo.runs[0]?.stats).toEqual(stats);
   });
 
   it("purges document text past the retention window", async () => {
@@ -578,7 +578,6 @@ describe("config", () => {
     expect(defaultConfig.extractBudgetMinutes).toBe(35);
     expect(defaultConfig.telegramChannels).toEqual(["airdrops_io"]);
     expect(defaultConfig.defillama).toEqual({ minTvl: 10_000_000, excludedCategories: ["CEX"], limit: 50 });
-    expect(sourceCount(defaultConfig)).toBe(3);
   });
 });
 
@@ -863,6 +862,28 @@ describe("runDaily fault tolerance", () => {
     const chat2 = fakeChat();
     await runDaily({ ...deps, chat: chat2.chat }, config);
     expect(chat2.calls).toEqual([]);
+  });
+
+  it("keeps ingesting the other documents and sources when storing one document throws", async () => {
+    const repo = new MemoryRepo();
+    const upsert = repo.upsertDocument.bind(repo);
+    repo.upsertDocument = async (doc, hash) => {
+      if (doc.url === INK_PAGE || doc.url === LLAMA_DOC) throw new Error("insert failed");
+      return upsert(doc, hash);
+    };
+    const { deps, config } = setup({ repo });
+    const stats = await runDaily(deps, config);
+    expect(stats.ingest_failed).toBe(2);
+    expect(stats.run_error).toBeUndefined();
+    expect(stats.source_failed).toBe(0);
+    expect(stats.docs_collected).toBe(5);
+    expect(stats.docs_changed).toBe(3);
+    expect(repo.allDocuments().map((d) => d.url).sort()).toEqual([
+      DEEPBOOK,
+      "https://t.me/airdrops_io/101",
+      "https://t.me/airdrops_io/102",
+    ]);
+    expect((await repo.findProjectsByNameKey("deepbook"))[0]?.status).toBe("live");
   });
 
   it("assesses the other projects when one assessment fails", async () => {

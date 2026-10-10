@@ -17,6 +17,8 @@ export interface DailyStats extends RunStats {
   /** Projects whose risk assessment threw. */
   score_failed: number;
   source_failed: number;
+  /** Collected documents that could not be stored (the other documents still were). */
+  ingest_failed: number;
   purged: number;
 }
 
@@ -34,6 +36,19 @@ export function emptyStats(): DailyStats {
     assessed: 0,
     score_failed: 0,
     source_failed: 0,
+    ingest_failed: 0,
     purged: 0,
   };
+}
+
+/**
+ * Process exit code for a finished run: 1 (the scheduled workflow shows as failed) when a stage failed or any
+ * source, document ingest, merge or assessment failed; 0 otherwise. Model failures (`extract_failed`) and
+ * budget deferrals are retried next run and do not fail the job.
+ */
+export function runExitCode(stats: RunStats): 0 | 1 {
+  const failed = ["run_error", "source_failed", "ingest_failed", "merge_failed", "score_failed"].some(
+    (counter) => (stats[counter] ?? 0) > 0,
+  );
+  return failed ? 1 : 0;
 }

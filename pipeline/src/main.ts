@@ -1,10 +1,12 @@
 // Daily pipeline entry point (GitHub Actions). Prints only the numeric run stats as one JSON line:
 // never errors, URLs, document text, project names, emails or wallet addresses (spec section 9).
+// Exits 1 after everything is persisted when a stage, source, ingest, merge or assessment failed.
 import { createClient } from "@supabase/supabase-js";
-import { defaultConfig, sourceCount } from "./config.js";
+import { defaultConfig } from "./config.js";
 import { createHttp } from "./http.js";
 import { streamChat } from "./llm/nvidia.js";
 import { runDaily } from "./run.js";
+import { runExitCode } from "./stats.js";
 import { SupabaseRepo } from "./store/supabase-repo.js";
 
 async function main(): Promise<number> {
@@ -35,7 +37,7 @@ async function main(): Promise<number> {
     return 1;
   }
   console.log(JSON.stringify(stats));
-  return stats.source_failed >= sourceCount(defaultConfig) ? 1 : 0;
+  return runExitCode(stats);
 }
 
 main().then(

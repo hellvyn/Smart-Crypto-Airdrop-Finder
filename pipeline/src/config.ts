@@ -33,8 +33,3 @@ export const defaultConfig: PipelineConfig = {
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
 };
-
-/** Number of sources a run collects from: airdrops.io, each Telegram channel, and DefiLlama. */
-export function sourceCount(config: PipelineConfig): number {
-  return 2 + config.telegramChannels.length;
-}

@@ -70,10 +70,20 @@ async function ingest(repo: PipelineRepo, doc: CollectedDocument, stats: DailySt
   stats.docs_changed += 1;
 }
 
+/** Ingests one document; a throw (database error) counts as `ingest_failed` and never stops the others. */
+async function ingestSafely(repo: PipelineRepo, doc: CollectedDocument, stats: DailyStats): Promise<void> {
+  try {
+    await ingest(repo, doc, stats);
+  } catch {
+    stats.ingest_failed += 1;
+  }
+}
+
 /**
  * Collects every source. A source that throws or reports `failed` counts toward `source_failed`;
- * any documents it still returned are ingested. DefiLlama documents are stored as `done` (never
- * sent to the LLM) and returned for the speculative merge.
+ * any documents it still returned are ingested. Each document is ingested on its own: one that cannot be
+ * stored counts as `ingest_failed` and the rest (and the other sources) continue. DefiLlama documents are
+ * stored as `done` (never sent to the LLM) and returned for the speculative merge.
  */
 export async function collectSources(
   deps: { repo: PipelineRepo; http: Http },
@@ -92,7 +102,7 @@ export async function collectSources(
       return;
     }
     if (result.failed) stats.source_failed += 1;
-    for (const doc of result.documents) await ingest(repo, doc, stats);
+    for (const doc of result.documents) await ingestSafely(repo, doc, stats);
   };
 
   await runCollector(() => collectAirdropsIo(http, now));
@@ -112,12 +122,17 @@ export async function collectSources(
   for (const candidate of llama.candidates) {
     const doc = defillamaDocument(candidate, now);
     stats.docs_collected += 1;
-    const hash = contentHash(doc.text);
-    if ((await repo.getDocumentHash(doc.url)) !== hash) stats.docs_changed += 1;
-    // Always upserted: the speculative merge needs the stored id, and it refreshes fetched_at.
-    const stored = await repo.upsertDocument(doc, hash);
-    if (stored.extractionStatus !== "done") await repo.setExtractionStatus(stored.id, "done");
-    items.push({ document: { ...stored, extractionStatus: "done" }, candidate });
+    try {
+      const hash = contentHash(doc.text);
+      const changed = (await repo.getDocumentHash(doc.url)) !== hash;
+      // Always upserted: the speculative merge needs the stored id, and it refreshes fetched_at.
+      const stored = await repo.upsertDocument(doc, hash);
+      if (changed) stats.docs_changed += 1;
+      if (stored.extractionStatus !== "done") await repo.setExtractionStatus(stored.id, "done");
+      items.push({ document: { ...stored, extractionStatus: "done" }, candidate });
+    } catch {
+      stats.ingest_failed += 1;
+    }
   }
   return items;
 }
