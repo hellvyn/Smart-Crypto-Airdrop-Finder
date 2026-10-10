@@ -129,7 +129,9 @@ async function mergeProject(
     { nameKey, domains: officialDomains },
     existing.map((p) => ({ id: p.id, nameKey: p.nameKey, domains: p.officialDomains })),
   );
-  const at = pickEvidenceDate(document);
+  // A DefiLlama listing is undated, weak evidence: date it at the epoch so any dated airdrops.io or
+  // Telegram evidence outranks it in deriveStatus, even when that page's "Updated" date is old.
+  const at = input.source === "defillama" ? new Date(0) : pickEvidenceDate(document);
 
   let project: ProjectRow;
   let evidenceField = "status";

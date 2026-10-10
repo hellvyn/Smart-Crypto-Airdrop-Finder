@@ -347,7 +347,7 @@ describe("runDaily", () => {
     expect(hyper?.chains).toEqual(["Hyperliquid L1"]);
     expect(hyper?.officialDomains).toEqual(["hyperdrive.fi"]);
     const evidence = await repo.listStatusEvidence(hyper?.id ?? "");
-    expect(evidence).toEqual([{ status: "speculative", at: NOW }]);
+    expect(evidence).toEqual([{ status: "speculative", at: new Date(0) }]);
     const quotes = repo["evidence"].filter((e) => e.projectId === hyper?.id).map((e) => e.quote);
     expect(quotes).toEqual(["No token listed; TVL $25000000, 7d change 12.50% (DefiLlama)"]);
     // Excluded category and tokened protocols are not candidates.
@@ -712,5 +712,28 @@ describe("runDaily slugs, platforms and DefiLlama", () => {
     };
     const stats = await runDaily({ ...deps, http: fakeHttp(pages), now: () => new Date(NOW.getTime() + DAY) }, config);
     expect(stats.docs_changed).toBe(0);
+  });
+
+  it("lets an older-dated airdrops.io page outrank DefiLlama speculative evidence", async () => {
+    const llamaDeepbook = {
+      name: "DeepBook", slug: "deepbook", url: "https://deepbook.tech", chains: ["Sui"], tvl: 3e7, change_7d: 1, category: "Dexs", gecko_id: null, symbol: "-",
+    };
+    const pages = basePages();
+    pages[HOME] = { status: 500, body: "" };
+    pages[PROTOCOLS] = { status: 200, body: JSON.stringify([llamaDeepbook]) };
+    const { repo, deps, config } = setup({ pages });
+    await runDaily(deps, config);
+    const [created] = await repo.findProjectsByNameKey("deepbook");
+    expect(created?.status).toBe("speculative");
+
+    // The detail page says "Updated 24 Jul 2026", well before the run's now.
+    const pages2 = basePages();
+    pages2[PROTOCOLS] = { status: 200, body: JSON.stringify([llamaDeepbook]) };
+    await runDaily({ ...deps, http: fakeHttp(pages2), now: () => new Date(NOW.getTime() + DAY) }, config);
+    const rows = await repo.findProjectsByNameKey("deepbook");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("live");
+    const changes = repo.projectChanges.filter((c) => c.field === "status" && c.projectId === rows[0]?.id);
+    expect(changes.map((c) => [c.oldValue, c.newValue])).toEqual([["speculative", "live"]]);
   });
 });
