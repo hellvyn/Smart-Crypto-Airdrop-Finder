@@ -78,8 +78,8 @@ const replies: Record<string, unknown> = {
 const chat: ChatFn = async (_model, messages) => {
   const reply = replies[/^Source: (\S+)/.exec(messages[1]?.content ?? "")?.[1] ?? ""];
   return reply === undefined
-    ? { content: "", finishReason: null, latencyMs: 1, httpStatus: 500 }
-    : { content: JSON.stringify(reply), finishReason: "stop", latencyMs: 1, httpStatus: 200 };
+    ? { content: "", finishReason: null, latencyMs: 1, httpStatus: 500, servedModel: null }
+    : { content: JSON.stringify(reply), finishReason: "stop", latencyMs: 1, httpStatus: 200, servedModel: null };
 };
 
 async function count(table: string): Promise<number> {

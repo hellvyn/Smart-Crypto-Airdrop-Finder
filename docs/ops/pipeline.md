@@ -1,7 +1,7 @@
 # Daily pipeline runbook
 
 How to set up, run and check the daily pipeline (`pipeline/`). It collects airdrops.io, Telegram and DefiLlama,
-extracts with NVIDIA-hosted models, merges into Supabase, scores risk and purges old text. It sends no email.
+extracts with LLMs (freellm `auto` first, NVIDIA-hosted models as fallback; see section 7), merges into Supabase, scores risk and purges old text. It sends no email.
 Spec: section 4 (pipeline), 5 (data model), 9 (privacy) and 11 (errors and testing) of
 `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md`.
 
@@ -40,14 +40,16 @@ In **Settings > Secrets and variables > Actions**, add repository secrets:
 
 | Secret | Value |
 |---|---|
+| `LLM_API_KEY` | freellm key; may be left empty (then no `Authorization` header is sent) |
+| `LLM_BASE_URL` | freellm base URL; may be left unset (default `https://freellm.hellvyn.id/v1`) |
 | `NVIDIA_API_KEY` | NVIDIA API key (`integrate.api.nvidia.com`) |
 | `SUPABASE_URL` | `https://<ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | the `service_role` key from step 1.3 |
 
 The workflow installs dependencies without these secrets and only passes them to the pipeline step. Only a
 missing `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` stops the run with `{"config_error":1}` before anything is
-collected. The pipeline reads no other secret (`pipeline/src/daily-job.ts` reads exactly these three, and
-`.github/workflows/daily.yml` passes exactly these three). The email digest was removed: a leftover
+collected. The pipeline reads no other secret (`pipeline/src/daily-job.ts` reads exactly these five, and
+`.github/workflows/daily.yml` passes exactly these five). The email digest was removed: a leftover
 `BREVO_API_KEY`, `EMAIL_FROM` or `SITE_URL` in the environment or in the repository secrets is ignored and can
 be deleted.
 
@@ -100,7 +102,7 @@ What to do:
 Fill `pipeline/eval/cases/` (gitignored; see `pipeline/eval/README.md`) and run:
 
 ```
-NVIDIA_API_KEY=... pnpm --filter pipeline eval
+LLM_API_KEY=... NVIDIA_API_KEY=... pnpm --filter pipeline eval
 ```
 
 Behind a proxy that injects the key, use `NODE_USE_ENV_PROXY=1 pnpm --filter pipeline eval`. Exit code 0 = all
@@ -129,3 +131,34 @@ npx -y supabase@2.120.0 stop
 
 `daily-smoke.ts` reuses fixed URLs, so run it right after `db reset`. Unit tests need no database:
 `pnpm test && pnpm typecheck`.
+
+## 7. LLM providers and the model that answered
+
+Extraction tries these models in order (`MODELS` in `pipeline/src/config.ts`; curation spec decision #30), all with
+streaming (both providers return 502 after about 30 s without it):
+
+1. `freellm:auto`: the owner's freellm router (`LLM_BASE_URL`, `LLM_API_KEY`), which picks a free model per request.
+2. `nvidia:z-ai/glm-5.3-flash`
+3. `nvidia:moonshotai/kimi-k3`
+4. `nvidia:google/gemma-4-31b-it`
+
+A model that answers HTTP 200 with something unusable (not JSON, wrong schema, cut off) hands the same document to the
+next model at once; that does not count against its circuit breaker. Only timeouts, non-200 replies and rate limits
+past their retries do; after 3 in a row the model is skipped for the rest of the run (`llm_models_tripped`). The
+breaker keys by `<provider>:<id>`.
+
+Every attempt is a row in `extractions`: `model` is the configured `<provider>:<id>`, `served_model` is the `model`
+field the provider streamed back (for `freellm:auto` the model the router chose, e.g. `gpt-oss:120b`; null for a
+failed request and for rows from before migration `0008_served_model.sql`). To see which models answered recently
+and how they did, in the Supabase SQL editor:
+
+```sql
+select model, served_model, count(*) as attempts, count(*) filter (where error is null) as ok,
+       round(avg(latency_ms)) as avg_ms
+from extractions
+where created_at > now() - interval '7 days'
+group by 1, 2
+order by attempts desc;
+```
+
+A drop in quality (eval or `extract_failed`) that lines up with one `served_model` points at that model.

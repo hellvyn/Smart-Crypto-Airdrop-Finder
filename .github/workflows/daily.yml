@@ -32,6 +32,11 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run pipeline
         env:
+          # freellm (first model, `auto`). LLM_API_KEY may be empty (no Authorization header is sent);
+          # an empty LLM_BASE_URL falls back to https://freellm.hellvyn.id/v1.
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          # NVIDIA (fallback models).
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

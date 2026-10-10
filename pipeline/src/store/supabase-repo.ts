@@ -198,6 +198,7 @@ export class SupabaseRepo implements PipelineRepo {
       await this.db.from("extractions").insert({
         document_id: documentId,
         model: attempt.model,
+        served_model: attempt.servedModel,
         prompt_version: promptVersion,
         raw: attempt.raw,
         http_status: attempt.httpStatus,
