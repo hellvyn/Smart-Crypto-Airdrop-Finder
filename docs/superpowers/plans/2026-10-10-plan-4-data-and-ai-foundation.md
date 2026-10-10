@@ -19,7 +19,7 @@ field yang menyamai isi airdrops.io, dan akurasi bisa diukur (eval diperluas + s
 
 **Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` (rev. 3: §4.4, §4.6, §5.0, §10, §12, §13)
 
-**Bergantung ke:** Plan 1 (pipeline, `PipelineRepo`, `streamChat`, `extractWithFallback`, eval), PR #2 (circuit breaker,
+**Bergantung ke:** Plan 7 (dikerjakan lebih dulu; migrasi `0007`), Plan 1 (pipeline, `PipelineRepo`, `streamChat`, `extractWithFallback`, eval), PR #2 (circuit breaker,
 `llm_models_tripped`). Plan 5 dan 6 bergantung ke plan ini.
 
 ## Prasyarat (owner)
@@ -41,7 +41,7 @@ field yang menyamai isi airdrops.io, dan akurasi bisa diukur (eval diperluas + s
 - Urutan model: `freellm:auto` → `nvidia:z-ai/glm-5.3-flash` → `nvidia:moonshotai/kimi-k3` →
   `nvidia:google/gemma-4-31b-it`. Streaming wajib (502 di ~30 detik tanpa streaming, di kedua provider).
 - Secret gak pernah di kode, log, atau output test. `LLM_API_KEY` boleh kosong (header `Authorization` gak dikirim).
-- Migrasi baru: `0007_served_model.sql`, `0008_extraction_v3.sql`. Migrasi lama gak diubah.
+- Migrasi baru: `0008_served_model.sql`, `0009_extraction_v3.sql`. Migrasi lama gak diubah.
 - `PROMPT_VERSION` baru: `2026-10-10.3`.
 - Commit trailer sesuai aturan repo (Co-Authored-By + Claude-Session).
 
@@ -225,7 +225,7 @@ git commit -m "feat(score): crt.sh domain-age fallback, GoPlus throttle and retr
 **Files:**
 - Modify: `pipeline/src/llm/nvidia.ts` (rename konsep, file tetap), `pipeline/src/llm/extract.ts`, `pipeline/src/config.ts`,
   `pipeline/src/main.ts`, `pipeline/src/store/repo.ts`, `pipeline/src/store/memory-repo.ts`, `pipeline/src/store/supabase-repo.ts`
-- Create: `supabase/migrations/0007_served_model.sql`
+- Create: `supabase/migrations/0008_served_model.sql`
 - Modify: `.github/workflows/daily.yml` (env run step: `LLM_API_KEY`, `LLM_BASE_URL`)
 - Test: `pipeline/test/llm.test.ts`, `pipeline/test/run.test.ts`, `pipeline/test/supabase-repo.test.ts`
 
@@ -290,7 +290,7 @@ Expected: PASS (114 pgTAP lama tetap lulus).
   `extractions.served_model`), commit
 
 ```bash
-git add pipeline supabase/migrations/0007_served_model.sql .github/workflows/daily.yml docs/ops/pipeline.md
+git add pipeline supabase/migrations/0008_served_model.sql .github/workflows/daily.yml docs/ops/pipeline.md
 git commit -m "feat(llm): multi-provider models, freellm auto first with NVIDIA fallback, record served model"
 ```
 
@@ -381,7 +381,7 @@ git commit -m "feat(extract): v3 schema - steps with cadence, key parameters, so
 ### Task 5: Menyimpan hasil ekstraksi v3
 
 **Files:**
-- Create: `supabase/migrations/0008_extraction_v3.sql`, `supabase/tests/extraction_v3.test.sql`
+- Create: `supabase/migrations/0009_extraction_v3.sql`, `supabase/tests/extraction_v3.test.sql`
 - Modify: `pipeline/src/store/repo.ts`, `memory-repo.ts`, `supabase-repo.ts`, `pipeline/src/steps/merge.ts`, `pipeline/src/run.ts` (`extractionInputs`)
 - Test: `pipeline/test/run.test.ts`, `pipeline/test/memory-repo.test.ts`, `pipeline/test/supabase-repo.test.ts`
 

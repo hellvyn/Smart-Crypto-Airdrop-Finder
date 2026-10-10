@@ -16,7 +16,7 @@ Label: **[FACT]** dari data/kode/run, **[INFERENCE]** kesimpulan dari bukti, **[
 ada pembeda antara airdrop yang legit dan yang gak jelas.
 
 **Tujuan produk (keputusan owner, direvisi 2026-10-10):** produk **berbayar**. Isi web cuma bisa diakses member yang
-bayar; pengunjung lain cuma lihat landing page + contoh terbatas. Ukuran suksesnya: konversi ke berbayar. Target user:
+**ditambahkan manual oleh owner** (pembayaran diurus owner di luar web); pengunjung lain cuma lihat landing page. Ukuran suksesnya: konversi ke berbayar. Target user:
 pemula **dan** farmer berpengalaman.
 
 **Positioning:** "Airdrop paling cuan, yang udah dicek aman, dan ada buktinya." Cuan = pengait (skor Worth it, top picks),
@@ -44,7 +44,7 @@ Permintaan owner dipecah jadi sub-proyek, masing-masing punya spec → plan → 
 | # | Sub-proyek | Status |
 |---|---|---|
 | 1 | **Fondasi kurasi**: sinyal legit, `curate()`, `worth()`, status kedaluwarsa, tampilan list kurasi | **spec ini** |
-| 2 | **Paywall**: landing page + contoh terbatas, pembayaran, akses member-only, top picks, pindah dari Vercel Hobby, ToS/privasi/refund/disclaimer | berikutnya |
+| 2 | **Akses member manual** (Plan 7, dikerjakan lebih dulu): hapus signup/email, data khusus user login, landing page. Sisa: top picks, pindah dari Vercel Hobby, ToS/privasi/disclaimer | Plan 7 + berikutnya |
 | 3 | Track record: hasil nyata airdrop dibanding level Worth it (riset sumber data dulu) | nanti |
 | 4 | Checklist task + estimasi effort per wallet | nanti |
 | 5 | Link klaim terverifikasi | nanti |
@@ -73,6 +73,10 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 27 | Dua jenis peluang | List dipisah jadi tab **"Live now"** (live/announced) dan **"Early bets"** (speculative); `worth()` meranking di dalam tab |
 | 28 | Standar tampil | Project cuma tampil kalau cek keamanan kuncinya jalan; paywall baru dinyalakan setelah gerbang kualitas §12 terpenuhi |
 | 29 | Bahasa | **Bahasa Indonesia saja** untuk UI web, email, dan semua output AI (menggantikan asumsi v1 "UI bahasa Inggris dulu"). Konten sumber berbahasa Inggris diterjemahkan/diringkas AI |
+| 31 | Pendaftaran member | Gak ada signup; owner menambah user satu per satu di Supabase (Auto Confirm); signup dimatikan di Supabase Auth |
+| 32 | Email | Gak ada email sama sekali: email digest dihapus, lupa password = owner reset manual |
+| 33 | Akses data | Semua data airdrop cuma untuk user login, dikunci di RLS **dan** routing; non-login cuma landing (`/`) + `/login`. Menggantikan rencana paywall berbayar di web |
+| 34 | Info perubahan | Ditampilkan di web ("Perubahan sejak kunjungan terakhir"), gak lewat email |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -323,13 +327,13 @@ Aturan yang tetap: backer klaim ditulis "Diklaim project, belum terverifikasi"; 
 - Halaman detail tetap bisa dibuka lewat link langsung (oleh yang punya akses), dengan peringatan di paling atas:
   "Not in the curated list: <alasan>". Halaman diberi `noindex`.
 - Watchlist tetap menampilkannya dengan label peringatan yang sama.
-- Digest: project di watchlist yang keluar dari kurasi diberitahukan (lewat `project_changes.field = curated`).
+- Web: project di watchlist yang keluar dari kurasi muncul di bagian "Perubahan sejak kunjungan terakhir" (lewat
+  `project_changes.field = curated`). Gak ada email (keputusan #32, #34).
 
 ## 8. Keamanan dan privasi
 
-- Semua tabel baru RLS on. `project_signals` dan `curations` sementara baca publik, mengikuti tabel tampilan yang ada
-  (`projects`, `evidence`, ...). Pembatasan ke member untuk **semua** tabel tampilan dikerjakan di sub-proyek #2 (paywall)
-  sekaligus, bukan per tabel di sini. `vc_portfolios` tanpa akses web.
+- Semua tabel baru RLS on. `project_signals`, `curations`, `ai_analyses` dan view `curated_list` cuma bisa dibaca
+  `authenticated` (keputusan #33; tabel tampilan lama dikunci di Plan 7). `vc_portfolios` tanpa akses web.
 - Gak ada data user baru. Log run tetap angka saja (spec v1 §9).
 - Teks halaman portfolio VC gak disimpan, cuma domain.
 - LLM gak pernah memutuskan lolos/worth; teks project (termasuk klaim "backed by X") gak bisa menaikkan status verified.
@@ -373,8 +377,7 @@ Aturan yang tetap: backer klaim ditulis "Diklaim project, belum terverifikasi"; 
 
 ## 12. Gerbang kualitas sebelum paywall dinyalakan
 
-Sub-proyek #2 (paywall) **gak boleh menerima pembayaran** sebelum semua gerbang ini terpenuhi dan angkanya dicatat di
-spec ini. Angka target adalah usulan [INFERENCE]; owner boleh mengubahnya, tapi gak boleh menghapus gerbangnya.
+Owner **gak menambahkan member berbayar** sebelum semua gerbang ini terpenuhi dan angkanya dicatat di spec ini. Angka target adalah usulan [INFERENCE]; owner boleh mengubahnya, tapi gak boleh menghapus gerbangnya.
 
 | # | Gerbang | Target | Diukur dari |
 |---|---|---|---|

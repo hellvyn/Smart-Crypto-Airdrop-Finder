@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Web dan email sepenuhnya Bahasa Indonesia; list cuma menampilkan airdrop yang lolos kurasi dalam dua tab;
+**Goal:** Web sepenuhnya Bahasa Indonesia; list cuma menampilkan airdrop yang lolos kurasi dalam dua tab;
 halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan masuk list, dengan label yang jujur
 (terverifikasi vs diklaim vs analisis AI); project yang gak lolos diberi peringatan dan `noindex`.
 
 **Architecture:**
 - Semua teks UI dipusatkan di modul copy (`apps/web/lib/copy.ts`) + label di `lib/view.ts`; pesan alasan risiko dan
-  digest di `@saf/core` diterjemahkan di sumbernya.
+  kurasi di `@saf/core` diterjemahkan di sumbernya.
 - View SQL baru `curated_list` (security_invoker) di atas `project_list` + curation terbaru + ringkasan sinyal.
 - Halaman tetap server components; data dari query baru di `lib/queries.ts`.
 
@@ -16,7 +16,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 
 **Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` (rev. 3: §7, §8, keputusan #27–#29)
 
-**Bergantung ke:** Plan 5 (`curations`, `project_signals`, `ai_analyses`, `curate` reasons, stats kurasi), Plan 4
+**Bergantung ke:** Plan 7 (route `/airdrops` dan `(app)/projects`, gak ada digest/signup), Plan 5 (`curations`, `project_signals`, `ai_analyses`, `curate` reasons, stats kurasi), Plan 4
 (`tasks.cadence`, evidence v3).
 
 ## Global Constraints
@@ -42,7 +42,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 - Badge "terverifikasi" cuma untuk sinyal `verified = true`. `claimed_backer` selalu tampil sebagai klaim.
 - Semua link keluar lewat `ExternalLink` (rel noopener noreferrer nofollow) dan URL yang sudah dibersihkan referral.
 - Anon key saja di web; service role gak pernah masuk `apps/web`.
-- Migrasi baru: `0010_curated_list.sql`.
+- Migrasi baru: `0011_curated_list.sql`.
 
 ## Review Focus
 
@@ -57,13 +57,12 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 
 ---
 
-### Task 1: Teks Bahasa Indonesia di `@saf/core` (alasan risiko, kurasi, digest email)
+### Task 1: Teks Bahasa Indonesia di `@saf/core` (alasan risiko dan kurasi)
 
 **Files:**
 - Modify: `packages/core/src/risk/assess.ts`, `packages/core/src/risk/dangerous-asks.ts`, `packages/core/src/curate/*.ts`
-  (pesan alasan), `packages/core/src/notify/render.ts` (subjek, judul bagian, label, footer unsubscribe)
-- Modify: `supabase/templates/confirmation.html`, `supabase/templates/recovery.html`
-- Test: test core yang ada (assertion pesan diperbarui), `packages/core/test/render.test.ts`
+  (pesan alasan)
+- Test: test core yang ada (assertion pesan diperbarui)
 
 **Interfaces:**
 - Kode alasan (`code`) gak berubah; cuma `message`. Contoh wajib:
@@ -71,14 +70,11 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
   - `speculative`: "Belum ada pengumuman airdrop; ini spekulasi berdasarkan sinyal onchain."
   - `hack_history`: "Project ini punya {n} catatan hack."
   - `insufficient_checks` (kurasi): "Cek keamanan kunci belum lengkap: {daftar cek}."
-- Digest: subjek "Ringkasan airdrop harian kamu ({tanggal})"; bagian "Deadline 48 jam ke depan", "Perubahan sejak
-  ringkasan terakhir", "Airdrop baru hari ini"; perubahan `curated_removed` → "Keluar dari daftar kurasi",
-  `curated_added` → "Masuk daftar kurasi".
 
 - [ ] **Step 1:** ubah assertion test yang ada ke teks baru (gagal) → **Step 2:** `pnpm --filter @saf/core exec vitest run` FAIL →
   **Step 3:** terjemahkan → **Step 4:** PASS + `grep -rniE "\b(safe|aman)\b" packages/core/src` cuma menemukan
   kata dalam teks peringatan/negasi yang disengaja → **Step 5:** commit
-  `git commit -m "feat(i18n): Indonesian risk, curation and digest copy"`
+  `git commit -m "feat(i18n): Indonesian risk and curation copy"`
 
 ---
 
@@ -88,15 +84,15 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 - Create: `apps/web/lib/copy.ts` (semua string halaman, dikelompokkan per halaman)
 - Modify: `apps/web/app/layout.tsx` (`lang="id"`, metadata), semua `app/**/page.tsx`, `components/*.tsx`,
   `lib/view.ts` (label status/risiko/deadline/presisi/cek sesuai glosarium), `lib/auth.ts` / `components/auth-form.tsx`
-  (pemetaan pesan error Supabase umum ke Bahasa Indonesia; pesan yang gak dikenali → "Terjadi kesalahan. Coba lagi.")
+  (pemetaan pesan error login Supabase ke Bahasa Indonesia; pesan yang gak dikenali → "Terjadi kesalahan. Coba lagi.")
 - Modify: `apps/web/e2e/*.spec.ts`, `apps/web/test/**` (assertion teks)
 - Test: unit + e2e yang ada
 
 **Interfaces:**
 - `copy.ts` mengekspor objek per area (`list`, `detail`, `auth`, `watchlist`, `wallets`, `settings`, `unsubscribe`,
-  `header`, `errors`) dengan string dan fungsi kecil untuk teks berangka (mis. `list.summary(n, m)`).
-- Pemetaan error auth minimal: invalid login credentials, email not confirmed, user already registered, password terlalu
-  lemah/pendek, rate limit, error sending email.
+  `header`, `landing`, `errors`) dengan string dan fungsi kecil untuk teks berangka (mis. `list.summary(n, m)`).
+- Pemetaan error auth minimal (cuma login yang tersisa setelah Plan 7): invalid login credentials, rate limit,
+  error jaringan.
 
 - [ ] **Step 1:** ubah assertion unit + e2e ke Bahasa Indonesia (gagal) → **Step 2:** `pnpm --filter web test` FAIL →
   **Step 3:** pindahkan string ke `copy.ts` dan terjemahkan → **Step 4:**
@@ -109,14 +105,14 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 ### Task 3: View `curated_list` + query
 
 **Files:**
-- Create: `supabase/migrations/0010_curated_list.sql`, `supabase/tests/curated_list.test.sql`
+- Create: `supabase/migrations/0011_curated_list.sql`, `supabase/tests/curated_list.test.sql`
 - Modify: `apps/web/lib/queries.ts`, `apps/web/lib/view.ts`
 - Test: `apps/web/test/queries.test.ts` (atau file test query yang ada)
 
 **Interfaces:**
 - Produces (SQL): `curated_list` (security_invoker) = kolom `project_list` + `tab`, `worth_level`, `curated_at`, dan
   `signals` (jsonb array `{kind, value, verified}` dari `project_signals`), cuma baris yang curation terbarunya
-  (`computed_at desc, seq desc`) `passed = true`. `grant select` ke anon, authenticated.
+  (`computed_at desc, seq desc`) `passed = true`. `grant select` ke **authenticated saja** (keputusan #33).
 - Produces (TS):
   - `listCurated(db, tab: Tab, f: ListFilters & { worth?: WorthLevel[] }, page: number): Promise<CuratedPage>`;
     urutan: worth (`high`→`insufficient_data`), sinyal terkuat (vc_backer → tvl → coingecko_listed → curated_source),
@@ -126,7 +122,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
   - `parseTab(v: string | undefined): Tab` (default `live_now`).
 
 - [ ] **Step 1: Test yang gagal** — pgTAP: project dengan curation terbaru `passed=false` gak muncul walau yang lama
-  `passed=true`; project tanpa curation gak muncul; anon bisa select. Vitest: `parseTab("x") === "live_now"`; urutan
+  `passed=true`; project tanpa curation gak muncul; authenticated bisa select, anon ditolak. Vitest: `parseTab("x") === "live_now"`; urutan
   `listCurated` sesuai aturan (mock rows).
 - [ ] **Step 2–4:** gagal → implementasi → pgTAP + `pnpm --filter web test` lulus.
 - [ ] **Step 5: Commit** — `git commit -m "feat(web): curated_list view and queries"`
@@ -136,7 +132,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 ### Task 4: Halaman list: dua tab, badge, ringkasan
 
 **Files:**
-- Modify: `apps/web/app/(public)/page.tsx`, `apps/web/components/ProjectRow.tsx`
+- Modify: `apps/web/app/(app)/airdrops/page.tsx`, `apps/web/components/ProjectRow.tsx`
 - Create: `apps/web/components/SignalBadges.tsx`, `apps/web/components/WorthBadge.tsx`, `apps/web/components/TabNav.tsx`
 - Test: `apps/web/test/components/*.test.tsx`, `apps/web/e2e/projects.spec.ts`
 
@@ -159,7 +155,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 ### Task 5: Halaman project baru
 
 **Files:**
-- Modify: `apps/web/app/(public)/projects/[slug]/page.tsx`, `apps/web/components/ProjectDetailView.tsx`,
+- Modify: `apps/web/app/(app)/projects/[slug]/page.tsx`, `apps/web/components/ProjectDetailView.tsx`,
   `apps/web/lib/queries.ts` (`getProjectDetail` diperluas)
 - Create: `apps/web/components/detail/AiDecision.tsx`, `Contradictions.tsx`, `StepsList.tsx`, `EffortBox.tsx`,
   `WhyListed.tsx`, `SafetyBox.tsx`, `LatestUpdate.tsx`
@@ -191,7 +187,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 ### Task 6: Project yang gak lolos: peringatan, `noindex`, watchlist
 
 **Files:**
-- Modify: `apps/web/app/(public)/projects/[slug]/page.tsx` (`generateMetadata` → `robots: { index: false }` kalau gak
+- Modify: `apps/web/app/(app)/projects/[slug]/page.tsx` (`generateMetadata` → `robots: { index: false }` kalau gak
   lolos), `ProjectDetailView.tsx`, `apps/web/app/(app)/watchlist/page.tsx`, `apps/web/lib/watchlist.ts`
 - Create: `apps/web/components/NotCuratedBanner.tsx`
 - Test: komponen + `apps/web/e2e/projects.spec.ts`, `apps/web/e2e/watchlist.spec.ts`
@@ -208,9 +204,36 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 
 ---
 
+### Task 7: "Perubahan sejak kunjungan terakhir" (pengganti email)
+
+**Files:**
+- Modify: `supabase/migrations/0011_curated_list.sql` (tambah `profiles.changes_seen_at timestamptz` + `grant update (changes_seen_at) on profiles to authenticated`)
+- Create: `apps/web/components/ChangesSinceLastVisit.tsx`, `apps/web/app/(app)/airdrops/actions.ts` (`markChangesSeen`)
+- Modify: `apps/web/lib/queries.ts`, `apps/web/app/(app)/airdrops/page.tsx`, `apps/web/app/(app)/watchlist/page.tsx`
+- Test: komponen, `supabase/tests/curated_list.test.sql`, e2e `watchlist.spec.ts`
+
+**Interfaces:**
+- `listChangesSince(db, since: Date | null, now: Date): Promise<ChangeItem[]>` — untuk project di watchlist user:
+  `project_changes` (`status`, `risk_level`, `curated`) setelah `since` (atau 7 hari terakhir kalau `null`), plus
+  deadline `claim`/`snapshot`/`campaign_end` dalam 48 jam (exact/approximate). Maksimal 20 item, terbaru dulu.
+  `project_changes` perlu baca member: policy `for select to authenticated` hanya untuk `project_id` yang ada di
+  watchlist user (pakai `exists (select 1 from watchlist w where w.user_id = auth.uid() and w.project_id = project_changes.project_id)`).
+- Teks: "Keluar dari daftar kurasi", "Masuk daftar kurasi", "Status berubah: {lama} → {baru}", "Risiko berubah:
+  {lama} → {baru}", "Deadline {jenis} dalam 48 jam ({tanggal})". Tombol "Tandai sudah dibaca" → `markChangesSeen`
+  set `changes_seen_at = now()`.
+- Ditampilkan di atas list `/airdrops` dan di watchlist; disembunyikan kalau kosong.
+
+- [ ] **Step 1: Test yang gagal** — pgTAP: user A gak bisa membaca `project_changes` project yang cuma ada di watchlist
+  user B; anon gak bisa sama sekali. e2e: project di watchlist berubah `curated` true→false → muncul "Keluar dari daftar
+  kurasi"; setelah "Tandai sudah dibaca" hilang.
+- [ ] **Step 2–4:** gagal → implementasi → pgTAP + test + e2e lulus.
+- [ ] **Step 5: Commit** — `git commit -m "feat(web): changes since last visit for watched projects"`
+
+---
+
 ## Selesai kalau
 
 - `pnpm -r test`, typecheck, pgTAP, dan seluruh e2e lulus dengan teks Bahasa Indonesia.
 - Di produksi (setelah satu run dengan Plan 5): tab "Bisa digarap sekarang" cuma berisi project lolos kurasi, ringkasan
   angka sesuai `pipeline_runs.stats`, halaman project lolos menampilkan Analisis AI berlabel.
-- Paywall belum ada di plan ini (sub-proyek #2); semua halaman masih bisa dibuka siapa saja.
+- Akses tetap khusus member (Plan 7).

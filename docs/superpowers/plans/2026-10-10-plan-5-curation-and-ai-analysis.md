@@ -18,7 +18,7 @@ gak + level Worth it) yang tersimpan dan bisa diukur terhadap gerbang kualitas.
 
 **Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` (rev. 3: §4.1–4.5, §5.1–5.3, §6, §9, §12, §13)
 
-**Bergantung ke:** Plan 4 (ekstraksi v3, `ProjectForScoring.steps/facts`, `ModelConfig.provider`, `loadProviders`,
+**Bergantung ke:** Plan 7 (tanpa digest, RLS member-only), Plan 4 (ekstraksi v3, `ProjectForScoring.steps/facts`, `ModelConfig.provider`, `loadProviders`,
 stats cakupan, set uji scam). Plan 6 bergantung ke plan ini (tabel `project_signals`, `curations`, `ai_analyses`).
 
 ## Global Constraints
@@ -35,7 +35,7 @@ stats cakupan, set uji scam). Plan 6 bergantung ke plan ini (tabel `project_sign
   diperdagangkan = +2, > 1 sumber independen = +1, modal high/low/none = −2/−1/0.
 - Level worth: total ≥ 4 `high`, 2–3 `medium`, ≤ 1 `low`; `insufficient_data` kalau satu-satunya sinyal potensi
   `curated_source` dan `capital_required = unknown`.
-- Migrasi baru: `0009_curation.sql`. Stats baru tetap angka.
+- Migrasi baru: `0010_curation.sql`. Stats baru tetap angka.
 - Batas analisis AI per run: `analyzeBudgetMinutes = 10`, `maxAnalysesPerRun = 60`; analisis di-skip (pakai cache) kalau
   hash masukan sama.
 
@@ -99,7 +99,7 @@ it("only applies to live, announced and speculative", () => {
 ### Task 2: Model data kurasi (migrasi 0009) + repo
 
 **Files:**
-- Create: `supabase/migrations/0009_curation.sql`, `supabase/tests/curation.test.sql`
+- Create: `supabase/migrations/0010_curation.sql`, `supabase/tests/curation.test.sql`
 - Modify: `pipeline/src/store/repo.ts`, `memory-repo.ts`, `supabase-repo.ts`
 - Test: `pipeline/test/memory-repo.test.ts`, `pipeline/test/supabase-repo.test.ts`
 
@@ -112,8 +112,8 @@ it("only applies to live, announced and speculative", () => {
   - `ai_analyses (id uuid pk, project_id fk cascade, kind text check in ('analyst','scam','contradictions'), input_hash text not null, result jsonb not null, model text not null, served_model text, prompt_version text not null, created_at timestamptz not null default now(), seq bigint generated always as identity)`.
   - `curations (id uuid pk, project_id fk cascade, passed boolean not null, worth_level text check in ('high','medium','low','insufficient_data'), tab text check in ('live_now','early_bets') null, reasons jsonb not null default '[]', coverage jsonb not null default '{}', computed_at timestamptz not null, seq bigint generated always as identity)`.
   - `project_changes.field` check diperluas jadi `('status','risk_level','curated')`.
-  - Baca publik (`for select to anon, authenticated using (true)`) untuk `project_signals`, `ai_analyses`, `curations`;
-    revoke insert/update/delete/truncate dari anon/authenticated (pola 0001).
+  - Baca **member saja** (`for select to authenticated using (true)`, keputusan #33) untuk `project_signals`,
+    `ai_analyses`, `curations`; `revoke all` dari anon; revoke insert/update/delete/truncate dari authenticated.
 - Produces (repo):
   - `replaceSignals(projectId: string, signals: NewSignal[], at: Date): Promise<void>` (hapus semua sinyal project, tulis ulang)
   - `listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }>`; `saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void>`
@@ -124,7 +124,8 @@ it("only applies to live, announced and speculative", () => {
     (tipe core `WorthLevel`, `Tab`, `CurationReason` didefinisikan di Task 8; di task ini dideklarasikan lebih dulu di
     `packages/core/src/curate/types.ts` dan diekspor).
 
-- [ ] **Step 1: Test yang gagal** — pgTAP: tabel + RLS (anon bisa select `curations`, gak bisa select `vc_portfolios`,
+- [ ] **Step 1: Test yang gagal** — pgTAP: tabel + RLS (authenticated bisa select `curations`, anon gak bisa select
+  tabel baru mana pun, authenticated gak bisa select `vc_portfolios`,
   gak bisa insert ke semua tabel baru), check `claimed_backer` verified=true ditolak (`23514`), `project_changes.field = 'curated'` diterima.
   Vitest repo: `saveCuration` dua kali (`passed` true → false) menulis satu `project_changes` `curated` "true"→"false";
   `replaceSignals` mengganti semua sinyal lama.
@@ -388,21 +389,19 @@ it("never raises the level because of the AI verdict", () => {
 
 ---
 
-### Task 9: Integrasi score → curations, `project_changes` curated, digest
+### Task 9: Integrasi score → curations, `project_changes` curated
 
 **Files:**
 - Modify: `pipeline/src/steps/score.ts`, `pipeline/src/stats.ts`, `pipeline/src/store/supabase-repo.ts` + `memory-repo.ts`
-  (`getDigestContext` ikut membaca perubahan `curated`), `packages/core/src/notify/digest.ts` (perubahan `curated`
-  masuk bagian "perubahan")
-- Test: `pipeline/test/run.test.ts`, `packages/core/test/digest.test.ts`
+- Test: `pipeline/test/run.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1–8.
 - Produces: per project aktif setelah `assessRisk`: `curate` + `worth` (worth dihitung juga untuk yang gagal, untuk
   halaman detail) → `saveCuration`. `curate`/`worth`/`saveCuration` yang throw untuk satu project dihitung `score_failed`
   dan project lain tetap diproses (spec §9). Stats: `curation_checked`, `curation_passed`, `curation_hidden_insufficient_checks`.
-  Digest: perubahan `curated` true→false tampil sebagai item perubahan (copy Bahasa Indonesia ditulis di Plan 6; di sini
-  cukup data + kode `curated_removed` / `curated_added`).
+  Perubahan `curated` dipakai halaman web "Perubahan sejak kunjungan terakhir" (Plan 6 Task 7); gak ada email
+  (Plan 7 menghapus digest).
 
 - [ ] **Step 1: Test yang gagal**
 
@@ -413,11 +412,10 @@ it("saves a curation per active project and counts passes", async () => {
   expect(repo.curations.length).toBe(stats.assessed);
 });
 it("logs a curated change when a watched project drops out", async () => { /* run 2 with high risk → project_changes curated true→false */ });
-it("includes curated_removed in the digest changes", () => { /* buildDigest */ });
 ```
 
 - [ ] **Step 2–4:** gagal → implementasi → `pnpm -r test && pnpm -r typecheck` lulus.
-- [ ] **Step 5: Commit** — `git commit -m "feat(score): save curations, log curated changes, include them in the digest"`
+- [ ] **Step 5: Commit** — `git commit -m "feat(score): save curations and log curated changes"`
 
 ---
 
