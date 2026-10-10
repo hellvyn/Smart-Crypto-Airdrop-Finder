@@ -50,6 +50,19 @@ describe("legacyListRedirect", () => {
     expect(legacyListRedirect("/", "?deleted=1")).toBeNull();
   });
 
+  it("keeps the landing for a query that is not a v1 list filter (click ids and campaign tags)", () => {
+    expect(legacyListRedirect("/", "?fbclid=x")).toBeNull();
+    expect(legacyListRedirect("/", "?utm_source=t")).toBeNull();
+    expect(legacyListRedirect("/", "?gclid=a&ttclid=b&utm_medium=c")).toBeNull();
+  });
+
+  it("still sends a v1 list link that also carries a campaign tag to /airdrops, query intact", () => {
+    expect(legacyListRedirect("/", "?status=live&utm_source=t")).toBe("/airdrops?status=live&utm_source=t");
+    expect(legacyListRedirect("/", "?fbclid=x&page=2")).toBe("/airdrops?fbclid=x&page=2");
+    expect(legacyListRedirect("/", "?risk=high")).toBe("/airdrops?risk=high");
+    expect(legacyListRedirect("/", "?chain=base")).toBe("/airdrops?chain=base");
+  });
+
   it("only applies to the root path", () => {
     expect(legacyListRedirect("/airdrops", "?status=live")).toBeNull();
     expect(legacyListRedirect("/projects/ink", "?status=live")).toBeNull();
@@ -75,6 +88,7 @@ describe("proxyRedirect", () => {
     expect(proxyRedirect({ ...get, pathname: "/", search: "?status=live", signedIn: false })).toBe("/airdrops?status=live");
     expect(proxyRedirect({ ...get, pathname: "/", search: "?status=live", signedIn: true })).toBe("/airdrops?status=live");
     expect(proxyRedirect({ ...get, pathname: "/", search: "", signedIn: false })).toBeNull();
+    expect(proxyRedirect({ ...get, pathname: "/", search: "?fbclid=x", signedIn: false })).toBeNull();
     expect(proxyRedirect({ ...get, pathname: "/airdrops", search: "?status=live", signedIn: false })).toBeNull();
   });
 });

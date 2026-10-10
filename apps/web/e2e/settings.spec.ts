@@ -136,3 +136,40 @@ test("deleting the account needs DELETE typed exactly, then removes the account 
     await db.from("projects").delete().eq("id", project.data.id);
   }
 });
+
+async function logInAs(page: Page, email: string, password: string): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Log in" }).click();
+}
+
+test("a member changes their own password after re-entering the current one", async ({ page, context }) => {
+  const { email } = await signedInUser(page, "s-pw");
+  const NEW_PASSWORD = "battery-staple-2";
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Ganti password" })).toBeVisible();
+
+  // A wrong current password: refused, still signed in, nothing changed.
+  await page.getByLabel("Password sekarang").fill("not-the-password");
+  await page.getByLabel("Password baru", { exact: true }).fill(NEW_PASSWORD);
+  await page.getByLabel("Ulangi password baru").fill(NEW_PASSWORD);
+  await page.getByRole("button", { name: "Ganti password" }).click();
+  await expect(page.getByText("Password sekarang salah.")).toBeVisible();
+  await expect(page).toHaveURL(/\/settings\?error=wrong_password$/);
+
+  // The right one: changed.
+  await page.getByLabel("Password sekarang").fill(PASSWORD);
+  await page.getByLabel("Password baru", { exact: true }).fill(NEW_PASSWORD);
+  await page.getByLabel("Ulangi password baru").fill(NEW_PASSWORD);
+  await page.getByRole("button", { name: "Ganti password" }).click();
+  await expect(page.getByText("Password udah diganti.")).toBeVisible();
+
+  // The old password no longer logs in; the new one does.
+  await context.clearCookies();
+  await logInAs(page, email, PASSWORD);
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page).toHaveURL(/\/login/);
+  await logInAs(page, email, NEW_PASSWORD);
+  await expect(page).toHaveURL(/\/watchlist$/);
+});

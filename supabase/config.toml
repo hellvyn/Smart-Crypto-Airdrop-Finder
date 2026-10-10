@@ -228,7 +228,8 @@ double_confirm_changes = true
 # email_confirm: true, and nothing sends email.
 enable_confirmations = false
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
-# Off: there is no password change flow in the app, and the admin sets passwords.
+# Off: the reauthentication it needs is sent by email, and nothing sends email. Members change their password in
+# /settings, which re-checks the current password first; the admin sets the first password and resets forgotten ones.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"

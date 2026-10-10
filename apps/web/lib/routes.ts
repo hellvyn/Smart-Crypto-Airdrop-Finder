@@ -21,13 +21,18 @@ export function loginRedirectPath(pathname: string, search: string): string {
   return `/login?${new URLSearchParams({ next: `${pathname}${search}` }).toString()}`;
 }
 
+/** Query keys of the v1 list, which lived at `/`. */
+const V1_LIST_PARAMS = ["status", "risk", "chain", "page"] as const;
+
 /**
- * The v1 list lived at `/`, so its bookmarks (`/?status=live`) go to the list with the same query. `/` without a query
- * is the landing page, and so is `/?deleted=1` (the notice after deleting your account).
+ * The v1 list lived at `/`, so its bookmarks (`/?status=live`) go to the list with the same query. Any other query
+ * keeps the landing page: `/?deleted=1` (the notice after deleting your account) and the click ids and campaign tags
+ * that social and ad platforms add to shared links (`fbclid`, `gclid`, `utm_*`).
  */
 export function legacyListRedirect(pathname: string, search: string): string | null {
-  if (pathname !== "/" || search === "" || search === "?") return null;
-  if (new URLSearchParams(search).has("deleted")) return null;
+  if (pathname !== "/") return null;
+  const params = new URLSearchParams(search);
+  if (!V1_LIST_PARAMS.some((key) => params.has(key))) return null;
   return `${LIST_PATH}${search}`;
 }
 

@@ -18,6 +18,20 @@ export function isSettingsError(v: unknown): v is SettingsError {
   return typeof v === "string" && Object.prototype.hasOwnProperty.call(SETTINGS_ERROR_MESSAGES, v);
 }
 
+/** Why a password change was refused. Any other Auth failure is thrown. */
+export type PasswordError = "wrong_password" | "password_mismatch" | "weak_password" | "same_password";
+
+export const PASSWORD_ERROR_MESSAGES: Record<PasswordError, string> = {
+  wrong_password: "Password sekarang salah.",
+  password_mismatch: "Password baru dan ulangannya beda.",
+  weak_password: "Password baru terlalu pendek atau terlalu lemah.",
+  same_password: "Password baru harus beda dari password sekarang.",
+};
+
+export function isPasswordError(v: unknown): v is PasswordError {
+  return typeof v === "string" && Object.prototype.hasOwnProperty.call(PASSWORD_ERROR_MESSAGES, v);
+}
+
 /** What the user must type, exactly, to confirm deleting their account. */
 export const DELETE_CONFIRMATION = "DELETE";
 export const CONFIRMATION_ERROR_MESSAGE = "Type DELETE to confirm.";
