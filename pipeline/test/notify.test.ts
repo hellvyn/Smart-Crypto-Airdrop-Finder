@@ -406,24 +406,42 @@ describe("MemoryRepo digest data", () => {
     expect(sender.sent[0]?.text).toContain("TWICE: status Announced → Ended");
   });
 
-  it("lists projects first seen within the window, oldest first, with their latest risk", async () => {
+  it("lists non-lookalike projects first seen within the window, newest first, capped, with their latest risk", async () => {
     const repo = new MemoryRepo();
     await repo.createProject(np("old"), new Date(NOW.getTime() - 24 * HOUR - 1));
+    await repo.createProject(np("future"), new Date(NOW.getTime() + 1));
     const b = await repo.createProject(np("b-new"), new Date(NOW.getTime() - 2 * HOUR));
     const a = await repo.createProject(np("a-new"), new Date(NOW.getTime() - 3 * HOUR));
     const c = await repo.createProject(np("c-new"), new Date(NOW.getTime() - 24 * HOUR));
     const d = await repo.createProject(np("d-new"), new Date(NOW.getTime() - 2 * HOUR));
+    const e = await repo.createProject(np("e-now"), NOW);
+    // A lookalike of a known project is never advertised as a new airdrop.
+    await repo.createProject(np("fake", { lookalikeOf: a.id }), new Date(NOW.getTime() - HOUR));
     await repo.saveRiskAssessment(a.id, assessment("low"), new Date(NOW.getTime() - HOUR));
     await repo.saveRiskAssessment(a.id, assessment("critical"), NOW);
-    const list = await repo.listNewProjects(24, NOW);
+    const list = await repo.listNewProjects(24, NOW, 10);
     // Same first_seen: id order.
     const [first, second] = [b, d].sort((x, y) => (x.id < y.id ? -1 : 1));
     expect(list.map((p) => [p.slug, p.riskLevel])).toEqual([
-      ["c-new", null],
-      ["a-new", "critical"],
+      ["e-now", null],
       [first?.slug, null],
       [second?.slug, null],
+      ["a-new", "critical"],
+      ["c-new", null],
     ]);
-    expect(list[0]).toEqual({ id: c.id, slug: "c-new", name: "C-NEW", status: "announced", riskLevel: null, firstSeen: c.firstSeen });
+    expect(list[4]).toEqual({ id: c.id, slug: "c-new", name: "C-NEW", status: "announced", riskLevel: null, firstSeen: c.firstSeen });
+    expect((await repo.listNewProjects(24, NOW, 2)).map((p) => p.id)).toEqual([e.id, first?.id]);
+  });
+
+  it("puts at most 10 new airdrops, newest first, in a digest", async () => {
+    const repo = new MemoryRepo();
+    repo.seedTestUser({ email: "in@example.test", newAirdropsOptIn: true });
+    for (let i = 0; i < 12; i++) {
+      await repo.createProject(np(`n${String(i).padStart(2, "0")}`), new Date(NOW.getTime() - (i + 1) * 60_000));
+    }
+    const sender = fakeSender();
+    await notifyStep(deps(repo, sender), EMAIL);
+    const listed = (sender.sent[0]?.text ?? "").match(/^- N\d\d/gm) ?? [];
+    expect(listed).toEqual(["- N00", "- N01", "- N02", "- N03", "- N04", "- N05", "- N06", "- N07", "- N08", "- N09"]);
   });
 });

@@ -691,18 +691,23 @@ export class SupabaseRepo implements PipelineRepo {
     };
   }
 
-  async listNewProjects(sinceHours: number, now: Date): Promise<DigestProject[]> {
+  async listNewProjects(sinceHours: number, now: Date, limit: number): Promise<DigestProject[]> {
     const cutoff = new Date(now.getTime() - sinceHours * HOUR_MS).toISOString();
-    const rows = await this.fetchAll<DigestProjectDb>("listNewProjects", (from, to) =>
-      this.db
+    // uuid order in Postgres is the same as MemoryRepo's code-unit order of the lowercase text form.
+    const rows = check(
+      "listNewProjects",
+      await this.db
         .from("projects")
         .select(DIGEST_PROJECT_COLUMNS)
+        .is("lookalike_of", null)
         .gte("first_seen", cutoff)
-        .order("first_seen")
+        .lte("first_seen", now.toISOString())
+        .order("first_seen", { ascending: false })
         .order("id")
-        .range(from, to),
+        .limit(limit)
+        .returns<DigestProjectDb[]>(),
     );
-    return this.toDigestProjects(rows);
+    return this.toDigestProjects(rows ?? []);
   }
 
   async countDigestsSent(refDate: string): Promise<number> {

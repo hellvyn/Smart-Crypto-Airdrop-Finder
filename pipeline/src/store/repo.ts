@@ -136,8 +136,11 @@ export interface PipelineRepo {
    * 24 hours before `now` when `since` is null (oldest first; insertion order breaks ties). `lastDigestAt` is `since`.
    */
   getDigestContext(userId: string, since: Date | null, now: Date): Promise<DigestContext>;
-  /** Projects with `first_seen` at or after `now - sinceHours`, oldest first then by id, with their latest risk level. */
-  listNewProjects(sinceHours: number, now: Date): Promise<DigestProject[]>;
+  /**
+   * Projects with `first_seen` between `now - sinceHours` and `now` (inclusive) that are not a lookalike of another
+   * project (`lookalike_of` is null), newest first then by id, at most `limit`, with their latest risk level.
+   */
+  listNewProjects(sinceHours: number, now: Date, limit: number): Promise<DigestProject[]>;
   /** Digest log rows for this UTC date (`YYYY-MM-DD`), whoever they belong to. */
   countDigestsSent(refDate: string): Promise<number>;
   hasDigest(userId: string, refDate: string): Promise<boolean>;

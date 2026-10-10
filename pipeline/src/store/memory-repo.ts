@@ -423,11 +423,12 @@ export class MemoryRepo implements PipelineRepo {
     return { lastDigestAt: since, watched, deadlines, changes };
   }
 
-  async listNewProjects(sinceHours: number, now: Date): Promise<DigestProject[]> {
+  async listNewProjects(sinceHours: number, now: Date, limit: number): Promise<DigestProject[]> {
     const cutoff = now.getTime() - sinceHours * HOUR_MS;
     const projects = [...this.projects.values()]
-      .filter((p) => p.firstSeen.getTime() >= cutoff)
-      .sort((a, b) => a.firstSeen.getTime() - b.firstSeen.getTime() || compareText(a.id, b.id));
+      .filter((p) => p.lookalikeOf === null && p.firstSeen.getTime() >= cutoff && p.firstSeen.getTime() <= now.getTime())
+      .sort((a, b) => b.firstSeen.getTime() - a.firstSeen.getTime() || compareText(a.id, b.id))
+      .slice(0, limit);
     const out: DigestProject[] = [];
     for (const p of projects) out.push(await this.digestProject(p));
     return out;

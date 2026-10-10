@@ -251,16 +251,37 @@ async function main(): Promise<void> {
   assert.equal(ctxNull.changes.length, 2);
   assert.deepEqual((await repo.getDigestContext(unconfirmed, null, T0)).watched, []);
 
-  // New projects: first_seen at or after now - 24h, with latest risk.
-  const fresh = (await repo.listNewProjects(24, new Date(T0.getTime() + 3600_000))).filter((x) => [p.id, twin.id].includes(x.id));
+  // New projects: first_seen within [now - 24h, now], lookalikes left out, with latest risk.
+  const fresh = (await repo.listNewProjects(24, new Date(T0.getTime() + 3600_000), 1000)).filter((x) => [p.id, twin.id].includes(x.id));
   assert.deepEqual(
     fresh.map((x) => [x.id, x.riskLevel]),
-    [p.id, twin.id].sort().map((id) => [id, id === p.id ? "low" : null]),
+    [[p.id, "low"]],
   );
   assert.equal(
-    (await repo.listNewProjects(24, new Date(T0.getTime() + 25 * 3600_000))).some((x) => x.id === p.id),
+    (await repo.listNewProjects(24, new Date(T0.getTime() + 25 * 3600_000), 1000)).some((x) => x.id === p.id),
     false,
   );
+  // Newest first, id breaks ties, capped. A random two-day slot in the 1900s keeps other rows out of the window.
+  const slot = new Date(Date.UTC(1900, 0, 2) + Math.floor(Math.random() * 18_000) * 2 * day);
+  const newOnes: { id: string; at: number }[] = [];
+  for (let i = 0; i < 12; i += 1) {
+    const at = slot.getTime() - (i === 4 ? 3 : i) * 60_000; // n3 and n4 share a first_seen
+    const row = await repo.createProject(
+      { slug: `smoke-${suffix}-n${i}`, name: `New ${i}`, nameKey: `smokenew${suffix}${i}`, tokenSymbol: null, chains: [], officialDomains: [], status: "announced", conflict: false, lookalikeOf: null },
+      new Date(at),
+    );
+    newOnes.push({ id: row.id, at });
+  }
+  await repo.createProject(
+    { slug: `smoke-${suffix}-nfake`, name: "New 0", nameKey: `smokenew${suffix}0`, tokenSymbol: null, chains: [], officialDomains: [], status: "announced", conflict: false, lookalikeOf: newOnes[0]!.id },
+    slot,
+  );
+  await repo.saveRiskAssessment(newOnes[1]!.id, assessment("high"), slot);
+  const expected = [...newOnes].sort((x, y) => y.at - x.at || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0)).slice(0, 10);
+  const listed = await repo.listNewProjects(24, slot, 10);
+  assert.deepEqual(listed.map((x) => x.id), expected.map((x) => x.id));
+  assert.deepEqual(listed.map((x) => x.riskLevel), expected.map((x) => (x.id === newOnes[1]!.id ? "high" : null)));
+  assert.deepEqual((await repo.listNewProjects(24, slot, 2)).map((x) => x.id), expected.slice(0, 2).map((x) => x.id));
 
   // notification_log (service-role only table).
   const refDate = "2026-10-10";

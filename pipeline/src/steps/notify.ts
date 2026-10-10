@@ -8,8 +8,10 @@ import type { DigestRecipient, PipelineRepo, RunStats } from "../store/repo.js";
 
 /** Maximum parallel send requests. */
 const SEND_CONCURRENCY = 5;
-/** "New airdrops today" = first seen in the last 24 hours. */
+/** "New airdrops today" = first seen in the last 24 hours, not a lookalike, newest first. */
 const NEW_PROJECT_HOURS = 24;
+/** At most this many new airdrops per digest. */
+const NEW_PROJECT_LIMIT = 10;
 
 export interface NotifyStats extends RunStats {
   digests_sent: number;
@@ -64,7 +66,7 @@ export async function notifyStep(deps: NotifyDeps, cfg: EmailConfig): Promise<No
   const recipients = await repo.listDigestRecipients();
   const sentToday = await repo.countDigestsSent(refDate);
   let newProjects: DigestProject[] | null = null;
-  if (recipients.some((r) => r.newAirdropsOptIn)) newProjects = await repo.listNewProjects(NEW_PROJECT_HOURS, now);
+  if (recipients.some((r) => r.newAirdropsOptIn)) newProjects = await repo.listNewProjects(NEW_PROJECT_HOURS, now, NEW_PROJECT_LIMIT);
 
   const candidates: { recipient: DigestRecipient; digest: Digest }[] = [];
   for (const recipient of recipients) {
