@@ -623,7 +623,3 @@ blockquote {
   background: var(--ink);
   color: var(--ground);
 }
-
-.ui-button:hover {
-  color: inherit;
-}

@@ -26,6 +26,22 @@ test("page is Indonesian, titled AirdropIQ, and the visitor header offers Login"
   await expect(header.getByRole("link", { name: "Login" })).toBeVisible();
 });
 
+test("the dark Login button keeps readable text on hover", async ({ page }) => {
+  await page.goto("/");
+  const login = page.getByRole("banner").getByRole("link", { name: "Login" });
+  const colors = () =>
+    login.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { text: style.color, fill: style.backgroundColor };
+    });
+  const resting = await colors();
+  expect(resting.text).not.toBe(resting.fill);
+  await login.hover();
+  const hovered = await colors();
+  expect(hovered.fill).toBe(resting.fill);
+  expect(hovered.text).toBe(resting.text);
+});
+
 test("the header never links to signup (#46)", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("banner").locator('a[href*="signup"]')).toHaveCount(0);
