@@ -1,8 +1,8 @@
 # LLM extraction eval
 
 Scores the extraction prompt and the model fallback chain against hand-labelled texts
-(`ground-truth.json`, committed: it is our own labelling). Today 8 cases are labelled; the quality gates of spec
-section 12 (G4 to G6) need at least 30, see "Labelling the new cases" below.
+(`ground-truth.json`, committed: it is our own labelling). 33 cases are labelled (2026-10-10), which meets the
+"at least 30" of spec section 12 (G4 to G6); see "Labelling the new cases" below.
 
 ## Filling `cases/`
 
@@ -31,8 +31,17 @@ For each case id in `ground-truth.json` create two files:
   `aio_*`, one Telegram post for `tg_*`).
 - `cases/<id>.meta.json`: `{"source": "<url>", "published": "<ISO date>" | null}`.
 
-The original case ids (texts are not in the repo; copy them from the sources by hand): `aio_deepbook`,
-`aio_variational`, `aio_abstract`, `aio_raycash`, `tg_flop`, `tg_ink`, `tg_ledger_negative`, `tg_weekly_radar`.
+Where each labelled case comes from (texts are not in the repo):
+
+- `aio_<slug>`: the airdrops.io page `https://airdrops.io/<slug with - for _>/`, as the pipeline's own collector
+  (`collectAirdropsIo`, including the resolved visit links and the Overview block) produced it.
+- `tg_<n>`: post `https://t.me/airdrops_io/<n>`, one post per case, as `collectTelegram` / `parseTelegramPage` parse it.
+- The four original Telegram cases: `tg_flop` = post 7927, `tg_ink` = post 7921, `tg_ledger_negative` = post 7929,
+  `tg_weekly_radar` = post 7932 (weekly radar Oct 3 to Oct 9). The original texts were never committed, so these
+  posts were matched to the existing labels by content on 2026-10-10 (see "Label yang perlu review owner").
+
+Pages change: a later fetch of an `aio_*` page can differ from the text the labels were made from (2026-10-10). If a
+label no longer fits the current page, relabel it from the new text rather than keeping the old one.
 
 ## Running
 
@@ -92,7 +101,10 @@ besides `project`, `status`, `token` and `chain`:
 
 - `deadlines`: every deadline the text states, `kind` one of `claim`, `snapshot`, `campaign_end`, `withdraw_funds`,
   `tge`, `other`; `date` is `YYYY-MM-DD`, or `null` when the text names the event but gives no date. Leave the field
-  out (not `[]`) for a case you did not label, so it does not count toward the gate.
+  out (not `[]`) for a case you did not label, so it does not count toward the gate. `[]` means "labelled, the text
+  states no such deadline". Not labelled on purpose (the model may still list them; extra deadlines cost nothing):
+  dates that only name a period ("Q4 2026", "end of H1 2027", "end of October"), past facts that are not a deadline
+  (launch, funding or announcement dates), and side events whose kind is a guess (NFT mints, whitelist windows).
 - `officialDomains`: registrable domains (`example.xyz`, not `app.example.xyz`) of the project's own site, app and
   docs as the text links them. Never `airdrops.io`, `alphadrops.net`, or intermediary hosts (`t.me`, `linktr.ee`,
   `galxe.com`, `zealy.io`, `layer3.xyz`, `bit.ly`, `t.co`).
@@ -100,16 +112,44 @@ besides `project`, `status`, `token` and `chain`:
 Target mix for the 30 cases: at least 12 airdrops.io pages with status live or announced, at least 5 speculative,
 at least 5 Telegram posts, at least 2 negatives (`kind: "negative"`), plus the radar.
 
-### Status of the labels (what the owner still has to do)
+### Status of the labels
 
-- Labelled today: 8 cases (4 `aio_*`, 3 `tg_*` project or negative cases, 1 radar), 6 of them status-scored.
-- **22 more cases must be added** to reach 30; the case texts must come from the production export above, which
-  needs the production service role key. Nothing in this repository can produce them.
-- The 6 existing project cases have no `deadlines` or `officialDomains` yet. They need those fields added from their
-  texts, or the G5 and official-domain gates cannot be measured.
+Labelled on 2026-10-10 from texts fetched that day: 33 cases.
+
+- 23 airdrops.io pages: 4 original (`aio_deepbook`, `aio_variational`, `aio_abstract`, `aio_raycash`) and 19 new.
+  Of the new ones, 14 are `live` and 5 `speculative`.
+- 10 Telegram posts: the 4 original ones (2 speculative, 1 negative, the radar) and 6 new ones (`tg_7919` ended,
+  `tg_7908`, `tg_7892` and `tg_7928` speculative, `tg_7832` announced, `tg_4899` negative).
+- Every project case carries `deadlines` and `officialDomains` (18 labelled deadlines, 28 labelled domains in total).
+
+The texts were fetched with the pipeline's own collectors (airdrops.io home, `/latest/` and `/speculative/` listings,
+the `airdrops_io` Telegram channel and its search), not with `export-cases.ts`: the production service role key was
+not available. The texts are what the daily job would have stored for the same pages that day.
 
 ### Label yang perlu review owner
 
-Mark every label you are unsure about here (case id and field, one line each) so the owner can check it against
-the source page before the numbers go into spec section 12. Empty until the new cases are labelled; the owner
-reviews all of the new labels anyway (plan prerequisite).
+The owner reviews all of the new labels anyway (plan prerequisite). These are the ones most likely to be wrong:
+
+- `tg_flop`, `tg_ink`, `tg_ledger_negative`, `tg_weekly_radar`: source posts matched to the existing labels by
+  content (7927, 7921, 7929, 7932); confirm these are the posts the labels were made from.
+- `aio_czr` status `live`: the claim window in the text closed on 2026-10-05; `live` is what the text says, without
+  knowing today's date.
+- `aio_perptools` status `live`: the page header says "Airdrop unconfirmed" but the body says the airdrop is
+  confirmed and points convert into $PERP while Season 2 runs. Labelled from the body.
+- `aio_imperial` status `speculative`: the page header says "Airdrop confirmed" but the body says no token or TGE is
+  announced. Labelled from the body.
+- `aio_extended` status `live`: about 30% of EXT is set aside for points holders, but the docs say points carry no
+  guaranteed entitlement. Could be read as `speculative`.
+- `tg_7832` status `announced`: Arthur Hayes "confirmed the schedule" and 20% of supply for the testnet, which has
+  not started yet.
+- `aio_canopy` deadlines `[]`: the text gives "TGE Date: 07.09.26", which is ambiguous (7 Sep or 9 Jul); not labelled.
+- `aio_perptools` deadlines `[]`: "Season 1 balances were snapshotted ... on October 2, 2026" could be a `snapshot`
+  deadline; not labelled.
+- `aio_mint_io` deadlines: only the TGE (2026-10-20); the Mint a Bear whitelist claim closing on 2026-10-27 is an NFT
+  whitelist window and is not labelled.
+- `aio_deepbook` deadline `campaign_end 2026-04-17`: Season 1 end date, a past event; `claim` is `null` because the
+  text only says "30 days after the portal launched".
+- Chains left `null` where the text's chain is not a plain chain name (own chain, "Orderly", "Lighter", "BSC" vs "BNB
+  Chain", Extended's Starknet vs the header's Arbitrum/Ethereum). Chain is not a gate.
+- `aio_acepyr` token `ACEPYR` and `aio_wick` token `WICK`: the text names the ticker of a token that does not exist
+  yet; `token: null` would also be defensible.

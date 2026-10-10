@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { registrableDomain } from "@saf/core";
 import type { DeadlineKind, ExtractionResult } from "@saf/core";
 import { evaluatePass, rawOfficialUrls, rawOfficialUrlsOfOutcome, scoreCase } from "../eval/score.js";
 import type { CaseScore, GroundTruth } from "../eval/score.js";
@@ -185,7 +186,8 @@ describe("scoreCase", () => {
   });
 
   it("does not score deadlines or domains for a project case without those labels", () => {
-    const s = scoreCase("aio_abstract", result([project()]), truth, "", []);
+    const found = result([project({ name: "Zeta", deadlines: [{ kind: "claim", date: "2026-10-05", precision: "exact", text: "Oct 5" }], official_urls: ["https://zeta.xyz/"] })]);
+    const s = scoreCase("c_zeta", found, truthWith({}), TEXT, []);
     expect([s.deadlinesExpected, s.deadlinesMatched, s.officialDomainsExpected, s.officialDomainsMatched]).toEqual([0, 0, 0, 0]);
   });
 
@@ -224,7 +226,12 @@ describe("scoreCase", () => {
 });
 
 describe("evaluatePass", () => {
-  const blank = (caseId: string): CaseScore => scoreCase(caseId, null, truth, "", []);
+  /** A score with every check unset and no deadlines or domains counted, whatever the ground truth labels. */
+  const blank = (caseId: string): CaseScore => ({
+    ...scoreCase(caseId, null, truth, "", []),
+    deadlinesExpected: 0,
+    officialDomainsExpected: 0,
+  });
   /** Ten status-scored project cases with 10 deadlines and 10 official domains, all correct; plus the v1 special cases. */
   const good = (): CaseScore[] => [
     ...Array.from({ length: 10 }, (_, i) => ({
@@ -313,5 +320,44 @@ describe("raw official URLs", () => {
     });
     expect(rawOfficialUrlsOfOutcome([attempt("schema", answer), attempt(null, answer)])).toHaveLength(3);
     expect(rawOfficialUrlsOfOutcome([attempt("schema", answer)])).toEqual([]);
+  });
+});
+
+describe("ground-truth.json labels", () => {
+  const cases = Object.entries(truth.cases);
+  const projects = cases.flatMap(([id, c]) => (c.kind === "project" ? [{ id, ...c }] : []));
+
+  it("labels at least 30 cases in the mix the quality gates need", () => {
+    const aio = projects.filter((p) => p.id.startsWith("aio_"));
+    expect(cases.length).toBeGreaterThanOrEqual(30);
+    expect(aio.filter((p) => p.status === "live" || p.status === "announced").length).toBeGreaterThanOrEqual(12);
+    expect(projects.filter((p) => p.status === "speculative").length).toBeGreaterThanOrEqual(5);
+    expect(cases.filter(([id, c]) => id.startsWith("tg_") && c.kind !== "radar").length).toBeGreaterThanOrEqual(5);
+    expect(cases.filter(([, c]) => c.kind === "negative").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("labels deadlines and official domains on every project case", () => {
+    const unlabelled = projects.filter((p) => p.deadlines === undefined || p.officialDomains === undefined);
+    expect(unlabelled.map((p) => p.id)).toEqual([]);
+  });
+
+  it("writes every labelled deadline with a known kind and a YYYY-MM-DD or null date", () => {
+    const kinds = new Set(["claim", "snapshot", "campaign_end", "withdraw_funds", "tge", "other"]);
+    const bad = projects.flatMap((p) =>
+      (p.deadlines ?? [])
+        .filter((d) => !kinds.has(d.kind) || !(d.date === null || /^\d{4}-\d{2}-\d{2}$/.test(d.date)))
+        .map((d) => `${p.id}: ${d.kind} ${d.date}`),
+    );
+    expect(bad).toEqual([]);
+  });
+
+  it("writes official domains as registrable domains that are not aggregator or intermediary hosts", () => {
+    const excluded = new Set(["airdrops.io", "alphadrops.net", "t.me", "x.com", "linktr.ee", "galxe.com", "zealy.io"]);
+    const bad = projects.flatMap((p) =>
+      (p.officialDomains ?? [])
+        .filter((d) => registrableDomain(`https://${d}/`) !== d || excluded.has(d))
+        .map((d) => `${p.id}: ${d}`),
+    );
+    expect(bad).toEqual([]);
   });
 });
