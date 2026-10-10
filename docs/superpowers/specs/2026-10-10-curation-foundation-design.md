@@ -13,35 +13,43 @@ Label: **[FACT]** dari data/kode/run, **[INFERENCE]** kesimpulan dari bukti, **[
 **Masalah** (dari owner): list v1 terlalu "mentah". Semua orang lihat isi yang sama, info airdrop kurang menarik, dan belum
 ada pembeda antara airdrop yang legit dan yang gak jelas.
 
-**Tujuan produk (keputusan owner):** bikin orang **mau daftar**. Ukuran suksesnya: signup rate. Target user: pemula
-**dan** farmer berpengalaman.
+**Tujuan produk (keputusan owner, direvisi 2026-10-10):** produk **berbayar**. Isi web cuma bisa diakses member yang
+bayar; pengunjung lain cuma lihat landing page + contoh terbatas. Ukuran suksesnya: konversi ke berbayar. Target user:
+pemula **dan** farmer berpengalaman.
 
-**Tujuan sub-proyek #1:** list publik cuma berisi airdrop yang **lolos kurasi**: belum berakhir, risiko low/medium, dan
+**Positioning:** "Airdrop paling cuan, yang udah dicek aman, dan ada buktinya." Cuan = pengait (skor Worth it, top picks),
+aman = pembeda dari list lain, bukti = sumber untuk tiap label + track record (sub-proyek berikutnya).
+
+**Tujuan sub-proyek #1:** list member cuma berisi airdrop yang **lolos kurasi**: belum berakhir, risiko low/medium, dan
 punya minimal satu sinyal legit. Tiap airdrop yang lolos punya level **Worth it** (potensi dibanding effort) dengan
-alasan yang bisa dicek.
+alasan yang bisa dicek. Sampai paywall (sub-proyek #2) jadi, halaman tetap bisa dibuka siapa saja seperti sekarang.
 
 **Yang gak dijanjikan:** "dijamin legit" atau "pasti untung". Kurasi mengurangi risiko, gak menghapusnya (prinsip spec v1
 §1: gak pernah ada label "AMAN"). Tiap klaim di UI harus bisa ditelusuri ke sinyal dan sumbernya.
 
 ## 2. Pemecahan scope
 
-Permintaan owner dipecah jadi 5 sub-proyek, masing-masing punya spec → plan → implementasi sendiri:
+Permintaan owner dipecah jadi sub-proyek, masing-masing punya spec → plan → implementasi sendiri (urutan direvisi
+2026-10-10 setelah keputusan positioning dan produk berbayar):
 
 | # | Sub-proyek | Status |
 |---|---|---|
 | 1 | **Fondasi kurasi**: sinyal legit, `curate()`, `worth()`, status kedaluwarsa, tampilan list kurasi | **spec ini** |
-| 2 | Pembagian publik vs member + top picks (pengait signup) | berikutnya |
-| 3 | Alert airdrop baru yang lolos kurasi + deadline (sambung ke digest yang ada) | nanti |
-| 4 | Checklist task per wallet | nanti |
-| 5 | Cek eligibility lebih dalam | paling belakang |
+| 2 | **Paywall**: landing page + contoh terbatas, pembayaran, akses member-only, top picks, pindah dari Vercel Hobby, ToS/privasi/refund/disclaimer | berikutnya |
+| 3 | Track record: hasil nyata airdrop dibanding level Worth it (riset sumber data dulu) | nanti |
+| 4 | Checklist task + estimasi effort per wallet | nanti |
+| 5 | Link klaim terverifikasi | nanti |
+| 6 | Cek eligibility lebih dalam | paling belakang |
 
-Sub-proyek 2–5 bergantung pada data kurasi dari #1.
+**Dicoret:** alert Telegram (keputusan owner). Notifikasi tetap lewat email digest yang ada.
+
+Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 
 ## 3. Keputusan owner (2026-10-10)
 
 | # | Topik | Keputusan |
 |---|---|---|
-| 15 | Tujuan "lebih menarik" | Bikin orang mau daftar (signup rate) |
+| 15 | Tujuan "lebih menarik" | ~~Bikin orang mau daftar (signup rate)~~ Diganti #24 |
 | 16 | Target user | Pemula dan farmer berpengalaman |
 | 17 | Budget data VC/funding | Tetap ~$0/bulan |
 | 18 | Project yang gak lolos kurasi | **Disembunyikan** dari semua list publik |
@@ -49,6 +57,10 @@ Sub-proyek 2–5 bergantung pada data kurasi dari #1.
 | 20 | Definisi "worth it" | Potensi dibanding effort, ditampilkan sebagai level + alasan, tanpa nominal $ |
 | 21 | Arsitektur | Pendekatan A: tahap sinyal + fungsi deterministik di core. LLM cuma mengekstrak, gak pernah menilai |
 | 22 | Sumber VC terverifikasi | Cek silang ke halaman portfolio VC top (opsi A) + sinyal lain tetap jalan (opsi B). Scraper Apify jadi upgrade kalau ada budget |
+| 23 | Positioning | "Paling cuan, udah dicek aman, ada buktinya" |
+| 24 | Model akses | Cuma member berbayar yang bisa akses isi web |
+| 25 | Pengunjung non-member | Landing page + contoh terbatas (detail di sub-proyek #2) |
+| 26 | Alert Telegram | Gak dibikin |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
 penuh oleh owner (gak skalabel). API funding berbayar ditunda (lihat §11).
@@ -196,7 +208,10 @@ CoinGecko → sumber kurasi), lalu deadline terdekat, lalu `last_seen` terbaru.
 
 ## 7. Tampilan (UI bahasa Inggris)
 
-### 7.1 Halaman utama `/`
+Halaman di bawah ini nantinya **khusus member** (sub-proyek #2 yang menambah paywall, landing page, dan contoh terbatas).
+Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall dikerjakan di #2.
+
+### 7.1 Halaman list (sekarang `/`)
 - Sumber data: `curated_list`. Project yang gak lolos gak muncul di list mana pun.
 - Baris ringkasan dari run terakhir: "N airdrops checked today · M passed curation".
 - Tiap baris: nama, status, level **Worth it**, level risiko, badge sinyal (`VC-backed: Paradigm ✓`, `TVL $45M`,
@@ -211,14 +226,16 @@ CoinGecko → sumber kurasi), lalu deadline terdekat, lalu `last_seen` terbaru.
 - Status kedaluwarsa: "Ended (deadline passed)" + deadline dasarnya.
 
 ### 7.3 Project yang gak lolos / keluar dari kurasi
-- Halaman detail tetap bisa dibuka lewat link langsung, dengan peringatan di paling atas:
+- Halaman detail tetap bisa dibuka lewat link langsung (oleh yang punya akses), dengan peringatan di paling atas:
   "Not in the curated list: <alasan>". Halaman diberi `noindex`.
 - Watchlist tetap menampilkannya dengan label peringatan yang sama.
 - Digest: project di watchlist yang keluar dari kurasi diberitahukan (lewat `project_changes.field = curated`).
 
 ## 8. Keamanan dan privasi
 
-- Semua tabel baru RLS on. `project_signals` dan `curations` baca publik (data tampilan). `vc_portfolios` tanpa akses web.
+- Semua tabel baru RLS on. `project_signals` dan `curations` sementara baca publik, mengikuti tabel tampilan yang ada
+  (`projects`, `evidence`, ...). Pembatasan ke member untuk **semua** tabel tampilan dikerjakan di sub-proyek #2 (paywall)
+  sekaligus, bukan per tabel di sini. `vc_portfolios` tanpa akses web.
 - Gak ada data user baru. Log run tetap angka saja (spec v1 §9).
 - Teks halaman portfolio VC gak disimpan, cuma domain.
 - LLM gak pernah memutuskan lolos/worth; teks project (termasuk klaim "backed by X") gak bisa menaikkan status verified.
@@ -249,5 +266,5 @@ CoinGecko → sumber kurasi), lalu deadline terdekat, lalu `last_seen` terbaru.
 | 1 | Struktur dan ToS halaman portfolio tiap VC kandidat | VC dicoret dari daftar; cakupan `vc_backer` mengecil |
 | 2 | Data `/protocols` DefiLlama memuat `url` dan `gecko_id` yang cukup untuk pencocokan domain [INFERENCE dari kode collector] | Sinyal TVL/CoinGecko cuma untuk project DefiLlama |
 | 3 | Kalibrasi bobot `worth()` terhadap data produksi | Level worth gak mencerminkan potensi; ubah bobot |
-| 4 | Seberapa banyak project lolos per hari | Kalau terlalu sedikit (< 3), tinjau ulang syarat risiko `medium`/`insufficient_data` |
+| 4 | Seberapa banyak project lolos per hari. Data run pertama [FACT]: 85 dari 96 project berisiko low/medium (0 high/critical), jadi aturan §6.2 akan meloloskan hampir semua | Kurasi gak terasa menyaring. Diputuskan setelah kalibrasi `worth()`: opsi utamanya list default cuma worth `medium` ke atas, sisanya di tab "All checked" |
 | 5 | RootData: owner melaporkan gak ada API gratis (2026-10-10) [FACT dari owner]; CryptoRank Sandbox gak memuat funding [INFERENCE dari review pihak ketiga]; DefiLlama `/raises` berbayar (HTTP 402) [FACT] | Sumber funding lengkap butuh budget; Apify (~$0,002/round) jadi upgrade pertama |
