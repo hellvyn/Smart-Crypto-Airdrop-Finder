@@ -44,6 +44,20 @@ describe("cleanUrl", () => {
     expect(cleanUrl("https://a.io/rewards/abc").referralStripped).toBe(false);
   });
 
+  it("also strips /r/<code>/ with a trailing slash", () => {
+    expect(cleanUrl("https://www.raycash.xyz/r/V8P3TX/")).toEqual({
+      url: "https://www.raycash.xyz/",
+      referralStripped: true,
+    });
+  });
+
+  it("preserves the fragment while still removing ref from the query", () => {
+    expect(cleanUrl("https://a.io/p?ref=1&x=2#section")).toEqual({
+      url: "https://a.io/p?x=2#section",
+      referralStripped: true,
+    });
+  });
+
   it("throws on invalid URLs", () => {
     expect(() => cleanUrl("not a url")).toThrow();
   });
@@ -53,6 +67,13 @@ describe("registrableDomain", () => {
   it("returns the registrable domain", () => {
     expect(registrableDomain("https://waitlist.deepbook.tech/x")).toBe("deepbook.tech");
     expect(registrableDomain("https://foo.bar.example.co.uk/")).toBe("example.co.uk");
+  });
+
+  it("keeps private suffixes so different projects stay distinct", () => {
+    expect(registrableDomain("https://phish.vercel.app/x")).toBe("phish.vercel.app");
+    expect(registrableDomain("https://evil.github.io/")).toBe("evil.github.io");
+    expect(registrableDomain("https://x.pages.dev/")).toBe("x.pages.dev");
+    expect(registrableDomain("https://waitlist.deepbook.tech/x")).toBe("deepbook.tech");
   });
 
   it("returns punycode for IDN hosts", () => {
@@ -92,5 +113,41 @@ describe("filterUrlsInSource", () => {
 
   it("ignores a trailing slash on the input URL too", () => {
     expect(filterUrlsInSource(["https://b.io/"], "visit https://b.io now")).toEqual(["https://b.io/"]);
+  });
+
+  it("rejects a URL that is only a prefix of a longer path", () => {
+    expect(filterUrlsInSource(["https://a.io/x"], "go to https://a.io/xyz now")).toEqual([]);
+  });
+
+  it("rejects a URL that is only a prefix of a longer host", () => {
+    expect(
+      filterUrlsInSource(["https://uniswap.org"], "claim at https://uniswap.org.evil.xyz/claim"),
+    ).toEqual([]);
+  });
+
+  it("rejects a bare-host URL matching a different path on that host", () => {
+    expect(filterUrlsInSource(["https://a.io/"], "see https://a.io/anything-else")).toEqual([]);
+    expect(filterUrlsInSource(["https://a.io"], "see https://a.io/anything-else")).toEqual([]);
+  });
+
+  it("rejects a URL followed by more query params", () => {
+    expect(filterUrlsInSource(["https://a.io/p?a=1"], "https://a.io/p?a=1&amp;b=2")).toEqual([]);
+  });
+
+  it("accepts a trailing-slash occurrence followed by a boundary", () => {
+    expect(filterUrlsInSource(["https://a.io/x"], "(https://a.io/x/)")).toEqual(["https://a.io/x"]);
+    expect(filterUrlsInSource(["https://a.io/x"], "[https://a.io/x/] ok")).toEqual(["https://a.io/x"]);
+  });
+
+  it("accepts a URL followed by ] or whitespace or end of text", () => {
+    expect(filterUrlsInSource(["https://a.io/x"], "[https://a.io/x]")).toEqual(["https://a.io/x"]);
+    expect(filterUrlsInSource(["https://a.io/x"], "https://a.io/x\nnext")).toEqual(["https://a.io/x"]);
+    expect(filterUrlsInSource(["https://a.io/x"], "end https://a.io/x")).toEqual(["https://a.io/x"]);
+  });
+
+  it("finds a later valid occurrence after an invalid prefix occurrence", () => {
+    expect(
+      filterUrlsInSource(["https://a.io/x"], "https://a.io/xyz and https://a.io/x, done"),
+    ).toEqual(["https://a.io/x"]);
   });
 });

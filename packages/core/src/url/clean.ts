@@ -46,7 +46,8 @@ export function cleanUrl(raw: string): CleanedUrl {
   }
 
   const segments = parsed.pathname.split("/");
-  // "/r/CODE" splits into ["", "r", "CODE"].
+  // "/r/CODE" splits into ["", "r", "CODE"]; "/r/CODE/" adds a trailing "".
+  if (segments.length === 4 && segments[3] === "") segments.pop();
   if (segments.length === 3 && segments[0] === "" && segments[1] === "r" && segments[2] !== "") {
     parsed.pathname = "/";
     stripped = true;

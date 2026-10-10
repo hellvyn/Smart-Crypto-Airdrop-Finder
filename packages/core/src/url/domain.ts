@@ -12,7 +12,9 @@ export function registrableDomain(url: string): string | null {
   } catch {
     return null;
   }
-  return getDomain(host) ?? null;
+  // Private suffixes (vercel.app, github.io, ...) are public registries, so
+  // each tenant is its own registrable domain.
+  return getDomain(host, { allowPrivateDomains: true }) ?? null;
 }
 
 const BASE = 36;
