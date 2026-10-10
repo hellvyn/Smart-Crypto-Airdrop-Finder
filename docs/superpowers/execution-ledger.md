@@ -151,3 +151,4 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 - P4 Task 8: complete (commits a79b089..1a42242, review clean). Every DefiLlama document hash changes once. Controller verified documents upsert on `url` and evidence on `(project,document,field,value)` with `ignoreDuplicates`, so nothing is duplicated.
 - P4 Task 8: minor (deferred): garbled `listingDate` comment. `deadFrom: false/0` is treated as dead. No tests for `deadFrom: ""` and for the "n/a" listing date.
 - G2-2a merged: f063f9e, 5dfc046, c625a11, 05e6278 (auto-merged `run.test.ts`, `config.ts`, `pipeline.md`). Tests: core 134, pipeline 245, web 284 unit · typecheck ok · pgTAP 119 · e2e 67/67.
+- G2-2b started: P4.T4 ∥ P4.T7 from 9816aff (workflow run wf_53667bae-c23)
