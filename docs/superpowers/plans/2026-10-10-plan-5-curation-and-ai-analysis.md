@@ -399,7 +399,8 @@ it("never raises the level because of the AI verdict", () => {
 **Interfaces:**
 - Consumes: Task 1–8.
 - Produces: per project aktif setelah `assessRisk`: `curate` + `worth` (worth dihitung juga untuk yang gagal, untuk
-  halaman detail) → `saveCuration`. Stats: `curation_checked`, `curation_passed`, `curation_hidden_insufficient_checks`.
+  halaman detail) → `saveCuration`. `curate`/`worth`/`saveCuration` yang throw untuk satu project dihitung `score_failed`
+  dan project lain tetap diproses (spec §9). Stats: `curation_checked`, `curation_passed`, `curation_hidden_insufficient_checks`.
   Digest: perubahan `curated` true→false tampil sebagai item perubahan (copy Bahasa Indonesia ditulis di Plan 6; di sini
   cukup data + kode `curated_removed` / `curated_added`).
 
