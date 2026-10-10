@@ -388,7 +388,7 @@ git commit -m "feat(extract): v3 schema - steps with cadence, key parameters, so
 **Interfaces:**
 - Consumes: v3 fields dari Task 4.
 - Produces:
-  - Migrasi 0008: `alter table tasks add column position integer not null default 0, add column cadence text not null
+  - Migrasi 0009: `alter table tasks add column position integer not null default 0, add column cadence text not null
     default 'once' check (cadence in ('once','daily','weekly'));`
   - `PipelineRepo.replaceTasks(projectId, documentId, steps: { text: string; cadence: "once" | "daily" | "weekly" }[])`
     (signature berubah; `position` = indeks array).

@@ -96,7 +96,7 @@ it("only applies to live, announced and speculative", () => {
 
 ---
 
-### Task 2: Model data kurasi (migrasi 0009) + repo
+### Task 2: Model data kurasi (migrasi 0010) + repo
 
 **Files:**
 - Create: `supabase/migrations/0010_curation.sql`, `supabase/tests/curation.test.sql`
