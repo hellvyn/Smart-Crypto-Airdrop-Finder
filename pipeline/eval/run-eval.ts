@@ -7,7 +7,7 @@ import { MODELS } from "../src/config.js";
 import { extractWithFallback } from "../src/llm/extract.js";
 import { streamChat } from "../src/llm/nvidia.js";
 import { PROMPT_VERSION } from "../src/llm/prompt.js";
-import { evaluatePass, scoreCase } from "./score.js";
+import { evaluatePass, rawOfficialUrlsOfOutcome, scoreCase } from "./score.js";
 import type { CaseScore, GroundTruth } from "./score.js";
 
 const EVAL_DIR = fileURLToPath(new URL(".", import.meta.url));
@@ -38,6 +38,13 @@ async function run(): Promise<number> {
   const chat = (model: Parameters<typeof streamChat>[0], messages: Parameters<typeof streamChat>[1]) =>
     streamChat(model, messages, { fetch, apiKey: process.env["NVIDIA_API_KEY"] ?? "" });
 
+  if ((process.env["NVIDIA_API_KEY"] ?? "") === "" && process.env["NODE_USE_ENV_PROXY"] !== "1") {
+    console.warn(
+      "Notice: NVIDIA_API_KEY is empty and NODE_USE_ENV_PROXY is not 1. Calls only work if the key is injected by a proxy; " +
+        "in that case Node needs NODE_USE_ENV_PROXY=1 to use it. Continuing.",
+    );
+  }
+
   console.log(`Prompt version ${PROMPT_VERSION}; models: ${MODELS.map((m) => m.id).join(" > ")}`);
 
   const scores: CaseScore[] = [];
@@ -62,7 +69,7 @@ async function run(): Promise<number> {
     const started = Date.now();
     const outcome = await extractWithFallback(doc, MODELS, { chat, sleep });
     const result: ExtractionResult | null = outcome.ok ? outcome.result : null;
-    const score = scoreCase(id, result, truth, text);
+    const score = scoreCase(id, result, truth, text, rawOfficialUrlsOfOutcome(outcome.attempts));
     scores.push(score);
 
     const model = outcome.ok ? outcome.model : `FAILED (${outcome.attempts.map((a) => a.error).join(",")})`;

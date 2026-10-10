@@ -26,7 +26,7 @@ export type ChatFn = (model: ModelConfig, messages: ChatMessage[]) => Promise<Ch
 const RATE_LIMIT_BACKOFF_MS = [2000, 4000] as const;
 
 /** Parses model output: straight JSON first, then the first `{` .. last `}` after removing code fences. */
-function parseJson(content: string): { ok: true; value: unknown } | { ok: false } {
+export function parseJson(content: string): { ok: true; value: unknown } | { ok: false } {
   try {
     return { ok: true, value: JSON.parse(content) };
   } catch {

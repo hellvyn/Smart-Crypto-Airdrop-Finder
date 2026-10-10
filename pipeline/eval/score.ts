@@ -1,5 +1,7 @@
-import { filterUrlsInSource, normalizeName } from "@saf/core";
+import { extractionSchema, filterUrlsInSource, normalizeName } from "@saf/core";
 import type { ExtractionResult, Status } from "@saf/core";
+import type { ExtractionAttempt } from "../src/llm/extract.js";
+import { parseJson } from "../src/llm/extract.js";
 
 type Project = ExtractionResult["projects"][number];
 
@@ -18,11 +20,11 @@ export interface CaseScore {
   caseId: string;
   /** Null when the case is not status-scored. */
   statusOk: boolean | null;
-  /** True when the case expects no token check (not a project case). */
-  tokenOk: boolean;
-  /** True when no chain is expected (or the case is not a project case). */
-  chainOk: boolean;
-  /** `official_urls` that do not appear verbatim in the case text. */
+  /** Null when the case is not a project case. */
+  tokenOk: boolean | null;
+  /** Null when the case is not a project case; true when no chain is expected. */
+  chainOk: boolean | null;
+  /** Raw model `official_urls` (before cleanup) that do not appear verbatim in the case text. */
   hallucinatedUrls: number;
   /** Null unless the case is the negative one. */
   negativeOk: boolean | null;
@@ -61,29 +63,42 @@ function chainMatches(expected: string | null, chains: string[]): boolean {
   return chains.some((c) => c.trim().toLowerCase() === wanted);
 }
 
+/** All `official_urls` of a raw model answer; [] if it is not a schema-valid extraction. */
+export function rawOfficialUrls(raw: string): string[] {
+  const parsed = parseJson(raw);
+  if (!parsed.ok) return [];
+  const validated = extractionSchema.safeParse(parsed.value);
+  return validated.success ? validated.data.projects.flatMap((p) => p.official_urls) : [];
+}
+
+/** Raw `official_urls` of the last successful attempt, i.e. the answer before URL cleanup. */
+export function rawOfficialUrlsOfOutcome(attempts: ExtractionAttempt[]): string[] {
+  const last = [...attempts].reverse().find((a) => a.error === null);
+  return last ? rawOfficialUrls(last.raw) : [];
+}
+
 /**
- * Scores one extraction against the ground truth. `text` is the case text, used to find
- * URLs the model made up. A null `result` (every model failed) fails every applicable check.
+ * Scores one extraction against the ground truth. Status, token, chain, negative and radar
+ * come from the post-processed `result`; a null `result` (every model failed) fails every
+ * applicable check. `hallucinatedUrls` counts `rawUrls` (the model's `official_urls` before
+ * cleanup) that are not in the case `text`.
  */
 export function scoreCase(
   caseId: string,
   result: ExtractionResult | null,
   truth: GroundTruth,
   text: string,
+  rawUrls: string[],
 ): CaseScore {
   const expected = truth.cases[caseId];
   const projects = result?.projects ?? [];
-
-  let hallucinatedUrls = 0;
-  for (const project of projects) {
-    hallucinatedUrls += project.official_urls.length - filterUrlsInSource(project.official_urls, text).length;
-  }
+  const hallucinatedUrls = rawUrls.length - filterUrlsInSource(rawUrls, text).length;
 
   const score: CaseScore = {
     caseId,
     statusOk: null,
-    tokenOk: true,
-    chainOk: true,
+    tokenOk: null,
+    chainOk: null,
     hallucinatedUrls,
     negativeOk: null,
     radarRecall: null,

@@ -24,11 +24,15 @@ NVIDIA_API_KEY=... pnpm --filter pipeline eval
 Cases run one at a time through `extractWithFallback` with the default models from `src/config.ts`. It prints a
 metrics table (no case text) and which model answered each case.
 
+If `NVIDIA_API_KEY` is empty the script prints a notice and continues, since a proxy may inject the key. In
+proxy-only environments set `NODE_USE_ENV_PROXY=1` so Node's `fetch` goes through the proxy.
+
 Exit codes: `0` pass, `1` a pass condition failed, `2` `cases/` is missing or empty.
 
 ## Pass conditions (spec section 11)
 
-- Hallucinated URLs: 0 (every `official_urls` entry must appear in the case text).
+- Hallucinated URLs: 0. Counts every `official_urls` entry the model output (before referral cleanup and before the
+  pipeline drops unknown URLs) that does not appear verbatim in the case text.
 - `tg_ledger_negative` is rejected (`is_airdrop_content: false`).
 - `aio_abstract` has status `ended`.
 - Status accuracy over the 6 status-scored cases is at least `baselineStatusAccuracy` (5).

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { ExtractionResult } from "@saf/core";
-import { evaluatePass, scoreCase } from "../eval/score.js";
+import { evaluatePass, rawOfficialUrls, rawOfficialUrlsOfOutcome, scoreCase } from "../eval/score.js";
 import type { GroundTruth } from "../eval/score.js";
 
 const truth = JSON.parse(readFileSync(new URL("../eval/ground-truth.json", import.meta.url), "utf8")) as GroundTruth;
@@ -29,26 +29,35 @@ function result(projects: Project[], isAirdrop = true): ExtractionResult {
 
 describe("scoreCase", () => {
   it("fails the status check when Abstract is answered as speculative", () => {
-    const score = scoreCase("aio_abstract", result([project({ status: "speculative" })]), truth, "");
+    const score = scoreCase("aio_abstract", result([project({ status: "speculative" })]), truth, "", []);
     expect(score.statusOk).toBe(false);
   });
 
   it("passes the status check when Abstract is answered as ended", () => {
-    const score = scoreCase("aio_abstract", result([project()]), truth, "");
+    const score = scoreCase("aio_abstract", result([project()]), truth, "", []);
     expect(score.statusOk).toBe(true);
     expect(score.tokenOk).toBe(true);
     expect(score.chainOk).toBe(true);
   });
 
-  it("counts official URLs that are not in the case text", () => {
+  it("counts raw URLs that are not in the case text", () => {
     const text = "Claim at https://abs.xyz/claim now";
+    const raw = ["https://abs.xyz/claim", "https://abstract-fake.xyz/"];
+    const score = scoreCase("aio_abstract", result([project({ official_urls: ["https://abs.xyz/claim"] })]), truth, text, raw);
+    // The post-processed result dropped the fake URL already; the raw output still counts it.
+    expect(score.hallucinatedUrls).toBe(1);
+  });
+
+  it("does not count a referral URL that cleanup shortened", () => {
+    const text = "Join at https://www.raycash.xyz/r/V8P3TX today";
     const score = scoreCase(
-      "aio_abstract",
-      result([project({ official_urls: ["https://abs.xyz/claim", "https://abstract-fake.xyz/"] })]),
+      "aio_raycash",
+      result([project({ name: "RayCash", status: "speculative", chains: ["Polygon"], official_urls: ["https://www.raycash.xyz/"] })]),
       truth,
       text,
+      ["https://www.raycash.xyz/r/V8P3TX"],
     );
-    expect(score.hallucinatedUrls).toBe(1);
+    expect(score.hallucinatedUrls).toBe(0);
   });
 
   it("compares the token case-insensitively and ignores a leading $", () => {
@@ -57,6 +66,7 @@ describe("scoreCase", () => {
       result([project({ name: "DeepBook", token_symbol: "$deep", status: "live", chains: ["Sui"] })]),
       truth,
       "",
+      [],
     );
     expect(ok.statusOk).toBe(true);
     expect(ok.tokenOk).toBe(true);
@@ -67,13 +77,14 @@ describe("scoreCase", () => {
       result([project({ name: "DeepBook", token_symbol: "DBK", status: "live", chains: ["Ethereum"] })]),
       truth,
       "",
+      [],
     );
     expect(bad.tokenOk).toBe(false);
     expect(bad.chainOk).toBe(false);
   });
 
   it("scores a missing extraction as failed", () => {
-    const score = scoreCase("aio_deepbook", null, truth, "");
+    const score = scoreCase("aio_deepbook", null, truth, "", []);
     expect(score.statusOk).toBe(false);
     expect(score.tokenOk).toBe(false);
     expect(score.chainOk).toBe(false);
@@ -89,30 +100,33 @@ describe("scoreCase", () => {
       ]),
       truth,
       "",
+      [],
     );
     expect(score.statusOk).toBe(true);
     expect(score.tokenOk).toBe(true);
   });
 
   it("does not score status for the negative and radar cases", () => {
-    expect(scoreCase("tg_ledger_negative", result([], false), truth, "").statusOk).toBeNull();
-    expect(scoreCase("tg_weekly_radar", result([]), truth, "").statusOk).toBeNull();
+    expect(scoreCase("tg_ledger_negative", result([], false), truth, "", []).statusOk).toBeNull();
+    expect(scoreCase("tg_weekly_radar", result([]), truth, "", []).statusOk).toBeNull();
+    expect(scoreCase("tg_weekly_radar", result([]), truth, "", []).tokenOk).toBeNull();
+    expect(scoreCase("tg_ledger_negative", result([], false), truth, "", []).chainOk).toBeNull();
   });
 
   it("accepts the negative case only when the text is rejected", () => {
-    expect(scoreCase("tg_ledger_negative", result([], false), truth, "").negativeOk).toBe(true);
-    expect(scoreCase("tg_ledger_negative", result([project()], true), truth, "").negativeOk).toBe(false);
-    expect(scoreCase("tg_ledger_negative", null, truth, "").negativeOk).toBe(false);
-    expect(scoreCase("aio_abstract", result([project()]), truth, "").negativeOk).toBeNull();
+    expect(scoreCase("tg_ledger_negative", result([], false), truth, "", []).negativeOk).toBe(true);
+    expect(scoreCase("tg_ledger_negative", result([project()], true), truth, "", []).negativeOk).toBe(false);
+    expect(scoreCase("tg_ledger_negative", null, truth, "", []).negativeOk).toBe(false);
+    expect(scoreCase("aio_abstract", result([project()]), truth, "", []).negativeOk).toBeNull();
   });
 
   it("counts radar recall as distinct expected slugs matched by an extracted project", () => {
     const names = ["Abstract", "Arcus", "Aster", "Ink", "Jumper", "Jumper Exchange", "Kryvora", "Unrelated Thing"];
-    const score = scoreCase("tg_weekly_radar", result(names.map((name) => project({ name }))), truth, "");
+    const score = scoreCase("tg_weekly_radar", result(names.map((name) => project({ name }))), truth, "", []);
     // abstract, arcus, aster, ink-chain, jumper-exchange, kryvora-network
     expect(score.radarRecall).toBe(6);
-    expect(scoreCase("tg_weekly_radar", null, truth, "").radarRecall).toBe(0);
-    expect(scoreCase("aio_abstract", result([project()]), truth, "").radarRecall).toBeNull();
+    expect(scoreCase("tg_weekly_radar", null, truth, "", []).radarRecall).toBe(0);
+    expect(scoreCase("aio_abstract", result([project()]), truth, "", []).radarRecall).toBeNull();
   });
 
   it("keeps the radar threshold and all 28 slugs in the ground truth", () => {
@@ -128,7 +142,7 @@ describe("scoreCase", () => {
 
 describe("evaluatePass", () => {
   const ok = (caseId: string, over: Partial<ReturnType<typeof scoreCase>> = {}) => ({
-    ...scoreCase(caseId, null, truth, ""),
+    ...scoreCase(caseId, null, truth, "", []),
     ...over,
   });
 
@@ -151,5 +165,32 @@ describe("evaluatePass", () => {
     expect(evaluatePass(lowRecall, truth).some((c) => !c.ok)).toBe(true);
     const lowStatus = good.map((s) => (s.caseId === "tg_flop" ? { ...s, statusOk: false } : s));
     expect(evaluatePass(lowStatus, truth).some((c) => !c.ok)).toBe(true);
+  });
+});
+
+describe("raw official URLs", () => {
+  const answer = JSON.stringify({
+    is_airdrop_content: true,
+    projects: [project({ official_urls: ["https://a.io/", "https://b.io/"] }), project({ official_urls: ["https://c.io/"] })],
+  });
+
+  it("reads them from a plain or fenced answer", () => {
+    expect(rawOfficialUrls(answer)).toEqual(["https://a.io/", "https://b.io/", "https://c.io/"]);
+    expect(rawOfficialUrls("```json\n" + answer + "\n```")).toHaveLength(3);
+    expect(rawOfficialUrls("not json")).toEqual([]);
+    expect(rawOfficialUrls('{"is_airdrop_content":"yes"}')).toEqual([]);
+  });
+
+  it("uses the last successful attempt", () => {
+    const attempt = (error: string | null, raw: string) => ({
+      model: "m",
+      httpStatus: 200,
+      finishReason: "stop",
+      latencyMs: 1,
+      error,
+      raw,
+    });
+    expect(rawOfficialUrlsOfOutcome([attempt("schema", answer), attempt(null, answer)])).toHaveLength(3);
+    expect(rawOfficialUrlsOfOutcome([attempt("schema", answer)])).toEqual([]);
   });
 });
