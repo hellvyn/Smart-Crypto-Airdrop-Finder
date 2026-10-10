@@ -27,6 +27,8 @@ Label:
 | 8 | LLM | Owner mau pakai **NVIDIA** (`integrate.api.nvidia.com`) | Sudah dites pakai key (Spike 3). Kandidat: kimi-k3 → glm-5.3-flash → gemma-4-31b-it. ToS buat produk publik [UNKNOWN] |
 | 9 | Akun user | **Pakai akun (login)** | Dipilih owner. Claude awalnya nyaranin anonim + simpan lokal |
 | 10 | Fungsi akun di v1 | **Sinkron watchlist & wallet + notifikasi email** (digest harian + reminder H-1 deadline). Cek wallet **on-demand** (di-cache) | Ditunda: monetisasi (tapi field `plan` disiapin), pelacakan wallet otomatis di background, web push. Limit free tier layanan email [UNKNOWN] |
+| 11 | Metode login | **Email + password** | Dipilih owner (Claude nyaranin magic link + Google). Tetap butuh email verifikasi & reset password. Pakai library auth yang matang, jangan bikin sendiri. Login via wallet ditolak (konflik pesan anti-scam, ribet di multi-chain) |
+| 12 | Frekuensi scan | **Harian** | Dipilih owner. Risiko yang diterima: deadline yang diumumin < 24 jam bisa kelewat (contoh: radar Oct 9 18:06 UTC → deadline Axis Oct 10 12:00 UTC). Frekuensi dibikin bisa diatur lewat config. Email urgent di-drop |
 
 ## 2. Rencana sumber data (setelah spike)
 
