@@ -1,0 +1,11 @@
+node_modules
+dist
+.env*
+pipeline/eval/cases/
+.superpowers/
+!.env.example
+.next/
+next-env.d.ts
+*.tsbuildinfo
+test-results/
+playwright-report/

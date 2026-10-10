@@ -1,0 +1,27 @@
+// Public entry point of @saf/core. Later tasks add pure logic exports here.
+export { cleanUrl } from "./url/clean.js";
+export type { CleanedUrl } from "./url/clean.js";
+export { registrableDomain, toUnicodeDomain } from "./url/domain.js";
+export { filterUrlsInSource } from "./url/in-source.js";
+export type { Status, DeadlineKind, DatePrecision } from "./types.js";
+export { extractionSchema } from "./schema/extraction.js";
+export type { ExtractionResult, ExtractedDeadline } from "./schema/extraction.js";
+export { normalizeDeadline } from "./deadline/normalize.js";
+export { normalizeName } from "./entity/name.js";
+export { decideMerge } from "./entity/merge.js";
+export type { ProjectRef, MergeDecision } from "./entity/merge.js";
+export { deriveStatus, pickEvidenceDate } from "./status/derive.js";
+export type { StatusEvidence } from "./status/derive.js";
+export { isEvmAddress } from "./chain/adapter.js";
+export type { ActivitySummary, ChainAdapter } from "./chain/adapter.js";
+export type { Severity, RiskLevel, RiskReason } from "./types.js";
+export { DANGEROUS_ASK_CODES, detectDangerousAsks, findDangerousAskSentences } from "./risk/dangerous-asks.js";
+export type { DangerousAskCode } from "./risk/dangerous-asks.js";
+export { isLookalike } from "./risk/lookalike.js";
+export { assessRisk } from "./risk/assess.js";
+export type { CheckId, RiskCheck, RiskInput, RiskAssessment } from "./risk/assess.js";
+export { buildDigest } from "./notify/digest.js";
+export type { Digest, DigestInput, DigestProject } from "./notify/digest.js";
+export { allocateQuota } from "./notify/quota.js";
+export { displayName, renderDigestEmail } from "./notify/render.js";
+export type { RenderOptions, RenderedEmail } from "./notify/render.js";
