@@ -4,6 +4,7 @@ import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 import type {
   ExtractionStatus,
+  NewEvidence,
   NewProject,
   PipelineRepo,
   ProjectForScoring,
@@ -175,6 +176,8 @@ export class SupabaseRepo implements PipelineRepo {
         .from("documents")
         .select()
         .eq("extraction_status", "pending")
+        // Purged documents stay pending but have nothing to extract.
+        .neq("text", "")
         .order("fetched_at")
         .order("url")
         .limit(limit)
@@ -287,14 +290,7 @@ export class SupabaseRepo implements PipelineRepo {
     }
   }
 
-  async addEvidence(e: {
-    projectId: string;
-    documentId: string;
-    field: string;
-    value: string;
-    quote: string;
-    at: Date;
-  }): Promise<void> {
+  async addEvidence(e: NewEvidence): Promise<void> {
     check(
       "addEvidence",
       await this.db.from("evidence").upsert(
@@ -305,9 +301,22 @@ export class SupabaseRepo implements PipelineRepo {
           value: e.value,
           quote: e.quote,
           at: e.at.toISOString(),
+          source_url: e.sourceUrl,
         },
         { onConflict: "project_id,document_id,field,value", ignoreDuplicates: true },
       ),
+    );
+  }
+
+  async deleteEvidence(projectId: string, documentId: string, field: string): Promise<void> {
+    check(
+      "deleteEvidence",
+      await this.db
+        .from("evidence")
+        .delete()
+        .eq("project_id", projectId)
+        .eq("document_id", documentId)
+        .eq("field", field),
     );
   }
 
@@ -387,14 +396,20 @@ export class SupabaseRepo implements PipelineRepo {
     type ScoringDb = ProjectDb & {
       tasks: { description: string }[];
       links: { url: string; kind: string }[];
-      evidence: { documents: { source_key: string } | null }[];
+      evidence: { field: string; value: string; quote: string; documents: { source_key: string } | null }[];
+      lookalike: { name: string; official_domains: string[] } | null;
     };
     const rows = await this.fetchAll<ScoringDb>("listProjectsForScoring", (from, to) =>
       this.db
         .from("projects")
-        .select(`${PROJECT_COLUMNS}, tasks(description), links(url, kind), evidence(documents(source_key))`)
+        .select(
+          `${PROJECT_COLUMNS}, tasks(description), links(url, kind), ` +
+            "evidence(field, value, quote, documents(source_key)), lookalike:lookalike_of(name, official_domains)",
+        )
         .gte("last_seen", cutoff)
         .order("id")
+        // Evidence in insertion order, so sourceAsks match MemoryRepo.
+        .order("seq", { referencedTable: "evidence" })
         .range(from, to)
         .returns<ScoringDb[]>(),
     );
@@ -403,6 +418,9 @@ export class SupabaseRepo implements PipelineRepo {
       tasks: r.tasks.map((t) => t.description),
       links: r.links.map((l) => ({ url: l.url, kind: l.kind })),
       sourceCount: new Set(r.evidence.flatMap((e) => (e.documents ? [e.documents.source_key] : []))).size,
+      lookalikeOfName: r.lookalike?.name ?? null,
+      lookalikeOfDomains: r.lookalike?.official_domains ?? [],
+      sourceAsks: r.evidence.filter((e) => e.field === "dangerous_ask").map((e) => ({ code: e.value, quote: e.quote })),
     }));
   }
 

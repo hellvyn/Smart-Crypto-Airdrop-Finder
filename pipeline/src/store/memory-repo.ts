@@ -4,6 +4,7 @@ import type { CollectedDocument } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 import type {
   ExtractionStatus,
+  NewEvidence,
   NewProject,
   PipelineRepo,
   ProjectForScoring,
@@ -22,14 +23,7 @@ export interface ProjectChange {
   changedAt: Date;
 }
 
-interface EvidenceRow {
-  projectId: string;
-  documentId: string;
-  field: string;
-  value: string;
-  quote: string;
-  at: Date;
-}
+type EvidenceRow = NewEvidence;
 
 interface DeadlineRow extends ExtractedDeadline {
   projectId: string;
@@ -126,7 +120,7 @@ export class MemoryRepo implements PipelineRepo {
   async listPendingDocuments(limit: number): Promise<StoredDocument[]> {
     // Order: fetched_at asc, url asc (same as SupabaseRepo).
     return [...this.documents.values()]
-      .filter((d) => d.extractionStatus === "pending")
+      .filter((d) => d.extractionStatus === "pending" && d.text !== "")
       .sort((a, b) => a.fetchedAt.getTime() - b.fetchedAt.getTime() || compareText(a.url, b.url))
       .slice(0, limit)
       .map((d) => ({ ...d }));
@@ -195,6 +189,10 @@ export class MemoryRepo implements PipelineRepo {
     if (!duplicate) this.evidence.push({ ...e });
   }
 
+  async deleteEvidence(projectId: string, documentId: string, field: string): Promise<void> {
+    removeWhere(this.evidence, (e) => e.projectId === projectId && e.documentId === documentId && e.field === field);
+  }
+
   async listStatusEvidence(projectId: string): Promise<StatusEvidence[]> {
     // Order: at asc, insertion order breaks ties (Array.sort is stable). SupabaseRepo orders by at, seq.
     return this.evidence
@@ -235,11 +233,18 @@ export class MemoryRepo implements PipelineRepo {
         const d = this.documents.get(e.documentId);
         if (d) sourceKeys.add(d.sourceKey);
       }
+      const other = p.lookalikeOf === null ? undefined : this.projects.get(p.lookalikeOf);
       result.push({
         ...cloneProject(p),
         tasks: this.tasks.filter((t) => t.projectId === p.id).map((t) => t.description),
         links: this.links.filter((l) => l.projectId === p.id).map((l) => ({ url: l.url, kind: l.kind })),
         sourceCount: sourceKeys.size,
+        lookalikeOfName: other?.name ?? null,
+        lookalikeOfDomains: other ? [...other.officialDomains] : [],
+        // Insertion order, same as SupabaseRepo's evidence.seq.
+        sourceAsks: this.evidence
+          .filter((e) => e.projectId === p.id && e.field === "dangerous_ask")
+          .map((e) => ({ code: e.value, quote: e.quote })),
       });
     }
     return result;

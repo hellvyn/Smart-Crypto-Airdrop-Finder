@@ -58,6 +58,8 @@ create table evidence (
   value text not null,
   quote text not null,
   at timestamptz not null,
+  -- documents.url of document_id, copied at insert so the web app can link the source without reading documents.
+  source_url text not null,
   -- Insertion order, used as a deterministic tie-break when evidence shares the same `at`.
   seq bigint generated always as identity,
   unique (project_id, document_id, field, value)

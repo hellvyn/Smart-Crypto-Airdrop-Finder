@@ -29,6 +29,7 @@ describe("selectSpeculativeCandidates", () => {
       name: "High",
       slug: "high",
       url: "https://example.org",
+      twitter: null,
       chains: ["Ethereum"],
       tvl: 50_000_000,
       change7d: 40,
@@ -72,6 +73,18 @@ describe("selectSpeculativeCandidates", () => {
     expect(a?.change7d).toBe(1);
     expect(result.find((c) => c.slug === "b")?.change7d).toBeNull();
     expect(result.find((c) => c.slug === "c")?.change7d).toBeNull();
+  });
+
+  it("keeps a valid twitter handle without '@' and drops invalid ones", () => {
+    const protocols = [
+      { ...base, name: "A", slug: "a", twitter: "hyperdrive_fi" },
+      { ...base, name: "B", slug: "b", twitter: "@HyperDrive" },
+      { ...base, name: "C", slug: "c", twitter: "https://x.com/evil" },
+      { ...base, name: "D", slug: "d", twitter: "" },
+      { ...base, name: "E", slug: "e" },
+    ];
+    const handles = Object.fromEntries(selectSpeculativeCandidates(protocols, opts).map((c) => [c.slug, c.twitter]));
+    expect(handles).toEqual({ a: "hyperdrive_fi", b: "HyperDrive", c: null, d: null, e: null });
   });
 
   it("breaks change7d ties by tvl desc and applies limit after sorting", () => {

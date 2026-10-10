@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessRisk, detectDangerousAsks, isLookalike } from "../src/index.js";
+import { assessRisk, detectDangerousAsks, findDangerousAskSentences, isLookalike } from "../src/index.js";
 import type { CheckId, RiskInput } from "../src/index.js";
 
 describe("detectDangerousAsks", () => {
@@ -70,6 +70,36 @@ describe("detectDangerousAsks", () => {
 
   it("ignores harmless tasks", () => {
     expect(detectDangerousAsks(["Swap on the testnet", "Follow us on X"])).toEqual([]);
+  });
+});
+
+describe("findDangerousAskSentences", () => {
+  it("returns the first sentence per ask code", () => {
+    const text =
+      "DeepBook airdrop is live. Never share your seed phrase. Enter your seed phrase to claim! Pay a gas fee to claim your tokens.\nEnter your private key too.";
+    expect(findDangerousAskSentences(text)).toEqual([
+      { code: "asks_secret", sentence: "Enter your seed phrase to claim!" },
+      { code: "asks_payment", sentence: "Pay a gas fee to claim your tokens." },
+    ]);
+  });
+
+  it("finds nothing in warnings or harmless text", () => {
+    expect(findDangerousAskSentences("Never share your seed phrase. Bridge ETH to Base and pay gas fees.")).toEqual([]);
+    expect(findDangerousAskSentences("")).toEqual([]);
+  });
+
+  it("does not split on dots inside URLs or decimals", () => {
+    const text = "Send 0.1 ETH to receive your airdrop at [https://deepbook-airdrop.xyz/claim] today. Done.";
+    expect(findDangerousAskSentences(text)).toEqual([
+      { code: "asks_payment", sentence: "Send 0.1 ETH to receive your airdrop at [https://deepbook-airdrop.xyz/claim] today." },
+    ]);
+  });
+
+  it("caps very long sentences", () => {
+    const long = `Enter your seed phrase ${"and more words ".repeat(40)}`;
+    const [hit] = findDangerousAskSentences(long);
+    expect(hit?.sentence.length).toBeLessThanOrEqual(280);
+    expect(hit?.sentence.endsWith("...")).toBe(true);
   });
 });
 
@@ -154,8 +184,11 @@ function input(overrides: Partial<RiskInput> = {}): RiskInput {
       sourceCount: 3,
       hasOfficialSocial: true,
       lookalikeOf: null,
+      lookalikeOfName: null,
+      lookalikeOfDomains: [],
     },
     tasks: ["Swap on the app"],
+    sourceAsks: [],
     linkDomains: [{ domain: "app.uniswap.org", kind: "app" }],
     domainAgeDays: { "app.uniswap.org": 2000 },
     phishingFlags: { "app.uniswap.org": false },
@@ -314,19 +347,63 @@ describe("assessRisk", () => {
   it("still reports lookalikeOf without official domains, and the check ran", () => {
     const base = input();
     const a = assessRisk(
-      input({ project: { ...base.project, officialDomains: [], lookalikeOf: "Other" } }),
+      input({ project: { ...base.project, officialDomains: [], lookalikeOf: "3f2a-uuid", lookalikeOfName: "Other" } }),
     );
     expect(a.reasons.map((r) => r.code)).toContain("lookalike_domain");
     expect(a.checks.find((c) => c.id === "lookalike")?.ran).toBe(true);
   });
 
-  it("flags project.lookalikeOf as an extra lookalike reason", () => {
+  it("names the other project and its domains in the lookalikeOf reason, never its id", () => {
     const base = input();
-    const a = assessRisk(input({ project: { ...base.project, lookalikeOf: "Other Project" } }));
+    const a = assessRisk(
+      input({
+        project: {
+          ...base.project,
+          lookalikeOf: "0b6c5f3e-1d2a-4c1b-9f00-1234567890ab",
+          lookalikeOfName: "DeepBook",
+          lookalikeOfDomains: ["deepbook.tech"],
+        },
+      }),
+    );
     expect(a.level).toBe("high");
     const l = a.reasons.filter((r) => r.code === "lookalike_domain");
     expect(l).toHaveLength(1);
-    expect(l[0]?.message).toContain("Other Project");
+    expect(l[0]?.message).toBe('This project shares a name with "DeepBook" (deepbook.tech) but uses a different domain.');
+    expect(l[0]?.message).not.toContain("0b6c5f3e");
+  });
+
+  it("falls back to a generic wording when the other project's name is unknown", () => {
+    const base = input();
+    const a = assessRisk(
+      input({ project: { ...base.project, lookalikeOf: "0b6c5f3e-1d2a-4c1b-9f00-1234567890ab" } }),
+    );
+    const l = a.reasons.filter((r) => r.code === "lookalike_domain");
+    expect(l[0]?.message).toBe("This project shares a name with another project but uses a different domain.");
+  });
+
+  it("source-text asks are critical with the quoted sentence", () => {
+    const a = assessRisk(
+      input({ sourceAsks: [{ code: "asks_secret", quote: "Enter your seed phrase to claim." }] }),
+    );
+    expect(a.level).toBe("critical");
+    const r = a.reasons.filter((x) => x.code === "asks_secret");
+    expect(r).toHaveLength(1);
+    expect(r[0]?.message).toContain("Enter your seed phrase to claim.");
+    expect(r[0]?.source).toBe("text");
+  });
+
+  it("does not duplicate an ask already found in the tasks, and ignores unknown codes", () => {
+    const a = assessRisk(
+      input({
+        tasks: ["Send 0.1 ETH to receive your airdrop"],
+        sourceAsks: [
+          { code: "asks_payment", quote: "Send 0.1 ETH to receive your airdrop." },
+          { code: "something_else", quote: "x" },
+        ],
+      }),
+    );
+    expect(a.reasons.map((r) => r.code)).toEqual(["asks_payment"]);
+    expect(a.reasons[0]?.source).toBe("extraction");
   });
 
   it("flags token owner powers and malicious creator as high", () => {

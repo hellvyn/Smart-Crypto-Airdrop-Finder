@@ -75,3 +75,36 @@ export function detectDangerousAsks(tasks: string[]): RiskReason[] {
 
   return reasons;
 }
+
+export type DangerousAskCode = "asks_secret" | "asks_payment";
+
+export const DANGEROUS_ASK_CODES: readonly DangerousAskCode[] = ["asks_secret", "asks_payment"];
+
+const MAX_SENTENCE_LENGTH = 280;
+// A sentence ends at ".", "!" or "?" followed by whitespace (so URLs and decimals stay whole), or at a newline.
+const SENTENCE_END_RE = /(?<=[.!?])\s+|\n+/;
+
+function capSentence(sentence: string): string {
+  return sentence.length > MAX_SENTENCE_LENGTH ? `${sentence.slice(0, MAX_SENTENCE_LENGTH - 3)}...` : sentence;
+}
+
+/**
+ * Scans full source text sentence by sentence with the same rules as `detectDangerousAsks`.
+ * Returns the first matching sentence per ask code (capped at 280 characters), in code order.
+ */
+export function findDangerousAskSentences(text: string): { code: DangerousAskCode; sentence: string }[] {
+  const sentences = text
+    .split(SENTENCE_END_RE)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const found = new Map<string, string>();
+  for (const sentence of sentences) {
+    for (const reason of detectDangerousAsks([sentence])) {
+      if (!found.has(reason.code)) found.set(reason.code, capSentence(sentence));
+    }
+  }
+  return DANGEROUS_ASK_CODES.flatMap((code) => {
+    const sentence = found.get(code);
+    return sentence === undefined ? [] : [{ code, sentence }];
+  });
+}

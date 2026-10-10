@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { decideMerge, deriveStatus, normalizeName, pickEvidenceDate, registrableDomain } from "@saf/core";
+import {
+  decideMerge,
+  deriveStatus,
+  findDangerousAskSentences,
+  normalizeName,
+  pickEvidenceDate,
+  registrableDomain,
+} from "@saf/core";
 import type { ExtractedDeadline, Status } from "@saf/core";
 import type { DailyStats } from "../stats.js";
 import type { PipelineRepo, ProjectRow, StoredDocument } from "../store/repo.js";
@@ -88,8 +95,10 @@ export interface ProjectInput {
   quote: string;
   tasks: string[];
   deadlines: ExtractedDeadline[];
-  /** Cleaned official URLs. */
+  /** Cleaned official URLs; their kinds come from `classifyLink`. */
   urls: string[];
+  /** Cleaned URL that is the project's website whatever its path (the DefiLlama `url`), or null. */
+  websiteUrl: string | null;
   /**
    * `defillama`: a listing without a confirmed status. On an existing project its evidence is stored as
    * `defillama_listing`, so `deriveStatus` ignores it; only a newly created project gets `status` evidence.
@@ -99,26 +108,50 @@ export interface ProjectInput {
 
 const union = (a: readonly string[], b: readonly string[]): string[] => [...new Set([...a, ...b])];
 
-/** Finds or creates the project for one input and applies chains, domains, token and status evidence. */
+/** Link kinds whose domains can become official. Claim links never do: a claim page is what phishing imitates. */
+const OFFICIAL_KINDS: ReadonlySet<LinkKind> = new Set<LinkKind>(["website", "app", "docs"]);
+
+/** Classified links of one input: the website URL first (as `website` unless it is a social host), then `urls`. */
+function inputLinks(input: ProjectInput): { url: string; kind: LinkKind }[] {
+  const links: { url: string; kind: LinkKind }[] = [];
+  if (input.websiteUrl !== null) {
+    const kind = classifyLink(input.websiteUrl);
+    if (kind !== null) links.push({ url: input.websiteUrl, kind: kind === "social" ? "social" : "website" });
+  }
+  for (const url of input.urls) {
+    const kind = classifyLink(url);
+    if (kind !== null) links.push({ url, kind });
+  }
+  return links;
+}
+
+/**
+ * Finds or creates the project for one input and applies chains, token and status evidence.
+ *
+ * Official domains (registrable domains of website, app and docs links, never claim, social or platform
+ * hosts) are only set while the project has none: on creation, or on an existing project with an empty
+ * list. A project that already has official domains never gains new ones automatically, so a phishing
+ * domain listed next to the real one cannot whitelist itself.
+ *
+ * Before the first status evidence of this (project, document) pair is written in this merge, the
+ * document's earlier evidence for that field is deleted, so a page that changed replaces its own claim.
+ */
 async function mergeProject(
   repo: PipelineRepo,
   input: ProjectInput,
   document: StoredDocument,
   now: Date,
   stats: DailyStats,
+  cleared: Set<string>,
 ): Promise<{ id: string; links: { url: string; kind: LinkKind }[] } | null> {
   const nameKey = normalizeName(input.name);
   if (nameKey === "") return null;
 
-  const links: { url: string; kind: LinkKind }[] = [];
-  for (const url of input.urls) {
-    const kind = classifyLink(url);
-    if (kind !== null) links.push({ url, kind });
-  }
+  const links = inputLinks(input);
   const officialDomains = [
     ...new Set(
       links
-        .filter((l) => l.kind !== "social")
+        .filter((l) => OFFICIAL_KINDS.has(l.kind))
         .flatMap((l) => registrableDomain(l.url) ?? [])
         .filter((d) => !isPlatformDomain(d)),
     ),
@@ -160,6 +193,11 @@ async function mergeProject(
     if (input.source === "defillama") evidenceField = "defillama_listing";
   }
 
+  const clearKey = `${project.id} ${evidenceField}`;
+  if (!cleared.has(clearKey)) {
+    await repo.deleteEvidence(project.id, document.id, evidenceField);
+    cleared.add(clearKey);
+  }
   await repo.addEvidence({
     projectId: project.id,
     documentId: document.id,
@@ -167,6 +205,7 @@ async function mergeProject(
     value: input.status,
     quote: input.quote,
     at,
+    sourceUrl: document.url,
   });
   const derived = deriveStatus(await repo.listStatusEvidence(project.id), project.status);
   await repo.updateProject(
@@ -175,7 +214,7 @@ async function mergeProject(
       status: derived.status,
       conflict: derived.conflict,
       chains: union(project.chains, input.chains),
-      officialDomains: union(project.officialDomains, officialDomains),
+      officialDomains: project.officialDomains.length > 0 ? project.officialDomains : officialDomains,
       tokenSymbol: project.tokenSymbol ?? input.tokenSymbol,
       lastSeen: now,
     },
@@ -187,6 +226,12 @@ async function mergeProject(
 /**
  * Merges every project a document mentions. Deadlines and tasks are replaced per (project, document),
  * accumulated first so two mentions of the same project in one document do not overwrite each other.
+ *
+ * When the document yields exactly one project, its text is also scanned for dangerous asks (spec section 6:
+ * text and LLM output), stored as `dangerous_ask` evidence (value = ask code, quote = the sentence). A
+ * document about several projects cannot tell whose ask it is, so nothing is attributed. Earlier
+ * `dangerous_ask` evidence of this document is replaced either way. DefiLlama documents are skipped: their
+ * text is our own summary.
  */
 export async function mergeDocument(
   repo: PipelineRepo,
@@ -199,8 +244,9 @@ export async function mergeDocument(
     string,
     { deadlines: ExtractedDeadline[]; tasks: string[]; links: { url: string; kind: LinkKind }[] }
   >();
+  const cleared = new Set<string>();
   for (const input of inputs) {
-    const merged = await mergeProject(repo, input, document, now, stats);
+    const merged = await mergeProject(repo, input, document, now, stats, cleared);
     if (merged === null) continue;
     const acc = touched.get(merged.id) ?? { deadlines: [], tasks: [], links: [] };
     acc.deadlines.push(...input.deadlines);
@@ -208,7 +254,23 @@ export async function mergeDocument(
     acc.links.push(...merged.links);
     touched.set(merged.id, acc);
   }
+  const scanText = document.sourceKind !== "defillama";
+  const asks = scanText && touched.size === 1 ? findDangerousAskSentences(document.text) : [];
   for (const [projectId, acc] of touched) {
+    if (scanText) {
+      await repo.deleteEvidence(projectId, document.id, "dangerous_ask");
+      for (const ask of asks) {
+        await repo.addEvidence({
+          projectId,
+          documentId: document.id,
+          field: "dangerous_ask",
+          value: ask.code,
+          quote: ask.sentence,
+          at: pickEvidenceDate(document),
+          sourceUrl: document.url,
+        });
+      }
+    }
     await repo.replaceDeadlines(projectId, document.id, acc.deadlines);
     await repo.replaceTasks(projectId, document.id, acc.tasks);
     await repo.upsertLinks(

@@ -30,14 +30,15 @@ export interface PipelineDeps {
 const STEP = { collect: 1, extract: 2, merge: 3, speculative: 4, score: 5, purge: 6 } as const;
 
 function speculativeInput(c: SpeculativeCandidate): ProjectInput {
-  const urls: string[] = [];
+  let websiteUrl: string | null = null;
   if (c.url) {
     try {
-      urls.push(cleanUrl(c.url).url);
+      websiteUrl = cleanUrl(c.url).url;
     } catch {
       // Not an absolute URL: no link.
     }
   }
+  const urls = c.twitter === null ? [] : [`https://x.com/${c.twitter}`];
   return {
     name: c.name,
     tokenSymbol: null,
@@ -47,6 +48,7 @@ function speculativeInput(c: SpeculativeCandidate): ProjectInput {
     tasks: [],
     deadlines: [],
     urls,
+    websiteUrl,
     source: "defillama",
   };
 }
@@ -112,6 +114,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
         tasks: p.tasks,
         deadlines: p.deadlines,
         urls: p.official_urls,
+        websiteUrl: null,
         source: "extraction",
       }));
       await mergeOne(document, inputs, true);

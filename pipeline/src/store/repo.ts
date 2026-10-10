@@ -38,6 +38,23 @@ export interface ProjectForScoring extends ProjectRow {
   links: { url: string; kind: string }[];
   /** Number of distinct document source keys among the project's evidence. */
   sourceCount: number;
+  /** Name of the `lookalikeOf` project (null when there is none). */
+  lookalikeOfName: string | null;
+  /** Official domains of the `lookalikeOf` project ([] when there is none). */
+  lookalikeOfDomains: string[];
+  /** `dangerous_ask` evidence (value = ask code, quote = source sentence), in insertion order. */
+  sourceAsks: { code: string; quote: string }[];
+}
+
+export interface NewEvidence {
+  projectId: string;
+  documentId: string;
+  field: string;
+  value: string;
+  quote: string;
+  at: Date;
+  /** `documents.url` of `documentId`, copied so readers can link the source without reading documents. */
+  sourceUrl: string;
 }
 
 export interface PipelineRepo {
@@ -46,6 +63,7 @@ export interface PipelineRepo {
   upsertDocument(doc: CollectedDocument, contentHash: string): Promise<StoredDocument>;
   /** Highest message id stored for a channel (documents `https://t.me/<channel>/<id>`), or null. */
   lastTelegramMessageId(channel: string): Promise<number | null>;
+  /** Pending documents with non-empty text (purged ones are skipped), oldest `fetched_at` first, then by url. */
   listPendingDocuments(limit: number): Promise<StoredDocument[]>;
   saveExtraction(documentId: string, attempt: ExtractionAttempt, promptVersion: string): Promise<void>;
   setExtractionStatus(documentId: string, status: ExtractionStatus): Promise<void>;
@@ -55,14 +73,10 @@ export interface PipelineRepo {
   createProject(p: NewProject, at: Date): Promise<ProjectRow>;
   /** Always bumps `lastSeen` to `at`. A status change also writes a `project_changes` row. */
   updateProject(id: string, patch: Partial<ProjectRow>, at: Date): Promise<void>;
-  addEvidence(e: {
-    projectId: string;
-    documentId: string;
-    field: string;
-    value: string;
-    quote: string;
-    at: Date;
-  }): Promise<void>;
+  /** Ignored when the same (project, document, field, value) already exists. */
+  addEvidence(e: NewEvidence): Promise<void>;
+  /** Deletes the evidence of one field that one document contributed to one project. */
+  deleteEvidence(projectId: string, documentId: string, field: string): Promise<void>;
   /** Evidence rows with field "status", as input for `deriveStatus`. */
   listStatusEvidence(projectId: string): Promise<StatusEvidence[]>;
   /** Replaces the deadlines this document contributed to the project. */

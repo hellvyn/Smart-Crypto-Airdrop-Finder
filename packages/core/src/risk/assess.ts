@@ -1,5 +1,6 @@
 import type { RiskLevel, RiskReason, Severity, Status } from "../types.js";
-import { detectDangerousAsks } from "./dangerous-asks.js";
+import { DANGEROUS_ASK_CODES, detectDangerousAsks } from "./dangerous-asks.js";
+import type { DangerousAskCode } from "./dangerous-asks.js";
 import { isLookalike, registrableOf } from "./lookalike.js";
 
 export type { RiskReason } from "../types.js";
@@ -28,9 +29,19 @@ export interface RiskInput {
     conflict: boolean;
     sourceCount: number;
     hasOfficialSocial: boolean;
+    /** Id of the project this one shares a name with. Only decides whether the reason applies. */
     lookalikeOf: string | null;
+    /** Display name of the `lookalikeOf` project, shown in the reason. */
+    lookalikeOfName: string | null;
+    /** Official domains of the `lookalikeOf` project, shown in the reason. */
+    lookalikeOfDomains: string[];
   };
   tasks: string[];
+  /**
+   * Dangerous asks found in the source text itself (code from `findDangerousAskSentences`, quote = the sentence).
+   * Unknown codes are ignored; a code already found in `tasks` is not reported twice.
+   */
+  sourceAsks: { code: string; quote: string }[];
   linkDomains: { domain: string; kind: "website" | "app" | "docs" | "claim" | "social" }[];
   /** null = check failed or TLD unsupported. */
   domainAgeDays: Record<string, number | null>;
@@ -47,6 +58,11 @@ export interface RiskAssessment {
   reasons: RiskReason[];
   checks: RiskCheck[];
 }
+
+const SOURCE_ASK_MESSAGE: Record<DangerousAskCode, string> = {
+  asks_secret: "The source text asks for a seed phrase or private key",
+  asks_payment: "The source text asks you to send crypto in order to claim",
+};
 
 const NEW_CLAIM_DOMAIN_DAYS = 30;
 const YOUNG_DOMAIN_DAYS = 90;
@@ -81,6 +97,16 @@ function plural(n: number, unit: string): string {
 export function assessRisk(input: RiskInput): RiskAssessment {
   const { project } = input;
   const reasons: RiskReason[] = [...detectDangerousAsks(input.tasks)];
+  for (const ask of input.sourceAsks) {
+    if (!(DANGEROUS_ASK_CODES as readonly string[]).includes(ask.code)) continue;
+    if (reasons.some((r) => r.code === ask.code)) continue;
+    reasons.push({
+      code: ask.code,
+      severity: "critical",
+      message: `${SOURCE_ASK_MESSAGE[ask.code as DangerousAskCode]}: "${ask.quote}"`,
+      source: "text",
+    });
+  }
 
   const officialRegs = new Set(project.officialDomains.map(keyOf));
 
@@ -152,10 +178,14 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     }
   }
   if (project.lookalikeOf !== null) {
+    const other =
+      project.lookalikeOfName === null
+        ? "another project"
+        : `"${project.lookalikeOfName}"${project.lookalikeOfDomains.length > 0 ? ` (${project.lookalikeOfDomains.join(", ")})` : ""}`;
     reasons.push({
       code: "lookalike_domain",
       severity: "high",
-      message: `This project shares a name with "${project.lookalikeOf}" but uses a different domain.`,
+      message: `This project shares a name with ${other} but uses a different domain.`,
       source: "heuristic",
     });
   }

@@ -4,6 +4,8 @@ export interface SpeculativeCandidate {
   name: string;
   slug: string;
   url: string | null;
+  /** X (Twitter) handle without "@", or null when missing or not a valid handle. */
+  twitter: string | null;
   chains: string[];
   tvl: number;
   change7d: number | null;
@@ -14,6 +16,7 @@ const protocolSchema = z.object({
   name: z.string(),
   slug: z.string(),
   url: z.string().nullish(),
+  twitter: z.string().nullish(),
   chains: z.array(z.string()),
   tvl: z.number().nullish(),
   change_7d: z.number().nullish(),
@@ -21,6 +24,14 @@ const protocolSchema = z.object({
   gecko_id: z.string().nullish(),
   symbol: z.string(),
 });
+
+const TWITTER_HANDLE = /^[A-Za-z0-9_]{1,15}$/;
+
+/** A bare X handle ("@" and surrounding spaces removed), or null when it is not a valid handle. */
+function twitterHandle(raw: string | null | undefined): string | null {
+  const handle = (raw ?? "").trim().replace(/^@/, "");
+  return TWITTER_HANDLE.test(handle) ? handle : null;
+}
 
 /**
  * Picks DefiLlama protocols that look like pre-token ("speculative") airdrop candidates:
@@ -48,6 +59,7 @@ export function selectSpeculativeCandidates(
       name: p.name,
       slug: p.slug,
       url: p.url ? p.url : null,
+      twitter: twitterHandle(p.twitter),
       chains: p.chains,
       tvl: p.tvl,
       change7d: typeof p.change_7d === "number" && Number.isFinite(p.change_7d) ? p.change_7d : null,

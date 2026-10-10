@@ -80,7 +80,8 @@ interface FakeHttp extends Http {
   maxInFlight: number;
 }
 
-function fakeHttp(pages: Pages): FakeHttp {
+/** `registrations` maps a domain to its RDAP registration date (default 2020-01-01). */
+function fakeHttp(pages: Pages, registrations: Record<string, string> = {}): FakeHttp {
   let inFlight = 0;
   const http: FakeHttp = {
     gets: [],
@@ -95,10 +96,8 @@ function fakeHttp(pages: Pages): FakeHttp {
         return { status: 200, body: JSON.stringify({ code: 1, result: { phishing_site: 0 } }) };
       }
       if (url.startsWith("https://rdap.org/domain/")) {
-        return {
-          status: 200,
-          body: JSON.stringify({ events: [{ eventAction: "registration", eventDate: "2020-01-01T00:00:00Z" }] }),
-        };
+        const eventDate = registrations[url.slice("https://rdap.org/domain/".length)] ?? "2020-01-01T00:00:00Z";
+        return { status: 200, body: JSON.stringify({ events: [{ eventAction: "registration", eventDate }] }) };
       }
       return pages[url] ?? { status: 404, body: "" };
     },
@@ -200,6 +199,17 @@ function setup(opts: { pages?: Pages; chat?: FakeChat; repo?: MemoryRepo; now?: 
 
 async function projects(repo: MemoryRepo) {
   return repo.listProjectsForScoring(10_000, NOW);
+}
+
+/** Latest stored risk assessment of the first project with this name key. */
+async function latestRisk(repo: MemoryRepo, nameKey: string, index = 0) {
+  const id = (await repo.findProjectsByNameKey(nameKey))[index]?.id;
+  return repo.riskAssessments.filter((r) => r.projectId === id).at(-1);
+}
+
+/** The Telegram fixture page with extra messages appended. */
+function telegramWith(...messages: string[]): { status: number; body: string } {
+  return { status: 200, body: fixture("telegram.html").replace("</section>", `${messages.join("")}</section>`) };
 }
 
 describe("runDaily", () => {
@@ -551,6 +561,179 @@ describe("runDaily lookalikes", () => {
     const rows = await repo.findProjectsByNameKey("deepbook");
     expect(rows.map((r) => r.slug)).toEqual(["deepbook", "deepbook-2"]);
     expect(rows[1]?.lookalikeOf).toBe(rows[0]?.id);
+
+    // The risk reason names the other project and its official domain, never its id.
+    const risk = await latestRisk(repo, "deepbook", 1);
+    const reasons = risk?.reasons.filter((r) => r.code === "lookalike_domain").map((r) => r.message) ?? [];
+    expect(reasons).toContain('This project shares a name with "DeepBook" (deepbook.tech) but uses a different domain.');
+    expect(reasons.join(" ")).not.toContain(rows[0]?.id ?? "-");
+  });
+});
+
+describe("runDaily official domains", () => {
+  it("never promotes a later claim domain to official, so a young lookalike claim domain is high risk", async () => {
+    const { repo, deps, config } = setup();
+    await runDaily(deps, config);
+    expect((await repo.findProjectsByNameKey("deepbook"))[0]?.officialDomains).toEqual(["deepbook.tech"]);
+
+    const pages = basePages();
+    pages[TG] = telegramWith(
+      tgMessage(
+        105,
+        "2026-10-10T08:00:00+00:00",
+        'DeepBook claim is live: <a href="https://deepbook.tech/">site</a> <a href="https://deepbook-airdrop.xyz/claim">claim</a>',
+      ),
+    );
+    const replies = {
+      ...REPLIES,
+      "https://t.me/airdrops_io/105": {
+        is_airdrop_content: true,
+        projects: [
+          project({ name: "DeepBook", status: "live", official_urls: ["https://deepbook.tech/", "https://deepbook-airdrop.xyz/claim"] }),
+        ],
+      },
+    };
+    const later = new Date(NOW.getTime() + DAY);
+    const http = fakeHttp(pages, { "deepbook-airdrop.xyz": new Date(NOW.getTime() - 5 * DAY).toISOString() });
+    await runDaily({ ...deps, http, chat: fakeChat(replies).chat, now: () => later }, config);
+
+    const rows = await repo.findProjectsByNameKey("deepbook");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.officialDomains).toEqual(["deepbook.tech"]);
+    const risk = await latestRisk(repo, "deepbook");
+    expect(risk?.level).toBe("high");
+    expect(risk?.reasons.map((r) => r.code)).toEqual(expect.arrayContaining(["new_claim_domain", "lookalike_domain", "young_domain"]));
+  });
+
+  it("takes official domains only from website, app and docs links of a new project", async () => {
+    const pages = basePages();
+    pages[TG] = telegramWith(
+      tgMessage(
+        106,
+        "2026-10-08T08:00:00+00:00",
+        'Nova drop: <a href="https://claim.nova-drop.xyz/">claim</a> <a href="https://docs.novaproto.io/start">docs</a> <a href="https://x.com/nova">X</a>',
+      ),
+    );
+    const replies = {
+      ...REPLIES,
+      "https://t.me/airdrops_io/106": {
+        is_airdrop_content: true,
+        projects: [
+          project({
+            name: "Nova",
+            status: "live",
+            official_urls: ["https://claim.nova-drop.xyz/", "https://docs.novaproto.io/start", "https://x.com/nova"],
+          }),
+        ],
+      },
+    };
+    const { repo, deps, config } = setup({ pages, chat: fakeChat(replies) });
+    await runDaily(deps, config);
+    expect((await repo.findProjectsByNameKey("nova"))[0]?.officialDomains).toEqual(["novaproto.io"]);
+  });
+
+  it("fills official domains of an existing project that has none yet", async () => {
+    const repo = new MemoryRepo();
+    await repo.createProject(
+      { slug: "ink", name: "Ink", nameKey: "ink", tokenSymbol: null, chains: [], officialDomains: [], status: "unknown", conflict: false, lookalikeOf: null },
+      new Date(NOW.getTime() - DAY),
+    );
+    const { deps, config } = setup({ repo });
+    await runDaily(deps, config);
+    const ink = await repo.findProjectsByNameKey("ink");
+    expect(ink).toHaveLength(1);
+    expect(ink[0]?.officialDomains).toEqual(["inkonchain.com"]);
+  });
+
+  it("treats the DefiLlama url as the website and the DefiLlama twitter handle as a social link", async () => {
+    const pages = basePages();
+    pages[PROTOCOLS] = {
+      status: 200,
+      body: JSON.stringify([{ ...PROTOCOL_LIST[0], url: "https://hyperdrive.fi/claim", twitter: "hyperdrive_fi" }]),
+    };
+    const { repo, deps, config } = setup({ pages });
+    await runDaily(deps, config);
+    const [hyper] = await repo.findProjectsByNameKey("hyperdrivelend");
+    expect(hyper?.officialDomains).toEqual(["hyperdrive.fi"]);
+    const scored = (await projects(repo)).find((p) => p.nameKey === "hyperdrivelend");
+    expect(scored?.links).toEqual([
+      { url: "https://hyperdrive.fi/claim", kind: "website" },
+      { url: "https://x.com/hyperdrive_fi", kind: "social" },
+    ]);
+    expect(repo.riskAssessments.find((r) => r.projectId === hyper?.id)?.reasons.map((r) => r.code)).not.toContain("single_source");
+  });
+});
+
+describe("runDaily evidence", () => {
+  it("replaces a document's status evidence when the page changes, so an update on the same day is no conflict", async () => {
+    const { repo, deps, config } = setup();
+    await runDaily(deps, config);
+    expect((await repo.findProjectsByNameKey("deepbook"))[0]?.status).toBe("live");
+
+    // Same "Updated 24 Jul 2026" date, new content that says the claim ended.
+    const pages = basePages();
+    pages[DEEPBOOK] = {
+      status: 200,
+      body: fixture("airdrops-detail.html").replace("Claims are open for 30 days.", "The claim has ended."),
+    };
+    const replies = {
+      ...REPLIES,
+      [DEEPBOOK]: { is_airdrop_content: true, projects: [project({ name: "DeepBook", status: "ended", official_urls: ["https://deepbook.tech/waitlist"] })] },
+    };
+    await runDaily({ ...deps, http: fakeHttp(pages), chat: fakeChat(replies).chat, now: () => new Date(NOW.getTime() + DAY) }, config);
+    const [deepbook] = await repo.findProjectsByNameKey("deepbook");
+    expect(deepbook?.status).toBe("ended");
+    expect(deepbook?.conflict).toBe(false);
+    expect((await repo.listStatusEvidence(deepbook?.id ?? "")).map((e) => e.status)).toEqual(["ended"]);
+  });
+
+  it("copies the document url into evidence", async () => {
+    const { repo, deps, config } = setup();
+    await runDaily(deps, config);
+    const [deepbook] = await repo.findProjectsByNameKey("deepbook");
+    expect(repo["evidence"].filter((e) => e.projectId === deepbook?.id).map((e) => e.sourceUrl)).toEqual([DEEPBOOK]);
+  });
+
+  it("scans the text of a single-project document for dangerous asks the LLM left out", async () => {
+    const pages = basePages();
+    pages[TG] = telegramWith(
+      tgMessage(106, "2026-10-08T08:00:00+00:00", "Scamdrop airdrop is live. Never share your keys with anyone. Enter your seed phrase to claim your tokens."),
+    );
+    const replies = {
+      ...REPLIES,
+      "https://t.me/airdrops_io/106": {
+        is_airdrop_content: true,
+        projects: [project({ name: "Scamdrop", status: "live", tasks: ["Claim your tokens"] })],
+      },
+    };
+    const { repo, deps, config } = setup({ pages, chat: fakeChat(replies) });
+    await runDaily(deps, config);
+    const [scam] = await repo.findProjectsByNameKey("scamdrop");
+    const asks = repo["evidence"].filter((e) => e.projectId === scam?.id && e.field === "dangerous_ask");
+    expect(asks.map((e) => [e.value, e.quote])).toEqual([["asks_secret", "Enter your seed phrase to claim your tokens."]]);
+    const risk = await latestRisk(repo, "scamdrop");
+    expect(risk?.level).toBe("critical");
+    expect(risk?.reasons.find((r) => r.code === "asks_secret")?.source).toBe("text");
+  });
+
+  it("does not attribute text asks in a multi-project document to any project", async () => {
+    const pages = basePages();
+    pages[TG] = telegramWith(
+      tgMessage(107, "2026-10-08T08:00:00+00:00", "Alphadrop and Betadrop airdrops. Enter your seed phrase to claim your tokens."),
+    );
+    const replies = {
+      ...REPLIES,
+      "https://t.me/airdrops_io/107": {
+        is_airdrop_content: true,
+        projects: [project({ name: "Alphadrop", status: "live" }), project({ name: "Betadrop", status: "live" })],
+      },
+    };
+    const { repo, deps, config } = setup({ pages, chat: fakeChat(replies) });
+    await runDaily(deps, config);
+    expect(repo["evidence"].filter((e) => e.field === "dangerous_ask")).toEqual([]);
+    for (const key of ["alphadrop", "betadrop"]) {
+      expect((await latestRisk(repo, key))?.reasons.map((r) => r.code)).not.toContain("asks_secret");
+    }
   });
 });
 

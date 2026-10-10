@@ -1,4 +1,5 @@
-// Smoke test of SupabaseRepo against a local Supabase (`supabase start`).
+// Smoke test of SupabaseRepo against a local Supabase (`supabase start`). It writes and deletes rows and runs a
+// text purge over all documents, so it refuses to run against anything but a local stack.
 // Usage: SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... [SUPABASE_ANON_KEY=...] pnpm --filter pipeline exec tsx scripts/repo-smoke.ts
 import assert from "node:assert/strict";
 import { createClient } from "@supabase/supabase-js";
@@ -7,6 +8,7 @@ import { SupabaseRepo } from "../src/store/supabase-repo.js";
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !serviceKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
+if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(url)) throw new Error("refusing to run against a non-local Supabase");
 
 const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 const repo = new SupabaseRepo(admin);
@@ -44,6 +46,11 @@ async function main(): Promise<void> {
   assert.ok(!(await repo.listPendingDocuments(1000)).some((d) => d.id === mf.id));
   assert.equal((await repo.upsertDocument(doc("mf"), "m1")).extractionStatus, "merge_failed");
   assert.equal((await repo.upsertDocument(doc("mf", { text: "changed" }), "m2")).extractionStatus, "pending");
+
+  // Pending documents with purged (empty) text are not listed, even when they are the oldest.
+  const empty = await repo.upsertDocument(doc("empty", { text: "", fetchedAt: new Date(Date.UTC(1999, 0, 1)) }), "e1");
+  assert.equal(empty.extractionStatus, "pending");
+  assert.ok(!(await repo.listPendingDocuments(1000)).some((d) => d.id === empty.id));
 
   // Deterministic pending order: fetched_at asc, url asc. Year-2000 dates sort before everything else.
   const old = (n: number) => new Date(Date.UTC(2000, 0, 1, 0, 0, n));
@@ -98,7 +105,7 @@ async function main(): Promise<void> {
   const t1 = new Date(T0.getTime() + 1000);
   await repo.updateProject(p.id, { status: "live", conflict: true }, t1);
   await repo.updateProject(p.id, { status: "live" }, new Date(T0.getTime() + 2000));
-  const ev = { projectId: p.id, documentId: a.id, field: "status", value: "live", quote: "is live", at: T0 };
+  const ev = { projectId: p.id, documentId: a.id, field: "status", value: "live", quote: "is live", at: T0, sourceUrl: a.url };
   await repo.addEvidence(ev);
   await repo.addEvidence(ev);
   assert.deepEqual(await repo.listStatusEvidence(p.id), [{ status: "live", at: T0 }]);
@@ -110,6 +117,18 @@ async function main(): Promise<void> {
     (await repo.listStatusEvidence(p.id)).map((x) => x.status),
     ["live", "ended", "announced"],
   );
+  // evidence.source_url is the document url given at insert.
+  const sourceUrls = await admin.from("evidence").select("document_id, source_url").eq("project_id", p.id).order("seq");
+  assert.equal(sourceUrls.error, null);
+  assert.deepEqual(
+    (sourceUrls.data ?? []).map((r) => r.source_url),
+    [a.url, b.url, b.url],
+  );
+  // deleteEvidence removes one field of one (project, document) pair only.
+  await repo.addEvidence({ ...ev, documentId: b.id, field: "dangerous_ask", value: "asks_payment", quote: "Send 0.1 ETH to claim your tokens." });
+  await repo.addEvidence({ ...ev, documentId: a.id, field: "dangerous_ask", value: "asks_secret", quote: "Enter your seed phrase." });
+  await repo.deleteEvidence(p.id, b.id, "status");
+  assert.deepEqual((await repo.listStatusEvidence(p.id)).map((x) => x.status), ["live"]);
 
   await repo.replaceTasks(p.id, a.id, ["Bridge", "Swap"]);
   await repo.replaceTasks(p.id, a.id, ["Bridge only"]);
@@ -123,6 +142,19 @@ async function main(): Promise<void> {
   assert.deepEqual(scored.tasks, ["Bridge only"]);
   assert.deepEqual(scored.links, [{ url: "https://smoke.test/", kind: "claim" }]);
   assert.equal(scored.sourceCount, 1);
+  // dangerous_ask evidence comes back in insertion order; no lookalike for p, the twin names p.
+  assert.deepEqual(scored.sourceAsks, [
+    { code: "asks_payment", quote: "Send 0.1 ETH to claim your tokens." },
+    { code: "asks_secret", quote: "Enter your seed phrase." },
+  ]);
+  assert.equal(scored.lookalikeOfName, null);
+  assert.deepEqual(scored.lookalikeOfDomains, []);
+  const scoredTwin = (await repo.listProjectsForScoring(30, T0)).find((x) => x.id === twin.id);
+  assert.ok(scoredTwin);
+  assert.equal(scoredTwin.lookalikeOf, p.id);
+  assert.equal(scoredTwin.lookalikeOfName, "Smoke");
+  assert.deepEqual(scoredTwin.lookalikeOfDomains, ["smoke.test"]);
+  assert.deepEqual(scoredTwin.sourceAsks, []);
   assert.equal(scored.status, "live");
   assert.equal(scored.lastSeen.getTime(), T0.getTime() + 2000);
   assert.equal((await repo.listProjectsForScoring(30, new Date(T0.getTime() + 60 * day))).some((x) => x.id === p.id), false);
