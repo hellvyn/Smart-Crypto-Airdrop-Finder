@@ -263,19 +263,19 @@ describe("unsafe claim link", () => {
 describe("Pagination", () => {
   it("links Previous and Next and keeps the filters", () => {
     render(<Pagination page={2} pageSize={50} total={120} filters={{ status: ["live"], risk: ["high"], chain: "base" }} />);
-    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe("/?status=live&risk=high&chain=base");
-    expect(screen.getByRole("link", { name: "Next" }).getAttribute("href")).toBe("/?status=live&risk=high&chain=base&page=3");
+    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe("/airdrops?status=live&risk=high&chain=base");
+    expect(screen.getByRole("link", { name: "Next" }).getAttribute("href")).toBe("/airdrops?status=live&risk=high&chain=base&page=3");
     expect(screen.getByText("51-100 of 120")).toBeTruthy();
   });
 
   it("has no Next on the last page and no Previous on the first", () => {
     const { unmount } = render(<Pagination page={1} pageSize={50} total={55} filters={{}} />);
     expect(screen.queryByRole("link", { name: "Previous" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Next" }).getAttribute("href")).toBe("/?page=2");
+    expect(screen.getByRole("link", { name: "Next" }).getAttribute("href")).toBe("/airdrops?page=2");
     unmount();
     render(<Pagination page={2} pageSize={50} total={55} filters={{}} />);
     expect(screen.queryByRole("link", { name: "Next" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe("/");
+    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe("/airdrops");
   });
 
   it("renders nothing for a single page", () => {
@@ -285,7 +285,7 @@ describe("Pagination", () => {
 
   it("links back to the last page when the page is past the end", () => {
     render(<Pagination page={9} pageSize={50} total={55} filters={{}} />);
-    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe("/?page=2");
+    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe("/airdrops?page=2");
   });
 });
 

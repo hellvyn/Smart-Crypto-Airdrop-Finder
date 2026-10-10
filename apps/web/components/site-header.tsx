@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { signOut } from "@/app/(auth)/actions";
 import { getUser } from "@/lib/auth";
+import { LIST_PATH } from "@/lib/routes";
 import { Button, HazardBar } from "@/components/ui";
 
 /**
@@ -21,14 +22,14 @@ export async function SiteHeader() {
         </Link>
         {user ? (
           <nav className="site-nav site-nav-member" aria-label="Menu utama">
-            <Link href="/airdrops">Airdrop</Link>
+            <Link href={LIST_PATH}>Airdrop</Link>
             <Link href="/watchlist">Watchlist</Link>
             <Link href="/wallets">Wallets</Link>
             <Link href="/settings">Settings</Link>
           </nav>
         ) : (
           <nav className="site-nav site-nav-visitor" aria-label="Menu utama">
-            <Link href="/airdrops">Airdrop</Link>
+            <Link href={LIST_PATH}>Airdrop</Link>
             <Link href="/#cara">Kenapa AirdropIQ</Link>
             <Link href="/#jejak">Track record</Link>
           </nav>

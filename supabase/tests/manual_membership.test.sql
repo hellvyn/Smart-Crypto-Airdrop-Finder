@@ -4,7 +4,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(20);
+select plan(25);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS).
 -- user G: 33333333-..., user H: 44444444-...
@@ -75,6 +75,42 @@ select is(
   0, 'G''s account and profile are gone');
 select is((select count(*)::int from profiles where user_id = '44444444-4444-4444-4444-444444444444'), 1,
   'H''s profile is intact');
+
+-- ---------- anon reads (Plan 7 Task 4, review focus 1) ----------
+-- The anon key is public, so anyone can call /rest/v1/<table> directly. Lock the existing grants and RLS as a
+-- regression: anon reads no rows of the user tables even when rows exist, and can still read the public list.
+insert into projects (id, slug, name, name_key, chains, status, first_seen, last_seen) values
+  ('cccccccc-0000-0000-0000-000000000001', 'mm-public', 'MM Public', 'mmpublic', '{base}', 'live', now(), now());
+insert into watchlist (user_id, project_id) values
+  ('44444444-4444-4444-4444-444444444444', 'cccccccc-0000-0000-0000-000000000001');
+insert into wallets (user_id, address, chain_family) values
+  ('44444444-4444-4444-4444-444444444444', '0x00000000000000000000000000000000000000d4', 'evm');
+
+-- Rows visible to the current role. A refused read (no privilege, 42501) is what PostgREST answers with an error and
+-- no data, so it counts as zero rows, the same as rows filtered out by RLS.
+create function pg_temp.visible_rows(tbl regclass) returns bigint language plpgsql as $f$
+declare n bigint;
+begin
+  execute format('select count(*) from %s', tbl) into n;
+  return n;
+exception when insufficient_privilege then
+  return 0;
+end
+$f$;
+
+-- 21. The rows exist, so zero below means hidden, not missing.
+select is(
+  (select pg_temp.visible_rows('public.watchlist') > 0 and pg_temp.visible_rows('public.wallets') > 0
+          and pg_temp.visible_rows('public.profiles') > 0),
+  true, 'fixtures: H has a watchlist row, a wallet and a profile');
+
+set local role anon;
+-- 22-25.
+select is(pg_temp.visible_rows('public.watchlist'), 0::bigint, 'anon cannot read watchlists');
+select is(pg_temp.visible_rows('public.wallets'), 0::bigint, 'anon cannot read wallets');
+select is(pg_temp.visible_rows('public.profiles'), 0::bigint, 'anon cannot read profiles');
+select isnt_empty($$ select 1 from public.project_list $$, 'anon can read the public list');
+reset role;
 
 select * from finish();
 rollback;

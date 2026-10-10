@@ -1,4 +1,7 @@
+import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
+import { getUser } from "@/lib/auth";
+import { signedInLoginTarget } from "@/lib/routes";
 import { safeNextPath } from "@/lib/safe-next";
 import { logIn } from "../actions";
 
@@ -10,7 +13,10 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string | string[] }>;
 }) {
   const params = await searchParams;
-  const next = safeNextPath(typeof params.next === "string" ? params.next : null);
+  const rawNext = typeof params.next === "string" ? params.next : null;
+  // Already signed in (checked with Supabase Auth, like requireUser): no form, straight on.
+  if (await getUser()) redirect(signedInLoginTarget(rawNext));
+  const next = safeNextPath(rawNext);
   return (
     <>
       <h1>Log in</h1>

@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { LIST_PATH } from "@/lib/routes";
 import { listQueryString, type ListFilters } from "@/lib/view";
 
 function href(f: ListFilters, page: number): string {
   const qs = listQueryString(f, page);
-  return qs ? `/?${qs}` : "/";
+  return qs ? `${LIST_PATH}?${qs}` : LIST_PATH;
 }
 
 /** Prev/Next links that keep the active filters. `total` is the number of matching projects across all pages. */

@@ -9,16 +9,21 @@ function clampRotation(degrees: number): number {
   return Math.min(MAX_ROTATION, Math.max(-MAX_ROTATION, degrees));
 }
 
-/** A ringed stamp ("LOLOS 4/4 CEK", "ENDED"). Colour comes from the tone, ring width from the size. */
+/**
+ * A ringed stamp ("LOLOS 4/4 CEK", "ENDED"). Colour comes from the tone, ring width from the size. `note` adds a small
+ * third line ("ATAU GAK TAMPIL").
+ */
 export function Stamp({
   top,
   bottom,
+  note,
   tone,
   size,
   rotate,
 }: {
   top: string;
   bottom: string;
+  note?: string;
   tone: StampTone;
   size: StampSize;
   rotate: number;
@@ -27,7 +32,7 @@ export function Stamp({
     <span
       className="ui-stamp"
       role="img"
-      aria-label={`${top} ${bottom}`.trim()}
+      aria-label={[top, bottom, note].filter(Boolean).join(" ")}
       data-tone={tone}
       data-size={size}
       style={{ transform: `rotate(${clampRotation(rotate)}deg)` }}
@@ -38,6 +43,11 @@ export function Stamp({
       {bottom ? (
         <span className="ui-stamp-bottom" aria-hidden="true">
           {bottom}
+        </span>
+      ) : null}
+      {note ? (
+        <span className="ui-stamp-note" aria-hidden="true">
+          {note}
         </span>
       ) : null}
     </span>

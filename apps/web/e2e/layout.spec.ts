@@ -59,7 +59,7 @@ test.describe("360px phone", () => {
   test.use({ viewport: { width: 360, height: 740 } });
 
   test("visitor pages do not scroll sideways", async ({ page }) => {
-    for (const path of ["/", "/login"]) {
+    for (const path of ["/", "/airdrops", "/login"]) {
       await page.goto(path);
       const width = await page.evaluate(() => document.documentElement.scrollWidth);
       expect(width, path).toBeLessThanOrEqual(360);

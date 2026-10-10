@@ -30,6 +30,12 @@ describe("Stamp", () => {
     expect(stamp(Number.NaN).style.transform).toBe("rotate(0deg)");
   });
 
+  it("adds an optional third line under the bottom text, also in its label", () => {
+    render(<Stamp top="LOLOS" bottom="4/4 CEK" note="ATAU GAK TAMPIL" tone="pass" size="lg" rotate={-8} />);
+    const el = screen.getByLabelText("LOLOS 4/4 CEK ATAU GAK TAMPIL");
+    expect(el.lastElementChild?.textContent).toBe("ATAU GAK TAMPIL");
+  });
+
   it("exposes size and tone so ring width and colour can be styled", () => {
     render(<Stamp top="ENDED" bottom="" tone="ended" size="lg" rotate={5} />);
     const el = screen.getByLabelText("ENDED");
