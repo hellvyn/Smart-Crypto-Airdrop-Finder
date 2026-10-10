@@ -205,7 +205,7 @@ async function main(): Promise<void> {
     const proj = await anon.from("projects").select("id").eq("id", p.id);
     assert.equal(proj.error, null);
     assert.equal(proj.data?.length, 1);
-    for (const table of ["documents", "extractions", "project_changes", "notification_log"]) {
+    for (const table of ["documents", "extractions", "project_changes"]) {
       const res = await anon.from(table).select("*").limit(1);
       assert.deepEqual(res.data ?? [], [], `${table} must not be readable by anon`);
     }

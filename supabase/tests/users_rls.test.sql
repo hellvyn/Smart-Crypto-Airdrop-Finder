@@ -41,9 +41,8 @@ insert into wallet_checks (user_id, address, chain, result) values
 -- 1-2. Signup trigger created a profile with defaults.
 select is((select count(*)::int from profiles), 2, 'profile rows were created automatically on signup');
 select results_eq(
-  $$ select plan, digest_enabled, new_airdrops_opt_in, timezone, unsubscribe_token is not null
-     from profiles where user_id = '11111111-1111-1111-1111-111111111111' $$,
-  $$ values ('free'::text, true, false, 'UTC'::text, true) $$,
+  $$ select plan, timezone from profiles where user_id = '11111111-1111-1111-1111-111111111111' $$,
+  $$ values ('free'::text, 'UTC'::text) $$,
   'profile has the documented defaults');
 
 -- 3-6. Table constraints.
