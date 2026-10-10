@@ -159,12 +159,7 @@ a{color:#111111}a:hover{color:#C2410C}
 </div>
 </sc-for>
 </div>
-<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:4px">
-<span style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Advanced check</span>
-<sc-if value="{{visitor}}" hint-placeholder-val="{{ true }}">
-<span style="font-size:13px;color:#2B2B28">Hasil lengkapnya buat member. Kalau ada yang ketemu masalah, tetap kami tampilin ke semua orang.</span>
-</sc-if>
-</div>
+<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px">Advanced check</div>
 <div style="border:2px solid #111111">
 <sc-for list="{{extraChecks}}" as="x" hint-placeholder-count="3">
 <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:10px 12px;border-bottom:2px solid #111111">

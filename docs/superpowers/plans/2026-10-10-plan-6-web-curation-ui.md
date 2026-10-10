@@ -60,7 +60,7 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   | footer | "Not financial advice. Tetap DYOR sebelum connect wallet." |
   | sub-filter modal (#52) | label "Modal:"; pilihan "Semua" / "Gratis" / "Butuh $" (+ " · {n}"); tag baris "Gratis" / "Butuh ${x}+" / "Butuh $" / "Modal belum jelas" |
   | security check (#53) | badge "Re-check tiap pagi · terakhir {jam} WIB"; strip "Lapis cek" / "Source dibaca" / "Link dicek" / "Red flag"; badge "Wajib lolos" + "Satu aja gagal jalan, project ini gak bakal tampil. Bukan dianggap lolos."; kartu "Cek 01"…"Cek 04": "Minta seed phrase / bayar dulu", "Domain tiruan", "Umur domain", "Database phishing"; judul "Advanced check": "Riwayat hack", "Cross-check antar source", "AI baca halaman claim"; sumber "Scanner AirdropIQ", "Database AirdropIQ", "RDAP registry", "GoPlus Security", "DefiLlama Hacks", "Analisis AI" |
-  | advanced check pengunjung (#54) | cap "Member only"; catatan "Hasil lengkapnya buat member. Kalau ada yang ketemu masalah, tetap kami tampilin ke semua orang." |
+  | advanced check pengunjung (#54) | cap "Member only" (tanpa kalimat penjelasan) |
   | hasil garapan (#51) | "Dapet berapa dari airdrop ini?", "Gak dapet", "Hasil kamu", "Total hasil garapan", "Boleh dipakai anonim buat rata-rata hasil member", "Rata-rata member yang garap {project}: ≈ ${x} (dari {n} member yang mau berbagi)" |
   Sumber kebenaran teks: mockup `docs/design/airdropiq-c/*.dc.html` (spec §16). Kalau glosarium dan mockup beda,
   glosarium yang dipakai.
