@@ -13,6 +13,7 @@ export async function SiteHeader() {
         {user ? (
           <>
             <Link href="/watchlist">Watchlist</Link>
+            <Link href="/settings">Settings</Link>
             <span data-testid="user-email" className="user-email">
               {user.email}
             </span>

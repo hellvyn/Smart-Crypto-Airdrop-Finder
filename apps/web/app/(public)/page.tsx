@@ -22,6 +22,7 @@ function many(v: string | string[] | undefined): string[] {
 
 export default async function AirdropsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
+  const accountDeleted = many(sp.deleted)[0] === "1";
   const filters = parseFilters(sp);
   const db = await createServerClient();
   const now = new Date();
@@ -38,6 +39,11 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <h1>Airdrops</h1>
+      {accountDeleted ? (
+        <p role="status" className="form-message">
+          Your account was deleted.
+        </p>
+      ) : null}
       <StaleBanner lastRunAt={lastRunAt} now={now} />
       <p className="muted">
         Last updated: {lastRunAt ? formatDateTime(lastRunAt) : "never"}. {total} {total === 1 ? "airdrop" : "airdrops"}. Nearest deadline first, then most recently seen.
