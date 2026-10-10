@@ -3,7 +3,6 @@
 // Usage: SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... [SUPABASE_ANON_KEY=...] pnpm --filter pipeline exec tsx scripts/repo-smoke.ts
 import assert from "node:assert/strict";
 import { createClient } from "@supabase/supabase-js";
-import { DuplicateDigestError } from "../src/store/repo.js";
 import { SupabaseRepo } from "../src/store/supabase-repo.js";
 
 const url = process.env.SUPABASE_URL;
@@ -184,119 +183,6 @@ async function main(): Promise<void> {
     { field: "risk_level", old_value: "high", new_value: "low" },
   ]);
 
-  // notifications (as service_role: auth admin API, profiles, watchlist, notification_log)
-  const createUser = async (label: string, confirmed: boolean): Promise<string> => {
-    const res = await admin.auth.admin.createUser({
-      email: `smoke-${label}-${suffix}@example.test`,
-      password: `pw-${suffix}-${label}-Aa1!`,
-      email_confirm: confirmed,
-    });
-    assert.equal(res.error, null, `createUser ${label}: ${res.error?.message ?? ""}`);
-    return (res.data.user as { id: string }).id;
-  };
-  const reader = await createUser("reader", true);
-  const unconfirmed = await createUser("unconfirmed", false);
-  const optedOut = await createUser("optedout", true);
-  const userIds = [reader, unconfirmed, optedOut];
-  const profileUpdates = [
-    await admin.from("profiles").update({ new_airdrops_opt_in: true }).eq("user_id", reader),
-    await admin.from("profiles").update({ digest_enabled: false }).eq("user_id", optedOut),
-    await admin.from("watchlist").insert([
-      { user_id: reader, project_id: p.id },
-      { user_id: optedOut, project_id: p.id },
-    ]),
-  ];
-  for (const r of profileUpdates) assert.equal(r.error, null, `seed failed: ${r.error?.message ?? ""}`);
-  const token = await admin.from("profiles").select("unsubscribe_token").eq("user_id", reader).single();
-  assert.equal(token.error, null);
-
-  const ours = async () => (await repo.listDigestRecipients()).filter((r) => userIds.includes(r.userId));
-  // Only the confirmed, digest-enabled user; no digest logged yet.
-  assert.deepEqual(await ours(), [
-    {
-      userId: reader,
-      email: `smoke-reader-${suffix}@example.test`,
-      newAirdropsOptIn: true,
-      unsubscribeToken: token.data?.unsubscribe_token,
-      lastDigestAt: null,
-    },
-  ]);
-
-  // Dated deadlines only, by date; the undated one from document a is left out.
-  await repo.replaceDeadlines(p.id, b.id, [
-    { kind: "claim", date: "2026-10-12", precision: "exact", text: "Claim" },
-    { kind: "snapshot", date: "2026-10-11", precision: "approximate", text: "Snapshot" },
-  ]);
-  const sinceT0 = new Date(T0.getTime() + 1500);
-  const ctx = await repo.getDigestContext(reader, sinceT0, new Date(T0.getTime() + 3600_000));
-  assert.deepEqual(ctx.lastDigestAt, sinceT0);
-  assert.deepEqual(ctx.watched, [
-    { id: p.id, slug: `smoke-${suffix}`, name: "Smoke", status: "live", riskLevel: "low", firstSeen: T0 },
-  ]);
-  assert.deepEqual(ctx.deadlines, [
-    { projectId: p.id, kind: "snapshot", date: "2026-10-11", precision: "approximate", text: "Snapshot" },
-    { projectId: p.id, kind: "claim", date: "2026-10-12", precision: "exact", text: "Claim" },
-  ]);
-  // Changes strictly after `since` (the status change at T0+1s is before it), oldest first.
-  assert.deepEqual(
-    ctx.changes.map((c) => [c.field, c.oldValue, c.newValue, c.changedAt.getTime() - T0.getTime()]),
-    [
-      ["risk_level", "low", "high", 3000],
-      ["risk_level", "high", "low", 3000],
-    ],
-  );
-  // since = null: the 24 hours before `now`.
-  const ctxNull = await repo.getDigestContext(reader, null, new Date(T0.getTime() + 24 * 3600_000 + 2500));
-  assert.deepEqual(ctxNull.lastDigestAt, null);
-  assert.equal(ctxNull.changes.length, 2);
-  assert.deepEqual((await repo.getDigestContext(unconfirmed, null, T0)).watched, []);
-
-  // New projects: first_seen within [now - 24h, now], lookalikes left out, with latest risk.
-  const fresh = (await repo.listNewProjects(24, new Date(T0.getTime() + 3600_000), 1000)).filter((x) => [p.id, twin.id].includes(x.id));
-  assert.deepEqual(
-    fresh.map((x) => [x.id, x.riskLevel]),
-    [[p.id, "low"]],
-  );
-  assert.equal(
-    (await repo.listNewProjects(24, new Date(T0.getTime() + 25 * 3600_000), 1000)).some((x) => x.id === p.id),
-    false,
-  );
-  // Newest first, id breaks ties, capped. A random two-day slot in the 1900s keeps other rows out of the window.
-  const slot = new Date(Date.UTC(1900, 0, 2) + Math.floor(Math.random() * 18_000) * 2 * day);
-  const newOnes: { id: string; at: number }[] = [];
-  for (let i = 0; i < 12; i += 1) {
-    const at = slot.getTime() - (i === 4 ? 3 : i) * 60_000; // n3 and n4 share a first_seen
-    const row = await repo.createProject(
-      { slug: `smoke-${suffix}-n${i}`, name: `New ${i}`, nameKey: `smokenew${suffix}${i}`, tokenSymbol: null, chains: [], officialDomains: [], status: "announced", conflict: false, lookalikeOf: null },
-      new Date(at),
-    );
-    newOnes.push({ id: row.id, at });
-  }
-  await repo.createProject(
-    { slug: `smoke-${suffix}-nfake`, name: "New 0", nameKey: `smokenew${suffix}0`, tokenSymbol: null, chains: [], officialDomains: [], status: "announced", conflict: false, lookalikeOf: newOnes[0]!.id },
-    slot,
-  );
-  await repo.saveRiskAssessment(newOnes[1]!.id, assessment("high"), slot);
-  const expected = [...newOnes].sort((x, y) => y.at - x.at || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0)).slice(0, 10);
-  const listed = await repo.listNewProjects(24, slot, 10);
-  assert.deepEqual(listed.map((x) => x.id), expected.map((x) => x.id));
-  assert.deepEqual(listed.map((x) => x.riskLevel), expected.map((x) => (x.id === newOnes[1]!.id ? "high" : null)));
-  assert.deepEqual((await repo.listNewProjects(24, slot, 2)).map((x) => x.id), expected.slice(0, 2).map((x) => x.id));
-
-  // notification_log (service-role only table).
-  const refDate = "2026-10-10";
-  const before = await repo.countDigestsSent(refDate);
-  assert.equal(await repo.hasDigest(reader, refDate), false);
-  const sentAt = new Date(T0.getTime() + 60_000);
-  await repo.logDigest(reader, refDate, sentAt);
-  assert.equal(await repo.hasDigest(reader, refDate), true);
-  assert.equal(await repo.hasDigest(reader, "2026-10-11"), false);
-  assert.equal(await repo.countDigestsSent(refDate), before + 1);
-  await assert.rejects(repo.logDigest(reader, refDate, sentAt), DuplicateDigestError);
-  await repo.logDigest(reader, "2026-10-09", new Date(T0.getTime() - 3600_000));
-  assert.deepEqual((await ours())[0]?.lastDigestAt, sentAt);
-  console.log("notifications ok");
-
   // runs
   const runId = await repo.startRun(T0);
   await repo.finishRun(runId, { documents: 3, sourceFailed: 0 }, t1);
@@ -342,12 +228,6 @@ async function main(): Promise<void> {
   }
 
   // cleanup (fail loudly so a broken cleanup is not silent)
-  for (const id of userIds) {
-    const res = await admin.auth.admin.deleteUser(id);
-    assert.equal(res.error, null, `deleteUser failed: ${res.error?.message ?? ""}`);
-  }
-  const leftover = await admin.from("notification_log").select("id").in("user_id", userIds);
-  assert.deepEqual(leftover.data, [], "notification_log rows must go with the user");
   const cleanup = [
     await admin.from("projects").delete().in("id", [p.id, twin.id]),
     await admin.from("documents").delete().like("source_key", `%${suffix}%`),

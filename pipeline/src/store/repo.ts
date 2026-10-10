@@ -1,6 +1,4 @@
 import type {
-  DigestInput,
-  DigestProject,
   ExtractedDeadline,
   RiskAssessment,
   RiskLevel,
@@ -63,27 +61,6 @@ export interface NewEvidence {
   at: Date;
 }
 
-/** A user who gets the daily digest: digest enabled and email confirmed. Never logged or put in stats. */
-export interface DigestRecipient {
-  userId: string;
-  email: string;
-  newAirdropsOptIn: boolean;
-  unsubscribeToken: string;
-  /** Greatest `sent_at` of the user's digest log rows; null when they never got one. */
-  lastDigestAt: Date | null;
-}
-
-/** The per-user part of a `DigestInput`. */
-export type DigestContext = Omit<DigestInput, "now" | "newProjects">;
-
-/** `logDigest` hit the (user, kind, ref_date) unique key: a digest for that day is already logged. */
-export class DuplicateDigestError extends Error {
-  constructor() {
-    super("digest already logged for this day");
-    this.name = "DuplicateDigestError";
-  }
-}
-
 export interface PipelineRepo {
   getDocumentHash(url: string): Promise<string | null>;
   /** Insert or update by URL. A changed hash resets the extraction status to "pending"; the same hash keeps it. */
@@ -127,23 +104,4 @@ export interface PipelineRepo {
   finishRun(runId: string, stats: RunStats, at: Date): Promise<void>;
   /** Blanks the text of documents fetched more than `olderThanDays` ago (hash stays). Returns how many were blanked. */
   purgeDocumentText(olderThanDays: number, now: Date): Promise<number>;
-
-  /** Users with `digest_enabled` and a confirmed email (auth.users), ordered by user id. */
-  listDigestRecipients(): Promise<DigestRecipient[]>;
-  /**
-   * The user's watched projects (by id, with their latest risk level), those projects' deadlines that have a
-   * date (by date, project id, kind), and their `project_changes` with `changed_at` after `since`, or within the
-   * 24 hours before `now` when `since` is null (oldest first; insertion order breaks ties). `lastDigestAt` is `since`.
-   */
-  getDigestContext(userId: string, since: Date | null, now: Date): Promise<DigestContext>;
-  /**
-   * Projects with `first_seen` between `now - sinceHours` and `now` (inclusive) that are not a lookalike of another
-   * project (`lookalike_of` is null), newest first then by id, at most `limit`, with their latest risk level.
-   */
-  listNewProjects(sinceHours: number, now: Date, limit: number): Promise<DigestProject[]>;
-  /** Digest log rows for this UTC date (`YYYY-MM-DD`), whoever they belong to. */
-  countDigestsSent(refDate: string): Promise<number>;
-  hasDigest(userId: string, refDate: string): Promise<boolean>;
-  /** Logs a sent digest. Throws `DuplicateDigestError` when one is already logged for that user and date. */
-  logDigest(userId: string, refDate: string, at: Date): Promise<void>;
 }

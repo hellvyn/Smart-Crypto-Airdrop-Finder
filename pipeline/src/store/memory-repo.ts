@@ -1,11 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { DigestProject, ExtractedDeadline, RiskAssessment, RiskLevel, Status, StatusEvidence } from "@saf/core";
+import type { ExtractedDeadline, RiskAssessment, RiskLevel, Status, StatusEvidence } from "@saf/core";
 import type { CollectedDocument } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
-import { DuplicateDigestError } from "./repo.js";
 import type {
-  DigestContext,
-  DigestRecipient,
   ExtractionStatus,
   NewEvidence,
   NewProject,
@@ -17,7 +14,6 @@ import type {
 } from "./repo.js";
 
 const DAY_MS = 86_400_000;
-const HOUR_MS = 3_600_000;
 
 export interface ProjectChange {
   projectId: string;
@@ -66,23 +62,6 @@ interface RunRow {
   stats: RunStats;
 }
 
-/** An auth user plus their profile (the two are joined by user id in Postgres). */
-interface UserRow {
-  userId: string;
-  email: string;
-  emailConfirmed: boolean;
-  digestEnabled: boolean;
-  newAirdropsOptIn: boolean;
-  unsubscribeToken: string;
-}
-
-export interface NotificationLogRow {
-  userId: string;
-  kind: "digest";
-  refDate: string;
-  sentAt: Date;
-}
-
 interface ExtractionRow extends ExtractionAttempt {
   documentId: string;
   promptVersion: string;
@@ -95,46 +74,12 @@ export class MemoryRepo implements PipelineRepo {
   readonly deadlines: DeadlineRow[] = [];
   readonly riskAssessments: RiskRow[] = [];
   readonly runs: RunRow[] = [];
-  readonly notificationLog: NotificationLogRow[] = [];
 
   private readonly documents = new Map<string, StoredDocument>();
   private readonly projects = new Map<string, ProjectRow>();
   private readonly evidence: EvidenceRow[] = [];
   private readonly tasks: TaskRow[] = [];
   private readonly links: LinkRow[] = [];
-  private readonly users: UserRow[] = [];
-  private readonly watchlist: { userId: string; projectId: string }[] = [];
-
-  /**
-   * Test-only: adds an auth user with a profile (in Postgres the signup trigger creates the profile). Defaults:
-   * email confirmed, digest on, new airdrops off, random unsubscribe token. Returns the user id.
-   */
-  seedTestUser(u: {
-    email: string;
-    emailConfirmed?: boolean;
-    digestEnabled?: boolean;
-    newAirdropsOptIn?: boolean;
-    unsubscribeToken?: string;
-  }): string {
-    const userId = randomUUID();
-    this.users.push({
-      userId,
-      email: u.email,
-      emailConfirmed: u.emailConfirmed ?? true,
-      digestEnabled: u.digestEnabled ?? true,
-      newAirdropsOptIn: u.newAirdropsOptIn ?? false,
-      unsubscribeToken: u.unsubscribeToken ?? randomUUID(),
-    });
-    return userId;
-  }
-
-  /** Test-only: adds a project to a user's watchlist (ignored when already watched). */
-  seedTestWatch(userId: string, projectId: string): void {
-    if (!this.users.some((u) => u.userId === userId)) throw new Error("unknown user");
-    if (!this.projects.has(projectId)) throw new Error("unknown project");
-    if (this.watchlist.some((w) => w.userId === userId && w.projectId === projectId)) return;
-    this.watchlist.push({ userId, projectId });
-  }
 
   /** Snapshot of every stored document (test helper). */
   allDocuments(): StoredDocument[] {
@@ -363,88 +308,6 @@ export class MemoryRepo implements PipelineRepo {
       }
     }
     return purged;
-  }
-
-  async listDigestRecipients(): Promise<DigestRecipient[]> {
-    return this.users
-      .filter((u) => u.emailConfirmed && u.digestEnabled)
-      .sort((a, b) => compareText(a.userId, b.userId))
-      .map((u) => {
-        let lastDigestAt: Date | null = null;
-        for (const l of this.notificationLog) {
-          if (l.userId !== u.userId || l.kind !== "digest") continue;
-          if (lastDigestAt === null || l.sentAt.getTime() > lastDigestAt.getTime()) lastDigestAt = l.sentAt;
-        }
-        return {
-          userId: u.userId,
-          email: u.email,
-          newAirdropsOptIn: u.newAirdropsOptIn,
-          unsubscribeToken: u.unsubscribeToken,
-          lastDigestAt,
-        };
-      });
-  }
-
-  private async digestProject(p: ProjectRow): Promise<DigestProject> {
-    return {
-      id: p.id,
-      slug: p.slug,
-      name: p.name,
-      status: p.status,
-      riskLevel: await this.latestRiskLevel(p.id),
-      firstSeen: p.firstSeen,
-    };
-  }
-
-  async getDigestContext(userId: string, since: Date | null, now: Date): Promise<DigestContext> {
-    const ids = new Set(this.watchlist.filter((w) => w.userId === userId).map((w) => w.projectId));
-    const projects = [...this.projects.values()]
-      .filter((p) => ids.has(p.id))
-      .sort((a, b) => compareText(a.id, b.id));
-    const watched: DigestProject[] = [];
-    for (const p of projects) watched.push(await this.digestProject(p));
-
-    const deadlines: DigestContext["deadlines"] = [];
-    for (const d of this.deadlines) {
-      if (!ids.has(d.projectId) || d.date === null) continue;
-      deadlines.push({ projectId: d.projectId, kind: d.kind, date: d.date, precision: d.precision, text: d.text });
-    }
-    deadlines.sort(
-      (a, b) => compareText(a.date, b.date) || compareText(a.projectId, b.projectId) || compareText(a.kind, b.kind),
-    );
-
-    const cutoff = (since ?? new Date(now.getTime() - 24 * HOUR_MS)).getTime();
-    // changed_at, then insertion order (stable sort), same as SupabaseRepo's changed_at, seq.
-    const changes = this.projectChanges
-      .filter((c) => ids.has(c.projectId) && c.changedAt.getTime() > cutoff)
-      .sort((a, b) => a.changedAt.getTime() - b.changedAt.getTime())
-      .map((c) => ({ ...c }));
-
-    return { lastDigestAt: since, watched, deadlines, changes };
-  }
-
-  async listNewProjects(sinceHours: number, now: Date, limit: number): Promise<DigestProject[]> {
-    const cutoff = now.getTime() - sinceHours * HOUR_MS;
-    const projects = [...this.projects.values()]
-      .filter((p) => p.lookalikeOf === null && p.firstSeen.getTime() >= cutoff && p.firstSeen.getTime() <= now.getTime())
-      .sort((a, b) => b.firstSeen.getTime() - a.firstSeen.getTime() || compareText(a.id, b.id))
-      .slice(0, limit);
-    const out: DigestProject[] = [];
-    for (const p of projects) out.push(await this.digestProject(p));
-    return out;
-  }
-
-  async countDigestsSent(refDate: string): Promise<number> {
-    return this.notificationLog.filter((l) => l.kind === "digest" && l.refDate === refDate).length;
-  }
-
-  async hasDigest(userId: string, refDate: string): Promise<boolean> {
-    return this.notificationLog.some((l) => l.userId === userId && l.kind === "digest" && l.refDate === refDate);
-  }
-
-  async logDigest(userId: string, refDate: string, at: Date): Promise<void> {
-    if (await this.hasDigest(userId, refDate)) throw new DuplicateDigestError();
-    this.notificationLog.push({ userId, kind: "digest", refDate, sentAt: at });
   }
 }
 

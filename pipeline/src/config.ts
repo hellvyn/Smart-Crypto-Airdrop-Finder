@@ -14,25 +14,6 @@ export interface PipelineConfig {
   extractBudgetMinutes: number;
   scoreActiveSinceDays: number;
   textRetentionDays: number;
-  email: EmailConfig;
-}
-
-/**
- * Daily digest settings. `enabled` = a Brevo API key is configured. Digest budget per UTC day =
- * floor(dailyLimit * (1 - reserveRatio)) minus digests already sent that day; the reserve is left for Supabase
- * Auth emails sent through the same provider.
- */
-export interface EmailConfig {
-  enabled: boolean;
-  /**
-   * True when `BREVO_API_KEY` is set but `EMAIL_FROM` or `SITE_URL` is missing or invalid. Email is then enabled
-   * but the notify stage fails (failed_step 7, exit 1) while every other stage still runs.
-   */
-  misconfigured?: boolean;
-  dailyLimit: number;
-  reserveRatio: number;
-  /** Absolute http(s) base URL of the web app, without trailing slash. Email links are built only from it. */
-  siteUrl: string;
 }
 
 /** Model fallback order (spec 4.3). `max_tokens` and `temperature` are set by `streamChat`. */
@@ -53,55 +34,4 @@ export const defaultConfig: PipelineConfig = {
   extractBudgetMinutes: 35,
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
-  // Brevo Free: 300 emails per day, 20% kept for auth emails.
-  email: { enabled: false, dailyLimit: 300, reserveRatio: 0.2, siteUrl: "" },
 };
-
-export const DEFAULT_SENDER_NAME = "Smart Airdrop Finder";
-
-const ADDRESS = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
-
-/** Parses `EMAIL_FROM`: `"Name <addr>"` or `"addr"` (name defaults to "Smart Airdrop Finder"). Null when invalid. */
-export function parseEmailFrom(value: string): { name: string; email: string } | null {
-  const trimmed = value.trim();
-  const named = /^(.*?)\s*<([^<>]*)>$/.exec(trimmed);
-  const rawName = named ? (named[1] ?? "").trim().replace(/^"(.*)"$/, "$1").trim() : "";
-  const email = named ? (named[2] ?? "").trim() : trimmed;
-  if (!ADDRESS.test(email)) return null;
-  return { name: rawName === "" ? DEFAULT_SENDER_NAME : rawName, email };
-}
-
-/** Absolute http(s) URL without query or fragment, trailing slashes removed; null when invalid. */
-function parseSiteUrl(value: string): string | null {
-  let url: URL;
-  try {
-    url = new URL(value.trim());
-  } catch {
-    return null;
-  }
-  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.search !== "" || url.hash !== "") return null;
-  if (url.username !== "" || url.password !== "") return null;
-  return url.href.replace(/\/+$/, "");
-}
-
-export interface EmailEnv {
-  email: EmailConfig;
-  /** Sender settings; null when email is disabled or misconfigured. */
-  brevo: { apiKey: string; from: { name: string; email: string } } | null;
-}
-
-/**
- * Reads the email settings from the environment. Without `BREVO_API_KEY` email is disabled. With it,
- * `EMAIL_FROM` and `SITE_URL` are required and must be valid; otherwise email is enabled but `misconfigured`, so
- * only the notify stage fails and the rest of the run is unaffected.
- */
-export function loadEmailEnv(env: Record<string, string | undefined>): EmailEnv {
-  const apiKey = (env.BREVO_API_KEY ?? "").trim();
-  if (apiKey === "") return { email: { ...defaultConfig.email }, brevo: null };
-  const from = parseEmailFrom(env.EMAIL_FROM ?? "");
-  const siteUrl = parseSiteUrl(env.SITE_URL ?? "");
-  if (from === null || siteUrl === null) {
-    return { email: { ...defaultConfig.email, enabled: true, misconfigured: true }, brevo: null };
-  }
-  return { email: { ...defaultConfig.email, enabled: true, siteUrl }, brevo: { apiKey, from } };
-}
