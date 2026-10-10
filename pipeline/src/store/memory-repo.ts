@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtractedDeadline, RiskAssessment, RiskLevel, Status, StatusEvidence } from "@saf/core";
 import type { CollectedDocument } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
+import { FACT_FIELDS } from "./repo.js";
 import type {
   ExtractionStatus,
   NewEvidence,
@@ -10,6 +11,7 @@ import type {
   ProjectForScoring,
   ProjectRow,
   RunStats,
+  Step,
   StoredDocument,
 } from "./repo.js";
 
@@ -37,6 +39,8 @@ interface TaskRow {
   projectId: string;
   documentId: string;
   description: string;
+  position: number;
+  cadence: Step["cadence"];
 }
 
 interface LinkRow {
@@ -211,9 +215,11 @@ export class MemoryRepo implements PipelineRepo {
     for (const d of ds) this.deadlines.push({ ...d, projectId, documentId });
   }
 
-  async replaceTasks(projectId: string, documentId: string, tasks: string[]): Promise<void> {
+  async replaceTasks(projectId: string, documentId: string, steps: Step[]): Promise<void> {
     removeWhere(this.tasks, (t) => t.projectId === projectId && t.documentId === documentId);
-    for (const description of tasks) this.tasks.push({ projectId, documentId, description });
+    steps.forEach((step, position) =>
+      this.tasks.push({ projectId, documentId, description: step.text, position, cadence: step.cadence }),
+    );
   }
 
   async upsertLinks(
@@ -239,9 +245,19 @@ export class MemoryRepo implements PipelineRepo {
         if (d) sourceKeys.add(d.sourceKey);
       }
       const other = p.lookalikeOf === null ? undefined : this.projects.get(p.lookalikeOf);
+      // Order: document_id, position (same as SupabaseRepo).
+      const steps = this.tasks
+        .filter((t) => t.projectId === p.id)
+        .sort((a, b) => compareText(a.documentId, b.documentId) || a.position - b.position)
+        .map((t) => ({ text: t.description, cadence: t.cadence }));
       result.push({
         ...cloneProject(p),
-        tasks: this.tasks.filter((t) => t.projectId === p.id).map((t) => t.description),
+        tasks: steps.map((s) => s.text),
+        steps,
+        // Insertion order, same as SupabaseRepo's evidence.seq.
+        facts: this.evidence
+          .filter((e) => e.projectId === p.id && FACT_FIELDS.includes(e.field))
+          .map((e) => ({ field: e.field, value: e.value, quote: e.quote })),
         links: this.links.filter((l) => l.projectId === p.id).map((l) => ({ url: l.url, kind: l.kind })),
         sourceCount: sourceKeys.size,
         lookalikeOfName: other?.name ?? null,

@@ -1,5 +1,6 @@
 import type {
   ExtractedDeadline,
+  ExtractionResult,
   RiskAssessment,
   RiskLevel,
   Status,
@@ -39,8 +40,54 @@ export interface RunStats {
 
 export type NewProject = Omit<ProjectRow, "id" | "firstSeen" | "lastSeen">;
 
+/** One extracted step (`tasks` row): done once, or repeated daily or weekly. */
+export interface Step {
+  text: string;
+  cadence: "once" | "daily" | "weekly";
+}
+
+/** A v3 extraction fact, stored as an `evidence` row of one of the `FACT_FIELDS`. */
+export interface Fact {
+  field: string;
+  value: string;
+  quote: string;
+}
+
+type ExtractedProject = ExtractionResult["projects"][number];
+// Records keyed by the schema's name enums, so a name added to the extraction schema fails to compile here until
+// it is listed (and its stale evidence is replaced like the others).
+const KEY_PARAMETER_NAMES: Record<ExtractedProject["key_parameters"][number]["name"], true> = {
+  allocation: true,
+  distribution: true,
+  tge: true,
+};
+const SOURCE_RATING_NAMES: Record<ExtractedProject["source_ratings"][number]["name"], true> = {
+  difficulty: true,
+  cost: true,
+};
+
+/**
+ * Evidence fields holding v3 extraction facts (curation spec §4.6): `key_parameter:<name>` and
+ * `source_rating:<name>` (value + quote), `latest_update` (value = date or "", quote = the update sentence),
+ * `claimed_backer` (value = investor), `capital_required` (value = level) and `capital_min_usd` (value = number
+ * as text); the last two have no quote ("").
+ */
+export const FACT_FIELDS: readonly string[] = [
+  ...Object.keys(KEY_PARAMETER_NAMES).map((name) => `key_parameter:${name}`),
+  ...Object.keys(SOURCE_RATING_NAMES).map((name) => `source_rating:${name}`),
+  "latest_update",
+  "claimed_backer",
+  "capital_required",
+  "capital_min_usd",
+];
+
 export interface ProjectForScoring extends ProjectRow {
+  /** Texts of `steps`, in the same order. */
   tasks: string[];
+  /** Steps grouped by contributing document, in step order (`position`) within each document. */
+  steps: { text: string; cadence: string }[];
+  /** Evidence rows of the `FACT_FIELDS`, in insertion order. */
+  facts: Fact[];
   links: { url: string; kind: string }[];
   /** Number of distinct document source keys among the project's evidence. */
   sourceCount: number;
@@ -89,8 +136,8 @@ export interface PipelineRepo {
   listStatusEvidence(projectId: string): Promise<StatusEvidence[]>;
   /** Replaces the deadlines this document contributed to the project. */
   replaceDeadlines(projectId: string, documentId: string, ds: ExtractedDeadline[]): Promise<void>;
-  /** Replaces the tasks this document contributed to the project. */
-  replaceTasks(projectId: string, documentId: string, tasks: string[]): Promise<void>;
+  /** Replaces the steps (`tasks` rows) this document contributed to the project; `position` = index in `steps`. */
+  replaceTasks(projectId: string, documentId: string, steps: Step[]): Promise<void>;
   upsertLinks(
     projectId: string,
     links: { url: string; kind: string; referralStripped: boolean }[],

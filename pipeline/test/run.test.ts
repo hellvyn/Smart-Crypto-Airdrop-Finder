@@ -882,6 +882,129 @@ describe("runDaily evidence", () => {
   });
 });
 
+describe("runDaily v3 extraction storage", () => {
+  const ALLOCATION = "The airdrop allocation is 5% of the total supply.";
+  const BACKER = "Ink is backed by Paradigm and others.";
+  const DIFFICULTY = "Difficulty: Easy.";
+  const UPDATE = "Update: the snapshot moved to November.";
+  const DEPOSIT = "Deposit at least 1000 USDC to qualify.";
+
+  /** The Ink page with extra sentences in its description. */
+  function inkPages(...sentences: string[]): Pages {
+    const pages = basePages();
+    pages[INK_PAGE] = {
+      status: 200,
+      body: detailPage("Ink Chain", `Bridge to Ink now. Check in daily. ${sentences.join(" ")}`),
+    };
+    return pages;
+  }
+
+  function inkReply(fields: Record<string, unknown>): Record<string, unknown> {
+    return {
+      ...REPLIES,
+      [INK_PAGE]: {
+        is_airdrop_content: true,
+        projects: [project({ name: "Ink Chain", status: "speculative", chains: ["Ink"], ...fields })],
+      },
+    };
+  }
+
+  const ink = async (repo: MemoryRepo) => (await projects(repo)).find((p) => p.nameKey === "ink");
+
+  it("stores steps in order with their cadence and v3 facts as evidence", async () => {
+    const replies = inkReply({
+      steps: [
+        { text: "Check in", cadence: "daily" },
+        { text: "Bridge", cadence: "once" },
+      ],
+      key_parameters: [{ name: "allocation", value: "5%", quote: ALLOCATION }],
+      claimed_backers: [{ investor: "Paradigm", quote: BACKER }],
+    });
+    const { repo, deps, config } = setup({ pages: inkPages(ALLOCATION, BACKER), chat: fakeChat(replies) });
+    await runDaily(deps, config);
+    const p = await ink(repo);
+    expect(p?.steps).toEqual([
+      { text: "Check in", cadence: "daily" },
+      { text: "Bridge", cadence: "once" },
+    ]);
+    expect(p?.tasks).toEqual(["Check in", "Bridge"]);
+    // capital_required defaults to "unknown" and capital_min_usd to null: neither is written.
+    expect(p?.facts).toEqual([
+      { field: "key_parameter:allocation", value: "5%", quote: ALLOCATION },
+      { field: "claimed_backer", value: "Paradigm", quote: BACKER },
+    ]);
+  });
+
+  it("replaces a document's v3 facts and steps when the page changes", async () => {
+    const first = inkReply({
+      steps: [
+        { text: "Check in", cadence: "daily" },
+        { text: "Bridge", cadence: "once" },
+      ],
+      key_parameters: [{ name: "allocation", value: "5%", quote: ALLOCATION }],
+      claimed_backers: [{ investor: "Paradigm", quote: BACKER }],
+    });
+    const { repo, deps, config } = setup({ pages: inkPages(ALLOCATION, BACKER), chat: fakeChat(first) });
+    await runDaily(deps, config);
+
+    const second = inkReply({
+      steps: [{ text: "Bridge", cadence: "once" }],
+      key_parameters: [{ name: "allocation", value: "5%", quote: ALLOCATION }],
+    });
+    await runDaily(
+      { ...deps, http: fakeHttp(inkPages(ALLOCATION)), chat: fakeChat(second).chat, now: () => new Date(NOW.getTime() + DAY) },
+      config,
+    );
+    const p = await ink(repo);
+    expect(p?.steps).toEqual([{ text: "Bridge", cadence: "once" }]);
+    expect(p?.facts).toEqual([{ field: "key_parameter:allocation", value: "5%", quote: ALLOCATION }]);
+  });
+
+  it("stores ratings, the latest update, and the capital level and minimum as facts", async () => {
+    const replies = inkReply({
+      source_ratings: [{ name: "difficulty", value: "Easy", quote: DIFFICULTY }],
+      latest_update: { text: UPDATE, date: "2026-10-01" },
+      capital_required: "high",
+      capital_min_usd: 1000,
+    });
+    const { repo, deps, config } = setup({ pages: inkPages(DIFFICULTY, UPDATE, DEPOSIT), chat: fakeChat(replies) });
+    await runDaily(deps, config);
+    expect((await ink(repo))?.facts).toEqual([
+      { field: "source_rating:difficulty", value: "Easy", quote: DIFFICULTY },
+      { field: "latest_update", value: "2026-10-01", quote: UPDATE },
+      { field: "capital_required", value: "high", quote: "" },
+      { field: "capital_min_usd", value: "1000", quote: "" },
+    ]);
+  });
+
+  it("stores an undated latest update with an empty value", async () => {
+    const replies = inkReply({ latest_update: { text: UPDATE, date: null } });
+    const { repo, deps, config } = setup({ pages: inkPages(UPDATE), chat: fakeChat(replies) });
+    await runDaily(deps, config);
+    expect((await ink(repo))?.facts).toEqual([{ field: "latest_update", value: "", quote: UPDATE }]);
+  });
+
+  it("drops a fact whose quote is not in the source and still merges the project", async () => {
+    const replies = inkReply({
+      key_parameters: [{ name: "allocation", value: "5%", quote: ALLOCATION }],
+      claimed_backers: [{ investor: "Paradigm", quote: "Paradigm led the Ink seed round." }],
+    });
+    const { repo, deps, config } = setup({ pages: inkPages(ALLOCATION), chat: fakeChat(replies) });
+    const stats = await runDaily(deps, config);
+    expect(stats.merge_failed).toBe(0);
+    expect(repo.allDocuments().find((d) => d.url === INK_PAGE)?.extractionStatus).toBe("done");
+    expect((await ink(repo))?.facts).toEqual([{ field: "key_parameter:allocation", value: "5%", quote: ALLOCATION }]);
+  });
+
+  it("stores the flat task list of an answer without steps as one-time steps", async () => {
+    const { repo, deps, config } = setup();
+    await runDaily(deps, config);
+    const deepbook = (await projects(repo)).find((p) => p.nameKey === "deepbook");
+    expect(deepbook?.steps).toEqual([{ text: "Join the waitlist", cadence: "once" }]);
+    expect(deepbook?.facts).toEqual([]);
+  });
+});
+
 describe("runDaily fault tolerance", () => {
   it("marks a document merge_failed when its merge throws and keeps going", async () => {
     const repo = new MemoryRepo();

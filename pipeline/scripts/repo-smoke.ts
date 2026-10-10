@@ -136,8 +136,20 @@ async function main(): Promise<void> {
   await repo.deleteEvidence(p.id, b.id, "status");
   assert.deepEqual((await repo.listStatusEvidence(p.id)).map((x) => x.status), ["live"]);
 
-  await repo.replaceTasks(p.id, a.id, ["Bridge", "Swap"]);
-  await repo.replaceTasks(p.id, a.id, ["Bridge only"]);
+  await repo.replaceTasks(p.id, a.id, [
+    { text: "Bridge", cadence: "once" },
+    { text: "Swap", cadence: "daily" },
+  ]);
+  await repo.replaceTasks(p.id, a.id, [{ text: "Bridge only", cadence: "once" }]);
+  // Rows stored out of step order come back by position.
+  const outOfOrder = await admin.from("tasks").insert([
+    { project_id: p.id, document_id: b.id, description: "Vote", position: 1, cadence: "weekly" },
+    { project_id: p.id, document_id: b.id, description: "Check in", position: 0, cadence: "daily" },
+  ]);
+  assert.equal(outOfOrder.error, null);
+  // v3 facts are evidence rows; status and dangerous_ask evidence are not facts.
+  await repo.addEvidence({ ...ev, field: "key_parameter:allocation", value: "5%", quote: "5% of supply." });
+  await repo.addEvidence({ ...ev, field: "capital_min_usd", value: "1000", quote: "" });
   await repo.replaceDeadlines(p.id, a.id, [{ kind: "claim", date: "2026-11-01", precision: "exact", text: "Nov 1" }]);
   await repo.replaceDeadlines(p.id, a.id, [{ kind: "snapshot", date: null, precision: "approximate", text: "soon" }]);
   await repo.upsertLinks(p.id, [{ url: "https://smoke.test/", kind: "website", referralStripped: false }]);
@@ -145,7 +157,18 @@ async function main(): Promise<void> {
 
   const scored = (await repo.listProjectsForScoring(30, T0)).find((x) => x.id === p.id);
   assert.ok(scored);
-  assert.deepEqual(scored.tasks, ["Bridge only"]);
+  // Steps are grouped by document (document_id order), in position order within each document.
+  const stepsA = [{ text: "Bridge only", cadence: "once" }];
+  const stepsB = [
+    { text: "Check in", cadence: "daily" },
+    { text: "Vote", cadence: "weekly" },
+  ];
+  assert.deepEqual(scored.steps, a.id < b.id ? [...stepsA, ...stepsB] : [...stepsB, ...stepsA]);
+  assert.deepEqual(scored.tasks, a.id < b.id ? ["Bridge only", "Check in", "Vote"] : ["Check in", "Vote", "Bridge only"]);
+  assert.deepEqual(scored.facts, [
+    { field: "key_parameter:allocation", value: "5%", quote: "5% of supply." },
+    { field: "capital_min_usd", value: "1000", quote: "" },
+  ]);
   assert.deepEqual(scored.links, [{ url: "https://smoke.test/", kind: "claim" }]);
   assert.equal(scored.sourceCount, 1);
   // dangerous_ask evidence comes back in insertion order; no lookalike for p, the twin names p.
