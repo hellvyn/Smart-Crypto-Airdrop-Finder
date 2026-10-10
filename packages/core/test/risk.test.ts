@@ -68,6 +68,20 @@ describe("detectDangerousAsks", () => {
     expect(detectDangerousAsks(["He enters your private key"]).map((x) => x.code)).toEqual(["asks_secret"]);
   });
 
+  it("accepts -ing forms of verbs that drop their final e, and -ies forms", () => {
+    const secret = (t: string) => detectDangerousAsks([t]).map((x) => x.code);
+    expect(secret("Start by providing your seed phrase")).toEqual(["asks_secret"]);
+    expect(secret("Claim by sharing your private key")).toEqual(["asks_secret"]);
+    expect(secret("Finish by pasting your mnemonic")).toEqual(["asks_secret"]);
+    expect(secret("Continue typing your recovery phrase")).toEqual(["asks_secret"]);
+    expect(secret("Claim after validating your secret phrase")).toEqual(["asks_secret"]);
+    expect(secret("The bot verifies your seed phrase")).toEqual(["asks_secret"]);
+    expect(secret("Then verifying your private key")).toEqual(["asks_secret"]);
+    expect(secret("Claim by submitting your seed phrase")).toEqual(["asks_secret"]);
+    expect(secret("Never sharing your seed phrase")).toEqual([]);
+    expect(secret("Never providing your private key to anyone")).toEqual([]);
+  });
+
   it("ignores harmless tasks", () => {
     expect(detectDangerousAsks(["Swap on the testnet", "Follow us on X"])).toEqual([]);
   });
