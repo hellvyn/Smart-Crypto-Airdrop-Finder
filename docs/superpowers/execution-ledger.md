@@ -160,3 +160,4 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 - Ruling: GoPlus answers HTTP 200 `code: 4029` when rate-limited (found live by P4.T7), so Review Focus 5 does not hold and most production domains would get `null` → `insufficient_checks` in Plan 5. This is load-bearing, so it gets a controller fix task FX1 (4029 = 429, paced requests calibrated by a capped live measurement, a rate-limited counter) in 2c — costs one extra task now versus an empty curated list later.
 - Ruling: FX2 makes v3 defaulted fields accept `null` and drops a claimed backer whose name is not in its quote (P4.T4 review minors with real cost: a wasted fallback model and an invented investor) — costs a small core change in 2c.
 - G2-2b merged: e4a5762, d3d3268. Tests: core 146, pipeline 276, web 284 unit · typecheck ok · pgTAP 119 · e2e 67/67.
+- G2-2c started: P4.T5 ∥ P4.T6 ∥ P4.FX1 ∥ P4.FX2 from 3f79f4a (workflow run wf_e9181920-5fe)
