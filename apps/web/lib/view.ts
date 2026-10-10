@@ -106,22 +106,6 @@ function time(value: string): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
-/** Nearest firm deadline first, then newest `lastSeen`. Quarter and month deadlines count as no deadline. */
-export function sortProjects(items: ProjectListItem[]): ProjectListItem[] {
-  const deadlineOf = (p: ProjectListItem): number | null =>
-    p.nextDeadline && isFirmPrecision(p.nextDeadline.precision) && !Number.isNaN(Date.parse(p.nextDeadline.date))
-      ? Date.parse(p.nextDeadline.date)
-      : null;
-  return [...items].sort((a, b) => {
-    const da = deadlineOf(a);
-    const db = deadlineOf(b);
-    if (da !== null && db !== null && da !== db) return da - db;
-    if (da !== null && db === null) return -1;
-    if (da === null && db !== null) return 1;
-    return time(b.lastSeen) - time(a.lastSeen);
-  });
-}
-
 const CHECK_LABELS: Record<string, string> = {
   dangerous_asks: "dangerous-ask scan",
   phishing_list: "phishing list",

@@ -5,7 +5,8 @@ import type { WalletActivityView } from "./WalletActivity";
 import { WalletActivity } from "./WalletActivity";
 import { parseSummary } from "@/lib/activity-summary";
 
-// Longer than the server's three sequential 10 s provider calls would ever need.
+// Longer than the server ever needs: the provider calls run in two sequential rounds (counters, then both transaction
+// lists in parallel), each capped at 10 s, plus the database round trips.
 const CLIENT_TIMEOUT_MS = 35_000;
 const KINDS = ["rate_limited", "unavailable", "chain_not_supported", "not_owner"] as const;
 

@@ -13,25 +13,11 @@ import {
   pickNextDeadline,
   riskLabel,
   safeHttpUrl,
-  sortProjects,
   statusLabel,
-  type ProjectListItem,
 } from "../lib/view";
 
 const NOW = new Date("2026-10-10T12:00:00Z");
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3600_000);
-
-function item(over: Partial<ProjectListItem> & { slug: string }): ProjectListItem {
-  return {
-    name: over.slug,
-    status: "live",
-    riskLevel: null,
-    chains: [],
-    nextDeadline: null,
-    lastSeen: "2026-10-01T00:00:00Z",
-    ...over,
-  };
-}
 
 describe("isStale", () => {
   it("is stale beyond 36 hours", () => expect(isStale(hoursAgo(37), NOW)).toBe(true));
@@ -59,52 +45,6 @@ describe("labels", () => {
     for (const l of [null, "low", "medium", "high", "critical", "insufficient_data"] as const) {
       expect(riskLabel(l)).not.toMatch(/safe/i);
     }
-  });
-});
-
-describe("sortProjects", () => {
-  it("puts the nearer exact deadline first", () => {
-    const sorted = sortProjects([
-      item({ slug: "later", nextDeadline: { date: "2026-12-01", kind: "claim", precision: "exact" } }),
-      item({ slug: "sooner", nextDeadline: { date: "2026-10-20", kind: "claim", precision: "approximate" } }),
-    ]);
-    expect(sorted.map((p) => p.slug)).toEqual(["sooner", "later"]);
-  });
-
-  it("treats a quarter deadline as no deadline", () => {
-    const sorted = sortProjects([
-      item({
-        slug: "quarter",
-        lastSeen: "2026-10-09T00:00:00Z",
-        nextDeadline: { date: "2026-10-11", kind: "tge", precision: "quarter" },
-      }),
-      item({ slug: "exact", nextDeadline: { date: "2027-01-01", kind: "claim", precision: "exact" } }),
-    ]);
-    expect(sorted.map((p) => p.slug)).toEqual(["exact", "quarter"]);
-  });
-
-  it("breaks ties by newest lastSeen", () => {
-    const sorted = sortProjects([
-      item({ slug: "old", lastSeen: "2026-10-01T00:00:00Z" }),
-      item({ slug: "new", lastSeen: "2026-10-09T00:00:00Z" }),
-      item({
-        slug: "same-day-old",
-        lastSeen: "2026-10-02T00:00:00Z",
-        nextDeadline: { date: "2026-11-01", kind: "claim", precision: "exact" },
-      }),
-      item({
-        slug: "same-day-new",
-        lastSeen: "2026-10-08T00:00:00Z",
-        nextDeadline: { date: "2026-11-01", kind: "snapshot", precision: "approximate" },
-      }),
-    ]);
-    expect(sorted.map((p) => p.slug)).toEqual(["same-day-new", "same-day-old", "new", "old"]);
-  });
-
-  it("does not mutate its input", () => {
-    const input = [item({ slug: "a" }), item({ slug: "b", lastSeen: "2026-10-09T00:00:00Z" })];
-    sortProjects(input);
-    expect(input.map((p) => p.slug)).toEqual(["a", "b"]);
   });
 });
 
