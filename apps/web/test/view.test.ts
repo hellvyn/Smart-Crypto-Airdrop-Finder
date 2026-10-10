@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   coverageLine,
+  PAGE_SIZE,
   isStale,
+  listQueryString,
+  parsePage,
   pickLastSuccessfulRun,
   pickLatestRisk,
   pickNextDeadline,
@@ -160,5 +163,22 @@ describe("coverageLine", () => {
     const ids = ["dangerous_asks","phishing_list","domain_age","lookalike","token_security","contract_verified","hack_history","corroboration"] as const;
     const line = coverageLine(ids.map((id, i) => ({ id, ran: i !== 2 })));
     expect(line).toBe("7/8 checks ran; domain age unavailable");
+  });
+});
+
+describe("paging helpers", () => {
+  it("parses ?page= with 1-based fallback", () => {
+    expect(PAGE_SIZE).toBe(50);
+    expect(parsePage("3")).toBe(3);
+    expect(parsePage(undefined)).toBe(1);
+    for (const bad of ["0", "-2", "abc", "1.5", "", "2e3", "99999999999"]) expect(parsePage(bad)).toBe(1);
+  });
+
+  it("builds a query string that keeps the filters", () => {
+    expect(listQueryString({}, 1)).toBe("");
+    expect(listQueryString({ status: ["live", "ended"], risk: ["high"], chain: "base" }, 2)).toBe(
+      "status=live&status=ended&risk=high&chain=base&page=2",
+    );
+    expect(listQueryString({ chain: "a b&c" }, 1)).toBe("chain=a+b%26c");
   });
 });

@@ -2,6 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProjectDetailView } from "../components/ProjectDetailView";
+import { Pagination } from "../components/Pagination";
 import { ProjectRow } from "../components/ProjectRow";
 import { RiskBadge } from "../components/RiskBadge";
 import { StaleBanner } from "../components/StaleBanner";
@@ -246,5 +247,42 @@ describe("ProjectDetailView", () => {
   it("uses wallet activity wording only, never eligible or safe", () => {
     const { container } = render(<ProjectDetailView project={detail()} />);
     expect(container.textContent ?? "").not.toMatch(/eligible|\bsafe\b/i);
+  });
+});
+
+describe("unsafe claim link", () => {
+  it("hides the Official checker label entirely when the claim URL is not http(s)", () => {
+    render(<ProjectDetailView project={detail({ links: [{ url: "javascript:alert(1)", kind: "claim" }] })} />);
+    expect(screen.queryByText(/Official checker/)).toBeNull();
+    expect(document.querySelector("a[href^='javascript']")).toBeNull();
+  });
+});
+
+describe("Pagination", () => {
+  it("links Previous and Next and keeps the filters", () => {
+    render(<Pagination page={2} pageSize={50} total={120} filters={{ status: ["live"], risk: ["high"], chain: "base" }} />);
+    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe("/?status=live&risk=high&chain=base");
+    expect(screen.getByRole("link", { name: "Next" }).getAttribute("href")).toBe("/?status=live&risk=high&chain=base&page=3");
+    expect(screen.getByText("51-100 of 120")).toBeTruthy();
+  });
+
+  it("has no Next on the last page and no Previous on the first", () => {
+    const { unmount } = render(<Pagination page={1} pageSize={50} total={55} filters={{}} />);
+    expect(screen.queryByRole("link", { name: "Previous" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Next" }).getAttribute("href")).toBe("/?page=2");
+    unmount();
+    render(<Pagination page={2} pageSize={50} total={55} filters={{}} />);
+    expect(screen.queryByRole("link", { name: "Next" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe("/");
+  });
+
+  it("renders nothing for a single page", () => {
+    const { container } = render(<Pagination page={1} pageSize={50} total={3} filters={{}} />);
+    expect(container.textContent).toBe("");
+  });
+
+  it("links back to the last page when the page is past the end", () => {
+    render(<Pagination page={9} pageSize={50} total={55} filters={{}} />);
+    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe("/?page=2");
   });
 });

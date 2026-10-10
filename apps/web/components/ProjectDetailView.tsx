@@ -40,8 +40,10 @@ function EvidenceItem({ e }: { e: Evidence }) {
 }
 
 export function ProjectDetailView({ project }: { project: ProjectDetail }) {
-  const claimLinks = project.links.filter((l) => l.kind === "claim");
+  // A claim URL that is not http(s) is not linkable, so the "Official checker" label is hidden with it.
+  const claimLinks = project.links.filter((l) => l.kind === "claim" && safeHttpUrl(l.url) !== null);
   const otherLinks = project.links.filter((l) => l.kind !== "claim");
+  const unsafeClaimLinks = project.links.filter((l) => l.kind === "claim" && safeHttpUrl(l.url) === null);
   const conflictEvidence = project.conflict ? project.evidence.filter((e) => e.field === "status") : [];
   const otherEvidence = project.conflict ? project.evidence.filter((e) => e.field !== "status") : project.evidence;
 
@@ -138,9 +140,9 @@ export function ProjectDetailView({ project }: { project: ProjectDetail }) {
 
       <section aria-labelledby="links-heading">
         <h2 id="links-heading">Links</h2>
-        {otherLinks.length > 0 ? (
+        {otherLinks.length + unsafeClaimLinks.length > 0 ? (
           <ul>
-            {otherLinks.map((l) => (
+            {[...otherLinks, ...unsafeClaimLinks].map((l) => (
               <li key={l.url}>
                 <span className="muted">{l.kind}: </span>
                 <ExternalLink href={l.url}>{l.url}</ExternalLink>

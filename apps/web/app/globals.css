@@ -198,3 +198,10 @@ blockquote {
   border-left: 3px solid var(--border);
   overflow-wrap: anywhere;
 }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}

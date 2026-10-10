@@ -212,3 +212,23 @@ export async function cleanupSeed(): Promise<void> {
   documentIds = [];
   runIds = [];
 }
+
+/** Seeds `count` live projects on one unique chain, newest last_seen first by index. Returns the chain name. */
+export async function seedManyProjects(count: number): Promise<{ chain: string; slugs: string[] }> {
+  const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const chain = `pg${tag}`;
+  const base = Date.now();
+  const rows = Array.from({ length: count }, (_, i) => ({
+    slug: `e2e-page-${tag}-${String(i).padStart(3, "0")}`,
+    name: `E2E Page ${tag} ${String(i).padStart(3, "0")}`,
+    name_key: `e2epage${tag}${i}`,
+    chains: [chain.toUpperCase()], // stored mixed-case on purpose: the chain filter is case-insensitive
+    status: "live",
+    first_seen: new Date(base - 1000).toISOString(),
+    // index 0 is the most recently seen, so it is first in the default order.
+    last_seen: new Date(base - i * 60_000).toISOString(),
+  }));
+  const data = must(await adminClient().from("projects").insert(rows).select("id, slug"), "many projects");
+  projectIds.push(...(data as { id: string }[]).map((r) => r.id));
+  return { chain, slugs: rows.map((r) => r.slug) };
+}

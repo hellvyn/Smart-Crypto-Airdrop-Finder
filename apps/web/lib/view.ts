@@ -221,3 +221,23 @@ export function pickLastSuccessfulRun(
   }
   return best;
 }
+
+// ---- Paging ----
+
+export const PAGE_SIZE = 50;
+
+/** `?page=N`, 1-based. Anything that is not a positive whole number (or is absurdly large) means page 1. */
+export function parsePage(raw: string | undefined): number {
+  if (raw === undefined || !/^[1-9]\d{0,6}$/.test(raw)) return 1;
+  return Number(raw);
+}
+
+/** Query string for the list page that keeps the filters; page 1 is left out. Empty string when there is nothing to say. */
+export function listQueryString(f: ListFilters, page: number): string {
+  const sp = new URLSearchParams();
+  for (const s of f.status ?? []) sp.append("status", s);
+  for (const r of f.risk ?? []) sp.append("risk", r);
+  if (f.chain) sp.set("chain", f.chain);
+  if (page > 1) sp.set("page", String(page));
+  return sp.toString();
+}

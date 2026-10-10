@@ -1,3 +1,4 @@
+import { Pagination } from "@/components/Pagination";
 import { ProjectRow } from "@/components/ProjectRow";
 import { StaleBanner } from "@/components/StaleBanner";
 import { getLastSuccessfulRunAt, listChains, listProjects } from "@/lib/queries";
@@ -5,6 +6,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import {
   RISK_LEVELS,
   STATUSES,
+  parsePage,
   formatDateTime,
   riskLabel,
   statusLabel,
@@ -26,14 +28,17 @@ function parseFilters(sp: SearchParams): ListFilters {
 }
 
 export default async function AirdropsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const filters = parseFilters(await searchParams);
+  const sp = await searchParams;
+  const filters = parseFilters(sp);
   const db = await createServerClient();
   const now = new Date();
-  const [items, lastRunAt, chains] = await Promise.all([
-    listProjects(db, filters, now),
+  const page = parsePage(many(sp.page)[0]);
+  const [{ items, total, pageSize }, lastRunAt, chains] = await Promise.all([
+    listProjects(db, filters, page),
     getLastSuccessfulRunAt(db),
     listChains(db),
   ]);
+  const selectedChain = filters.chain?.toLowerCase();
   const hasFilters = !!(filters.status?.length || filters.risk?.length || filters.chain);
 
   return (
@@ -41,7 +46,7 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
       <h1>Airdrops</h1>
       <StaleBanner lastRunAt={lastRunAt} now={now} />
       <p className="muted">
-        Last updated: {lastRunAt ? formatDateTime(lastRunAt) : "never"}. Nearest deadline first, then most recently seen.
+        Last updated: {lastRunAt ? formatDateTime(lastRunAt) : "never"}. {total} {total === 1 ? "airdrop" : "airdrops"}. Nearest deadline first, then most recently seen.
       </p>
 
       <form method="get" className="filters" aria-label="Filters">
@@ -63,8 +68,11 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
         </fieldset>
         <label>
           Chain
-          <select name="chain" defaultValue={filters.chain?.toLowerCase() ?? ""}>
+          <select name="chain" defaultValue={selectedChain ?? ""}>
             <option value="">All chains</option>
+            {selectedChain && !chains.includes(selectedChain) ? (
+              <option value={selectedChain}>{selectedChain} (no matches)</option>
+            ) : null}
             {chains.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -77,7 +85,7 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
       </form>
 
       {items.length === 0 ? (
-        <p>{hasFilters ? "No airdrops match these filters." : "No airdrops yet."}</p>
+        <p>{page > 1 ? "No airdrops on this page." : hasFilters ? "No airdrops match these filters." : "No airdrops yet."}</p>
       ) : (
         <div className="project-list">
           {items.map((item) => (
@@ -85,6 +93,7 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
           ))}
         </div>
       )}
+      <Pagination page={page} pageSize={pageSize} total={total} filters={filters} />
     </>
   );
 }

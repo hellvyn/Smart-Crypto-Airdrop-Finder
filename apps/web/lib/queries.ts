@@ -7,8 +7,8 @@ import {
   STATUSES,
   pickLastSuccessfulRun,
   pickLatestRisk,
+  PAGE_SIZE,
   pickNextDeadline,
-  sortProjects,
   utcToday,
   type ListFilters,
   type ProjectDetail,
@@ -61,69 +61,80 @@ function throwIf(error: { message: string } | null, what: string): void {
   if (error) throw new Error(`Failed to load ${what}: ${error.message}`);
 }
 
-/** Embedded relation keeping only the latest risk row per project. */
-const LIST_SELECT =
-  "id, slug, name, status, chains, last_seen, " +
-  "risk_assessments(level, computed_at, seq), " +
-  "deadlines(date, kind, precision)";
-
-export async function listProjects(db: SupabaseClient, f: ListFilters = {}, now: Date = new Date()): Promise<ProjectListItem[]> {
-  let q = db
-    .from("projects")
-    .select(LIST_SELECT)
-    .order("computed_at", { ascending: false, referencedTable: "risk_assessments" })
-    .order("seq", { ascending: false, referencedTable: "risk_assessments" })
-    .limit(1, { referencedTable: "risk_assessments" })
-    .gte("deadlines.date", utcToday(now))
-    .in("deadlines.precision", ["exact", "approximate"]);
-  if (f.status && f.status.length > 0) q = q.in("status", f.status);
-  const { data, error } = await q;
-  throwIf(error, "projects");
-
-  const today = utcToday(now);
-  const items: ProjectListItem[] = [];
-  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
-    const risks = Array.isArray(row.risk_assessments) ? (row.risk_assessments as Record<string, unknown>[]) : [];
-    const latest = pickLatestRisk(
-      risks.map((r) => ({ level: r.level, computedAt: String(r.computed_at), seq: Number(r.seq) })),
-    );
-    const deadlines = Array.isArray(row.deadlines) ? (row.deadlines as Record<string, unknown>[]) : [];
-    items.push({
-      slug: String(row.slug),
-      name: String(row.name),
-      status: asStatus(row.status),
-      riskLevel: latest ? asRiskLevel(latest.level) : null,
-      chains: Array.isArray(row.chains) ? (row.chains as unknown[]).map(String) : [],
-      nextDeadline: pickNextDeadline(
-        deadlines.map((d) => ({
-          date: typeof d.date === "string" ? d.date : null,
-          kind: String(d.kind),
-          precision: String(d.precision),
-        })),
-        today,
-      ),
-      lastSeen: String(row.last_seen),
-    });
-  }
-
-  const chain = f.chain?.trim().toLowerCase();
-  const filtered = items.filter(
-    (p) =>
-      (!f.risk || f.risk.length === 0 || (p.riskLevel !== null && f.risk.includes(p.riskLevel))) &&
-      (!chain || p.chains.some((c) => c.toLowerCase() === chain)),
-  );
-  return sortProjects(filtered);
+export interface ProjectPage {
+  items: ProjectListItem[];
+  /** Number of projects matching the filters, across all pages. */
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
-/** Distinct chain names across all projects, for the chain filter. */
-export async function listChains(db: SupabaseClient): Promise<string[]> {
-  const { data, error } = await db.from("projects").select("chains");
-  throwIf(error, "chains");
-  const set = new Set<string>();
-  for (const row of (data ?? []) as { chains: unknown }[]) {
-    if (Array.isArray(row.chains)) for (const c of row.chains) if (typeof c === "string" && c) set.add(c.toLowerCase());
+const LIST_COLUMNS =
+  "id, slug, name, status, chains, last_seen, " +
+  "next_deadline_date, next_deadline_kind, next_deadline_precision, latest_risk_level";
+
+// Filters, ordering and paging all run in SQL against the `project_list` view (migration 0003), so the list never
+// depends on PostgREST's row cap. Order: nearest firm deadline (nulls last), newest last_seen, then id.
+interface Filterable {
+  in(column: string, values: string[]): Filterable;
+  contains(column: string, value: string[]): Filterable;
+}
+
+function applyFilters<T>(query: T, f: ListFilters): T {
+  let q = query as unknown as Filterable;
+  if (f.status && f.status.length > 0) q = q.in("status", f.status);
+  if (f.risk && f.risk.length > 0) q = q.in("latest_risk_level", f.risk);
+  const chain = f.chain?.trim().toLowerCase();
+  if (chain) q = q.contains("chains_lower", [chain]);
+  return q as unknown as T;
+}
+
+function toListItem(row: Record<string, unknown>): ProjectListItem {
+  return {
+    slug: String(row.slug),
+    name: String(row.name),
+    status: asStatus(row.status),
+    riskLevel: asRiskLevel(row.latest_risk_level),
+    chains: Array.isArray(row.chains) ? (row.chains as unknown[]).map(String) : [],
+    nextDeadline:
+      typeof row.next_deadline_date === "string"
+        ? {
+            date: row.next_deadline_date,
+            kind: String(row.next_deadline_kind),
+            precision: String(row.next_deadline_precision),
+          }
+        : null,
+    lastSeen: String(row.last_seen),
+  };
+}
+
+export async function listProjects(db: SupabaseClient, f: ListFilters = {}, page = 1): Promise<ProjectPage> {
+  const from = (page - 1) * PAGE_SIZE;
+  const { data, error, count } = await applyFilters(db.from("project_list").select(LIST_COLUMNS, { count: "exact" }), f)
+    .order("next_deadline_date", { ascending: true, nullsFirst: false })
+    .order("last_seen", { ascending: false })
+    .order("id", { ascending: true })
+    .range(from, from + PAGE_SIZE - 1);
+  if (error?.code === "PGRST103") {
+    // The page is past the end. Report the real total so the page can link back to the last page.
+    const head = await applyFilters(db.from("project_list").select("id", { count: "exact", head: true }), f);
+    throwIf(head.error, "projects");
+    return { items: [], total: head.count ?? 0, page, pageSize: PAGE_SIZE };
   }
-  return [...set].sort();
+  throwIf(error, "projects");
+  return {
+    items: ((data ?? []) as unknown as Record<string, unknown>[]).map(toListItem),
+    total: count ?? 0,
+    page,
+    pageSize: PAGE_SIZE,
+  };
+}
+
+/** Distinct lowercase chain names across all projects, for the chain filter. */
+export async function listChains(db: SupabaseClient): Promise<string[]> {
+  const { data, error } = await db.from("project_chains").select("chain").order("chain", { ascending: true });
+  throwIf(error, "chains");
+  return ((data ?? []) as { chain: unknown }[]).map((r) => String(r.chain));
 }
 
 export async function getProjectDetail(db: SupabaseClient, slug: string, now: Date = new Date()): Promise<ProjectDetail | null> {
@@ -143,7 +154,7 @@ export async function getProjectDetail(db: SupabaseClient, slug: string, now: Da
     db.from("tasks").select("description").eq("project_id", id),
     db.from("links").select("url, kind").eq("project_id", id),
     db.from("evidence").select("field, value, quote, source_url, at, seq").eq("project_id", id)
-      .order("at", { ascending: false }).order("seq", { ascending: false }),
+      .order("at", { ascending: false }).order("seq", { ascending: false }).limit(100),
   ]);
   throwIf(risks.error, "risk");
   throwIf(deadlines.error, "deadlines");
@@ -203,8 +214,9 @@ export async function getLastSuccessfulRunAt(db: SupabaseClient): Promise<Date |
     .from("pipeline_runs")
     .select("finished_at, stats")
     .not("finished_at", "is", null)
+    .is("stats->>run_error", null)
     .order("finished_at", { ascending: false })
-    .limit(50);
+    .limit(1);
   throwIf(error, "pipeline runs");
   return pickLastSuccessfulRun(
     (data ?? []).map((r) => ({ finishedAt: (r.finished_at as string | null) ?? null, stats: r.stats as unknown })),
