@@ -27,6 +27,11 @@ describe("normalizeDeadline year rule", () => {
     expect(normalizeDeadline(d, new Date("2026-10-09")).date).toBe("2027-03-05");
   });
 
+  it("treats a 4-digit time like 2300 UTC as no year", () => {
+    const d = { ...base, date: "2026-01-03", text: "Jan 3, 2300 UTC" };
+    expect(normalizeDeadline(d, new Date("2026-12-28")).date).toBe("2027-01-03");
+  });
+
   it("never shifts the year when the text has a 4-digit year", () => {
     const d = { ...base, date: "2026-12-15", text: "Dec 15, 2026" };
     expect(normalizeDeadline(d, new Date("2027-06-01")).date).toBe("2026-12-15");
@@ -67,6 +72,18 @@ describe("normalizeDeadline approximate rule", () => {
   it("applies the approximate rule when date is null", () => {
     const d: ExtractedDeadline = { kind: "tge", date: null, precision: "exact", text: "around Q4" };
     expect(normalizeDeadline(d, new Date("2026-10-09"))).toEqual({ ...d, precision: "approximate" });
+  });
+
+  it("never downgrades month or quarter precision to approximate", () => {
+    const month: ExtractedDeadline = { kind: "tge", date: "2026-11-01", precision: "month", text: "around November 2026" };
+    expect(normalizeDeadline(month, new Date("2026-10-09")).precision).toBe("month");
+    const quarter: ExtractedDeadline = { kind: "tge", date: "2026-10-01", precision: "quarter", text: "around Q4 2026" };
+    expect(normalizeDeadline(quarter, new Date("2026-10-09")).precision).toBe("quarter");
+  });
+
+  it("keeps approximate precision as it is", () => {
+    const d: ExtractedDeadline = { kind: "claim", date: "2026-10-20", precision: "approximate", text: "around Oct 20" };
+    expect(normalizeDeadline(d, new Date("2026-10-09")).precision).toBe("approximate");
   });
 });
 

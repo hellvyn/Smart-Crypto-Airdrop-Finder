@@ -1,6 +1,7 @@
 import type { ExtractedDeadline } from "../schema/extraction.js";
 
-const FOUR_DIGIT_YEAR = /\b\d{4}\b/;
+// Years 1900-2099 only, so times such as "2300 UTC" are not mistaken for a year.
+const FOUR_DIGIT_YEAR = /\b(?:19|20)\d{2}\b/;
 // "~" is not a word character, so it cannot sit inside \b(...)\b; match it separately.
 const APPROXIMATE_WORDS = /\b(?:approximately|approx\.?|around|about)\b|~/i;
 const DATE_FORMAT = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -36,7 +37,8 @@ function rollToCutoff(month: number, day: number, cutoff: Date): string | null {
  * Deterministic fix-ups for an LLM-extracted deadline. Returns a new object.
  * - Text without a 4-digit year: keep month+day and pick the earliest year on or
  *   after (publishedAt - 7 days), compared as UTC calendar dates.
- * - Hedging words ("approximately", "around", "~", ...): force precision "approximate".
+ * - Hedging words ("approximately", "around", "~", ...): downgrade precision "exact" to "approximate".
+ *   Month and quarter precision are already coarser and stay as they are.
  */
 export function normalizeDeadline(d: ExtractedDeadline, publishedAt: Date | null): ExtractedDeadline {
   const out: ExtractedDeadline = { ...d };
@@ -50,7 +52,7 @@ export function normalizeDeadline(d: ExtractedDeadline, publishedAt: Date | null
     }
   }
 
-  if (APPROXIMATE_WORDS.test(out.text)) out.precision = "approximate";
+  if (out.precision === "exact" && APPROXIMATE_WORDS.test(out.text)) out.precision = "approximate";
 
   return out;
 }
