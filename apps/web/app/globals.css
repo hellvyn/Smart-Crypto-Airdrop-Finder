@@ -17,6 +17,13 @@
   --member-fill: #fff1ea;
   --hazard: repeating-linear-gradient(-45deg, var(--ink) 0 14px, var(--accent) 14px 28px);
 
+  /* Farming heatmap (Plan 8): each level is darker than the one before, so the shade alone tells them apart. */
+  --heat-none: #e8e8e2;
+  --heat-0: #ffffff;
+  --heat-1: #bfe3cc;
+  --heat-2: #5fae80;
+  --heat-3: #1f7a45;
+
   /* Names the older pages already use, mapped onto the tokens above. */
   --fg: var(--ink);
   --bg: var(--ground);
@@ -1009,4 +1016,494 @@ blockquote {
   .landing-today-stamp {
     right: -8px;
   }
+}
+
+/* Project page actions: Watch and Mulai garap side by side. */
+
+.project-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin: 1rem 0;
+}
+
+.project-actions form {
+  margin: 0;
+}
+
+.farm-button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+/* Garapan saya (mockup CGarapan). */
+
+.garapan {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.garapan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.garapan-title {
+  margin: 0;
+  font-size: 64px;
+  line-height: 0.92;
+  overflow-wrap: anywhere;
+}
+
+.garapan-summary {
+  display: flex;
+  flex-wrap: wrap;
+  border: 3px solid var(--ink);
+  background: var(--surface);
+}
+
+.garapan-stat {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 16px;
+}
+
+.garapan-stat + .garapan-stat {
+  border-left: 2px solid var(--ink);
+}
+
+.garapan-stat-number {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.garapan-stat-number[data-tone="pass"] {
+  color: var(--pass);
+}
+
+.garapan-stat-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.garapan-error {
+  padding: 10px 14px;
+  border: 2px solid var(--error);
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.garapan-empty {
+  margin: 0;
+  padding: 18px;
+  border: 2px dashed var(--line-soft);
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.heat-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.heat-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.farm-card {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.farm-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 14px 18px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.farm-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.farm-name {
+  margin: 0;
+  font-size: 30px;
+  overflow-wrap: anywhere;
+}
+
+.farm-name a {
+  text-decoration: none;
+}
+
+.farm-name a:hover {
+  color: var(--accent-text);
+}
+
+.farm-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.farm-countdown {
+  padding: 6px 10px;
+  background: var(--ink);
+  color: var(--ground);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.farm-countdown[data-ended="true"] {
+  padding: 4px 10px;
+  border: 2px solid var(--ended);
+  background: transparent;
+  color: var(--ended);
+}
+
+.farm-streak {
+  padding: 5px 10px;
+  border: 2px solid var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.farm-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+}
+
+.farm-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px 18px;
+  border-right: 2px solid var(--ink);
+}
+
+.farm-checklist form {
+  margin: 0;
+}
+
+.farm-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px 18px;
+}
+
+@media (max-width: 980px) {
+  .farm-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .farm-checklist {
+    border-right: 0;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .garapan-title {
+    font-size: 48px;
+  }
+}
+
+.farm-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.farm-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+
+.farm-group-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.farm-group-aside,
+.farm-range {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.farm-range {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.farm-tasks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.farm-task {
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+  border-bottom: 2px dashed var(--line-soft);
+}
+
+.farm-check-form {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.farm-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  text-align: left;
+}
+
+.farm-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--ink);
+  background: var(--surface);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.farm-check[aria-checked="true"] .farm-box {
+  border-color: var(--pass);
+  background: var(--pass);
+  color: var(--surface);
+}
+
+.farm-check[aria-checked="true"] .farm-task-text {
+  color: var(--ended);
+  text-decoration: line-through;
+}
+
+.farm-task-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.farm-task-plain {
+  flex: 1 1 auto;
+  padding: 8px 0 8px 36px;
+  font-size: 16px;
+}
+
+.farm-weekly-status {
+  flex: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-text);
+}
+
+.farm-weekly-status[data-done="true"] {
+  color: var(--pass);
+}
+
+.farm-archive {
+  flex: none;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.farm-note {
+  margin: 0;
+  padding: 12px;
+  border: 2px dashed var(--line-soft);
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.farm-add summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+  list-style: none;
+}
+
+.farm-add summary::-webkit-details-marker {
+  display: none;
+}
+
+.farm-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.farm-add-form label {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 140px;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.farm-add-form input,
+.farm-add-form select {
+  min-height: 44px;
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  background: var(--surface);
+  font: inherit;
+  font-size: 15px;
+}
+
+.farm-refresh {
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.farm-stop {
+  min-height: 44px;
+  padding: 9px 4px;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-transform: uppercase;
+}
+
+/* Heatmap: 14 px squares, 3 px apart, scrolling inside its own box on narrow screens. */
+
+.heat-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 3px 3px 6px;
+}
+
+.heat-grid {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+}
+
+.heat-days,
+.heat-week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.heat-days {
+  padding-right: 4px;
+}
+
+.heat-month,
+.heat-month-spacer,
+.heat-day-label {
+  height: 14px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.heat-month {
+  width: 14px;
+  overflow: visible;
+}
+
+.heat-cell,
+.heat-pad {
+  display: block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.heat-level-none {
+  background: var(--heat-none);
+}
+
+.heat-level-0 {
+  border: 1px solid var(--line-soft);
+  background: var(--heat-0);
+}
+
+.heat-level-1 {
+  background: var(--heat-1);
+}
+
+.heat-level-2 {
+  background: var(--heat-2);
+}
+
+.heat-level-3 {
+  background: var(--heat-3);
+}
+
+.heat-upcoming {
+  border: 1px dashed var(--line-soft);
+  background: transparent;
+}
+
+.heat-today {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }

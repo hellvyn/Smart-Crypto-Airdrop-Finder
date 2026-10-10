@@ -8,6 +8,8 @@ describe("isProtectedPath", () => {
     expect(isProtectedPath("/wallets")).toBe(true);
     expect(isProtectedPath("/wallets/123")).toBe(true);
     expect(isProtectedPath("/settings")).toBe(true);
+    expect(isProtectedPath("/garapan")).toBe(true);
+    expect(isProtectedPath("/garapanx")).toBe(false);
   });
 
   it("leaves the public pages and login open", () => {

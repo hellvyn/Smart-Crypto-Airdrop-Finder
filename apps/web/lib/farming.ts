@@ -32,13 +32,14 @@ const MAX_ACTIVE_TASKS = 30;
 const PAGE_SIZE = 1000;
 
 /** Why a farming request was refused; anything else is thrown as a plain Error. */
-export type FarmingErrorCode = "project_limit" | "task_limit" | "invalid_task" | "not_farming";
+export type FarmingErrorCode = "project_limit" | "task_limit" | "invalid_task" | "not_farming" | "task_inactive";
 
 export const FARMING_ERROR_MESSAGES: Record<FarmingErrorCode, string> = {
   project_limit: "Kamu udah garap 50 project. Berhentiin salah satu dulu sebelum mulai yang baru.",
   task_limit: "Satu project maksimal 30 task aktif. Arsipkan task yang udah gak kamu pakai dulu.",
   invalid_task: "Teks task wajib diisi, maksimal 200 karakter.",
   not_farming: "Kamu lagi gak garap project ini.",
+  task_inactive: "Task itu udah diarsipkan, atau project-nya udah berhenti kamu garap. Checklist di bawah udah yang terbaru.",
 };
 
 export function isFarmingErrorCode(v: unknown): v is FarmingErrorCode {
@@ -63,6 +64,8 @@ export interface FarmingCard {
   projectId: string;
   name: string;
   slug: string;
+  /** The member's local day the card was built for (YYYY-MM-DD). */
+  today: string;
   /** Earliest exact/approximate deadline of any kind from the member's today on, or null. */
   nextDeadline: { kind: DeadlineKind; date: string; precision: DatePrecision } | null;
   /** Active tasks in checklist order. */
@@ -309,12 +312,14 @@ export async function refreshFromSource(db: SupabaseClient, projectId: string): 
 
 /**
  * Checks (`done`) or unchecks a task for the member's today through toggle_farming_check(), and returns the state it
- * set. For a weekly task that is today's box only: whether the week is done comes from the stored checks.
+ * set. For a weekly task that is today's box only: whether the week is done comes from the stored checks. A task
+ * archived, or a project stopped, in another tab (22023) is refused as FarmingError "task_inactive".
  */
 export async function setCheck(db: SupabaseClient, taskId: string, done: boolean): Promise<boolean> {
   await requireUser();
   requireUuid(taskId, "task");
   const { data, error } = await db.rpc("toggle_farming_check", { p_task_id: taskId, p_done: done });
+  if (error?.code === "22023") throw new FarmingError("task_inactive");
   throwIf(error, "update the check");
   return data === true;
 }
@@ -444,6 +449,7 @@ export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<Fa
       projectId: p.project_id,
       name: String(p.projects!.name),
       slug: String(p.projects!.slug),
+      today,
       nextDeadline: upcoming ? { kind: upcoming.kind, date: upcoming.date!, precision: upcoming.precision } : null,
       tasks: active.map((t) => ({ id: t.id, text: t.text, cadence: t.cadence, origin: t.origin })),
       checkedToday: active.filter((t) => ticked.has(t.id)).map((t) => t.id),
