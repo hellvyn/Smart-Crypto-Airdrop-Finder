@@ -8,6 +8,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@saf/core": "workspace:*"
+    "@saf/core": "workspace:*",
+    "cheerio": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2"
   }
 }
