@@ -124,3 +124,12 @@ Ruling: `/?deleted=1` stays on the landing with a notice — keeps the delete-ac
 
 Ruling: T6 Steps 4-5 and T7's crt.sh part are reported blocked, not faked — the container has no production DB credentials and crt.sh is denied — costs an owner-run of two documented commands.
 Ruling: one non-project-host check extended from `isAggregatorHost` — the plan's named check does not exist and two checks would drift — costs a move if the owner wants it in core.
+
+## G1 tail (Plan 7)
+- P7 Task 4: complete (commits 4287501..d48c1f8, review clean). The implementer could not write the shared report path, so the reviewer saw no test evidence. The controller copied the report and ran every gate on the merge itself (results below).
+- P7 Task 4: real bug found by the RED e2e: a server-action POST after the session expired got a proxy 307 and showed Next's error page. Fix: the proxy lets server-action POSTs through, and `requireUser` redirects to `/login?next=<page>` (page from the proxy-set `x-airdropiq-path` header, sanitised by `safeNextPath`).
+- Ruling: accept letting server-action POSTs through the proxy — the controller verified every exported action in `(app)` calls `requireUser`, the `(app)` layout and every page call `requireUser`/`getUser`, the proxy always overwrites the path header, and RLS still applies — costs a missed `requireUser` in a future action being caught only by RLS. Carried to Plan 8: `/garapan` actions must call `requireUser`.
+- P7 Task 4: the pgTAP `is_empty` from the brief cannot work: anon has no privilege, so the select raises 42501 and aborts. Used a test-local helper that counts 42501 as 0 rows. Mutation-checked by the implementer. An anon REST e2e was added too.
+- P7 Task 4: minor (deferred): `<main>` max-width 1240 px applies to every page, including login and settings. `legacyListRedirect` sends any query on `/` (for example `utm_*`) to `/airdrops`. The `/#jejak` anchor stays dead until Plan 6. The `landing.test.tsx` price regex matches "rp" inside words.
+- G1-1c merged: dead693. Tests: core 134, pipeline 203, web 272 unit · typecheck ok · pgTAP 115 · e2e 66/66.
+- Workflow fix: worktree agents cannot always write to the main checkout. Reports now live in each worktree (`.superpowers/reports/`), and their paths flow to reviewers and fixers.

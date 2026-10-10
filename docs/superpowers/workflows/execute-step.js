@@ -34,7 +34,8 @@ const IMPL_SCHEMA = { type: 'object', properties: {
   commits: { type: 'array', items: { type: 'string' } },
   tests: { type: 'string', description: 'one-line test summary' },
   concerns: { type: 'string' },
-}, required: ['status', 'head_sha', 'commits', 'tests', 'concerns'] }
+  report_path: { type: 'string', description: 'absolute path of the report file you actually wrote' },
+}, required: ['status', 'head_sha', 'commits', 'tests', 'concerns', 'report_path'] }
 
 const REVIEW_SCHEMA = { type: 'object', properties: {
   tasks: { type: 'array', items: { type: 'object', properties: {
@@ -64,8 +65,9 @@ function workspaceRules(base) {
   return `## Workspace rules (mandatory, set by the controller)
 
 - You run inside your OWN git worktree: your current working directory. The main checkout ${REPO} belongs to the
-  controller. Never edit, commit, checkout or reset anything there. The only thing you write outside your worktree is
-  your report file (absolute path below).
+  controller. Never edit, commit, checkout or reset anything there, and do not write files there.
+- Your report file goes INSIDE your worktree at \`$PWD/.superpowers/reports/<name given below>\` (git-ignored, never
+  committed). Return its absolute path as report_path.
 - First, before anything else:
   1. \`git rev-parse HEAD\`. If it is not \`${base}\`, run \`git reset --hard ${base}\` (your worktree branch is private,
      so this is safe). Then confirm with \`git log -1 --oneline\`.
@@ -96,10 +98,10 @@ function implementerPrompt(t, base, mode, extra) {
 ## Findings to fix (verbatim from the reviewer)
 ${extra.findings.map(f => '- ' + f).join('\n')}
 
-Read the task brief (${t.brief}) and the existing report file (${t.report}) first: the report tells you what was
+Read the task brief (${t.brief}) and the earlier report(s) first: ${extra.reports.join(', ')}. They tell you what was
 built and tried. Your worktree must start at the task's current head \`${base}\` (see workspace rules). Fix every
-finding, re-run the tests that cover the amended code, then APPEND a fix report to ${t.report} (what you changed, the
-covering tests, the exact command, and its output). Commit. Then reply with the short status contract.`
+finding, re-run the tests that cover the amended code, then write your fix report (what you changed, the covering
+tests, the exact command, and its output) to your own report file. Commit. Then reply with the short status contract.`
     : `You are implementing ${t.id}: ${t.title}
 
 ## Where this fits
@@ -125,7 +127,7 @@ ${workspaceRules(base)}
 
 ${T.implementer}
 
-Report file: ${t.report}  (${mode === 'fix' ? 'append to it' : 'create it'})
+Report file name: ${t.id.replace(/[^A-Za-z0-9]/g, '-')}-${mode === 'fix' ? 'fix-' + (extra.round || 'w') : 'report'}.md (in \`$PWD/.superpowers/reports/\`)
 
 ## superpowers:test-driven-development (follow it exactly)
 
@@ -151,7 +153,7 @@ function reviewerPrompt(group) {
   const parts = group.map(g => `### ${g.t.id}: ${g.t.title}
 - Task brief: ${g.t.brief}
 - Global constraints file: ${g.t.constraints}
-- Implementer report: ${g.t.report}
+- Implementer report: ${g.report}
 - Base: ${g.base}  Head: ${g.head}
 - Diff file: create it first by running, from ${REPO}:
   \`bash ${SCRIPTS}/review-package ${g.t.plan} ${g.base} ${g.head} ${g.pkg}\`
@@ -171,14 +173,14 @@ summary: one entry per task id, with every spec gap and every Critical/Important
 file:line, what is wrong, how to fix), Minor ones in "minor", and ⚠️ items in "cannot_verify".`
 }
 
-function reReviewPrompt(t, findings, fixBase, head, pkg) {
+function reReviewPrompt(t, findings, fixBase, head, pkg, reports) {
   return `${T.reReview}
 
 ## Filled-in values
 - Task brief: ${t.brief}
 - Findings under verification:
 ${findings.map(f => '  - ' + f).join('\n')}
-- Implementer report (fix reports appended at the end): ${t.report}
+- Implementer reports (the last one is the fix report for this round): ${(reports || [t.report]).join(', ')}
 - Fix base: ${fixBase}  Head: ${head}
 - Diff file: create it first by running, from ${REPO}:
   \`bash ${SCRIPTS}/review-package ${t.plan} ${fixBase} ${head} ${pkg}\`
@@ -186,8 +188,9 @@ ${findings.map(f => '  - ' + f).join('\n')}
 Read-only on ${REPO} apart from that package file. Return the structured result.`
 }
 
-async function fixLoop(t, impl, review) {
+async function fixLoop(t, impl, review, firstReport) {
   let head = impl.head_sha
+  const reports = [firstReport]
   let open = review.blocking.slice()
   const log_ = []
   const minors = review.minor.slice()
@@ -197,7 +200,7 @@ async function fixLoop(t, impl, review) {
     const framing = round <= 3
       ? `This is fix round ${round} of 5.`
       : `A prior implementer attempted this task ${round - 1} times; you own it now. Read the report file for what was tried.`
-    const fix = await agent(implementerPrompt(t, head, 'fix', { findings: open, framing }), {
+    const fix = await agent(implementerPrompt(t, head, 'fix', { findings: open, framing, reports, round }), {
       label: `fix:${t.id}:r${round}`, phase: 'Fix', schema: IMPL_SCHEMA, isolation: 'worktree', model,
     })
     if (!fix || !fix.head_sha || fix.head_sha === head) {
@@ -207,7 +210,8 @@ async function fixLoop(t, impl, review) {
     }
     const fixBase = head
     head = fix.head_sha
-    const rr = await agent(reReviewPrompt(t, open, fixBase, head, `${t.workspace}/rereview-${t.n}-r${round}.diff`), {
+    if (fix.report_path) reports.push(fix.report_path)
+    const rr = await agent(reReviewPrompt(t, open, fixBase, head, `${t.workspace}/rereview-${t.n}-r${round}.diff`, reports), {
       label: `rereview:${t.id}:r${round}`, phase: 'Fix', schema: REREVIEW_SCHEMA, model: t.reviewModel,
     })
     if (!rr) { log_.push(`round ${round}: re-review died`); continue }
@@ -218,7 +222,7 @@ async function fixLoop(t, impl, review) {
     log_.push(`round ${round}/5: ${rr.findings.filter(f => f.addressed).length} addressed, ${stillOpen.length + broke.length} open; ${fixBase.slice(0, 7)}..${head.slice(0, 7)}`)
     open = [...stillOpen, ...broke]
   }
-  return { head, open, rounds: log_, minors, outOfScope }
+  return { head, open, rounds: log_, minors, outOfScope, reports }
 }
 
 function packFor(t, base, head, tag) { return `${t.workspace}/review-${t.n}-${tag}-${base.slice(0, 7)}..${head.slice(0, 7)}.diff` }
@@ -228,7 +232,7 @@ async function reviewAndFix(group) {
   const ok = group.filter(g => g.impl && g.impl.head_sha && g.impl.head_sha !== A.base && ['DONE', 'DONE_WITH_CONCERNS'].includes(g.impl.status))
   const results = group.filter(g => !ok.includes(g)).map(g => ({ id: g.t.id, base: A.base, head: g.impl ? g.impl.head_sha : '', impl: g.impl, review: null, fix: null }))
   if (!ok.length) return results
-  const items = ok.map(g => ({ t: g.t, impl: g.impl, base: A.base, head: g.impl.head_sha, pkg: packFor(g.t, A.base, g.impl.head_sha, 'task'), reviewFile: '' }))
+  const items = ok.map(g => ({ t: g.t, impl: g.impl, report: g.impl.report_path || g.t.report, base: A.base, head: g.impl.head_sha, pkg: packFor(g.t, A.base, g.impl.head_sha, 'task'), reviewFile: '' }))
   const reviewFile = `${items[0].t.workspace}/review-${A.step}-${items.map(i => i.t.n).join('-')}.md`
   items.forEach(i => { i.reviewFile = reviewFile })
   const model = items.some(i => i.t.reviewModel === 'opus') ? 'opus' : items[0].t.reviewModel
@@ -240,7 +244,7 @@ async function reviewAndFix(group) {
     if (!r) return { id: i.t.id, base: A.base, head: i.head, impl: i.impl, review: null, fix: null, note: 'review missing' }
     const needs = r.blocking.length > 0 || !r.spec_compliant || !r.quality_approved
     const blocking = r.blocking.length ? r.blocking : (needs ? ['Reviewer marked the task not approved without listing a finding; re-read ' + reviewFile + ' for this task and fix what it says.'] : [])
-    const fix = needs ? await fixLoop(i.t, i.impl, { blocking, minor: r.minor }) : null
+    const fix = needs ? await fixLoop(i.t, i.impl, { blocking, minor: r.minor }, i.report) : null
     return { id: i.t.id, base: A.base, head: fix ? fix.head : i.head, impl: i.impl, review: { ...r, file: reviewFile }, fix }
   }))
   return [...results, ...fixed.filter(Boolean)]
@@ -265,11 +269,11 @@ Write your full report to ${A.workspace}/wave-${A.wave}-review.md and return the
   const rev = await agent(prompt, { label: `wave-review:${A.wave}`, phase: 'WaveReview', schema: WAVE_SCHEMA, model: 'opus' })
   if (!rev || !rev.blocking.length) return { review: rev, fix: null }
   const t = { id: `wave ${A.wave}`, title: 'whole-wave review findings', brief: `${A.workspace}/wave-${A.wave}-review.md`, report: `${A.workspace}/wave-${A.wave}-fix-report.md`, plan: A.plans[0], workspace: A.workspace, n: `w${A.wave}`, implModel: 'opus', reviewModel: 'opus', constraints: A.constraints }
-  const fix = await agent(implementerPrompt(t, A.head, 'fix', { findings: rev.blocking, framing: 'These come from the whole-wave review; fix all of them in one pass.' }), {
+  const fix = await agent(implementerPrompt(t, A.head, 'fix', { findings: rev.blocking, framing: 'These come from the whole-wave review; fix all of them in one pass.', reports: [`${A.workspace}/wave-${A.wave}-review.md`], round: 'wave' }), {
     label: `wave-fix:${A.wave}`, phase: 'WaveReview', schema: IMPL_SCHEMA, isolation: 'worktree', model: 'opus',
   })
   if (!fix || !fix.head_sha || fix.head_sha === A.head) return { review: rev, fix, rereview: null }
-  const rr = await agent(reReviewPrompt(t, rev.blocking, A.head, fix.head_sha, `${A.workspace}/wave-${A.wave}-rereview.diff`), {
+  const rr = await agent(reReviewPrompt(t, rev.blocking, A.head, fix.head_sha, `${A.workspace}/wave-${A.wave}-rereview.diff`, [fix.report_path || '(no fix report)']), {
     label: `wave-rereview:${A.wave}`, phase: 'WaveReview', schema: REREVIEW_SCHEMA, model: 'opus',
   })
   return { review: rev, fix, rereview: rr }
