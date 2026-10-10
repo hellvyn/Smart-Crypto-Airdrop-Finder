@@ -29,6 +29,7 @@ Label:
 | 10 | Fungsi akun di v1 | **Sinkron watchlist & wallet + notifikasi email** (digest harian + reminder H-1 deadline). Cek wallet **on-demand** (di-cache) | Ditunda: monetisasi (tapi field `plan` disiapin), pelacakan wallet otomatis di background, web push. Limit free tier layanan email [UNKNOWN] |
 | 11 | Metode login | **Email + password** | Dipilih owner (Claude nyaranin magic link + Google). Tetap butuh email verifikasi & reset password. Pakai library auth yang matang, jangan bikin sendiri. Login via wallet ditolak (konflik pesan anti-scam, ribet di multi-chain) |
 | 12 | Frekuensi scan | **Harian** | Dipilih owner. Risiko yang diterima: deadline yang diumumin < 24 jam bisa kelewat (contoh: radar Oct 9 18:06 UTC → deadline Axis Oct 10 12:00 UTC). Frekuensi dibikin bisa diatur lewat config. Email urgent di-drop |
+| 13 | Isi v1 | **Finder + A (anti-scam) + akun/watchlist + notifikasi + cek wallet khusus EVM** (on-demand) | Rilis berikutnya: adapter chain lain (Solana, Aptos, Sui, TON, Cosmos), lalu B (worth it, butuh data funding yang berbayar) |
 
 ## 2. Rencana sumber data (setelah spike)
 
