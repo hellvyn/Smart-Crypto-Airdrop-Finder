@@ -178,3 +178,22 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 - Ruling: accept `cleanUrl` stripping the `r` query param for every source — the brief's verbatim test needs it and the spec says to use the one existing cleaner — costs a one-time hash change for documents with `?r=` and a stripped legitimate `?r=` on some official URL (owner to know).
 - P4 Task 9: minor (deferred): invisible U+E000/E001 literals in `alphadrops.ts` (write them as escapes). The 4th `sleep` parameter is required, unlike the brief. `collect.ts` imports `defaultSleep` from the GoPlus module. Intermediary hosts are still stored as project links. The test duplicates the host list. Other referral forms (`?code=`, `?inviteCode=`, `/join/X`) still pass. Volatile redirect targets may re-extract daily.
 - G2-2d merged. Tests: core 163, pipeline 366, web 284 unit · typecheck ok · pgTAP 136 · e2e 67/67.
+- G2 wave review started (workflow run wf_7e452a48-6b5)
+
+---
+
+# SDD ledger — plan: docs/superpowers/plans/2026-10-10-plan-8-farming-tracker.md
+
+## Pre-flight scan
+
+| Pair or task | Shared surface | Finding | Ruling |
+|---|---|---|---|
+| T1 × T2 | none | DB versus pure core, independent | 3a in parallel |
+| T3 × T1/T2/P4.T5 | `farming_*` tables and functions, `buildHeatmap`/`heatmapRange`, `tasks.cadence`/`position` | Real dependencies (P4.T5 is merged) | 3b |
+| T4 × T3/P7.T3/P7.T4 | actions/queries, `components/ui/*`, `routes.ts`, header | Real dependencies (P7 is merged) | 3c |
+| T2 self | range length | The prose says "max 364 days", but the no-deadline tests expect `start .. start+364` (365 cells, 2026-10-08 → 2027-10-07). The cap test (2026-01-02 .. 2026-12-31) is 364 cells. The tests are consistent with each other | Follow the tests: no deadline = `start + 364`. The cap applies only when a deadline makes the range longer |
+| T3 self | step text | "text_id after Plan 5": no owner in P8 | Use `tasks.description` now. P5.T6 owns the switch to `text_id` (plan amended) |
+| T3 self | `endedOn` | null in this plan | P6.T3 wires it |
+| T3 self | actions | G1 ruling: the proxy lets server-action POSTs through | Every `/garapan` action calls `requireUser` (the brief already says so; the reviewer checks it) |
+| T3 self | step order | P4.T5 returns steps ordered by `document_id`, then `position` | Use the order the repo/query returns |
+| T4 self | Files | The FarmButton goes next to WatchButton, which lives in `projects/[slug]/page.tsx` (not listed). The e2e needs a seeded daily source task with cadence (`e2e/support/seed.ts`, not listed) | Both are in scope |
