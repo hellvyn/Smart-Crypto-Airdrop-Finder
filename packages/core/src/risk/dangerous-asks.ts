@@ -5,8 +5,10 @@ const SECRET_RE = /seed phrase|recovery phrase|mnemonic|private key|secret phras
 const PAYMENT_RE =
   /\b(send|transfer|pay)\b.{0,40}(to (claim|unlock|receive).{0,20}(airdrop|allocation|tokens?|rewards?)|fee to claim|(gas|fee).{0,20}to claim)/i;
 const NEGATION_RE = /\b(never|don't|dont|do not|not)\b/i;
+// Whole words with the plain inflections -s and -ing only: "important" and "typical" are not verbs, and
+// past participles are left out because they read as adjectives ("your connected wallet"), not as asks.
 const ACTION_VERB_RE =
-  /\b(enter|submit|provide|share|import|paste|type|input|verify|sync|validate|send|upload|connect)\w*/i;
+  /\b(enter|submit|provide|share|import|paste|type|input|verify|sync|validate|send|upload|connect)(s|ing)?\b/i;
 // Sentence/clause boundaries stop the look-back window. A "." only counts when
 // followed by whitespace or the end, so decimals like "0.1" are not cut.
 const BOUNDARY_RE = /[.?!]+(?=\s|$)|[;:,\u2013\u2014]/g;

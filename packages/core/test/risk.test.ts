@@ -54,6 +54,20 @@ describe("detectDangerousAsks", () => {
     expect(detectDangerousAsks(["Create a wallet and back up your seed phrase"])).toEqual([]);
   });
 
+  it("does not treat words that merely start with an action verb as a verb", () => {
+    expect(detectDangerousAsks(["It is important to keep your seed phrase safe"])).toEqual([]);
+    expect(detectDangerousAsks(["Make sure your connected wallet has its seed phrase backed up"])).toEqual([]);
+    expect(detectDangerousAsks(["A typical seed phrase has 12 words"])).toEqual([]);
+    expect(detectDangerousAsks(["Once connected, your seed phrase stays in your wallet"])).toEqual([]);
+  });
+
+  it("accepts plain inflections of action verbs", () => {
+    expect(detectDangerousAsks(["Enter your seed phrase to verify"]).map((x) => x.code)).toEqual(["asks_secret"]);
+    expect(detectDangerousAsks(["Users submit their seed phrase here"]).map((x) => x.code)).toEqual(["asks_secret"]);
+    expect(detectDangerousAsks(["Start by entering your recovery phrase"]).map((x) => x.code)).toEqual(["asks_secret"]);
+    expect(detectDangerousAsks(["He enters your private key"]).map((x) => x.code)).toEqual(["asks_secret"]);
+  });
+
   it("ignores harmless tasks", () => {
     expect(detectDangerousAsks(["Swap on the testnet", "Follow us on X"])).toEqual([]);
   });
