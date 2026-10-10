@@ -21,7 +21,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { deleteAccount, submitDeleteAccount, submitUpdateSettings, updateSettings } from "../app/(app)/settings/actions";
-import { getSettings, isValidTimezone, parseCheckbox, timezoneOptions } from "../lib/settings";
+import { getSettings, isValidTimezone, timezoneOptions } from "../lib/settings";
 
 const USER = { id: "11111111-1111-4111-8111-111111111111" };
 
@@ -117,49 +117,36 @@ describe("timezones", () => {
   });
 });
 
-describe("parseCheckbox", () => {
-  it("is true only for 'on' and false only when absent", () => {
-    expect(parseCheckbox("on")).toBe(true);
-    expect(parseCheckbox(null)).toBe(false);
-    expect(() => parseCheckbox("true")).toThrow();
-    expect(() => parseCheckbox("1")).toThrow();
-    expect(() => parseCheckbox("")).toThrow();
-    expect(() => parseCheckbox(new File([], "x"))).toThrow();
-  });
-});
-
 describe("getSettings", () => {
   it("reads the signed-in user's profile", async () => {
     const { db, recs } = fakeDb({
-      respond: () => ({ data: { digest_enabled: false, new_airdrops_opt_in: true, timezone: "Asia/Jakarta" }, error: null }),
+      respond: () => ({ data: { timezone: "Asia/Jakarta" }, error: null }),
     });
-    expect(await getSettings(db)).toEqual({ digestEnabled: false, newAirdropsOptIn: true, timezone: "Asia/Jakarta" });
+    expect(await getSettings(db)).toEqual({ timezone: "Asia/Jakarta" });
     expect(requireUser).toHaveBeenCalled();
     expect(recs[0]!.table).toBe("profiles");
+    expect(recs[0]!.calls).toContainEqual(["select", "timezone"]);
     expect(recs[0]!.calls).toContainEqual(["eq", "user_id", USER.id]);
   });
 
   it("falls back to defaults when there is no profile row, and throws on a database error", async () => {
     const { db } = fakeDb({ respond: () => ({ data: null, error: null }) });
-    expect(await getSettings(db)).toEqual({ digestEnabled: true, newAirdropsOptIn: false, timezone: "UTC" });
+    expect(await getSettings(db)).toEqual({ timezone: "UTC" });
     const bad = fakeDb({ respond: () => ({ data: null, error: { message: "boom" } }) });
     await expect(getSettings(bad.db)).rejects.toThrow(/boom/);
   });
 });
 
 describe("updateSettings", () => {
-  it("writes only the three allowed columns, scoped by user_id", async () => {
+  it("writes only the timezone column, scoped by user_id", async () => {
     const f = fakeDb();
     serverDb = f.db;
-    const res = await updateSettings({ digestEnabled: false, newAirdropsOptIn: true, timezone: "Europe/Berlin" });
+    const res = await updateSettings({ timezone: "Europe/Berlin" });
     expect(res).toEqual({ ok: true });
     expect(requireUser).toHaveBeenCalled();
     const rec = f.recs[0]!;
     expect(rec.table).toBe("profiles");
-    expect(rec.calls).toContainEqual([
-      "update",
-      { digest_enabled: false, new_airdrops_opt_in: true, timezone: "Europe/Berlin" },
-    ]);
+    expect(rec.calls).toContainEqual(["update", { timezone: "Europe/Berlin" }]);
     expect(rec.calls).toContainEqual(["eq", "user_id", USER.id]);
     expect(revalidatePath).toHaveBeenCalledWith("/settings");
   });
@@ -167,7 +154,7 @@ describe("updateSettings", () => {
   it("refuses an unknown timezone and writes nothing", async () => {
     const f = fakeDb();
     serverDb = f.db;
-    const res = await updateSettings({ digestEnabled: true, newAirdropsOptIn: false, timezone: "Mars/Base" });
+    const res = await updateSettings({ timezone: "Mars/Base" });
     expect(res).toEqual({ ok: false, error: "invalid_timezone" });
     expect(f.recs).toHaveLength(0);
     expect(revalidatePath).not.toHaveBeenCalled();
@@ -175,42 +162,27 @@ describe("updateSettings", () => {
 
   it("throws when the database fails or no profile row was updated", async () => {
     serverDb = fakeDb({ respond: () => ({ data: null, error: { message: "denied" } }) }).db;
-    await expect(updateSettings({ digestEnabled: true, newAirdropsOptIn: false, timezone: "UTC" })).rejects.toThrow(/denied/);
+    await expect(updateSettings({ timezone: "UTC" })).rejects.toThrow(/denied/);
     serverDb = fakeDb({ respond: () => ({ data: [], error: null }) }).db;
-    await expect(updateSettings({ digestEnabled: true, newAirdropsOptIn: false, timezone: "UTC" })).rejects.toThrow();
-  });
-
-  it("rejects non-boolean input", async () => {
-    serverDb = fakeDb().db;
-    await expect(
-      updateSettings({ digestEnabled: "yes" as unknown as boolean, newAirdropsOptIn: false, timezone: "UTC" }),
-    ).rejects.toThrow();
+    await expect(updateSettings({ timezone: "UTC" })).rejects.toThrow();
   });
 });
 
 describe("submitUpdateSettings (form)", () => {
-  it("maps checkboxes, saves and redirects with saved=1", async () => {
+  it("saves the timezone and redirects with saved=1", async () => {
     const f = fakeDb();
     serverDb = f.db;
-    const to = await redirected(submitUpdateSettings(form({ newAirdropsOptIn: "on", timezone: "UTC" })));
+    const to = await redirected(submitUpdateSettings(form({ timezone: "Asia/Jakarta" })));
     expect(to).toBe("/settings?saved=1");
-    expect(f.recs[0]!.calls).toContainEqual([
-      "update",
-      { digest_enabled: false, new_airdrops_opt_in: true, timezone: "UTC" },
-    ]);
+    expect(f.recs[0]!.calls).toContainEqual(["update", { timezone: "Asia/Jakarta" }]);
   });
 
   it("redirects with the error and writes nothing for a bad timezone", async () => {
     const f = fakeDb();
     serverDb = f.db;
-    const to = await redirected(submitUpdateSettings(form({ digestEnabled: "on", timezone: "Mars/Base" })));
+    const to = await redirected(submitUpdateSettings(form({ timezone: "Mars/Base" })));
     expect(to).toBe("/settings?error=invalid_timezone");
     expect(f.recs).toHaveLength(0);
-  });
-
-  it("throws on a malformed checkbox value", async () => {
-    serverDb = fakeDb().db;
-    await expect(submitUpdateSettings(form({ digestEnabled: "maybe", timezone: "UTC" }))).rejects.toThrow();
   });
 });
 

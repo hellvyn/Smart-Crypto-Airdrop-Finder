@@ -26,7 +26,7 @@ async function signedInUser(page: Page, tag: string): Promise<{ email: string; i
 async function profileOf(userId: string) {
   const { data, error } = await adminClient()
     .from("profiles")
-    .select("digest_enabled, new_airdrops_opt_in, timezone")
+    .select("timezone")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
@@ -42,32 +42,26 @@ test("the settings page shows the profile defaults", async ({ page }) => {
   await signedInUser(page, "s-defaults");
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await expect(page.getByLabel("Email me a daily digest")).toBeChecked();
-  await expect(page.getByLabel("Email me new airdrops")).not.toBeChecked();
+  await expect(page.getByLabel(/digest|new airdrops/i)).toHaveCount(0);
   await expect(page.getByLabel("Time zone")).toHaveValue("UTC");
   await expect(page.getByRole("heading", { name: "Delete account" })).toBeVisible();
 });
 
-test("turning the digest off persists after a reload", async ({ page }) => {
-  const { id } = await signedInUser(page, "s-digest");
+test("changing the time zone persists after a reload", async ({ page }) => {
+  const { id } = await signedInUser(page, "s-tz-save");
   await page.goto("/settings");
-  await page.getByLabel("Email me a daily digest").uncheck();
-  await page.getByLabel("Email me new airdrops").check();
   await page.getByLabel("Time zone").selectOption("Asia/Jakarta");
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByText("Settings saved.")).toBeVisible();
 
   await page.reload();
-  await expect(page.getByLabel("Email me a daily digest")).not.toBeChecked();
-  await expect(page.getByLabel("Email me new airdrops")).toBeChecked();
   await expect(page.getByLabel("Time zone")).toHaveValue("Asia/Jakarta");
-  expect(await profileOf(id)).toEqual({ digest_enabled: false, new_airdrops_opt_in: true, timezone: "Asia/Jakarta" });
+  expect(await profileOf(id)).toEqual({ timezone: "Asia/Jakarta" });
 });
 
 test("an unknown time zone shows an error and changes nothing", async ({ page }) => {
   const { id } = await signedInUser(page, "s-tz");
   await page.goto("/settings");
-  await page.getByLabel("Email me a daily digest").uncheck();
   // The select only offers valid zones; post a forged value to exercise the server-side check.
   await page.getByLabel("Time zone").evaluate((el) => {
     const select = el as HTMLSelectElement;
@@ -77,7 +71,7 @@ test("an unknown time zone shows an error and changes nothing", async ({ page })
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByText("Unknown time zone.")).toBeVisible();
   await expect(page.getByText("Settings saved.")).toHaveCount(0);
-  expect(await profileOf(id)).toEqual({ digest_enabled: true, new_airdrops_opt_in: false, timezone: "UTC" });
+  expect(await profileOf(id)).toEqual({ timezone: "UTC" });
 });
 
 test("deleting the account needs DELETE typed exactly, then removes the account and its data", async ({ page, context }) => {

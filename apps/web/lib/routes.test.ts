@@ -10,13 +10,9 @@ describe("isProtectedPath", () => {
     expect(isProtectedPath("/settings")).toBe(true);
   });
 
-  it("leaves public and auth pages open", () => {
+  it("leaves the public pages and login open", () => {
     expect(isProtectedPath("/")).toBe(false);
     expect(isProtectedPath("/login")).toBe(false);
-    expect(isProtectedPath("/signup")).toBe(false);
-    expect(isProtectedPath("/reset-password")).toBe(false);
-    expect(isProtectedPath("/update-password")).toBe(false);
-    expect(isProtectedPath("/auth/callback")).toBe(false);
   });
 
   it("matches whole path segments only", () => {

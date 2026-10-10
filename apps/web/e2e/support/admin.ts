@@ -1,6 +1,5 @@
-// Test-harness only. There is no inbox in CI or the sandbox, so the tests get the verification and recovery
-// links that Supabase would email by calling the admin API (`generateLink`), then open them the way the email
-// templates in supabase/templates/ build them: /auth/callback?token_hash=<hashed_token>&type=email|recovery
+// Test-harness only. Accounts are created by an admin in production too (signups are off, nothing sends email), so
+// the tests create their users through the admin API with the email already confirmed.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let admin: SupabaseClient | undefined;
@@ -25,27 +24,6 @@ export function uniqueEmail(tag: string): string {
 export async function createConfirmedUser(email: string, password: string): Promise<void> {
   const { error } = await adminClient().auth.admin.createUser({ email, password, email_confirm: true });
   if (error) throw error;
-}
-
-/**
- * Does what a signup does when email confirmations are on (the production setting): creates an unconfirmed
- * account and returns the link from the confirmation email.
- */
-export async function signupVerificationLink(email: string, password: string): Promise<string> {
-  const { data, error } = await adminClient().auth.admin.generateLink({ type: "signup", email, password });
-  if (error) throw error;
-  return callbackPath(data.properties.hashed_token, "email"); // as supabase/templates/confirmation.html
-}
-
-/** The link from the password-reset email. */
-export async function recoveryLink(email: string): Promise<string> {
-  const { data, error } = await adminClient().auth.admin.generateLink({ type: "recovery", email });
-  if (error) throw error;
-  return callbackPath(data.properties.hashed_token, "recovery"); // as supabase/templates/recovery.html
-}
-
-function callbackPath(tokenHash: string, type: string): string {
-  return `/auth/callback?${new URLSearchParams({ token_hash: tokenHash, type }).toString()}`;
 }
 
 export async function deleteCreatedUsers(): Promise<void> {

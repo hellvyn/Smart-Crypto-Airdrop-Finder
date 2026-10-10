@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { DELETE_CONFIRMATION, parseCheckbox, saveSettings, type Settings, type SettingsError } from "@/lib/settings";
+import { DELETE_CONFIRMATION, saveSettings, type Settings, type SettingsError } from "@/lib/settings";
 import { createServerClient } from "@/lib/supabase/server";
 
 /**
@@ -22,8 +22,6 @@ export async function updateSettings(input: Settings): Promise<{ ok: true } | { 
 export async function submitUpdateSettings(formData: FormData): Promise<void> {
   const timezone = formData.get("timezone");
   const result = await updateSettings({
-    digestEnabled: parseCheckbox(formData.get("digestEnabled")),
-    newAirdropsOptIn: parseCheckbox(formData.get("newAirdropsOptIn")),
     timezone: typeof timezone === "string" ? timezone : "",
   });
   redirect(result.ok ? "/settings?saved=1" : `/settings?error=${result.error}`);

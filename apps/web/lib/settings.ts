@@ -1,12 +1,10 @@
-// The signed-in user's settings (the three user-editable columns of `profiles`). Every function verifies the user
-// itself with requireUser(), filters by that user's id, and relies on RLS ("own profile ...") plus the column-level
-// UPDATE grant (digest_enabled, new_airdrops_opt_in, timezone) as the other barriers.
+// The signed-in user's settings (the one user-editable column of `profiles`: the time zone). Every function verifies
+// the user itself with requireUser(), filters by that user's id, and relies on RLS ("own profile ...") plus the
+// column-level UPDATE grant (timezone) as the other barriers.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireUser } from "./auth";
 
 export interface Settings {
-  digestEnabled: boolean;
-  newAirdropsOptIn: boolean;
   timezone: string;
 }
 
@@ -24,7 +22,7 @@ export function isSettingsError(v: unknown): v is SettingsError {
 export const DELETE_CONFIRMATION = "DELETE";
 export const CONFIRMATION_ERROR_MESSAGE = "Type DELETE to confirm.";
 
-const DEFAULTS: Settings = { digestEnabled: true, newAirdropsOptIn: false, timezone: "UTC" };
+const DEFAULTS: Settings = { timezone: "UTC" };
 
 let zoneSet: Set<string> | undefined;
 let zoneList: string[] | undefined;
@@ -50,13 +48,6 @@ export function timezoneOptions(current?: string): string[] {
   return current && !set.has(current) ? [current, ...list] : list;
 }
 
-/** A form checkbox: "on" when ticked, absent when not. Anything else is a malformed request. */
-export function parseCheckbox(v: FormDataEntryValue | null): boolean {
-  if (v === null) return false;
-  if (v === "on") return true;
-  throw new Error("Invalid checkbox value");
-}
-
 function throwIf(error: { message: string } | null, what: string): void {
   if (error) throw new Error(`Failed to ${what}: ${error.message}`);
 }
@@ -66,17 +57,13 @@ export async function getSettings(db: SupabaseClient): Promise<Settings> {
   const user = await requireUser();
   const { data, error } = await db
     .from("profiles")
-    .select("digest_enabled, new_airdrops_opt_in, timezone")
+    .select("timezone")
     .eq("user_id", user.id)
     .maybeSingle();
   throwIf(error, "load the settings");
   if (!data) return { ...DEFAULTS };
-  const row = data as { digest_enabled: unknown; new_airdrops_opt_in: unknown; timezone: unknown };
-  return {
-    digestEnabled: row.digest_enabled === true,
-    newAirdropsOptIn: row.new_airdrops_opt_in === true,
-    timezone: typeof row.timezone === "string" ? row.timezone : DEFAULTS.timezone,
-  };
+  const row = data as { timezone: unknown };
+  return { timezone: typeof row.timezone === "string" ? row.timezone : DEFAULTS.timezone };
 }
 
 /** Saves the settings after validating them. Nothing is written for an unknown time zone. */
@@ -85,17 +72,10 @@ export async function saveSettings(
   input: Settings,
 ): Promise<{ ok: true } | { ok: false; error: SettingsError }> {
   const user = await requireUser();
-  if (typeof input.digestEnabled !== "boolean" || typeof input.newAirdropsOptIn !== "boolean") {
-    throw new Error("Invalid settings");
-  }
   if (!isValidTimezone(input.timezone)) return { ok: false, error: "invalid_timezone" };
   const { data, error } = await db
     .from("profiles")
-    .update({
-      digest_enabled: input.digestEnabled,
-      new_airdrops_opt_in: input.newAirdropsOptIn,
-      timezone: input.timezone,
-    })
+    .update({ timezone: input.timezone })
     .eq("user_id", user.id)
     .select("user_id");
   throwIf(error, "save the settings");

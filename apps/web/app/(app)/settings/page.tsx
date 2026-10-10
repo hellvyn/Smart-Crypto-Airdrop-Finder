@@ -29,12 +29,6 @@ export default async function SettingsPage({
       <h1>Settings</h1>
       <form action={submitUpdateSettings} className="auth-form">
         <label>
-          <input type="checkbox" name="digestEnabled" defaultChecked={settings.digestEnabled} /> Email me a daily digest
-        </label>
-        <label>
-          <input type="checkbox" name="newAirdropsOptIn" defaultChecked={settings.newAirdropsOptIn} /> Email me new airdrops
-        </label>
-        <label>
           Time zone
           <select name="timezone" defaultValue={settings.timezone}>
             {timezoneOptions(settings.timezone).map((tz) => (
