@@ -1,5 +1,5 @@
-// End-to-end smoke of runDaily against a local Supabase, with fake HTTP, a fake LLM and a fake email sender (no
-// external network: Brevo is never called). Two runs with email disabled, then one with email enabled.
+// End-to-end smoke of runDaily against a local Supabase, with fake HTTP and a fake LLM (no external network).
+// Two runs: the second sees a Telegram post that ends DeepBook's airdrop.
 // Run on a freshly reset database (`supabase db reset`), because it reuses fixed fixture URLs.
 // Usage: SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... pnpm --filter pipeline exec tsx scripts/daily-smoke.ts
 import assert from "node:assert/strict";
@@ -8,7 +8,6 @@ import { createClient } from "@supabase/supabase-js";
 import type { Http } from "../src/collectors/types.js";
 import { defaultConfig } from "../src/config.js";
 import type { ChatFn } from "../src/llm/extract.js";
-import type { EmailMessage, EmailSender } from "../src/notify/email-sender.js";
 import { runDaily } from "../src/run.js";
 import { SupabaseRepo } from "../src/store/supabase-repo.js";
 
@@ -23,7 +22,6 @@ const fixture = (name: string): string => readFileSync(new URL(`../test/fixtures
 
 const T0 = new Date("2026-10-10T23:00:00Z");
 const T1 = new Date("2026-10-11T23:00:00Z");
-const T2 = new Date("2026-10-11T23:30:00Z");
 
 const telegram = (extra: string): string => fixture("telegram.html").replace("</section>", `${extra}</section>`);
 const endedPost = `<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="airdrops_io/104">
@@ -130,53 +128,6 @@ async function main(): Promise<void> {
       pipeline_runs: await count("pipeline_runs"),
     }),
   );
-  // Email enabled, fake sender: one confirmed user watching DeepBook gets its live -> ended change; an unconfirmed
-  // one gets nothing. A second run the same day sends nothing new.
-  const createUser = async (label: string, confirmed: boolean): Promise<string> => {
-    const res = await db.auth.admin.createUser({
-      email: `daily-${label}@example.test`,
-      password: `daily-${label}-Aa1!`,
-      email_confirm: confirmed,
-    });
-    assert.equal(res.error, null, `createUser ${label}: ${res.error?.message ?? ""}`);
-    return (res.data.user as { id: string }).id;
-  };
-  const reader = await createUser("reader", true);
-  const unconfirmed = await createUser("unconfirmed", false);
-  const watch = await db.from("watchlist").insert(
-    [reader, unconfirmed].map((user_id) => ({ user_id, project_id: deepbook[0]?.id })),
-  );
-  assert.equal(watch.error, null);
-  const sent: EmailMessage[] = [];
-  const sender: EmailSender = {
-    async send(m) {
-      sent.push(m);
-      return { ok: true, status: 201 };
-    },
-  };
-  const emailConfig = {
-    ...defaultConfig,
-    email: { enabled: true, dailyLimit: 300, reserveRatio: 0.2, siteUrl: "https://saf.test" },
-  };
-  const third = await runDaily({ ...deps, sender, http: fakeHttp(telegram(endedPost)), now: () => T2 }, emailConfig);
-  const fourth = await runDaily({ ...deps, sender, http: fakeHttp(telegram(endedPost)), now: () => T2 }, emailConfig);
-  for (const s of [third, fourth]) {
-    assert.equal(s.run_error, undefined);
-    assert.equal(s.digests_failed, 0);
-    assert.ok(!JSON.stringify(s).includes("@"));
-  }
-  console.log(JSON.stringify(third));
-  console.log(JSON.stringify(fourth));
-  assert.equal(third.digests_sent, 1);
-  assert.equal(fourth.digests_sent, 0);
-  assert.equal(fourth.digests_already_sent, 1);
-  assert.deepEqual(sent.map((m) => m.to), ["daily-reader@example.test"]);
-  assert.match(sent[0]?.text ?? "", /DeepBook: status Live → Ended/);
-  const token = await db.from("profiles").select("unsubscribe_token").eq("user_id", reader).single();
-  assert.ok((sent[0]?.text ?? "").includes(`https://saf.test/unsubscribe?token=${token.data?.unsubscribe_token}`));
-  const log = await db.from("notification_log").select("user_id, kind, ref_date");
-  assert.deepEqual(log.data, [{ user_id: reader, kind: "digest", ref_date: "2026-10-11" }]);
-  for (const id of [reader, unconfirmed]) assert.equal((await db.auth.admin.deleteUser(id)).error, null);
   console.log("daily smoke ok");
 }
 

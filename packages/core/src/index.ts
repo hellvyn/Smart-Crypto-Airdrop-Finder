@@ -20,8 +20,3 @@ export type { DangerousAskCode } from "./risk/dangerous-asks.js";
 export { isLookalike } from "./risk/lookalike.js";
 export { assessRisk } from "./risk/assess.js";
 export type { CheckId, RiskCheck, RiskInput, RiskAssessment } from "./risk/assess.js";
-export { buildDigest } from "./notify/digest.js";
-export type { Digest, DigestInput, DigestProject } from "./notify/digest.js";
-export { allocateQuota } from "./notify/quota.js";
-export { displayName, renderDigestEmail } from "./notify/render.js";
-export type { RenderOptions, RenderedEmail } from "./notify/render.js";

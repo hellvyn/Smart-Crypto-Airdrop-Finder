@@ -22,7 +22,6 @@ export interface DailyStats extends RunStats {
   /** Collected documents that could not be stored (the other documents still were). */
   ingest_failed: number;
   purged: number;
-  // The notify counters (`NotifyStats`: digests_*) are added only when email is enabled.
 }
 
 export function emptyStats(): DailyStats {
@@ -47,11 +46,11 @@ export function emptyStats(): DailyStats {
 
 /**
  * Process exit code for a finished run: 1 (the scheduled workflow shows as failed) when a stage failed or any
- * source, document ingest, merge, assessment or digest failed; 0 otherwise. Model failures (`extract_failed`),
- * budget deferrals and digests skipped for quota are retried or expected and do not fail the job.
+ * source, document ingest, merge or assessment failed; 0 otherwise. Model failures (`extract_failed`) and
+ * budget deferrals are retried or expected and do not fail the job.
  */
 export function runExitCode(stats: RunStats): 0 | 1 {
-  const failed = ["run_error", "source_failed", "ingest_failed", "merge_failed", "score_failed", "digests_failed"].some(
+  const failed = ["run_error", "source_failed", "ingest_failed", "merge_failed", "score_failed"].some(
     (counter) => (stats[counter] ?? 0) > 0,
   );
   return failed ? 1 : 0;
