@@ -62,6 +62,9 @@ pengunjung; Kelayakan, urutan "paling cuan", Keputusan AI, dan effort khusus mem
     `<title>`; pakai koma, titik, atau "·".
   - Variasi panjang kalimat: campur kalimat sangat pendek dan tegas dengan kalimat yang lebih panjang. Paragraf gak
     boleh berisi kalimat yang panjang dan bobotnya sama rata.
+  - Gak terlalu baku: boleh campur istilah Inggris yang umum dipakai orang crypto Indonesia (worth it, claim, source,
+    effort, verified, ended, live, early, track record, DYOR, cross-check, step), tapi kalimatnya tetap kalimat
+    Indonesia. Hindari Inggris yang dipaksakan atau gaya "which is, literally".
   - Nada santai, bahasa sehari-hari yang wajar ("udah", "gak", "kamu"), boleh opini "kami" dan detail spesifik
     (mis. "06.00 WIB", "grup Telegram atau DM"). Gak ada angka atau klaim yang dikarang.
   - Hindari pola tiga serangkai, kalimat "bukan X, tapi Y", slogan bertiga, dan kartu/kalimat yang strukturnya kembar.
