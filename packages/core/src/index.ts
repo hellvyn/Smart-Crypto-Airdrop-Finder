@@ -7,3 +7,8 @@ export type { Status, DeadlineKind, DatePrecision } from "./types.js";
 export { extractionSchema } from "./schema/extraction.js";
 export type { ExtractionResult, ExtractedDeadline } from "./schema/extraction.js";
 export { normalizeDeadline } from "./deadline/normalize.js";
+export { normalizeName } from "./entity/name.js";
+export { decideMerge } from "./entity/merge.js";
+export type { ProjectRef, MergeDecision } from "./entity/merge.js";
+export { deriveStatus, pickEvidenceDate } from "./status/derive.js";
+export type { StatusEvidence } from "./status/derive.js";
