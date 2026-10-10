@@ -161,7 +161,6 @@ Lihat §8.
 
 | Tabel | Kolom penting |
 |---|---|
-| `sources` | jenis, URL atau channel, aktif/tidak |
 | `documents` | sumber, URL, `fetched_at`, `published_at`, `content_hash`, teks (dihapus setelah 90 hari, hash tetap disimpan), status ekstraksi (`done`/`pending`/`not_airdrop`) |
 | `extractions` | dokumen, model, `prompt_version`, JSON mentah, `finish_reason`, latensi |
 | `projects` | slug, nama, token, chain, domain resmi, status, flag `conflict`, `first_seen`, `last_seen` |
@@ -170,16 +169,20 @@ Lihat §8.
 | `tasks` | project, deskripsi, evidence |
 | `links` | project, URL bersih, jenis (website/app/docs/claim/social), `referral_stripped` |
 | `risk_assessments` | project, level, poin internal, `reasons[]` (kode, keparahan, pesan, sumber data), cakupan cek, `computed_at` |
+| `project_changes` | project, field (`status`/`risk_level`), nilai lama, nilai baru, waktu. Dipakai digest buat nampilin perubahan |
 | `pipeline_runs` | waktu mulai dan selesai, angka agregat per tahap |
+
+Daftar sumber (channel Telegram, kategori DefiLlama yang dikecualikan) disimpan di config pipeline, bukan di tabel.
 
 **Data user** (Row Level Security aktif: user cuma bisa baca dan ubah datanya sendiri)
 
 | Tabel | Kolom penting |
 |---|---|
-| `profiles` | user, `plan` (default `free`), digest aktif, opsi "airdrop baru", timezone |
+| `profiles` | user, `plan` (default `free`), digest aktif, opsi "airdrop baru", timezone, `unsubscribe_token` (acak) |
 | `watchlist` | user, project |
 | `wallets` | user, alamat, `chain_family` (`evm`), label |
 | `wallet_checks` | alamat, chain, hasil, `checked_at` (cache, TTL 6 jam) |
+| `wallet_check_requests` | user, waktu. Buat batas cek per jam |
 | `notification_log` | user, jenis, referensi, `sent_at` |
 
 **Estimasi kapasitas** [INFERENCE, dari ukuran teks di spike]
