@@ -225,3 +225,36 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 - P8: minor (deferred): the board reads every check without a lower bound (limit to `day >= range.start`). Test gaps around the resume race guard and 23514 on resume. `farming.ts` is 458 lines. Stale test-number comments in `farming.test.sql`. The on-conflict exists check runs outside the advisory lock.
 - G3-3b merged. Tests: core 194, pipeline 369, web 318 unit · typecheck ok · pgTAP 218 · e2e 67/67.
 - G3-3c started: P8.T4
+
+---
+
+# SDD ledger — plan: docs/superpowers/plans/2026-10-10-plan-5-curation-and-ai-analysis.md
+
+## Sub-steps (refined from the wave plan; my workflow runs each sub-step as one parallel batch)
+4a T1 ∥ T2 → 4b T3 ∥ T5 ∥ T8 → 4c1 T4 ∥ T6 → 4c2 T11 ∥ T7 → 4d T9 → 4e1 T12 ∥ T10 → 4e2 T13
+
+## Pre-flight scan (rows from the dependency map, checked against the amended plan)
+
+| Pair or task | Shared surface | Finding | Ruling |
+|---|---|---|---|
+| T2 × T8 | `NewSignal`, `CurationReason`, `Tab`, `WorthLevel` | `@saf/core` cannot import pipeline types | T2 declares `NewSignal`/`SignalKind`/`SignalSource`/`AiKind` and the curation types in `packages/core/src/curate/types.ts` and exports them. T8 fills in the logic |
+| T3 × T4 | `VcIndex`, `signals.ts` | T3's `buildSignals` takes a `VcIndex` that T4 defines | T3 declares the `VcIndex` type. T4 implements the portfolio loading. Sequential (4b, 4c1) |
+| T4 × T11 | `signals.ts`, `signals.test.ts`, `config.ts` | Same file | Sequential (4c1, 4c2) |
+| T6 × T7 | `analyze.ts`, `analyze.test.ts` | Same file | Sequential (4c1, 4c2) |
+| T12 × T13 | `score.ts`, `run.test.ts` | Same function | Sequential (4e1, 4e2) |
+| T7 × T12 | `assess.ts` | Both add reasons | Sequential (4c2, 4e1) |
+| T1 × P4.T5/P4.T2 | `ProjectForScoring`, `score.ts` | Merged already | — |
+| T3 self | Files | `ProjectForScoring.sourceKinds` needs the repo trio, which is not listed | In scope |
+| T5 self | Files | `listProjectSourceTexts` (repo trio) and moving the fallback loop out of `extractWithFallback` (`extract.ts`) are not listed | In scope. Keep P4.T3's breaker and provider logic intact |
+| T6 self | `tasks.text_id` writer, tracker text | No repo method is named for it. The plan was amended so T6 also switches `apps/web/lib/farming.ts` to `text_id` | T6 adds a repo method (for example `saveStepTranslations`) and the farming switch. T6 owns the `ai_style_violations` stat (Global Constraints, no other owner) |
+| T9 self | signals into score | No interface carries the signals stage output to score | `ProjectForScoring.signals` is loaded from `project_signals` (written earlier in the same run). Coverage comes from the assessment checks. Stats add per-tab passed counts (`curation_passed_live_now`, `_early_bets`, `_ended`) for T10/G9 |
+| T13 self | `listedAtFirstPass` | `project_signals` is replaced every run and `curations` stores no listing flag | T13 appends a nullable `coingecko_listed boolean` to `curations` in 0011 (created in this wave, not applied anywhere). `saveCuration` writes it, and the track record reads it from the first passing curation |
+| T11 self | AlphaDrops budget | P4.T9 allows 80 detail pages. T11 adds up to 40 raise pages plus `llms-full.txt` | Combined cap of 120 AlphaDrops requests per run at ≥ 1.5 s each, documented in `pipeline.md` with the job-time arithmetic |
+| T12 self | GoPlus reuse | Phishing checks for claim links reuse the per-domain GoPlus results | Never call GoPlus outside the paced, budgeted queue from G2. The claim portal is fetched in `analyze` (#56) |
+| T4 self | Step 3 | Live check of 15 VC portfolio pages | Run what is reachable, keep fixtures small, and report unreachable ones as blocked |
+| T10 self | Step 5 | Needs a production run and owner review | Code and tests in full. Step 5 is reported blocked with the command |
+| T2/T8/T9 | owner decisions | #55 `public_fail_reason`, #58 `scam_pattern`, #54 scam member-only | Already in the amended plan text |
+
+Ruling: `ProjectForScoring.signals` is loaded from `project_signals` — the plan has no other channel from signals to score — costs a query per run.
+Ruling: `curations.coingecko_listed` is added in 0011 for the track record — otherwise listing history is lost every run — costs one column.
+Ruling: AlphaDrops is capped at 120 requests per run — two caps that were never reconciled — costs up to 40 detail pages if raise pages crowd them out.
