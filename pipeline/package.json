@@ -6,6 +6,7 @@
   "scripts": {
     "start": "tsx src/main.ts",
     "test": "vitest run --passWithNoTests",
+    "eval": "tsx eval/run-eval.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
