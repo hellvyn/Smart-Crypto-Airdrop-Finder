@@ -24,7 +24,9 @@ Label:
 | 5 | Antarmuka | **Web dashboard** | Telegram bot ditolak buat v1 |
 | 6 | Jenis airdrop | **Semua**, dengan label status | `live` → anti-scam, `diumumin` → eligibility, `spekulatif` → worth it |
 | 7 | Sumber data | Gabungan (lihat bagian 2) | **X/Twitter gak dipakai di v1** (API berbayar, scraping rawan diblokir) |
-| 8 | LLM | Owner mau pakai **NVIDIA** (`integrate.api.nvidia.com`) | Belum dites pakai API key, lihat bagian 4 |
+| 8 | LLM | Owner mau pakai **NVIDIA** (`integrate.api.nvidia.com`) | Sudah dites pakai key (Spike 3). Kandidat: kimi-k3 → glm-5.3-flash → gemma-4-31b-it. ToS buat produk publik [UNKNOWN] |
+| 9 | Akun user | **Pakai akun (login)** | Dipilih owner. Claude awalnya nyaranin anonim + simpan lokal |
+| 10 | Fungsi akun di v1 | **Sinkron watchlist & wallet + notifikasi email** (digest harian + reminder H-1 deadline). Cek wallet **on-demand** (di-cache) | Ditunda: monetisasi (tapi field `plan` disiapin), pelacakan wallet otomatis di background, web push. Limit free tier layanan email [UNKNOWN] |
 
 ## 2. Rencana sumber data (setelah spike)
 
