@@ -15,10 +15,14 @@ const CONFUSABLES: Readonly<Record<string, string>> = {
   "ѕ": "s", // Cyrillic ѕ
   "ο": "o", // Greek ο
   "α": "a", // Greek α
+  "ρ": "p", // Greek rho
+  "ı": "i", // Latin dotless i
+  "ԁ": "d", // Cyrillic de
+  "ɡ": "g", // Latin script g
 };
 
-const MAX_TYPO_DISTANCE = 2;
 const MIN_FUZZY_KEY_LENGTH = 5;
+const MIN_FUZZY_TOKEN_LENGTH = 4;
 const MIN_KEY_LENGTH = 3;
 
 /** Registrable domain of a bare hostname or a full URL, lowercased. */
@@ -65,9 +69,15 @@ export function isLookalike(domain: string, projectName: string, officialDomains
 
   const labels = nameLabels(domain);
   if (key.length >= MIN_FUZZY_KEY_LENGTH) {
+    // 1 edit for 5-6 letter names, 2 edits for longer ones.
+    const maxDistance = key.length >= 7 ? 2 : 1;
     return labels.some((label) => {
       const squashed = label.replace(/-/g, "");
-      return squashed.includes(key) || distance(squashed, key) <= MAX_TYPO_DISTANCE;
+      if (squashed.includes(key) || distance(squashed, key) <= maxDistance) return true;
+      // Typo plus affix: "uniswqp-airdrop" is caught on its own token.
+      return label
+        .split("-")
+        .some((token) => token.length >= MIN_FUZZY_TOKEN_LENGTH && distance(token, key) <= maxDistance);
     });
   }
   return labels.some((label) => label === key || label.split("-").some((token) => token === key));

@@ -85,8 +85,10 @@ export function assessRisk(input: RiskInput): RiskAssessment {
   const officialRegs = new Set(project.officialDomains.map(keyOf));
 
   // Critical: GoPlus phishing list, honeypot token.
+  const seenPhishing = new Set<string>();
   for (const [domain, flagged] of Object.entries(input.phishingFlags)) {
-    if (flagged === true) {
+    if (flagged === true && !seenPhishing.has(keyOf(domain))) {
+      seenPhishing.add(keyOf(domain));
       reasons.push({
         code: "phishing_listed",
         severity: "critical",
@@ -129,19 +131,24 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     }
   }
 
-  // High: lookalike link domains (one per distinct host) and the project-level flag.
-  const seenHosts = new Set<string>();
-  for (const l of input.linkDomains) {
-    const host = l.domain.toLowerCase();
-    if (seenHosts.has(host)) continue;
-    seenHosts.add(host);
-    if (isLookalike(l.domain, project.name, project.officialDomains)) {
-      reasons.push({
-        code: "lookalike_domain",
-        severity: "high",
-        message: `${l.domain} resembles the name "${project.name}" but is not an official domain.`,
-        source: "heuristic",
-      });
+  // High: lookalike link domains (one per registrable domain). Docs/social links are
+  // often project-owned platform hosts, and without official domains nothing can be
+  // told apart from the real site, so those cases are skipped.
+  const seenLookalike = new Set<string>();
+  if (project.officialDomains.length > 0) {
+    for (const l of input.linkDomains) {
+      if (l.kind === "docs" || l.kind === "social") continue;
+      const reg = keyOf(l.domain);
+      if (seenLookalike.has(reg)) continue;
+      if (isLookalike(l.domain, project.name, project.officialDomains)) {
+        seenLookalike.add(reg);
+        reasons.push({
+          code: "lookalike_domain",
+          severity: "high",
+          message: `${l.domain} resembles the name "${project.name}" but is not an official domain.`,
+          source: "heuristic",
+        });
+      }
     }
   }
   if (project.lookalikeOf !== null) {
@@ -235,7 +242,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     { id: "dangerous_asks", ran: true },
     { id: "phishing_list", ran: anyNonNull(input.phishingFlags) },
     { id: "domain_age", ran: anyNonNull(input.domainAgeDays) },
-    { id: "lookalike", ran: true },
+    { id: "lookalike", ran: project.officialDomains.length > 0 || project.lookalikeOf !== null },
     { id: "token_security", ran: input.token !== null },
     { id: "contract_verified", ran: input.contractVerified !== null },
     { id: "hack_history", ran: input.hackCount !== null },

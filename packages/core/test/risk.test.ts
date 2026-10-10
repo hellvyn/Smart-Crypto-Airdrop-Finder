@@ -29,7 +29,29 @@ describe("detectDangerousAsks", () => {
     const r = detectDangerousAsks(["Send 0.1 ETH to receive your airdrop"]);
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ code: "asks_payment", severity: "critical" });
-    expect(detectDangerousAsks(["Pay a gas fee"]).map((x) => x.code)).toEqual(["asks_payment"]);
+    expect(detectDangerousAsks(["Pay a gas fee to claim your tokens"]).map((x) => x.code)).toEqual([
+      "asks_payment",
+    ]);
+  });
+
+  it("does not flag legitimate deposit, bridge and repay tasks", () => {
+    expect(detectDangerousAsks(["Bridge ETH to Base and pay gas fees"])).toEqual([]);
+    expect(detectDangerousAsks(["Repay your loan to unlock boosted rewards"])).toEqual([]);
+    expect(detectDangerousAsks(["Deposit ETH into the vault to receive points"])).toEqual([]);
+  });
+
+  it("does not let a negation cross a sentence or clause boundary", () => {
+    expect(detectDangerousAsks(["Not sure how? Enter your seed phrase to sync"]).map((x) => x.code)).toEqual([
+      "asks_secret",
+    ]);
+    expect(
+      detectDangerousAsks(["If your wallet does not connect, enter your recovery phrase"]).map((x) => x.code),
+    ).toEqual(["asks_secret"]);
+  });
+
+  it("requires an action verb before the secret phrase", () => {
+    expect(detectDangerousAsks(["No one from our team will ever ask for your seed phrase"])).toEqual([]);
+    expect(detectDangerousAsks(["Create a wallet and back up your seed phrase"])).toEqual([]);
   });
 
   it("ignores harmless tasks", () => {
@@ -72,6 +94,18 @@ describe("isLookalike", () => {
     expect(isLookalike("ink-claim.xyz", "Ink", ["ink.xyz"])).toBe(true);
     expect(isLookalike("ink.claim.xyz", "Ink", ["ink.xyz"])).toBe(true);
     expect(isLookalike("pink.xyz", "Ink", ["ink.xyz"])).toBe(false);
+  });
+
+  it("detects a typo combined with an affix", () => {
+    expect(isLookalike("uniswqp-airdrop.xyz", "Uniswap", official)).toBe(true);
+    expect(isLookalike("claim-uniswa\u03c1.xyz", "Uniswap", official)).toBe(true);
+  });
+
+  it("folds extra confusables (Greek rho, dotless i, Cyrillic de, Latin script g)", () => {
+    expect(isLookalike("uniswa\u03c1.xyz", "Uniswap", official)).toBe(true);
+    expect(isLookalike("un\u0131swap.xyz", "Uniswap", official)).toBe(true);
+    expect(isLookalike("\u0501ydx-claim.xyz", "Dydx", ["dydx.exchange"])).toBe(true);
+    expect(isLookalike("\u0261rass-claim.xyz", "Grass", ["grass.io"])).toBe(true);
   });
 
   it("returns false for names shorter than 3 characters", () => {
@@ -221,6 +255,55 @@ describe("assessRisk", () => {
     const l = a.reasons.filter((r) => r.code === "lookalike_domain");
     expect(l).toHaveLength(1);
     expect(l[0]?.message).toContain("claim-uniswap-airdrop.xyz");
+  });
+
+  it("emits one lookalike_domain and one phishing_listed per registrable domain", () => {
+    const a = assessRisk(
+      input({
+        linkDomains: [
+          { domain: "a.uniswap-claim.xyz", kind: "claim" },
+          { domain: "b.uniswap-claim.xyz", kind: "app" },
+        ],
+        phishingFlags: { "a.uniswap-claim.xyz": true, "b.uniswap-claim.xyz": true },
+      }),
+    );
+    expect(a.reasons.filter((r) => r.code === "lookalike_domain")).toHaveLength(1);
+    expect(a.reasons.filter((r) => r.code === "phishing_listed")).toHaveLength(1);
+  });
+
+  it("ignores docs and social links for the lookalike check", () => {
+    const a = assessRisk(
+      input({
+        linkDomains: [
+          { domain: "uniswap.gitbook.io", kind: "docs" },
+          { domain: "uniswap.substack.com", kind: "social" },
+        ],
+        domainAgeDays: {},
+        phishingFlags: {},
+      }),
+    );
+    expect(a.reasons.map((r) => r.code)).not.toContain("lookalike_domain");
+  });
+
+  it("skips link lookalike when there are no official domains, and the check did not run", () => {
+    const base = input();
+    const a = assessRisk(
+      input({
+        project: { ...base.project, officialDomains: [] },
+        linkDomains: [{ domain: "app.uniswap.org", kind: "app" }],
+      }),
+    );
+    expect(a.reasons.map((r) => r.code)).not.toContain("lookalike_domain");
+    expect(a.checks.find((c) => c.id === "lookalike")?.ran).toBe(false);
+  });
+
+  it("still reports lookalikeOf without official domains, and the check ran", () => {
+    const base = input();
+    const a = assessRisk(
+      input({ project: { ...base.project, officialDomains: [], lookalikeOf: "Other" } }),
+    );
+    expect(a.reasons.map((r) => r.code)).toContain("lookalike_domain");
+    expect(a.checks.find((c) => c.id === "lookalike")?.ran).toBe(true);
   });
 
   it("flags project.lookalikeOf as an extra lookalike reason", () => {
