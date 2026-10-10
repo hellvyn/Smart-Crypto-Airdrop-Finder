@@ -84,7 +84,10 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
 - Badge "terverifikasi" cuma untuk sinyal `verified = true`. `claimed_backer` selalu tampil sebagai klaim.
 - Semua link keluar lewat `ExternalLink` (rel noopener noreferrer nofollow) dan URL yang sudah dibersihkan referral.
 - Anon key saja di web; service role gak pernah masuk `apps/web`.
-- Migrasi baru: `0012_curated_list.sql`.
+- Migrasi baru: `0012_curated_list.sql` (Task 3), `0013_member_checks.sql` (Task 5), `0014_changes_seen.sql` (Task 7),
+  `0015_farming_results.sql` (Task 8). Keputusan #57: migrasi yang sudah ada gak diedit task lain.
+- Alasan gagal untuk pengunjung (#55): `curations.reasons` khusus member; pengunjung membaca
+  `curations.public_fail_reason` (pesan fail pertama, diisi Plan 5 `saveCuration`). Member boleh membaca `reasons`.
 
 ## Review Focus
 
@@ -249,7 +252,8 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
 - Test: `apps/web/test/components/detail/*.test.tsx`, `apps/web/e2e/projects.spec.ts`
 
 **Interfaces:**
-- `ProjectDetail` mendapat: `curation: { passed; worthLevel; tab; reasons } | null`, `signals`, `analyst` (hasil
+- `ProjectDetail` mendapat: `curation: { passed; worthLevel; tab; reasons; publicFailReason } | null` (pengunjung:
+  `worthLevel`/`reasons` null, query cuma kolom yang di-grant ke anon; member: semua kolom), `signals`, `analyst` (hasil
   `ai_analyses` kind `analyst` terbaru, atau null), `scamFlags`, `contradictions`, `steps` (`{ text, cadence }[]`
   dari `tasks` urut `position`), `facts` (evidence v3: key_parameter, source_rating, latest_update, claimed_backer,
   capital_required).
@@ -275,8 +279,10 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
     dibaca; Link dicek dari `link_checks`; Red flag = alasan risiko severity ≥ medium + flag scam AI), 4 kartu wajib
     lolos, lalu "Advanced check" yang cuma berisi cek dengan `ran = true`. Tanggal daftar domain = `computed_at` −
     `ageDays`. Baris lama tanpa `detail` → kartu tetap tampil tanpa kalimat detail (gak ngarang angka).
-  - **Advanced check khusus member (#54):** migrasi 0013: `revoke select (checks) on risk_assessments from anon`
-    (grant kolom lain tetap); view `public_risk_checks` (security definer, owner postgres, `grant select` ke anon)
+  - **Advanced check khusus member (#54):** migrasi 0013: `revoke select on risk_assessments from anon` lalu
+    `grant select (id, project_id, level, points, reasons, computed_at, seq) on risk_assessments to anon` (revoke per
+    kolom gak mencabut grant level tabel, jadi `revoke select (checks)` saja gak berefek; diverifikasi 2026-10-10 di DB
+    lokal; cek dulu kolom yang benar-benar ada di tabel dan dibaca view `project_list`); view `public_risk_checks` (security definer, owner postgres, `grant select` ke anon)
     per project dari assessment terbaru: `key_checks` = entri `dangerous_asks`/`lookalike`/`domain_age`/
     `phishing_list` lengkap dengan `detail`; `advanced_checks` = entri lain cuma `{ id, ran, flagged }`, `flagged` =
     ada alasan risiko yang berasal dari cek itu. `getProjectDetail` untuk pengunjung baca view ini, member baca tabel.
@@ -310,8 +316,8 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
 - Test: komponen + `apps/web/e2e/projects.spec.ts`, `apps/web/e2e/watchlist.spec.ts`
 
 **Interfaces:**
-- Banner paling atas: "Gak masuk list: {alasan}" — alasan = pesan `fail` pertama dari curation terbaru, atau
-  "belum dinilai" kalau gak ada curation.
+- Banner paling atas: "Gak masuk list: {alasan}" — alasan = `curations.public_fail_reason` dari curation terbaru
+  (#55, kolom publik; `reasons` khusus member), atau "belum dinilai" kalau gak ada curation.
 - Watchlist: item yang curation terbarunya gagal (atau belum ada) diberi label yang sama.
 - Curation terbaru `passed = true` dengan `tab = ended` **bukan** gagal: tanpa banner, tanpa `noindex`; kepala halaman
   menampilkan status "Berakhir" + "Ended {tanggal}".
@@ -326,7 +332,7 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
 ### Task 7: "Perubahan sejak kunjungan terakhir" (pengganti email)
 
 **Files:**
-- Modify: `supabase/migrations/0012_curated_list.sql` (tambah `profiles.changes_seen_at timestamptz` + `grant update (changes_seen_at) on profiles to authenticated`)
+- Create: `supabase/migrations/0014_changes_seen.sql` (#57; tambah `profiles.changes_seen_at timestamptz` + `grant update (changes_seen_at) on profiles to authenticated`, plus policy lain task ini)
 - Create: `apps/web/components/ChangesSinceLastVisit.tsx`, `apps/web/app/(public)/airdrops/actions.ts` (`markChangesSeen`)
 - Modify: `apps/web/lib/queries.ts`, `apps/web/app/(public)/airdrops/page.tsx`, `apps/web/app/(app)/watchlist/page.tsx`
 - Test: komponen, `supabase/tests/curated_list.test.sql`, e2e `watchlist.spec.ts`
@@ -355,7 +361,8 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
 ### Task 8: Hasil garapan (#51)
 
 **Files:**
-- Modify: `supabase/migrations/0012_curated_list.sql` (tabel + fungsi di bawah), `apps/web/lib/farming.ts`,
+- Create: `supabase/migrations/0015_farming_results.sql` (#57; tabel + fungsi di bawah)
+- Modify: `apps/web/lib/farming.ts`,
   `apps/web/app/(app)/garapan/actions.ts`, `apps/web/components/farming/FarmingCard.tsx`, `apps/web/app/(app)/garapan/page.tsx`
 - Create: `apps/web/lib/prices.ts`, `apps/web/components/farming/ResultBox.tsx`, `supabase/tests/farming_results.test.sql`
 - Test: `apps/web/test/prices.test.ts`, `apps/web/test/components/farming/ResultBox.test.tsx`, e2e `farming.spec.ts`

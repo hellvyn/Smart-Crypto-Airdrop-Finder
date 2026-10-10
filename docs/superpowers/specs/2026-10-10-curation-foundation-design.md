@@ -102,6 +102,10 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 52 | Sub-filter modal di list | Di bawah tab ada "Modal:" Semua / Gratis / Butuh $. Tag per baris: "Gratis", "Butuh ${x}+" (atau "Butuh $" kalau angkanya gak disebut), "Modal belum jelas". Sumber: `capital_required` + `capital_min_usd` hasil ekstraksi (publik), bukan estimasi effort AI yang khusus member. Gabungan antar sumber: ada satu sumber bilang deposit → deposit; `none` cuma kalau semua sumber yang menyebut bilang gratis; angka = minimum terkecil yang disebut. Label dipilih owner ("Gratis" / "Butuh $") |
 | 53 | Security check versi laporan inspeksi | Bagian "04 · Security check" menampilkan isi cek, bukan cuma centang: strip angka (lapis cek, source dibaca, link dicek, red flag), 4 kartu "Wajib lolos" (hasil, detail, sumber data: Scanner AirdropIQ, Database AirdropIQ, RDAP registry, GoPlus Security), lalu "Advanced check" (riwayat hack DefiLlama, cross-check antar source, AI baca halaman claim) dan status tiap link. Cuma cek yang benar-benar jalan yang ditampilkan; `token_security`/`contract_verified` gak tampil selama belum pernah jalan. Detail angka disimpan di `risk_assessments.checks[].detail` |
 | 54 | Advanced check khusus member | Pengunjung melihat judul dan isi cek "Advanced check", tapi hasilnya diganti cap "Member only". Pengecualian: temuan masalah (alasan risiko `hack_history`, `ai_scam_pattern`, kontradiksi) gak pernah dikunci, tetap tampil ke semua orang lewat level risiko dan peringatan. 4 cek "Wajib lolos" tetap publik. Dikunci di DB: anon gak bisa baca kolom `risk_assessments.checks` dan `ai_analyses` kind `scam`; pengunjung pakai view `public_risk_checks` |
+| 55 | Alasan gak lolos untuk pengunjung | Pengunjung melihat satu alasan gagal pertama (kolom publik `curations.public_fail_reason`, diisi `saveCuration`). `reasons` lengkap, `coverage`, dan `worth_level` tetap khusus member. Sejalan dengan #54: masalah yang ditemukan tetap publik. |
+| 56 | Portal klaim dibaca di run yang sama | Halaman portal klaim diambil di tahap `analyze` (sebelum AI Scam Analyst), bukan di `score`, supaya teksnya gak telat satu run. Cek phishing GoPlus dan `link_checks` tetap di `score`. |
+| 57 | Migrasi gak diedit task lain | Plan 6 Task 7 dan 8 dapat migrasi sendiri (`0014_changes_seen.sql`, `0015_farming_results.sql`), gak menambah ke `0012`. |
+| 58 | Pola scam kuat menggugurkan kurasi | Flag AI Scam Analyst dengan pola `secret_request`, `payment_request`, `impersonation`, atau `fake_support` (kutipan lolos `quoteInSource`) → `curate()` gagal dengan alasan `scam_pattern`, apa pun level risikonya. `urgency`, `connect_wallet_to_check`, `other` tetap cuma alasan risiko karena umum di airdrop legit. |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -274,6 +278,8 @@ Lolos kalau **semua**:
 5. **Cek keamanan kunci jalan semua:** `dangerous_asks`, `lookalike`, `domain_age`, dan `phishing_list` untuk domain resmi
    project. Project tanpa domain resmi otomatis gagal di sini (alasan "insufficient checks"). Ini yang membuat "low risk"
    berarti "dicek dan bersih", bukan "gak sempat dicek".
+6. **Gak ada pola scam kuat dari AI (#58):** flag `secret_request`, `payment_request`, `impersonation`, atau
+   `fake_support` dengan kutipan valid → gagal `scam_pattern`. Syarat ini juga berlaku untuk project yang berakhir.
 
 Alasan gagal disimpan (untuk owner dan peringatan di halaman detail).
 
