@@ -12,3 +12,5 @@ export { decideMerge } from "./entity/merge.js";
 export type { ProjectRef, MergeDecision } from "./entity/merge.js";
 export { deriveStatus, pickEvidenceDate } from "./status/derive.js";
 export type { StatusEvidence } from "./status/derive.js";
+export { isEvmAddress } from "./chain/adapter.js";
+export type { ActivitySummary, ChainAdapter } from "./chain/adapter.js";
