@@ -1,12 +1,33 @@
 {
-  "baselineStatusAccuracy": 6,
   "cases": {
-    "aio_deepbook": { "kind": "project", "project": "deepbook", "status": "live", "token": "DEEP", "chain": "sui" },
-    "aio_variational": { "kind": "project", "project": "variational", "status": "live", "token": "VAR", "chain": "arbitrum" },
-    "aio_abstract": { "kind": "project", "project": "abstract", "status": "ended", "token": null, "chain": null },
-    "aio_raycash": { "kind": "project", "project": "raycash", "status": "speculative", "token": null, "chain": "polygon" },
-    "tg_flop": { "kind": "project", "project": "flop", "status": "speculative", "token": "FLOP", "chain": null },
-    "tg_ink": { "kind": "project", "project": "ink", "status": "speculative", "token": "INK", "chain": null },
+    "aio_deepbook": {
+      "kind": "project", "project": "deepbook", "status": "live", "token": "DEEP", "chain": "sui",
+      "deadlines": [{ "kind": "campaign_end", "date": "2026-04-17" }, { "kind": "claim", "date": null }],
+      "officialDomains": ["deepbook.tech"]
+    },
+    "aio_variational": {
+      "kind": "project", "project": "variational", "status": "live", "token": "VAR", "chain": "arbitrum",
+      "deadlines": [{ "kind": "campaign_end", "date": "2026-09-24" }],
+      "officialDomains": ["variational.io"]
+    },
+    "aio_abstract": {
+      "kind": "project", "project": "abstract", "status": "ended", "token": null, "chain": null,
+      "deadlines": [{ "kind": "withdraw_funds", "date": "2026-12-15" }],
+      "officialDomains": ["abs.xyz"]
+    },
+    "aio_raycash": {
+      "kind": "project", "project": "raycash", "status": "speculative", "token": null, "chain": "polygon",
+      "deadlines": [],
+      "officialDomains": ["raycash.xyz"]
+    },
+    "tg_flop": {
+      "kind": "project", "project": "flop", "status": "speculative", "token": "FLOP", "chain": null,
+      "deadlines": [], "officialDomains": []
+    },
+    "tg_ink": {
+      "kind": "project", "project": "ink", "status": "speculative", "token": "INK", "chain": null,
+      "deadlines": [], "officialDomains": []
+    },
     "tg_ledger_negative": { "kind": "negative" },
     "tg_weekly_radar": {
       "kind": "radar",
@@ -17,6 +38,131 @@
         "mint-io", "orbinum", "perptools", "pharos", "qfex", "reya-network", "rwaperp", "sleepagotchi", "truenorth",
         "vibe-vibe"
       ]
-    }
+    },
+
+    "aio_canopy": {
+      "kind": "project", "project": "canopy", "status": "live", "token": "CNPY", "chain": null,
+      "deadlines": [],
+      "officialDomains": ["canopynetwork.org"]
+    },
+    "aio_collector_crypt": {
+      "kind": "project", "project": "collector crypt", "status": "live", "token": "CARDS", "chain": "solana",
+      "deadlines": [{ "kind": "tge", "date": "2025-08-29" }],
+      "officialDomains": ["collectorcrypt.com"]
+    },
+    "aio_concrete": {
+      "kind": "project", "project": "concrete", "status": "live", "token": "CT", "chain": "ethereum",
+      "deadlines": [{ "kind": "tge", "date": "2026-09-30" }, { "kind": "claim", "date": null }],
+      "officialDomains": ["concretefoundation.xyz", "concrete.xyz"]
+    },
+    "aio_czr": {
+      "kind": "project", "project": "czr", "status": "live", "token": "CZR", "chain": "ethereum",
+      "deadlines": [
+        { "kind": "claim", "date": "2026-10-05" },
+        { "kind": "tge", "date": "2026-10-01" },
+        { "kind": "campaign_end", "date": "2026-09-30" }
+      ],
+      "officialDomains": ["czrex.com"]
+    },
+    "aio_satsuma": {
+      "kind": "project", "project": "satsuma", "status": "live", "token": "SUMA", "chain": "citrea",
+      "deadlines": [{ "kind": "tge", "date": "2026-06-04" }],
+      "officialDomains": ["satsuma.exchange"]
+    },
+    "aio_extended": {
+      "kind": "project", "project": "extended", "status": "live", "token": "EXT", "chain": null,
+      "deadlines": [{ "kind": "campaign_end", "date": "2026-09-29" }],
+      "officialDomains": ["extended.exchange"]
+    },
+    "aio_memebook": {
+      "kind": "project", "project": "memebook", "status": "live", "token": "MBK", "chain": "solana",
+      "deadlines": [],
+      "officialDomains": ["memebook.app"]
+    },
+    "aio_mint_io": {
+      "kind": "project", "project": "mint", "status": "live", "token": "MNTD", "chain": "robinhood chain",
+      "deadlines": [{ "kind": "tge", "date": "2026-10-20" }],
+      "officialDomains": ["mint.io", "getminted.io"]
+    },
+    "aio_tastyco": {
+      "kind": "project", "project": "tastyco", "status": "live", "token": "TASTY", "chain": null,
+      "deadlines": [],
+      "officialDomains": ["tastyco.io"]
+    },
+    "aio_aci": {
+      "kind": "project", "project": "aci", "status": "live", "token": "ACI", "chain": "ethereum",
+      "deadlines": [{ "kind": "campaign_end", "date": "2026-10-10" }],
+      "officialDomains": ["aci-token.net"]
+    },
+    "aio_kryvora_network": {
+      "kind": "project", "project": "kryvora", "status": "live", "token": "KRV", "chain": null,
+      "deadlines": [{ "kind": "campaign_end", "date": "2026-10-16" }],
+      "officialDomains": ["kryvora.network"]
+    },
+    "aio_orbinum": {
+      "kind": "project", "project": "orbinum", "status": "live", "token": "ORB", "chain": null,
+      "deadlines": [{ "kind": "snapshot", "date": null }],
+      "officialDomains": ["orbinum.network"]
+    },
+    "aio_synthra": {
+      "kind": "project", "project": "synthra", "status": "live", "token": "SYN", "chain": "arc",
+      "deadlines": [{ "kind": "tge", "date": "2026-09-17" }],
+      "officialDomains": ["synthra.org"]
+    },
+    "aio_perptools": {
+      "kind": "project", "project": "perptools", "status": "live", "token": "PERP", "chain": null,
+      "deadlines": [],
+      "officialDomains": ["perptools.ai"]
+    },
+    "aio_imperial": {
+      "kind": "project", "project": "imperial", "status": "speculative", "token": null, "chain": "solana",
+      "deadlines": [],
+      "officialDomains": ["imperial.space"]
+    },
+    "aio_acepyr": {
+      "kind": "project", "project": "acepyr", "status": "speculative", "token": "ACEPYR", "chain": "base",
+      "deadlines": [],
+      "officialDomains": ["acepyr.com"]
+    },
+    "aio_mindgames": {
+      "kind": "project", "project": "mindgames", "status": "speculative", "token": null, "chain": "robinhood chain",
+      "deadlines": [],
+      "officialDomains": ["minds.games"]
+    },
+    "aio_wick": {
+      "kind": "project", "project": "wick", "status": "speculative", "token": "WICK", "chain": null,
+      "deadlines": [],
+      "officialDomains": ["wick.xyz"]
+    },
+    "aio_titan_exchange": {
+      "kind": "project", "project": "titan", "status": "speculative", "token": null, "chain": "canton",
+      "deadlines": [],
+      "officialDomains": ["titanx.cc"]
+    },
+
+    "tg_7919": {
+      "kind": "project", "project": "abstract", "status": "ended", "token": null, "chain": null,
+      "deadlines": [{ "kind": "withdraw_funds", "date": "2026-12-15" }],
+      "officialDomains": ["abs.xyz"]
+    },
+    "tg_7908": {
+      "kind": "project", "project": "titan", "status": "speculative", "token": null, "chain": "canton",
+      "deadlines": [],
+      "officialDomains": ["titanx.cc"]
+    },
+    "tg_7892": {
+      "kind": "project", "project": "raycash", "status": "speculative", "token": null, "chain": null,
+      "deadlines": [], "officialDomains": []
+    },
+    "tg_7832": {
+      "kind": "project", "project": "flop", "status": "announced", "token": "FLOP", "chain": null,
+      "deadlines": [], "officialDomains": []
+    },
+    "tg_7928": {
+      "kind": "project", "project": "arcus", "status": "speculative", "token": null, "chain": null,
+      "deadlines": [],
+      "officialDomains": ["arcus.xyz"]
+    },
+    "tg_4899": { "kind": "negative" }
   }
 }

@@ -466,6 +466,28 @@ cocok untuk nama 4 huruf yang menempel dengan kata lain dalam satu label (Jito, 
 foundation/klaim milik project harus masuk daftar domain resmi, kalau tidak aturan lookalike menyembunyikan project
 legit. Detail: `pipeline/eval/scam-set/README.md`.
 
+**Eval LLM diperluas (Task P4.T6; `pipeline/eval/`).** Penilaian G4–G6 sekarang ada di kode: status ≥ 90% dari kasus
+berstatus (G4), tanggal + jenis deadline cocok ≥ 90% (G5), URL halusinasi 0 (G6), dan domain resmi (registrable domain
+dari `official_urls` yang ada di teks sumber) cocok ≥ 80%. Syarat v1 (negatif ditolak, Abstract `ended`, recall radar)
+tetap. Gerbang deadline/domain yang belum punya label dinilai **gagal**, bukan lolos, supaya gerbang yang belum
+terukur gak terlihat terpenuhi.
+
+| Gerbang | Hasil terakhir | Catatan |
+|---|---|---|
+| G4 akurasi status | **22/30 (73,3%) — gagal** | Salah: `aio_abstract`, `aio_czr`, `aio_extended`, `aio_memebook`, `aio_mint_io`, `aio_perptools`, `aio_synthra`, `tg_flop` |
+| G5 akurasi deadline | **13/18 (72,2%) — gagal** | Meleset: Abstract `withdraw_funds`, Extended dan Variational `campaign_end`, 1 dari 3 di CZR, 1 dari 2 di Concrete |
+| G6 URL halusinasi | **0 — lolos** | |
+| Domain resmi (≥ 80%) | **28/28 (100%) — lolos** | |
+
+Run 2026-10-10 (prompt `2026-10-10.3`, `NODE_USE_ENV_PROXY=1 pnpm --filter pipeline eval`): 33 kasus berlabel (23
+halaman airdrops.io, 10 post Telegram; 30 berstatus, 18 deadline, 28 domain berlabel). 29 kasus dijawab `freellm:auto`,
+4 oleh `nvidia:z-ai/glm-5.3-flash`. Syarat v1: negatif ditolak (lolos), **Abstract `ended` gagal**, **recall radar
+18/28 gagal** (butuh 22). Satu run saja dan `freellm:auto` memilih model per request, jadi angkanya bisa bergeser antar
+run. Teks kasus diambil hari itu dengan collector pipeline sendiri (bukan `export-cases.ts`: kunci service role produksi
+gak tersedia); 4 kasus Telegram lama dicocokkan ulang ke post sumbernya lewat isi. Label yang meragukan ada di
+`pipeline/eval/README.md` bagian "Label yang perlu review owner"; owner me-review semua label baru sebelum angka ini
+dipakai untuk keputusan paywall.
+
 Kalau G7 gagal (ada scam yang lolos), penyebabnya diperbaiki di aturan risiko/kurasi dulu, lalu set uji dijalankan
 ulang. Kalau G9 gagal karena syarat cek kunci, perbaikannya di cakupan data (§5.0), bukan melonggarkan syarat.
 
