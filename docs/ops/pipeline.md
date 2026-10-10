@@ -63,6 +63,21 @@ be deleted.
   the next run.
 - Running it twice on the same day is safe: unchanged documents are not extracted again.
 
+### GoPlus pacing and time budget
+
+GoPlus (`api.gopluslabs.io/api/v1/phishing_site`) rate-limits with **HTTP 200 and `code: 4029`** in the body (not
+only with 429). A live measurement (51 requests, harmless public domains) found: 30 back-to-back requests (about
+3.5 per second) were answered, the 31st got 4029, and the first request 5 s later was answered again; 18 requests
+one second apart all got `code: 1`. So `score` sends GoPlus requests one at a time with `GOPLUS_MIN_INTERVAL_MS`
+(1.5 s) between them, and one retry after `GOPLUS_RETRY_MS` (5 s) when it still answers 429, 4029 or 5xx.
+
+Budget: a request takes about 0.3 s, so each domain costs about 1.8 s. With about 150 domains the GoPlus part of
+`score` takes about 4.5 minutes (the RDAP, crt.sh and DefiLlama lookups run alongside it and are shorter). The job
+limit is 60 minutes and extraction stops starting LLM calls after 35 minutes (the last call can run up to 3 more),
+so collect plus extraction plus `score` ends at about 45 minutes. If GoPlus rate-limited every single domain even
+after the retry, `score` would take about 18 minutes (150 x (1.8 s + 5.3 s)) and the whole job about 58 minutes: barely
+inside the limit, so a day like that is the point to lower `maxDocumentsPerRun` or the extraction budget.
+
 ## 4. Read the result
 
 The job log contains exactly one JSON line of numeric counters (never URLs, text, names, emails or wallets).
@@ -81,7 +96,8 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `domain_age_ran` | of those, projects where the domain-age lookup (RDAP, else the first crt.sh certificate) answered for at least one official domain |
 | `domain_age_from_crtsh` | domains whose age came from crt.sh because RDAP had no answer (`.io` and some other TLDs have none) |
 | `phishing_list_ran` | of the projects with an official domain, those where the GoPlus phishing check answered for at least one |
-| `phishing_list_failed` | domains the GoPlus check gave no answer for, after one retry (429 or 5xx, 2 s pause); GoPlus is called one request at a time |
+| `phishing_list_failed` | domains the GoPlus check gave no answer for, after one retry (429, HTTP 200 with code 4029, or 5xx; 5 s pause) |
+| `phishing_list_rate_limited` | of those, domains GoPlus still rate-limited (429 or code 4029) after the retry |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
@@ -101,7 +117,9 @@ What to do:
 - `domain_age_ran` low compared to `projects_with_official_domain`: look at `domain_age_from_crtsh`. If it is 0, crt.sh
   is probably unreachable or too slow from the runner (the check is then counted as not run, never as an error); if
   it is above 0 but `domain_age_ran` is still low, the remaining TLDs have neither RDAP nor certificates.
-  `phishing_list_failed` high: GoPlus is rate-limiting; the domains stay unchecked until the next run.
+  `phishing_list_failed` high: GoPlus is rate-limiting; the domains stay unchecked until the next run. Check
+  `phishing_list_rate_limited`: if it is close to `phishing_list_failed`, raise `GOPLUS_MIN_INTERVAL_MS` in
+  `pipeline/src/enrich/goplus.ts`; if it is 0, the failures are timeouts or errors, not the rate limit.
 - `llm_models_tripped` > 0: a model endpoint failed repeatedly (see `extractions.error`, e.g. `http_0` = 180 s
   timeout). The run continues on the remaining models; if it repeats for days, reorder or replace the model in
   `pipeline/src/config.ts`.

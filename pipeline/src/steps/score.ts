@@ -4,7 +4,7 @@ import type { RiskInput } from "@saf/core";
 import type { Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
 import { firstCertificateAgeDays } from "../enrich/crtsh.js";
-import { checkPhishingSite } from "../enrich/goplus.js";
+import { GOPLUS_MIN_INTERVAL_MS, checkPhishingSite, defaultSleep } from "../enrich/goplus.js";
 import { countHacks, fetchHacks } from "../enrich/hacks.js";
 import { domainAgeDays } from "../enrich/rdap.js";
 import type { DailyStats } from "../stats.js";
@@ -45,6 +45,7 @@ export async function scoreProjects(
   stats: DailyStats,
 ): Promise<void> {
   const { repo, http } = deps;
+  const sleep = deps.sleep ?? defaultSleep;
   const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
   if (projects.length === 0) return;
 
@@ -57,12 +58,21 @@ export async function scoreProjects(
   const limit = pLimit(ENRICH_CONCURRENCY);
   const goplusLimit = pLimit(GOPLUS_CONCURRENCY);
   const phishing = new Map<string, boolean | null>();
+  let goplusStarted = false;
   const ages = new Map<string, number | null>();
   const agesFromCrtsh = new Set<string>();
   const [hacks] = await Promise.all([
     limit(() => fetchHacks(http)),
     ...domains.flatMap((domain) => [
-      goplusLimit(async () => phishing.set(domain, await checkPhishingSite(http, `https://${domain}`, deps.sleep))),
+      goplusLimit(async () => {
+        // The limiter runs these one at a time; leave a pause between consecutive requests (GoPlus rate-limits bursts).
+        if (goplusStarted) await sleep(GOPLUS_MIN_INTERVAL_MS);
+        goplusStarted = true;
+        phishing.set(
+          domain,
+          await checkPhishingSite(http, `https://${domain}`, sleep, () => void (stats.phishing_list_rate_limited += 1)),
+        );
+      }),
       limit(async () => {
         let age = await domainAgeDays(http, domain, now);
         if (age === null) {

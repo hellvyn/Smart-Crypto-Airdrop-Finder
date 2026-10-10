@@ -101,7 +101,7 @@ describe("checkPhishingSite retry", () => {
     const sleep = vi.fn(async () => {});
     expect(await checkPhishingSite(http, "https://a.io", sleep)).toBe(false);
     expect(sleep).toHaveBeenCalledTimes(1);
-    expect(sleep).toHaveBeenCalledWith(2000);
+    expect(sleep).toHaveBeenCalledWith(5000);
     expect(calls).toHaveLength(2);
   });
 
@@ -129,6 +129,58 @@ describe("checkPhishingSite retry", () => {
     expect(await checkPhishingSite(sequenceHttp([{ status: 200, body: "<html>" }], calls), "https://a.io", sleep)).toBeNull();
     expect(calls).toHaveLength(2);
     expect(sleep).not.toHaveBeenCalled();
+  });
+});
+
+const RATE_LIMITED_BODY = json({ code: 4029, message: "too many requests", result: {} });
+
+describe("checkPhishingSite rate limit sent as HTTP 200 with code 4029", () => {
+  it("pauses once, retries once and uses the second answer", async () => {
+    const calls: string[] = [];
+    const http = sequenceHttp([{ status: 200, body: RATE_LIMITED_BODY }, { status: 200, body: PHISHING_OK }], calls);
+    const sleep = vi.fn(async () => {});
+    const onRateLimited = vi.fn();
+    expect(await checkPhishingSite(http, "https://a.io", sleep, onRateLimited)).toBe(false);
+    expect(calls).toHaveLength(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(5000);
+    expect(onRateLimited).not.toHaveBeenCalled();
+  });
+
+  it("gives up with null after a second 4029, makes no third request and reports it as rate limited", async () => {
+    const calls: string[] = [];
+    const sleep = vi.fn(async () => {});
+    const onRateLimited = vi.fn();
+    const http = sequenceHttp([{ status: 200, body: RATE_LIMITED_BODY }], calls);
+    expect(await checkPhishingSite(http, "https://a.io", sleep, onRateLimited)).toBeNull();
+    expect(calls).toHaveLength(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(onRateLimited).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a second 429 as rate limited too", async () => {
+    const onRateLimited = vi.fn();
+    const http = sequenceHttp([{ status: 429, body: "" }]);
+    expect(await checkPhishingSite(http, "https://a.io", noSleep, onRateLimited)).toBeNull();
+    expect(onRateLimited).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call a 5xx that persists rate limited", async () => {
+    const onRateLimited = vi.fn();
+    const http = sequenceHttp([{ status: 503, body: "" }]);
+    expect(await checkPhishingSite(http, "https://a.io", noSleep, onRateLimited)).toBeNull();
+    expect(onRateLimited).not.toHaveBeenCalled();
+  });
+
+  it("leaves other non-1 codes as null without a retry or a rate-limit report", async () => {
+    const calls: string[] = [];
+    const sleep = vi.fn(async () => {});
+    const onRateLimited = vi.fn();
+    const http = sequenceHttp([{ status: 200, body: json({ code: 2, message: "err", result: {} }) }], calls);
+    expect(await checkPhishingSite(http, "https://a.io", sleep, onRateLimited)).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(onRateLimited).not.toHaveBeenCalled();
   });
 });
 
