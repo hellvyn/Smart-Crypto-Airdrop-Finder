@@ -19,6 +19,13 @@ function project(overrides: Partial<Project> = {}): Project {
     deadlines: [],
     official_urls: [],
     confidence: 0.9,
+    steps: [],
+    key_parameters: [],
+    source_ratings: [],
+    latest_update: null,
+    claimed_backers: [],
+    capital_required: "unknown",
+    capital_min_usd: null,
     ...overrides,
   };
 }
