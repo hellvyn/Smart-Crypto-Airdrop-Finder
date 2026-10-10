@@ -31,25 +31,34 @@ export class BlockscoutAdapter implements ChainAdapter {
     const addr = address.toLowerCase();
     const base = config.blockscoutBase;
 
-    const counters = (await this.getJson(`${base}/api/v2/addresses/${addr}/counters`)) as { transactions_count?: unknown };
-    const txCount = Number(counters?.transactions_count);
-    if (!Number.isSafeInteger(txCount) || txCount < 0) throw new Error("Blockscout returned an invalid transaction count");
+    const counters = (await this.getJson(`${base}/api/v2/addresses/${addr}/counters`)) as { transactions_count?: unknown } | null;
+    const counter = parseCounter(counters?.transactions_count);
 
     const txlist = `${base}/api?module=account&action=txlist&address=${addr}`;
-    const first = await this.txList(`${txlist}&sort=asc&page=1&offset=1`);
-    if (first === null) return summary(chain, 0, null, null, 0, true);
-    const recent = await this.txList(`${txlist}&sort=desc&page=1&offset=${PAGE_SIZE}`);
-    if (recent === null) return summary(chain, 0, null, null, 0, true);
+    const [first, recent] = await Promise.all([
+      this.txList(`${txlist}&sort=asc&page=1&offset=1`),
+      this.txList(`${txlist}&sort=desc&page=1&offset=${PAGE_SIZE}`),
+    ]);
+    // "No transactions" is only believed when both calls agree. A counter that disagrees with the lists is a stale
+    // counter, never proof of an empty wallet.
+    if (first === null && recent === null) {
+      if (counter !== 0) throw new Error("Blockscout counter and transaction lists disagree");
+      return summary(chain, 0, null, null, 0, true);
+    }
+    if (first === null || recent === null) throw new Error("Blockscout returned inconsistent transaction lists");
 
     const firstTxAt = txDate(first[0]);
     const lastTxAt = txDate(recent[0]);
     const months = new Set(recent.map((t) => txDate(t).toISOString().slice(0, 7)));
-    return summary(chain, txCount, firstTxAt, lastTxAt, months.size, recent.length < PAGE_SIZE);
+    return summary(chain, Math.max(counter, recent.length), firstTxAt, lastTxAt, months.size, recent.length < PAGE_SIZE);
   }
 
   private async getJson(url: string): Promise<unknown> {
     const res = await this.fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { accept: "application/json" } });
-    if (res.status !== 200) throw new Error(`Blockscout request failed with HTTP ${res.status}`);
+    if (res.status !== 200) {
+      await res.body?.cancel().catch(() => undefined);
+      throw new Error(`Blockscout request failed with HTTP ${res.status}`);
+    }
     return res.json();
   }
 
@@ -64,6 +73,17 @@ export class BlockscoutAdapter implements ChainAdapter {
     if (!Array.isArray(body.result) || body.result.length === 0) throw new Error("Blockscout returned an invalid transaction list");
     return body.result as Record<string, unknown>[];
   }
+}
+
+/** The counter as a non-negative integer; null, "", " ", false and other junk are errors, not zero. */
+function parseCounter(v: unknown): number {
+  if (typeof v === "string" && /^\d+$/.test(v)) {
+    const n = Number(v);
+    if (Number.isSafeInteger(n)) return n;
+  } else if (typeof v === "number" && Number.isSafeInteger(v) && v >= 0) {
+    return v;
+  }
+  throw new Error("Blockscout returned an invalid transaction count");
 }
 
 function txDate(tx: Record<string, unknown> | undefined): Date {

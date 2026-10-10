@@ -119,6 +119,55 @@ describe("BlockscoutAdapter", () => {
     await expect(new BlockscoutAdapter(f.fetch).getActivity(ADDR, "ethereum")).rejects.toThrow();
   });
 
+  it.each([null, "", " ", false, "abc", "-1", "1.5", -1, 1.5, {}, undefined])("throws on counter %j instead of reporting zero", async (counter) => {
+    const f = fakeFetch({
+      counters: () => json({ transactions_count: counter }),
+      asc: () => list([tx("2022-01-01T00:00:00Z")]),
+      desc: () => list([tx("2022-01-01T00:00:00Z")]),
+    });
+    await expect(new BlockscoutAdapter(f.fetch).getActivity(ADDR, "ethereum")).rejects.toThrow();
+  });
+
+  it("accepts a numeric counter", async () => {
+    const f = fakeFetch({
+      counters: () => json({ transactions_count: 7 }),
+      asc: () => list([tx("2022-01-01T00:00:00Z")]),
+      desc: () => list([tx("2022-01-01T00:00:00Z")]),
+    });
+    expect((await new BlockscoutAdapter(f.fetch).getActivity(ADDR, "ethereum")).txCount).toBe(7);
+  });
+
+  it("a lagging counter never shows as no activity: txCount is at least the list length", async () => {
+    const f = fakeFetch({
+      counters: () => json({ transactions_count: "0" }),
+      asc: () => list([tx("2022-01-01T00:00:00Z")]),
+      desc: () => list([tx("2022-03-01T00:00:00Z"), tx("2022-02-01T00:00:00Z"), tx("2022-01-01T00:00:00Z")]),
+    });
+    const s = await new BlockscoutAdapter(f.fetch).getActivity(ADDR, "ethereum");
+    expect(s.txCount).toBe(3);
+    expect(s.firstTxAt).not.toBeNull();
+  });
+
+  it("throws when the lists disagree about having transactions", async () => {
+    const ascOnly = fakeFetch({ counters: () => json({ transactions_count: "2" }), asc: () => list([tx("2022-01-01T00:00:00Z")]), desc: none });
+    await expect(new BlockscoutAdapter(ascOnly.fetch).getActivity(ADDR, "ethereum")).rejects.toThrow();
+    const descOnly = fakeFetch({ counters: () => json({ transactions_count: "2" }), asc: none, desc: () => list([tx("2022-01-01T00:00:00Z")]) });
+    await expect(new BlockscoutAdapter(descOnly.fetch).getActivity(ADDR, "ethereum")).rejects.toThrow();
+  });
+
+  it("throws when the counter says there are transactions but both lists are empty", async () => {
+    const f = fakeFetch({ counters: () => json({ transactions_count: "5" }), asc: none, desc: none });
+    await expect(new BlockscoutAdapter(f.fetch).getActivity(ADDR, "ethereum")).rejects.toThrow();
+  });
+
+  it("cancels the body of a non-200 response before throwing", async () => {
+    const cancel = vi.fn(async () => undefined);
+    const bad = { status: 502, body: { cancel }, json: async () => ({}) } as unknown as Response;
+    const adapter = new BlockscoutAdapter((async () => bad) as unknown as typeof fetch);
+    await expect(adapter.getActivity(ADDR, "ethereum")).rejects.toThrow(/502/);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
   it("throws on a malformed counters body or timestamp", async () => {
     const bad = fakeFetch({ counters: () => json({ foo: 1 }), asc: none, desc: none });
     await expect(new BlockscoutAdapter(bad.fetch).getActivity(ADDR, "ethereum")).rejects.toThrow();

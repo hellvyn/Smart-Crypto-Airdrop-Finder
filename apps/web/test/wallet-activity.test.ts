@@ -108,7 +108,10 @@ beforeEach(() => {
 describe("getWalletActivity", () => {
   it("fetches, saves with ISO dates through the RPC, records the request, and returns the summary", async () => {
     const { db, log } = fakeDb(world);
-    const { adapter, getActivity } = fakeAdapter();
+    const { adapter, getActivity } = fakeAdapter(async () => {
+      log.push({ kind: "adapter", name: "getActivity", args: null });
+      return SUMMARY;
+    });
     const r = await getWalletActivity(db, adapter, WID, "Ethereum", NOW);
     expect(r).toEqual({ kind: "ok", summary: SUMMARY, cached: false });
     expect(getActivity).toHaveBeenCalledWith(ADDR, "ethereum");
@@ -116,9 +119,11 @@ describe("getWalletActivity", () => {
     const save = log.find((l) => l.kind === "rpc" && l.name === "save_wallet_check");
     expect(save?.args).toEqual({ p_wallet_id: WID, p_chain: "ethereum", p_result: stored(SUMMARY) });
     expect(log.find((l) => l.kind === "insert")?.args).toEqual({ user_id: USER.id });
-    // The request is logged before the adapter is called.
+    // The request row is inserted BEFORE the provider is called, and the result is saved after it.
     const order = log.map((l) => `${l.kind}:${l.name}`);
-    expect(order.indexOf("insert:wallet_check_requests")).toBeLessThan(order.indexOf("rpc:save_wallet_check"));
+    expect(order.indexOf("adapter:getActivity")).toBeGreaterThan(-1);
+    expect(order.indexOf("insert:wallet_check_requests")).toBeLessThan(order.indexOf("adapter:getActivity"));
+    expect(order.indexOf("adapter:getActivity")).toBeLessThan(order.indexOf("rpc:save_wallet_check"));
   });
 
   it("answers from a 5-hour-old cache without calling the adapter or counting a request", async () => {
@@ -142,6 +147,19 @@ describe("getWalletActivity", () => {
     const { db } = fakeDb(world);
     const r = await getWalletActivity(db, fakeAdapter().adapter, WID, "ethereum", NOW);
     expect(r).toMatchObject({ kind: "ok", cached: true });
+  });
+
+  it("treats a result stamped up to 60 s in the future (clock skew) as fresh, but not minutes ahead", async () => {
+    const skewed = new Date(NOW.getTime() + 30_000).toISOString();
+    world.cache = { result: stored(SUMMARY), checked_at: skewed };
+    const a = fakeAdapter();
+    expect(await getWalletActivity(fakeDb(world).db, a.adapter, WID, "ethereum", NOW)).toMatchObject({ kind: "ok", cached: true });
+    expect(a.getActivity).not.toHaveBeenCalled();
+
+    world.cache = { result: stored(SUMMARY), checked_at: new Date(NOW.getTime() + 5 * 60_000).toISOString() };
+    const b = fakeAdapter();
+    await getWalletActivity(fakeDb(world).db, b.adapter, WID, "ethereum", NOW);
+    expect(b.getActivity).toHaveBeenCalledTimes(1);
   });
 
   it("refetches when the cache is 7 hours old", async () => {

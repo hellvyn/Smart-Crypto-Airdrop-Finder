@@ -5,6 +5,8 @@ import type { WalletActivityView } from "./WalletActivity";
 import { WalletActivity } from "./WalletActivity";
 import { parseSummary } from "@/lib/activity-summary";
 
+// Longer than the server's three sequential 10 s provider calls would ever need.
+const CLIENT_TIMEOUT_MS = 35_000;
 const KINDS = ["rate_limited", "unavailable", "chain_not_supported", "not_owner"] as const;
 
 async function check(walletId: string, chain: string): Promise<WalletActivityView> {
@@ -13,6 +15,7 @@ async function check(walletId: string, chain: string): Promise<WalletActivityVie
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ walletId, chain }),
+      signal: AbortSignal.timeout(CLIENT_TIMEOUT_MS),
     });
     if (res.status === 401) return { kind: "signed_out" };
     const body = (await res.json()) as { kind?: unknown; summary?: unknown; cached?: unknown };

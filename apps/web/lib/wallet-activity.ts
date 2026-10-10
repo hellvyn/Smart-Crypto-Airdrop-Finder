@@ -9,6 +9,8 @@ import { parseSummary, serializeSummary } from "./activity-summary";
 import { isUuid } from "./watchlist";
 
 export const CACHE_TTL_MS = 6 * 3_600_000;
+/** A cached result stamped slightly in the future (clock skew between servers) still counts as fresh. */
+export const CLOCK_SKEW_MS = 60_000;
 export const RATE_LIMIT_WINDOW_MS = 60 * 60_000;
 export const RATE_LIMIT_MAX = 10;
 
@@ -50,7 +52,7 @@ export async function getWalletActivity(
   if (row && typeof row.checked_at === "string") {
     const age = now.getTime() - Date.parse(row.checked_at);
     const cachedSummary = parseSummary(row.result);
-    if (cachedSummary && age >= 0 && age < CACHE_TTL_MS) return { kind: "ok", summary: cachedSummary, cached: true };
+    if (cachedSummary && age >= -CLOCK_SKEW_MS && age < CACHE_TTL_MS) return { kind: "ok", summary: cachedSummary, cached: true };
   }
 
   // 4. Rate limit: 10 requests per user in the last 60 minutes.
