@@ -2,6 +2,7 @@ node_modules
 dist
 .env*
 pipeline/eval/cases/
+pipeline/eval/scam-set/cases/
 .superpowers/
 !.env.example
 .next/
