@@ -21,6 +21,18 @@ purges old text. Spec: section 4
    `db push` applies everything in `supabase/migrations/` (`0001_pipeline.sql`: tables, RLS, public read
    policies; later files add users, web views, the digest log and unsubscribe function, through
    `0006_project_changes_seq.sql`). Run it again after pulling a new migration.
+
+   **Production project (`smart-airdrop-finder`, created 2026-10-10):** 0001–0006 were applied through the
+   Supabase MCP connector, not `db push`, so the remote migration history holds timestamped entries (0002 split
+   in parts; `delete_my_account()` was run in the SQL Editor and has no entry). Before the first `db push` of a
+   new migration there, align the history once, then push:
+
+   ```
+   npx -y supabase@2.120.0 migration repair --status reverted 20261010140453 20261010141009 20261010141033 \
+     20261010141045 20261010141237 20261010141244 20261010141250 20261010141256
+   npx -y supabase@2.120.0 migration repair --status applied 0001 0002 0003 0004 0005 0006
+   npx -y supabase@2.120.0 migration list   # local and remote columns should match
+   ```
 3. In **Project Settings > API**, copy the project URL and the `service_role` key. The service role key bypasses
    RLS: it goes only into GitHub Secrets, never into the web app or a browser.
 
