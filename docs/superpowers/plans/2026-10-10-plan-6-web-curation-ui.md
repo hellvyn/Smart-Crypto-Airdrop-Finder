@@ -58,7 +58,7 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   | bagian halaman project | "01 · AI verdict", "02 · Sumber yang beda cerita", "03 · Step garap", "04 · Security check", "05 · Estimasi effort", "06 · Kenapa lolos"; samping "Ringkasan", "Update terbaru" |
   | navigasi & akun | "Airdrop", "Kenapa AirdropIQ", "Track record", "Garapan saya", "Watchlist", "Login", "← Balik ke list" |
   | footer | "Not financial advice. Tetap DYOR sebelum connect wallet." |
-  | sub-filter modal (#52) | label "Modal:"; pilihan "Semua" / "Modal dengkul" / "Ada deposit" (+ " · {n}"); tag baris "Modal dengkul" / "Ada deposit · mulai ${x}" / "Ada deposit" / "Modal belum jelas" |
+  | sub-filter modal (#52) | label "Modal:"; pilihan "Semua" / "Gratis" / "Butuh $" (+ " · {n}"); tag baris "Gratis" / "Butuh ${x}+" / "Butuh $" / "Modal belum jelas" |
   | hasil garapan (#51) | "Dapet berapa dari airdrop ini?", "Gak dapet", "Hasil kamu", "Total hasil garapan", "Boleh dipakai anonim buat rata-rata hasil member", "Rata-rata member yang garap {project}: ≈ ${x} (dari {n} member yang mau berbagi)" |
   Sumber kebenaran teks: mockup `docs/design/airdropiq-c/*.dc.html` (spec §16). Kalau glosarium dan mockup beda,
   glosarium yang dipakai.
@@ -182,13 +182,13 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   - `parseTab(v: string | undefined): Tab` (`live_now` | `early_bets` | `ended`, default `live_now`).
   - `parseCapital(v: string | undefined): CapitalFilter` (default `all`) dan
     `capitalLabel(capital: "free" | "deposit" | "unknown", minUsd: number | null): string` (teks glosarium #52;
-    angka diformat `id-ID` tanpa desimal, mis. "Ada deposit · mulai $1.000").
+    angka diformat `id-ID` tanpa desimal, mis. "Butuh $1.000+").
 
 - [ ] **Step 1: Test yang gagal** — pgTAP: project dengan curation terbaru `passed=false` gak muncul walau yang lama
   `passed=true`; project tanpa curation gak muncul; anon bisa select `public_list` tapi gak punya kolom `worth_level`
   dan ditolak di `curated_list` (`42501`); authenticated bisa keduanya. Vitest: `parseTab("x") === "live_now"`,
   `parseTab("ended") === "ended"`; `parseCapital("x") === "all"`; `capitalLabel("deposit", 1000)` =
-  "Ada deposit · mulai $1.000", `capitalLabel("deposit", null)` = "Ada deposit"; pgTAP: project dengan evidence `none`
+  "Butuh $1.000+", `capitalLabel("deposit", null)` = "Butuh $"; pgTAP: project dengan evidence `none`
   dari satu dokumen dan `high` dari dokumen lain → `capital = 'deposit'`; `checkedLabel` untuk 0/1/3 hari dan > 48 jam; `getTrackRecord` → `null` saat
   `total = 9`; urutan
   `listCurated` sesuai aturan (mock rows), termasuk tab `ended` urut `ended_on` terbaru dulu; `getFarmingBoard` untuk

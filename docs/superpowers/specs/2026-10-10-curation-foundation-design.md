@@ -99,7 +99,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 49 | Gaya tulisan | Ditulis dengan skill humanizer: tanpa klise AI dan em dash, panjang kalimat bervariasi, nada santai dengan opini "kami", boleh campur istilah Inggris yang umum di crypto Indonesia. Teks final = glosarium Plan 6 (§16) |
 | 50 | Task utama di tracker | Langkah sekali jalan (`once`) ikut masuk "Garapan saya" sebagai "Task utama" (dicentang sekali, gak masuk heatmap/streak). "Tambah task" dikecilkan jadi link teks "+ Tambah task sendiri" |
 | 51 | Hasil garapan | Member mengisi sendiri hasil airdrop yang udah ended (jumlah token + tanggal claim, atau "Gak dapet"); nilai dolar dihitung dari harga CoinGecko di tanggal claim dan hari ini. Privat. Opt-in "boleh dipakai anonim" untuk rata-rata hasil member, tampil kalau ≥ 5 member ikut. Deteksi otomatis dari wallet ditunda (risiko token palsu, cakupan chain) |
-| 52 | Sub-filter modal di list | Di bawah tab ada "Modal:" Semua / Modal dengkul / Ada deposit. Tag per baris: "Modal dengkul", "Ada deposit · mulai ${x}" (atau "Ada deposit" kalau angkanya gak disebut), "Modal belum jelas". Sumber: `capital_required` + `capital_min_usd` hasil ekstraksi (publik), bukan estimasi effort AI yang khusus member. Gabungan antar sumber: ada satu sumber bilang deposit → deposit; `none` cuma kalau semua sumber yang menyebut bilang gratis; angka = minimum terkecil yang disebut. Label "butuh modal / tanpa modal" sengaja gak dipakai |
+| 52 | Sub-filter modal di list | Di bawah tab ada "Modal:" Semua / Gratis / Butuh $. Tag per baris: "Gratis", "Butuh ${x}+" (atau "Butuh $" kalau angkanya gak disebut), "Modal belum jelas". Sumber: `capital_required` + `capital_min_usd` hasil ekstraksi (publik), bukan estimasi effort AI yang khusus member. Gabungan antar sumber: ada satu sumber bilang deposit → deposit; `none` cuma kalau semua sumber yang menyebut bilang gratis; angka = minimum terkecil yang disebut. Label dipilih owner ("Gratis" / "Butuh $") |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -173,7 +173,7 @@ Field yang sudah direncanakan di rev. 1:
   teks sumber (aturan yang sama dengan field lain).
 - `capital_required`: `none` | `low` | `high` | `unknown`. Contoh: "deposit min. $1,000" = `high`.
 - `capital_min_usd`: angka minimal deposit dalam USD kalau teks menyebutnya (stablecoin dihitung 1:1), selain itu
-  `null`. Gak dikonversi dari ETH/token lain. Dipakai label "Ada deposit · mulai ${x}" (#52).
+  `null`. Gak dikonversi dari ETH/token lain. Dipakai label "Butuh ${x}+" (#52).
 
 ## 5. Pipeline
 
@@ -339,7 +339,7 @@ Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall d
 - Tiap baris: nama, status, level **Worth it**, level risiko, badge sinyal (`VC-backed: Paradigm ✓`, `TVL $45M`,
   `Listed on CoinGecko`, `Curated source`), deadline terdekat.
 - Filter: status, risiko, chain (sudah ada) + Worth it.
-- Sub-filter modal di bawah tab (#52): Semua / Modal dengkul / Ada deposit, plus tag modal di tiap baris.
+- Sub-filter modal di bawah tab (#52): Semua / Gratis / Butuh $, plus tag modal di tiap baris.
 - Kosong: "No airdrop passed curation today" + jumlah yang dicek.
 
 ### 7.2 Halaman detail `/projects/<slug>`: harus lebih berguna dari halaman airdrops.io

@@ -134,19 +134,19 @@ class Component extends DCLogic {
     };
     const data = {
       live_now: [
-        { ...pass(-8), cap: 'deposit', capLabel: 'Ada deposit · mulai $100', name: 'Nebula Perps', meta: 'Perp DEX · Arbitrum', risk: 'Rendah', worth: 'Sangat worth it', rank: 1, fresh: 0, claimOpen: false, deadline: 'Snapshot 30 Nov', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'VC: Paradigm ✓', style: verified }, { text: 'TVL $45 jt', style: plain }] },
-        { ...pass(5), cap: 'free', capLabel: 'Modal dengkul', name: 'Orbit Chain', meta: 'L2 · Ethereum', risk: 'Rendah', worth: 'Sangat worth it', rank: 2, fresh: 0, claimOpen: true, deadline: 'Claim s.d. 25 Okt', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'Listed di CoinGecko', style: plain }, { text: 'Source terkurasi', style: plain }] },
-        { ...pass(-3), cap: 'deposit', capLabel: 'Ada deposit · mulai $50', name: 'Kestrel Lend', meta: 'Lending · Base', risk: 'Sedang', worth: 'Worth it', rank: 3, fresh: 1, claimOpen: false, deadline: 'Belum ada tanggal', checked: 'Dicek kemarin', checkedStyle: fresh, signals: [{ text: 'Menurut AlphaDrops: a16z (lead)', style: reported }] },
+        { ...pass(-8), cap: 'deposit', capLabel: 'Butuh $100+', name: 'Nebula Perps', meta: 'Perp DEX · Arbitrum', risk: 'Rendah', worth: 'Sangat worth it', rank: 1, fresh: 0, claimOpen: false, deadline: 'Snapshot 30 Nov', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'VC: Paradigm ✓', style: verified }, { text: 'TVL $45 jt', style: plain }] },
+        { ...pass(5), cap: 'free', capLabel: 'Gratis', name: 'Orbit Chain', meta: 'L2 · Ethereum', risk: 'Rendah', worth: 'Sangat worth it', rank: 2, fresh: 0, claimOpen: true, deadline: 'Claim s.d. 25 Okt', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'Listed di CoinGecko', style: plain }, { text: 'Source terkurasi', style: plain }] },
+        { ...pass(-3), cap: 'deposit', capLabel: 'Butuh $50+', name: 'Kestrel Lend', meta: 'Lending · Base', risk: 'Sedang', worth: 'Worth it', rank: 3, fresh: 1, claimOpen: false, deadline: 'Belum ada tanggal', checked: 'Dicek kemarin', checkedStyle: fresh, signals: [{ text: 'Menurut AlphaDrops: a16z (lead)', style: reported }] },
         { ...pass(7), cap: 'unknown', capLabel: 'Modal belum jelas', name: 'Pulse Bridge', meta: 'Bridge · Solana', risk: 'Sedang', worth: 'Kurang worth it', rank: 4, fresh: 3, claimOpen: false, deadline: 'Akhir campaign 12 Des', checked: 'Belum dicek lagi sejak 7 Okt', checkedStyle: stale, signals: [{ text: 'Source terkurasi', style: plain }] }
       ],
       early_bets: [
-        { ...pass(-6), cap: 'deposit', capLabel: 'Ada deposit', name: 'Vega Restake', meta: 'Restaking · Ethereum', risk: 'Rendah', worth: 'Sangat worth it', rank: 1, fresh: 0, claimOpen: false, deadline: 'Belum diumumkan', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'TVL $210 jt', style: plain }, { text: 'Belum ada token', style: plain }] },
-        { ...pass(4), cap: 'free', capLabel: 'Modal dengkul', name: 'Lumen AI', meta: 'AI Agents · Multichain', risk: 'Rendah', worth: 'Worth it', rank: 2, fresh: 0, claimOpen: false, deadline: 'Waitlist', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'Menurut AlphaDrops: Sequoia (lead)', style: reported }] },
+        { ...pass(-6), cap: 'deposit', capLabel: 'Butuh $', name: 'Vega Restake', meta: 'Restaking · Ethereum', risk: 'Rendah', worth: 'Sangat worth it', rank: 1, fresh: 0, claimOpen: false, deadline: 'Belum diumumkan', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'TVL $210 jt', style: plain }, { text: 'Belum ada token', style: plain }] },
+        { ...pass(4), cap: 'free', capLabel: 'Gratis', name: 'Lumen AI', meta: 'AI Agents · Multichain', risk: 'Rendah', worth: 'Worth it', rank: 2, fresh: 0, claimOpen: false, deadline: 'Waitlist', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'Menurut AlphaDrops: Sequoia (lead)', style: reported }] },
         { ...pass(-2), cap: 'unknown', capLabel: 'Modal belum jelas', name: 'Drift Options', meta: 'Options · Arbitrum', risk: 'Sedang', worth: 'Kurang worth it', rank: 3, fresh: 2, claimOpen: false, deadline: 'Belum diumumkan', checked: 'Dicek 2 hari lalu', checkedStyle: fresh, signals: [{ text: 'TVL $3 jt', style: plain }] }
       ],
       ended: [
-        { ...ended(-5), cap: 'free', capLabel: 'Modal dengkul', name: 'Astra Swap', meta: 'DEX · Base', risk: 'Rendah', worth: 'Worth it', rank: 1, fresh: 0, claimOpen: false, deadline: 'Ended 5 Okt 2026', checked: 'Last check 5 Okt', checkedStyle: fresh, signals: [{ text: 'Listed di CoinGecko', style: plain }] },
-        { ...ended(6), cap: 'free', capLabel: 'Modal dengkul', name: 'Myriad Points', meta: 'Social · Ethereum', risk: 'Rendah', worth: 'Kurang worth it', rank: 2, fresh: 0, claimOpen: false, deadline: 'Ended 28 Sep 2026', checked: 'Last check 28 Sep', checkedStyle: fresh, signals: [{ text: 'Source terkurasi', style: plain }] }
+        { ...ended(-5), cap: 'free', capLabel: 'Gratis', name: 'Astra Swap', meta: 'DEX · Base', risk: 'Rendah', worth: 'Worth it', rank: 1, fresh: 0, claimOpen: false, deadline: 'Ended 5 Okt 2026', checked: 'Last check 5 Okt', checkedStyle: fresh, signals: [{ text: 'Listed di CoinGecko', style: plain }] },
+        { ...ended(6), cap: 'free', capLabel: 'Gratis', name: 'Myriad Points', meta: 'Social · Ethereum', risk: 'Rendah', worth: 'Kurang worth it', rank: 2, fresh: 0, claimOpen: false, deadline: 'Ended 28 Sep 2026', checked: 'Last check 28 Sep', checkedStyle: fresh, signals: [{ text: 'Source terkurasi', style: plain }] }
       ]
     };
     const capStyles = {
@@ -160,7 +160,7 @@ class Component extends DCLogic {
     const rows = list.map((r) => ({ ...r, showWorth: member, showLock: !member, worthStyle: worthStyles[r.worth], capStyle: capStyles[r.cap] }));
     const chipOn = 'min-height:40px;background:#111111;color:#F7F7F2;border:2px solid #111111;font:inherit;font-size:14px;font-weight:700;padding:6px 12px;cursor:pointer';
     const chipOff = 'min-height:40px;background:#FFFFFF;color:#111111;border:2px solid #111111;font:inherit;font-size:14px;font-weight:600;padding:6px 12px;cursor:pointer';
-    const caps = [['all', 'Semua'], ['free', 'Modal dengkul'], ['deposit', 'Ada deposit']].map(([id, label]) => ({
+    const caps = [['all', 'Semua'], ['free', 'Gratis'], ['deposit', 'Butuh $']].map(([id, label]) => ({
       label, count: id === 'all' ? pool.length : pool.filter((r) => r.cap === id).length,
       style: capSel === id ? chipOn : chipOff, pick: () => this.setState({ cap: id })
     }));
