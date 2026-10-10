@@ -132,11 +132,16 @@ export async function listProjects(db: SupabaseClient, f: ListFilters = {}, page
   };
 }
 
-/** Distinct lowercase chain names across all projects, for the chain filter. */
+/**
+ * Distinct trimmed, lowercase chain names across all projects, for the chain filter. Only names `parseChain` accepts
+ * unchanged are listed: any other option (e.g. "bnb chain (bsc)") would silently apply no filter when picked.
+ */
 export async function listChains(db: SupabaseClient): Promise<string[]> {
   const { data, error } = await db.from("project_chains").select("chain").order("chain", { ascending: true });
   throwIf(error, "chains");
-  return ((data ?? []) as { chain: unknown }[]).map((r) => String(r.chain));
+  return ((data ?? []) as { chain: unknown }[])
+    .map((r) => String(r.chain))
+    .filter((chain) => parseChain(chain) === chain);
 }
 
 export async function getProjectDetail(db: SupabaseClient, slug: string, now: Date = new Date()): Promise<ProjectDetail | null> {

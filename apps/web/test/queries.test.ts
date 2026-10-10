@@ -151,6 +151,25 @@ describe("listChains", () => {
     expect(recs[0]!.table).toBe("project_chains");
     expect(recs[0]!.calls).toContainEqual(["order", "chain", { ascending: true }]);
   });
+
+  it("lists only names the chain filter accepts as they are, so every option actually filters", async () => {
+    const { db } = fakeDb([
+      {
+        data: [
+          { chain: "arbitrum one" },
+          { chain: "base" },
+          { chain: "base " },
+          { chain: "bnb chain (bsc)" },
+          { chain: "x/y" },
+          { chain: "null" },
+          { chain: "" },
+          { chain: "zksync-era" },
+        ],
+        error: null,
+      },
+    ]);
+    expect(await listChains(db)).toEqual(["arbitrum one", "base", "zksync-era"]);
+  });
 });
 
 describe("getLastSuccessfulRunAt", () => {

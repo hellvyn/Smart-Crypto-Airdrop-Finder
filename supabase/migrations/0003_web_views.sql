@@ -9,9 +9,12 @@ select
   p.name,
   p.status,
   p.chains,
-  -- Lowercased copy, so the chain filter is a case-insensitive `chains_lower @> array['base']`.
+  -- Trimmed (ASCII whitespace), lowercased copy without blank names, so the chain filter is a case-insensitive
+  -- `chains_lower @> array['base']` that also matches a scraped "Base " (same normalisation as project_chains).
   coalesce(
-    (select array_agg(lower(c) order by lower(c)) from unnest(p.chains) as c),
+    (select array_agg(distinct lower(btrim(c, E' \t\n\r\f\x0b')) order by lower(btrim(c, E' \t\n\r\f\x0b')))
+     from unnest(p.chains) as c
+     where btrim(c, E' \t\n\r\f\x0b') <> ''),
     '{}'::text[]
   ) as chains_lower,
   p.last_seen,
@@ -39,11 +42,11 @@ left join lateral (
   limit 1
 ) r on true;
 
--- Distinct lowercase chain names, for the chain filter.
+-- Distinct trimmed, lowercase chain names, for the chain filter (same normalisation as project_list.chains_lower).
 create view public.project_chains with (security_invoker = true) as
-select distinct lower(c) as chain
+select distinct lower(btrim(c, E' \t\n\r\f\x0b')) as chain
 from public.projects p, unnest(p.chains) as c
-where c <> '';
+where btrim(c, E' \t\n\r\f\x0b') <> '';
 
 -- Read-only for the web roles.
 revoke all on public.project_list, public.project_chains from anon, authenticated;

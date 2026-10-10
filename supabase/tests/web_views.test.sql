@@ -3,11 +3,12 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(14);
+select plan(18);
 
 insert into projects (id, slug, name, name_key, chains, status, first_seen, last_seen) values
   ('bbbbbbbb-0000-0000-0000-000000000001', 'v-one', 'V One', 'vone', '{Ethereum,Base}', 'live', now(), now()),
-  ('bbbbbbbb-0000-0000-0000-000000000002', 'v-two', 'V Two', 'vtwo', '{}', 'unknown', now(), now() - interval '1 day');
+  ('bbbbbbbb-0000-0000-0000-000000000002', 'v-two', 'V Two', 'vtwo', '{}', 'unknown', now(), now() - interval '1 day'),
+  ('bbbbbbbb-0000-0000-0000-000000000003', 'v-three', 'V Three', 'vthree', array['base ', E'\t Arbitrum\n', '   ', '', 'VeChain'], 'live', now(), now() - interval '2 days');
 
 insert into documents (id, source_kind, source_key, url, content_hash, fetched_at) values
   ('dddddddd-0000-0000-0000-000000000001', 'airdrops_io', 'k', 'https://v.example/1', 'h', now());
@@ -43,10 +44,16 @@ select ok((select count(*) = 1 from project_list where chains_lower @> array['et
 select is((select next_deadline_date from project_list where slug = 'v-two'), null, 'no deadline gives null');
 select is((select latest_risk_level from project_list where slug = 'v-two'), null, 'no assessment gives null risk');
 select is((select chains_lower from project_list where slug = 'v-two'), '{}'::text[], 'empty chains give an empty lowercase array');
-select is((select count(*)::int from project_list), 2, 'one row per project');
+select is((select count(*)::int from project_list), 3, 'one row per project');
+select is((select chains_lower from project_list where slug = 'v-three'), '{arbitrum,base,vechain}'::text[],
+  'chains_lower is trimmed (whitespace only) and drops blank names');
+select ok((select count(*) = 2 from project_list where chains_lower @> array['base']), 'a padded "base " matches the base filter');
+select is((select count(*)::int from project_chains where chain <> btrim(chain) or chain = ''), 0,
+  'project_chains has no untrimmed or blank value');
+select is((select count(*)::int from project_chains where chain = 'base'), 1, '"Base" and "base " are one chain');
 select results_eq(
-  $$ select chain from project_chains where chain in ('base','ethereum') order by chain $$,
-  $$ values ('base'::text), ('ethereum'::text) $$,
+  $$ select chain from project_chains where chain in ('arbitrum', 'base', 'ethereum', 'vechain') order by chain $$,
+  $$ values ('arbitrum'::text), ('base'::text), ('ethereum'::text), ('vechain'::text) $$,
   'project_chains has distinct lowercase chains');
 select is((select count(*)::int from project_chains where chain <> lower(chain)), 0, 'project_chains has no mixed-case value');
 select is((select count(*)::int from documents), 0, 'anon still sees no documents (RLS, no policy)');
