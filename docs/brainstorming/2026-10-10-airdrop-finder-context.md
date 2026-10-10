@@ -30,6 +30,16 @@ Label:
 | 11 | Metode login | **Email + password** | Dipilih owner (Claude nyaranin magic link + Google). Tetap butuh email verifikasi & reset password. Pakai library auth yang matang, jangan bikin sendiri. Login via wallet ditolak (konflik pesan anti-scam, ribet di multi-chain) |
 | 12 | Frekuensi scan | **Harian** | Dipilih owner. Risiko yang diterima: deadline yang diumumin < 24 jam bisa kelewat (contoh: radar Oct 9 18:06 UTC → deadline Axis Oct 10 12:00 UTC). Frekuensi dibikin bisa diatur lewat config. Email urgent di-drop |
 | 13 | Isi v1 | **Finder + A (anti-scam) + akun/watchlist + notifikasi + cek wallet khusus EVM** (on-demand) | Rilis berikutnya: adapter chain lain (Solana, Aptos, Sui, TON, Cosmos), lalu B (worth it, butuh data funding yang berbayar) |
+| 14 | Arsitektur | **Opsi 1: scan harian di GitHub Actions (TypeScript) + Supabase (Postgres + auth) + web Next.js di-host terpisah** | Ditolak: Cloudflare all-in (batas subrequest/CPU, auth dirakit sendiri), 1 VM (beban ops & keamanan). Host web belum dipilih (Vercel Hobby rawan klausul non-komersial) |
+
+Asumsi yang dikonfirmasi owner: skala v1 puluhan sampai ratusan user; sukses = daftar update harian + skor risiko dengan alasan +
+gak ada deadline watchlist yang kelewat (kecuali yang diumumin < 24 jam); UI bahasa Inggris dulu; dikembangkan solo (dibantu Claude);
+TypeScript full-stack.
+
+Limit free tier (sumber sekunder, dicek 2026-10-10, **belum dari halaman resmi**): repo ini **public** → menit GitHub Actions
+unlimited; Supabase Free 500 MB + auth 50 ribu MAU, pause setelah 7 hari idle; Resend Free 100 email/hari; Brevo Free 300 email/hari;
+Vercel Hobby non-komersial & cron 1×/hari; Cloudflare Workers Free CPU 10 ms/invocation, 50 subrequest. **Kuota email = constraint
+paling ketat** di skala ratusan user.
 
 ## 2. Rencana sumber data (setelah spike)
 
