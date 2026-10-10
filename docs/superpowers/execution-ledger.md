@@ -138,3 +138,6 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 - G1: parked — a password change does not revoke the member's other sessions (`signOut({ scope: 'others' })`), so a session opened with the DM'd password stays valid — Ruling: real and small, but no second fix wave on a wave review; carried to P6 Task 2 (it rewrites settings) unless the owner wants it sooner — costs a window where an old session survives a password change.
 - G1: minor (deferred to Plan 6 copy pass): tab titles still "Smart Airdrop Finder" on login/wallets/watchlist/settings; `.env.example` mentions email redirect URLs; `LinkStatus` has no fallback for an unknown status; Stamp README table vs `aria-label`; `web.md` deploy order should put the signup switch first; Ticket README note "no links inside Ticket".
 - G1 complete. Tests at the merge: core 134, pipeline 203, web 284 unit · typecheck ok · pgTAP 115 · e2e 67/67.
+
+## Progress (Plan 4)
+- G2-2a started: P4.T1 ∥ P4.T2 ∥ P4.T3 ∥ P4.T8 from a79b089 (workflow run wf_b34d235b-3a6)
