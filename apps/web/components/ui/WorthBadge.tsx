@@ -1,0 +1,16 @@
+export type WorthLevel = "high" | "medium" | "low";
+
+const TEXT: Record<WorthLevel, string> = {
+  high: "Sangat worth it",
+  medium: "Worth it",
+  low: "Kurang worth it",
+};
+
+/** The worth-it verdict: orange fill (high), white with black outline (medium), plain grey text (low). */
+export function WorthBadge({ level }: { level: WorthLevel }) {
+  return (
+    <span className="ui-worth" data-level={level}>
+      {TEXT[level]}
+    </span>
+  );
+}

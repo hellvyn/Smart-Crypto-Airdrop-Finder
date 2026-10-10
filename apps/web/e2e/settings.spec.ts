@@ -118,7 +118,7 @@ test("deleting the account needs DELETE typed exactly, then removes the account 
     await page.getByRole("button", { name: "Delete my account" }).click();
     await expect(page).toHaveURL(/\/\?deleted=1$/);
     await expect(page.getByText("Your account was deleted.")).toBeVisible();
-    await expect(page.getByRole("link", { name: "Log in" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Login" })).toBeVisible();
 
     // The session is gone ...
     await page.goto("/settings");
