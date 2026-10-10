@@ -50,7 +50,7 @@ export interface CaseScore {
   deadlinesMatched: number;
   /** Labelled official domains (0 when the case has none labelled). */
   officialDomainsExpected: number;
-  /** Labelled official domains that an `official_urls` entry found in the case text belongs to. */
+  /** Labelled official domains that a post-processed (source-checked, referral-cleaned) `official_urls` entry belongs to. */
   officialDomainsMatched: number;
 }
 
@@ -95,10 +95,14 @@ function deadlinesMatched(expected: TruthDeadline[], found: Project | null): num
   return expected.filter((e) => found.deadlines.some((d) => d.kind === e.kind && d.date === e.date)).length;
 }
 
-/** Counts expected domains that some `official_urls` entry belongs to, after dropping URLs missing from `text`. */
-function officialDomainsMatched(expected: string[], found: Project | null, text: string): number {
+/**
+ * Counts expected domains that some `official_urls` entry belongs to. `found` is the post-processed extraction, whose
+ * `official_urls` were already source-checked and then referral-cleaned, so they are not re-checked against the text
+ * here (a cleaned URL is no longer verbatim in the source). Hallucinated URLs are counted separately from the raw answer.
+ */
+function officialDomainsMatched(expected: string[], found: Project | null): number {
   if (found === null) return 0;
-  const domains = new Set(filterUrlsInSource(found.official_urls, text).map((u) => registrableDomain(u)?.toLowerCase()));
+  const domains = new Set(found.official_urls.map((u) => registrableDomain(u)?.toLowerCase()));
   return expected.filter((d) => domains.has(d.toLowerCase())).length;
 }
 
@@ -119,9 +123,9 @@ export function rawOfficialUrlsOfOutcome(attempts: ExtractionAttempt[]): string[
 /**
  * Scores one extraction against the ground truth. Status, token, chain, negative and radar
  * come from the post-processed `result`; a null `result` (every model failed) fails every
- * applicable check. Deadlines match on kind and date; official domains count only for
- * `official_urls` entries that appear in the case `text`. `hallucinatedUrls` counts `rawUrls` (the model's `official_urls` before
- * cleanup) that are not in the case `text`.
+ * applicable check. Deadlines match on kind and date; official domains match on the registrable domain of the
+ * post-processed `official_urls` (already source-checked, so not re-filtered against `text`). `hallucinatedUrls`
+ * counts `rawUrls` (the model's `official_urls` before cleanup) that are not in the case `text`.
  */
 export function scoreCase(
   caseId: string,
@@ -157,7 +161,7 @@ export function scoreCase(
     score.deadlinesExpected = expected.deadlines?.length ?? 0;
     score.deadlinesMatched = deadlinesMatched(expected.deadlines ?? [], found);
     score.officialDomainsExpected = expected.officialDomains?.length ?? 0;
-    score.officialDomainsMatched = officialDomainsMatched(expected.officialDomains ?? [], found, text);
+    score.officialDomainsMatched = officialDomainsMatched(expected.officialDomains ?? [], found);
   } else if (expected.kind === "negative") {
     score.negativeOk = result !== null && !result.is_airdrop_content;
   } else {

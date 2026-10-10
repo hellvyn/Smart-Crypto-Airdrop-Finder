@@ -196,12 +196,14 @@ describe("scoreCase", () => {
     expect([s.officialDomainsMatched, s.officialDomainsExpected]).toEqual([2, 2]);
   });
 
-  it("scores official domains from source-verified URLs only", () => {
-    const t = truthWith({ officialDomains: ["zeta.xyz", "zeta-fake.xyz"] });
-    const found = result([project({ name: "Zeta", official_urls: ["https://zeta.xyz/", "https://zeta-fake.xyz/"] })]);
-    // TEXT contains zeta.xyz but not zeta-fake.xyz
-    const s = scoreCase("c_zeta", found, t, TEXT, []);
-    expect([s.officialDomainsMatched, s.officialDomainsExpected]).toEqual([1, 2]);
+  it("scores official domains of referral-cleaned URLs that are no longer verbatim in the text", () => {
+    const t = truthWith({ officialDomains: ["zeta.xyz"] });
+    // The source says https://app.zeta.xyz/r/ABC123 and https://zeta.xyz/claim?ref=ABC123&x=1; postProcess already
+    // source-checked them and stored the cleaned forms, which do not appear verbatim in the text any more.
+    const text = "Join via https://app.zeta.xyz/r/ABC123 or https://zeta.xyz/claim?ref=ABC123&x=1 today.";
+    const found = result([project({ name: "Zeta", official_urls: ["https://app.zeta.xyz/", "https://zeta.xyz/claim?x=1"] })]);
+    const s = scoreCase("c_zeta", found, t, text, []);
+    expect([s.officialDomainsMatched, s.officialDomainsExpected]).toEqual([1, 1]);
   });
 
   it("does not match an official domain that only shares a name with the expected one", () => {

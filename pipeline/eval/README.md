@@ -64,8 +64,9 @@ labelled for that column.
 - Deadline accuracy: at least 90% of the labelled deadlines are matched (G5). A labelled deadline is matched when
   the extracted project has a deadline with the same `kind` and the same `date` (`null` matches only `null`).
 - Official domain accuracy: at least 80% of the labelled `officialDomains` are matched. An expected domain counts
-  when the registrable domain of an extracted `official_urls` entry equals it **and** that URL appears in the case
-  text (`filterUrlsInSource`), so an invented URL never scores.
+  when the registrable domain of an extracted `official_urls` entry equals it. Those entries were already source-checked
+  (and referral-cleaned) by the pipeline's post-processing, so they are not re-checked against the text; an invented
+  URL is caught by the separate "no hallucinated URLs" condition.
 - `tg_weekly_radar` recall is at least `minRecall` (22 of 28 project slugs).
 
 A deadline or domain gate with nothing labelled **fails** ("nothing labelled, cannot be measured") rather than
