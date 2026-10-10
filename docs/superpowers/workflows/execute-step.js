@@ -76,6 +76,8 @@ function workspaceRules(base) {
   - \`${BIN}/dbtest "$PWD"\`: db reset from YOUR checkout's migrations, then all pgTAP tests. Exit code = result.
   - \`${BIN}/dbreset "$PWD"\`: db reset only (for vitest that hits the local DB).
   - \`${BIN}/e2e "$PWD" [spec files...]\`: db reset, production build, Playwright like CI. No args = full e2e suite.
+  - \`${BIN}/sbrestart "$PWD"\`: restart the stack with YOUR checkout's supabase/config.toml (only when you changed
+    auth settings there; other agents' runs wait on the same lock).
 - Unit tests and typecheck: \`pnpm test\` and \`pnpm typecheck\` at the worktree root (or \`pnpm --filter <pkg> ...\`).
 - Commit on your worktree branch only. Every commit message ends with a blank line and then exactly these trailers:
 ${TRAILERS}
