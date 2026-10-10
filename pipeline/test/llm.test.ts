@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CollectedDocument } from "../src/collectors/types.js";
+import { defaultConfig } from "../src/config.js";
 import { createCircuitBreaker } from "../src/llm/circuit-breaker.js";
 import { extractWithFallback } from "../src/llm/extract.js";
 import type { ChatFn } from "../src/llm/extract.js";
@@ -30,7 +31,8 @@ function sseResponse(text: string, status = 200): Response {
   return new Response(streamOf([enc.encode(text)]), { status });
 }
 
-const MODEL: ModelConfig = { id: "m/one", extraBody: { reasoning_effort: "low" } };
+const MODEL: ModelConfig = { provider: "nvidia", id: "m/one", extraBody: { reasoning_effort: "low" } };
+const BASE_URL = "https://example.test/v1";
 const MESSAGES = [{ role: "user" as const, content: "hi" }];
 
 function fakeFetch(handler: (url: string, init: RequestInit) => Response | Promise<Response>): typeof fetch {
@@ -43,7 +45,7 @@ describe("streamChat", () => {
     const cut = bytes.indexOf(0xc3) + 1; // between 0xC3 and 0x97
     const chunks = [bytes.slice(0, cut), bytes.slice(cut)];
     const f = fakeFetch(() => new Response(streamOf(chunks), { status: 200 }));
-    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k" });
+    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k", baseUrl: BASE_URL });
     expect(r.content).toBe("a×b");
     expect(r.content).not.toContain("Ã");
     expect(r.httpStatus).toBe(200);
@@ -54,14 +56,14 @@ describe("streamChat", () => {
     const bytes = enc.encode(full);
     const chunks = [bytes.slice(0, 17), bytes.slice(17, 40), bytes.slice(40)];
     const f = fakeFetch(() => new Response(streamOf(chunks), { status: 200 }));
-    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k" });
+    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k", baseUrl: BASE_URL });
     expect(r.content).toBe("Hello");
     expect(r.finishReason).toBe("stop");
   });
 
   it("returns finishReason null when the stream ends without one", async () => {
     const f = fakeFetch(() => sseResponse(sseLine(delta("partial"))));
-    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k" });
+    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k", baseUrl: BASE_URL });
     expect(r.content).toBe("partial");
     expect(r.finishReason).toBeNull();
   });
@@ -77,7 +79,7 @@ describe("streamChat", () => {
       sseLine({ choices: [], usage: { total_tokens: 5 } }) +
       "data: [DONE]\n\n" +
       sseLine(delta("ignored after done"));
-    const r = await streamChat(MODEL, MESSAGES, { fetch: fakeFetch(() => sseResponse(text)), apiKey: "k" });
+    const r = await streamChat(MODEL, MESSAGES, { fetch: fakeFetch(() => sseResponse(text)), apiKey: "k", baseUrl: BASE_URL });
     expect(r.content).toBe("ok");
     expect(r.finishReason).toBe("length");
   });
@@ -112,7 +114,7 @@ describe("streamChat", () => {
     expect(REQUEST_TIMEOUT_MS).toBe(180_000);
   });
 
-  it("uses the default base URL and omits Authorization for an empty key", async () => {
+  it("omits Authorization for an empty key", async () => {
     let seenUrl = "";
     let seenInit: RequestInit = {};
     const f = fakeFetch((url, init) => {
@@ -120,16 +122,48 @@ describe("streamChat", () => {
       seenInit = init;
       return sseResponse("data: [DONE]\n\n");
     });
-    await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "" });
-    expect(seenUrl).toBe("https://integrate.api.nvidia.com/v1/chat/completions");
+    await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "", baseUrl: "https://freellm.test/v1" });
+    expect(seenUrl).toBe("https://freellm.test/v1/chat/completions");
     expect(Object.keys(seenInit.headers as Record<string, string>)).not.toContain("Authorization");
+  });
+
+  it("captures the model that actually answered from the stream", async () => {
+    const text =
+      sseLine({ choices: [{ delta: { role: "assistant" }, finish_reason: null }] }) +
+      sseLine({ model: "", choices: [] }) +
+      sseLine({ model: "gpt-oss:120b", choices: [{ delta: { content: "{" }, finish_reason: null }] }) +
+      sseLine({ model: "other-model", choices: [{ delta: { content: "}" }, finish_reason: "stop" }] }) +
+      "data: [DONE]\n\n";
+    const auto: ModelConfig = { provider: "freellm", id: "auto", extraBody: {} };
+    const r = await streamChat(auto, MESSAGES, {
+      fetch: fakeFetch(() => sseResponse(text)),
+      apiKey: "",
+      baseUrl: "https://x.test/v1",
+    });
+    expect(r.content).toBe("{}");
+    expect(r.servedModel).toBe("gpt-oss:120b");
+  });
+
+  it("reports no served model when the stream never names one", async () => {
+    const r = await streamChat(MODEL, MESSAGES, {
+      fetch: fakeFetch(() => sseResponse(sseLine(delta("ok", "stop")) + "data: [DONE]\n\n")),
+      apiKey: "k",
+      baseUrl: BASE_URL,
+    });
+    expect(r.servedModel).toBeNull();
+  });
+
+  it("reports no served model for a failed request", async () => {
+    const f = fakeFetch(() => new Response("busy", { status: 503 }));
+    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k", baseUrl: BASE_URL });
+    expect(r.servedModel).toBeNull();
   });
 
   it("never throws: network errors become httpStatus 0", async () => {
     const f = fakeFetch(() => {
       throw new TypeError("fetch failed");
     });
-    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k" });
+    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k", baseUrl: BASE_URL });
     expect(r).toMatchObject({ httpStatus: 0, content: "", finishReason: null });
   });
 
@@ -140,13 +174,13 @@ describe("streamChat", () => {
         c.error(new Error("boom"));
       },
     });
-    const r = await streamChat(MODEL, MESSAGES, { fetch: fakeFetch(() => new Response(body)), apiKey: "k" });
+    const r = await streamChat(MODEL, MESSAGES, { fetch: fakeFetch(() => new Response(body)), apiKey: "k", baseUrl: BASE_URL });
     expect(r).toMatchObject({ httpStatus: 0, content: "", finishReason: null });
   });
 
   it("non-2xx returns the status and a truncated error body", async () => {
     const f = fakeFetch(() => new Response("x".repeat(900), { status: 502 }));
-    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k" });
+    const r = await streamChat(MODEL, MESSAGES, { fetch: f, apiKey: "k", baseUrl: BASE_URL });
     expect(r.httpStatus).toBe(502);
     expect(r.content).toBe("");
     expect(r.finishReason).toBeNull();
@@ -198,9 +232,9 @@ const DOC: CollectedDocument = {
 };
 
 const MODELS: ModelConfig[] = [
-  { id: "m/one", extraBody: {} },
-  { id: "m/two", extraBody: {} },
-  { id: "m/three", extraBody: {} },
+  { provider: "nvidia", id: "m/one", extraBody: {} },
+  { provider: "nvidia", id: "m/two", extraBody: {} },
+  { provider: "nvidia", id: "m/three", extraBody: {} },
 ];
 
 function project(over: Record<string, unknown> = {}) {
@@ -226,7 +260,7 @@ type Chat = ChatFn;
 type Reply = ChatResult;
 
 function reply(over: Partial<Reply> = {}): Reply {
-  return { content: okJson(), finishReason: "stop", latencyMs: 5, httpStatus: 200, ...over };
+  return { content: okJson(), finishReason: "stop", latencyMs: 5, httpStatus: 200, servedModel: null, ...over };
 }
 
 function scripted(replies: Reply[]): { chat: Chat; calls: string[] } {
@@ -248,9 +282,9 @@ describe("extractWithFallback", () => {
     const out = await extractWithFallback(DOC, MODELS, { chat, sleep });
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    expect(out.model).toBe("m/one");
+    expect(out.model).toBe("nvidia:m/one");
     expect(out.attempts).toHaveLength(1);
-    expect(out.attempts[0]).toMatchObject({ model: "m/one", httpStatus: 200, finishReason: "stop", error: null });
+    expect(out.attempts[0]).toMatchObject({ model: "nvidia:m/one", httpStatus: 200, finishReason: "stop", error: null });
     const p = out.result.projects[0];
     // referral param stripped by cleanUrl
     expect(p?.official_urls).toEqual(["https://inkonchain.com/", "https://claim.ink.test/app"]);
@@ -264,7 +298,7 @@ describe("extractWithFallback", () => {
     const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {} });
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    expect(out.model).toBe(MODELS[1]?.id);
+    expect(out.model).toBe("nvidia:m/two");
     expect(out.attempts).toHaveLength(2);
     expect(out.attempts[0]?.error).toBe("empty_content");
     expect(calls).toEqual(["m/one", "m/two"]);
@@ -279,7 +313,7 @@ describe("extractWithFallback", () => {
     expect(calls).toEqual(["m/one", "m/one", "m/one", "m/two"]);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    expect(out.model).toBe("m/two");
+    expect(out.model).toBe("nvidia:m/two");
     expect(out.attempts).toHaveLength(4);
     expect(out.attempts[0]).toMatchObject({ httpStatus: 429, error: "http_429", raw: "slow down" });
   });
@@ -290,7 +324,7 @@ describe("extractWithFallback", () => {
     const out = await extractWithFallback(DOC, MODELS, { chat, sleep });
     expect(calls).toEqual(["m/one", "m/one"]);
     expect(sleep.mock.calls.map((c) => c[0])).toEqual([2000]);
-    expect(out.ok && out.model).toBe("m/one");
+    expect(out.ok && out.model).toBe("nvidia:m/one");
   });
 
   it("drops official URLs that are not in the source text", async () => {
@@ -336,7 +370,7 @@ describe("extractWithFallback", () => {
       reply({ content: JSON.stringify({ is_airdrop_content: "yes", projects: [] }) }),
       reply({ content: okJson(), finishReason: null }),
     ]);
-    const models: ModelConfig[] = ["a", "b", "c", "d", "e"].map((id) => ({ id, extraBody: {} }));
+    const models: ModelConfig[] = ["a", "b", "c", "d", "e"].map((id) => ({ provider: "nvidia" as const, id, extraBody: {} }));
     const out = await extractWithFallback(DOC, models, { chat, sleep: async () => {} });
     expect(out.ok).toBe(false);
     expect(out.attempts.map((a) => a.error)).toEqual([
@@ -417,10 +451,10 @@ describe("extractWithFallback", () => {
 
   it("skips a model whose circuit is open", async () => {
     const breaker = createCircuitBreaker(1);
-    breaker.recordFailure("m/one");
+    breaker.recordFailure("nvidia:m/one");
     const { chat, calls } = scripted([reply()]);
     const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {}, breaker });
-    expect(out.ok && out.model).toBe("m/two");
+    expect(out.ok && out.model).toBe("nvidia:m/two");
     expect(calls).toEqual(["m/two"]);
   });
 
@@ -439,8 +473,8 @@ describe("extractWithFallback", () => {
     await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {}, breaker });
     expect(calls).toEqual(["m/one", "m/two", "m/one", "m/two", "m/three"]);
     // m/one: timeout then 503 = two consecutive failures. m/two: a 200 with bad JSON is reachable, not a failure.
-    expect(breaker.isOpen("m/one")).toBe(true);
-    expect(breaker.isOpen("m/two")).toBe(false);
+    expect(breaker.isOpen("nvidia:m/one")).toBe(true);
+    expect(breaker.isOpen("nvidia:m/two")).toBe(false);
   });
 
   it("counts a rate-limited model as failed only after its retries run out", async () => {
@@ -448,17 +482,52 @@ describe("extractWithFallback", () => {
     const limited = reply({ httpStatus: 429, content: "", finishReason: null });
     const { chat } = scripted([limited, limited, reply()]);
     const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {}, breaker });
-    expect(out.ok && out.model).toBe("m/one");
-    expect(breaker.isOpen("m/one")).toBe(false);
+    expect(out.ok && out.model).toBe("nvidia:m/one");
+    expect(breaker.isOpen("nvidia:m/one")).toBe(false);
   });
 
   it("defers the document without any call when every model's circuit is open", async () => {
     const breaker = createCircuitBreaker(1);
-    for (const m of MODELS) breaker.recordFailure(m.id);
+    for (const m of MODELS) breaker.recordFailure(`nvidia:${m.id}`);
     const { chat, calls } = scripted([]);
     const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {}, breaker });
     expect(out).toEqual({ ok: false, attempts: [], stopped: true });
     expect(calls).toEqual([]);
+  });
+
+  it("falls back to NVIDIA on the same document when auto returns unparsable JSON", async () => {
+    const breaker = createCircuitBreaker(1);
+    const { chat, calls } = scripted([reply({ content: "not json", servedModel: "gpt-oss:120b" }), reply()]);
+    const out = await extractWithFallback(DOC, defaultConfig.models, { chat, sleep: async () => {}, breaker });
+    expect(out.ok && out.model).toBe("nvidia:z-ai/glm-5.3-flash");
+    expect(calls).toEqual(["auto", "z-ai/glm-5.3-flash"]);
+    expect(out.attempts.map((a) => [a.model, a.error])).toEqual([
+      ["freellm:auto", "json_parse"],
+      ["nvidia:z-ai/glm-5.3-flash", null],
+    ]);
+    // A 200 with bad JSON is not an endpoint failure, even with a threshold of 1.
+    expect(breaker.isOpen("freellm:auto")).toBe(false);
+  });
+
+  it("records the model that answered on each attempt", async () => {
+    const { chat } = scripted([
+      reply({ httpStatus: 502, content: "", finishReason: null, errorBody: "bad gateway" }),
+      reply({ servedModel: "glm-5.3-flash-0926" }),
+    ]);
+    const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {} });
+    expect(out.attempts.map((a) => a.servedModel)).toEqual([null, "glm-5.3-flash-0926"]);
+  });
+
+  it("keeps separate circuits for the same model id on different providers", async () => {
+    const breaker = createCircuitBreaker(1);
+    const models: ModelConfig[] = [
+      { provider: "freellm", id: "shared/model", extraBody: {} },
+      { provider: "nvidia", id: "shared/model", extraBody: {} },
+    ];
+    const { chat } = scripted([reply({ httpStatus: 0, content: "", finishReason: null }), reply()]);
+    const out = await extractWithFallback(DOC, models, { chat, sleep: async () => {}, breaker });
+    expect(out.ok && out.model).toBe("nvidia:shared/model");
+    expect(breaker.opened()).toEqual(["freellm:shared/model"]);
   });
 
   it("passes system and user messages to the chat function", async () => {

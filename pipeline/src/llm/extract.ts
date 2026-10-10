@@ -2,11 +2,15 @@ import { cleanUrl, extractionSchema, filterUrlsInSource, normalizeDeadline } fro
 import type { ExtractionResult } from "@saf/core";
 import type { CollectedDocument } from "../collectors/types.js";
 import type { CircuitBreaker } from "./circuit-breaker.js";
+import { modelKey } from "./nvidia.js";
 import type { ChatMessage, ChatResult, ModelConfig } from "./nvidia.js";
 import { buildMessages } from "./prompt.js";
 
 export interface ExtractionAttempt {
+  /** `"<provider>:<id>"` of the configured model, e.g. `freellm:auto`. */
   model: string;
+  /** The model that actually answered (from the stream), or null when the reply named none. */
+  servedModel: string | null;
   httpStatus: number;
   finishReason: string | null;
   latencyMs: number;
@@ -17,6 +21,7 @@ export interface ExtractionAttempt {
 }
 
 export type ExtractOutcome =
+  /** `model`: `"<provider>:<id>"` of the model whose answer was used. */
   | { ok: true; result: ExtractionResult; model: string; attempts: ExtractionAttempt[] }
   /**
    * `stopped`: `shouldStop` ended the chain before every model was tried, or every model's circuit was open
@@ -100,7 +105,9 @@ function postProcess(result: ExtractionResult, doc: CollectedDocument): Extracti
  * Tries each model in order until one returns a complete, schema-valid extraction.
  * A 429 is retried on the same model after 2 s and then 4 s; any other failure moves on.
  * `shouldStop` is checked before every model call; once it returns true no further call starts.
- * A model whose `breaker` circuit is open is skipped; every final non-200 reply counts against its model.
+ * A model whose `breaker` circuit (keyed `"<provider>:<id>"`) is open is skipped; every final non-200 reply counts
+ * against its model. An HTTP 200 with an unusable answer (bad JSON, schema, truncated) moves the same document on
+ * to the next model at once and is not an endpoint failure.
  */
 export async function extractWithFallback(
   doc: CollectedDocument,
@@ -112,7 +119,8 @@ export async function extractWithFallback(
 
   let skipped = 0;
   for (const model of models) {
-    if (deps.breaker?.isOpen(model.id) === true) {
+    const key = modelKey(model);
+    if (deps.breaker?.isOpen(key) === true) {
       skipped += 1;
       continue;
     }
@@ -121,7 +129,8 @@ export async function extractWithFallback(
       const chat = await deps.chat(model, messages);
       const record = (error: string | null, raw: string): ExtractionAttempt => {
         const attempt: ExtractionAttempt = {
-          model: model.id,
+          model: key,
+          servedModel: chat.servedModel,
           httpStatus: chat.httpStatus,
           finishReason: chat.finishReason,
           latencyMs: chat.latencyMs,
@@ -139,10 +148,10 @@ export async function extractWithFallback(
           await deps.sleep(backoff);
           continue;
         }
-        deps.breaker?.recordFailure(model.id);
+        deps.breaker?.recordFailure(key);
         break;
       }
-      deps.breaker?.recordSuccess(model.id);
+      deps.breaker?.recordSuccess(key);
       if (chat.finishReason !== "stop") {
         record(`finish_${chat.finishReason}`, chat.content);
         break;
@@ -162,7 +171,7 @@ export async function extractWithFallback(
         break;
       }
       record(null, chat.content);
-      return { ok: true, result: postProcess(validated.data, doc), model: model.id, attempts };
+      return { ok: true, result: postProcess(validated.data, doc), model: key, attempts };
     }
   }
 

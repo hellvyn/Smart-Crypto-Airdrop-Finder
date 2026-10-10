@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Http } from "../src/collectors/types.js";
 import type { ChatFn } from "../src/llm/extract.js";
 import { defaultConfig } from "../src/config.js";
+import { loadProviders } from "../src/config.js";
 import type { PipelineConfig } from "../src/config.js";
 import { runDailyJob } from "../src/daily-job.js";
 import { runDaily } from "../src/run.js";
@@ -182,9 +183,9 @@ function fakeChat(replies: Record<string, unknown> = REPLIES, fail: Set<string> 
       inFlight--;
       const reply = replies[url];
       if (reply === undefined || fail.has(url)) {
-        return { content: "", finishReason: null, latencyMs: 1, httpStatus: 500, errorBody: "boom" };
+        return { content: "", finishReason: null, latencyMs: 1, httpStatus: 500, errorBody: "boom", servedModel: null };
       }
-      return { content: JSON.stringify(reply), finishReason: "stop", latencyMs: 1, httpStatus: 200 };
+      return { content: JSON.stringify(reply), finishReason: "stop", latencyMs: 1, httpStatus: 200, servedModel: null };
     },
   };
   return fake;
@@ -537,7 +538,7 @@ describe("runDaily extraction budget and merge queue", () => {
       ...inner,
       chat: async (model, messages) => {
         byModel.push(model.id);
-        if (model.id === first) return { content: "", finishReason: null, latencyMs: 180_000, httpStatus: 0 };
+        if (model.id === first) return { content: "", finishReason: null, latencyMs: 180_000, httpStatus: 0, servedModel: null };
         return inner.chat(model, messages);
       },
     };
@@ -589,14 +590,10 @@ describe("runDaily extraction budget and merge queue", () => {
 
 describe("config", () => {
   it("uses the model order and limits from the global constraints", () => {
-    expect(defaultConfig.models.map((m) => m.id)).toEqual([
-      "z-ai/glm-5.3-flash",
-      "moonshotai/kimi-k3",
-      "google/gemma-4-31b-it",
-    ]);
-    expect(defaultConfig.models[0]?.extraBody).toEqual({ reasoning_effort: "low" });
-    expect(defaultConfig.models[1]?.extraBody).toEqual({ chat_template_kwargs: { thinking: false } });
-    expect(defaultConfig.models[2]?.extraBody).toEqual({});
+    expect(defaultConfig.models[0]?.extraBody).toEqual({});
+    expect(defaultConfig.models[1]?.extraBody).toEqual({ reasoning_effort: "low" });
+    expect(defaultConfig.models[2]?.extraBody).toEqual({ chat_template_kwargs: { thinking: false } });
+    expect(defaultConfig.models[3]?.extraBody).toEqual({});
     expect(defaultConfig.llmConcurrency).toBe(3);
     expect(defaultConfig.maxDocumentsPerRun).toBe(150);
     expect(defaultConfig.scoreActiveSinceDays).toBe(60);
@@ -609,6 +606,32 @@ describe("config", () => {
       limit: 80,
       newWithinDays: 180,
     });
+  });
+});
+
+describe("LLM providers", () => {
+  it("orders freellm auto first and NVIDIA models as fallback", () => {
+    expect(defaultConfig.models.map((m) => `${m.provider}:${m.id}`)).toEqual([
+      "freellm:auto",
+      "nvidia:z-ai/glm-5.3-flash",
+      "nvidia:moonshotai/kimi-k3",
+      "nvidia:google/gemma-4-31b-it",
+    ]);
+  });
+
+  it("loads provider URLs and keys from the environment", () => {
+    expect(loadProviders({ LLM_BASE_URL: "https://x.test/v1/", LLM_API_KEY: "", NVIDIA_API_KEY: "n" })).toEqual({
+      freellm: { baseUrl: "https://x.test/v1", apiKey: "" },
+      nvidia: { baseUrl: "https://integrate.api.nvidia.com/v1", apiKey: "n" },
+    });
+    expect(loadProviders({})).toEqual({
+      freellm: { baseUrl: "https://freellm.hellvyn.id/v1", apiKey: "" },
+      nvidia: { baseUrl: "https://integrate.api.nvidia.com/v1", apiKey: "" },
+    });
+  });
+
+  it("falls back to the default freellm URL when LLM_BASE_URL is empty", () => {
+    expect(loadProviders({ LLM_BASE_URL: "" }).freellm.baseUrl).toBe("https://freellm.hellvyn.id/v1");
   });
 });
 
@@ -1203,5 +1226,72 @@ describe("runDailyJob with leftover Brevo settings", () => {
     expect(stats.assessed).toBe(3);
     expect(stats.run_error).toBeUndefined();
     expect(Object.keys(stats).some((k) => k.startsWith("digests_"))).toBe(false);
+  });
+});
+
+describe("runDailyJob LLM providers", () => {
+  const ENV = {
+    SUPABASE_URL: "http://127.0.0.1:54321",
+    SUPABASE_SERVICE_ROLE_KEY: "service-key",
+    LLM_BASE_URL: "https://llm.test/v1/",
+    NVIDIA_API_KEY: "nvidia-test-key",
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const sse = (model: string, content: string): Response =>
+    new Response(
+      `data: ${JSON.stringify({ model, choices: [{ delta: { content }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+      { status: 200 },
+    );
+
+  it.each([
+    ["an empty LLM_API_KEY sends no Authorization", "", undefined],
+    ["a set LLM_API_KEY is sent as a bearer token", "llm-test-key", "Bearer llm-test-key"],
+  ])("calls freellm auto first, then NVIDIA when auto answers unparsable JSON: %s", async (_name, llmKey, llmAuth) => {
+    const requests: { url: string; auth: string | undefined }[] = [];
+    vi.stubGlobal("fetch", async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, auth: (init?.headers as Record<string, string>)["Authorization"] });
+      if (url.startsWith("https://llm.test/")) return sse("gpt-oss:120b", "not json");
+      const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
+      const source = /^Source: (\S+)/.exec(body.messages[1]?.content ?? "")?.[1] ?? "";
+      const reply = REPLIES[source];
+      if (reply === undefined) return new Response("unknown", { status: 500 });
+      return sse("glm-served", JSON.stringify(reply));
+    });
+    const { repo, http } = setup();
+    const lines: string[] = [];
+
+    const code = await runDailyJob(
+      { ...ENV, LLM_API_KEY: llmKey },
+      { repo, http, sleep: async () => {}, now: () => NOW },
+      (line) => lines.push(line),
+    );
+
+    expect(code).toBe(0);
+    const freellm = requests.filter((r) => r.url.startsWith("https://llm.test/"));
+    const nvidia = requests.filter((r) => !r.url.startsWith("https://llm.test/"));
+    expect(new Set(freellm.map((r) => r.url))).toEqual(new Set(["https://llm.test/v1/chat/completions"]));
+    expect(new Set(freellm.map((r) => r.auth))).toEqual(new Set([llmAuth]));
+    expect(new Set(nvidia.map((r) => r.url))).toEqual(new Set(["https://integrate.api.nvidia.com/v1/chat/completions"]));
+    expect(new Set(nvidia.map((r) => r.auth))).toEqual(new Set(["Bearer nvidia-test-key"]));
+    expect(freellm).toHaveLength(4);
+    expect(nvidia).toHaveLength(4);
+
+    const attempts = repo.extractions.map((e) => [e.model, e.servedModel, e.error]);
+    expect(attempts.filter((a) => a[0] === "freellm:auto")).toEqual(
+      Array.from({ length: 4 }, () => ["freellm:auto", "gpt-oss:120b", "json_parse"]),
+    );
+    expect(attempts.filter((a) => a[0] !== "freellm:auto")).toEqual(
+      Array.from({ length: 4 }, () => ["nvidia:z-ai/glm-5.3-flash", "glm-served", null]),
+    );
+
+    const stats = JSON.parse(lines[0] ?? "{}") as Record<string, number>;
+    expect(stats.extract_ok).toBe(4);
+    expect(stats.llm_models_tripped).toBe(0);
+    expect(lines.join("\n")).not.toContain("test-key");
   });
 });

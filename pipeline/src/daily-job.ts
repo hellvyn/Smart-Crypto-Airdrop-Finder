@@ -1,7 +1,7 @@
 // The daily job behind `main.ts`: reads the environment, builds the real dependencies, runs the pipeline and
 // returns the process exit code. Split out of the entry point so tests can run it with fakes.
 import { createClient } from "@supabase/supabase-js";
-import { defaultConfig } from "./config.js";
+import { defaultConfig, loadProviders } from "./config.js";
 import { createHttp } from "./http.js";
 import { streamChat } from "./llm/nvidia.js";
 import { runDaily } from "./run.js";
@@ -24,7 +24,7 @@ export async function runDailyJob(
     log(JSON.stringify({ config_error: 1 }));
     return 1;
   }
-  const apiKey = env.NVIDIA_API_KEY ?? "";
+  const providers = loadProviders(env);
 
   let stats;
   try {
@@ -32,7 +32,7 @@ export async function runDailyJob(
       {
         repo: new SupabaseRepo(createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })),
         http: createHttp(),
-        chat: (model, messages) => streamChat(model, messages, { fetch, apiKey }),
+        chat: (model, messages) => streamChat(model, messages, { fetch, ...providers[model.provider] }),
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
         now: () => new Date(),
         ...overrides,

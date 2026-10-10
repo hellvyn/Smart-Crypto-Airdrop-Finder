@@ -73,9 +73,15 @@ async function main(): Promise<void> {
 
   await repo.saveExtraction(
     a.id,
-    { model: "m", httpStatus: 200, finishReason: "stop", latencyMs: 12.4, error: null, raw: "{}" },
+    { model: "freellm:auto", servedModel: "gpt-oss:120b", httpStatus: 200, finishReason: "stop", latencyMs: 12.4, error: null, raw: "{}" },
     "v1",
   );
+  const { data: savedExtractions, error: extractionReadError } = await admin
+    .from("extractions")
+    .select("model, served_model, latency_ms")
+    .eq("document_id", a.id);
+  assert.equal(extractionReadError, null);
+  assert.deepEqual(savedExtractions, [{ model: "freellm:auto", served_model: "gpt-oss:120b", latency_ms: 12 }]);
 
   // telegram
   const channel = `smoke_chan_${suffix}`;

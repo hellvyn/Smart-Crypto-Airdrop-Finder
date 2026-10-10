@@ -18,11 +18,13 @@ Case ids: `aio_deepbook`, `aio_variational`, `aio_abstract`, `aio_raycash`, `tg_
 ## Running
 
 ```
-NVIDIA_API_KEY=... pnpm --filter pipeline eval
+LLM_API_KEY=... NVIDIA_API_KEY=... pnpm --filter pipeline eval
 ```
 
 Cases run one at a time through `extractWithFallback` with the default models from `src/config.ts`. It prints a
-metrics table (no case text) and which model answered each case.
+metrics table (no case text) and which model answered each case (`<provider>:<id>`, e.g. `freellm:auto`).
+Providers come from the same environment as the daily job (`loadProviders`): `LLM_BASE_URL` (optional) and
+`LLM_API_KEY` (may be empty) for freellm, `NVIDIA_API_KEY` for the NVIDIA fallback models.
 
 If `NVIDIA_API_KEY` is empty the script prints a notice and continues, since a proxy may inject the key. In
 proxy-only environments set `NODE_USE_ENV_PROXY=1` so Node's `fetch` goes through the proxy.

@@ -184,6 +184,7 @@ describe("raw official URLs", () => {
   it("uses the last successful attempt", () => {
     const attempt = (error: string | null, raw: string) => ({
       model: "m",
+      servedModel: null,
       httpStatus: 200,
       finishReason: "stop",
       latencyMs: 1,

@@ -161,11 +161,16 @@ describe("MemoryRepo documents", () => {
     const d = await repo.upsertDocument(doc(), "h");
     await repo.saveExtraction(
       d.id,
-      { model: "m", httpStatus: 200, finishReason: "stop", latencyMs: 12, error: null, raw: "{}" },
+      { model: "freellm:auto", servedModel: "gpt-oss:120b", httpStatus: 200, finishReason: "stop", latencyMs: 12, error: null, raw: "{}" },
       "v1",
     );
     expect(repo.extractions).toHaveLength(1);
-    expect(repo.extractions[0]).toMatchObject({ documentId: d.id, promptVersion: "v1", model: "m" });
+    expect(repo.extractions[0]).toMatchObject({
+      documentId: d.id,
+      promptVersion: "v1",
+      model: "freellm:auto",
+      servedModel: "gpt-oss:120b",
+    });
   });
 });
 
