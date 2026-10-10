@@ -9,5 +9,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tldts": "^7.4.18"
   }
 }
