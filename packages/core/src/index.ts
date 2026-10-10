@@ -20,3 +20,5 @@ export type { DangerousAskCode } from "./risk/dangerous-asks.js";
 export { isLookalike } from "./risk/lookalike.js";
 export { assessRisk } from "./risk/assess.js";
 export type { CheckId, RiskCheck, RiskInput, RiskAssessment } from "./risk/assess.js";
+export { buildHeatmap, daysLeft, heatmapRange, localDay, mainProgress, streak, weeklyDone } from "./farming/tracker.js";
+export type { HeatLevel, HeatmapCell, HeatmapRange, TrackerCheck, TrackerTask } from "./farming/tracker.js";
