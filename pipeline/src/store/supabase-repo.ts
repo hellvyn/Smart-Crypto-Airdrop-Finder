@@ -312,6 +312,7 @@ export class SupabaseRepo implements PipelineRepo {
         .eq("project_id", projectId)
         .eq("field", "status")
         .order("at")
+        .order("seq")
         .returns<{ value: Status; at: string }[]>(),
     );
     return rows.map((r) => ({ status: r.value, at: new Date(r.at) }));
@@ -405,6 +406,7 @@ export class SupabaseRepo implements PipelineRepo {
         .select("level")
         .eq("project_id", projectId)
         .order("computed_at", { ascending: false })
+        .order("seq", { ascending: false })
         .limit(1)
         .maybeSingle<{ level: RiskLevel }>(),
     );

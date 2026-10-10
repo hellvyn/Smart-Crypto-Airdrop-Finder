@@ -124,8 +124,10 @@ export class MemoryRepo implements PipelineRepo {
   }
 
   async listPendingDocuments(limit: number): Promise<StoredDocument[]> {
+    // Order: fetched_at asc, url asc (same as SupabaseRepo).
     return [...this.documents.values()]
       .filter((d) => d.extractionStatus === "pending")
+      .sort((a, b) => a.fetchedAt.getTime() - b.fetchedAt.getTime() || compareText(a.url, b.url))
       .slice(0, limit)
       .map((d) => ({ ...d }));
   }
@@ -140,7 +142,11 @@ export class MemoryRepo implements PipelineRepo {
   }
 
   async findProjectsByNameKey(nameKey: string): Promise<ProjectRow[]> {
-    return [...this.projects.values()].filter((p) => p.nameKey === nameKey).map(cloneProject);
+    // Order: first_seen asc, slug asc (same as SupabaseRepo).
+    return [...this.projects.values()]
+      .filter((p) => p.nameKey === nameKey)
+      .sort((a, b) => a.firstSeen.getTime() - b.firstSeen.getTime() || compareText(a.slug, b.slug))
+      .map(cloneProject);
   }
 
   async createProject(p: NewProject, at: Date): Promise<ProjectRow> {
@@ -185,8 +191,10 @@ export class MemoryRepo implements PipelineRepo {
   }
 
   async listStatusEvidence(projectId: string): Promise<StatusEvidence[]> {
+    // Order: at asc, insertion order breaks ties (Array.sort is stable). SupabaseRepo orders by at, seq.
     return this.evidence
       .filter((e) => e.projectId === projectId && e.field === "status")
+      .sort((a, b) => a.at.getTime() - b.at.getTime())
       .map((e) => ({ status: e.value as Status, at: e.at }));
   }
 
@@ -236,7 +244,7 @@ export class MemoryRepo implements PipelineRepo {
     let latest: RiskRow | null = null;
     for (const r of this.riskAssessments) {
       if (r.projectId !== projectId) continue;
-      if (latest === null || r.computedAt.getTime() >= latest.computedAt.getTime()) latest = r;
+      if (latest === null || r.computedAt.getTime() >= latest.computedAt.getTime() /* ties: later insert wins */) latest = r;
     }
     return latest?.level ?? null;
   }
@@ -290,6 +298,11 @@ export class MemoryRepo implements PipelineRepo {
 
 function cloneProject(p: ProjectRow): ProjectRow {
   return { ...p, chains: [...p.chains], officialDomains: [...p.officialDomains] };
+}
+
+/** Code-unit comparison. Matches Postgres ordering of `documents.url` (declared `collate "C"`) and slugs for ASCII text. */
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function removeWhere<T>(arr: T[], pred: (x: T) => boolean): void {

@@ -73,6 +73,38 @@ describe("MemoryRepo documents", () => {
     expect(await repo.listPendingDocuments(10)).toHaveLength(2);
   });
 
+  it("orders pending documents by fetched_at then url, and a re-upserted document moves back", async () => {
+    const repo = new MemoryRepo();
+    const at = (n: number) => new Date(T0.getTime() + n * 1000);
+    await repo.upsertDocument(doc({ url: "https://x.test/a", fetchedAt: at(1) }), "a");
+    await repo.upsertDocument(doc({ url: "https://x.test/c", fetchedAt: at(2) }), "c");
+    await repo.upsertDocument(doc({ url: "https://x.test/b", fetchedAt: at(2) }), "b");
+    expect((await repo.listPendingDocuments(10)).map((d) => d.url)).toEqual([
+      "https://x.test/a",
+      "https://x.test/b",
+      "https://x.test/c",
+    ]);
+    // Equal fetched_at: url compares by byte order ("-" < "a"), as Postgres does for `url collate "C"`.
+    await repo.upsertDocument(doc({ url: "https://x.test/a-z", fetchedAt: at(2) }), "az");
+    await repo.upsertDocument(doc({ url: "https://x.test/aa", fetchedAt: at(2) }), "aa");
+    expect((await repo.listPendingDocuments(10)).map((d) => d.url).slice(1, 5)).toEqual([
+      "https://x.test/a-z",
+      "https://x.test/aa",
+      "https://x.test/b",
+      "https://x.test/c",
+    ]);
+    await repo.setExtractionStatus((await repo.upsertDocument(doc({ url: "https://x.test/a-z", fetchedAt: at(2) }), "az")).id, "done");
+    await repo.setExtractionStatus((await repo.upsertDocument(doc({ url: "https://x.test/aa", fetchedAt: at(2) }), "aa")).id, "done");
+    // Re-fetching "a" with changed content (status stays pending) gives it a newer fetched_at.
+    await repo.upsertDocument(doc({ url: "https://x.test/a", fetchedAt: at(3), text: "new" }), "a2");
+    expect((await repo.listPendingDocuments(1)).map((d) => d.url)).toEqual(["https://x.test/b"]);
+    expect((await repo.listPendingDocuments(10)).map((d) => d.url)).toEqual([
+      "https://x.test/b",
+      "https://x.test/c",
+      "https://x.test/a",
+    ]);
+  });
+
   it("finds the highest telegram message id for a channel", async () => {
     const repo = new MemoryRepo();
     expect(await repo.lastTelegramMessageId("airdropchan")).toBeNull();
@@ -157,6 +189,30 @@ describe("MemoryRepo projects", () => {
     expect(await repo.listStatusEvidence(p.id)).toEqual([{ status: "live", at: T0 }]);
   });
 
+  it("orders name-key matches by first_seen then slug", async () => {
+    const repo = new MemoryRepo();
+    const later = await repo.createProject(project({ slug: "a-late" }), new Date(T0.getTime() + 1000));
+    const z = await repo.createProject(project({ slug: "z-early" }), T0);
+    const b = await repo.createProject(project({ slug: "b-early" }), T0);
+    expect((await repo.findProjectsByNameKey("ink")).map((p) => p.id)).toEqual([b.id, z.id, later.id]);
+  });
+
+  it("lists status evidence by time, with insertion order breaking ties", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const d = await repo.upsertDocument(doc(), "h");
+    const ev = (value: string, at: Date) => ({ projectId: p.id, documentId: d.id, field: "status", value, quote: "q", at });
+    const later = new Date(T0.getTime() + 5000);
+    await repo.addEvidence(ev("ended", later));
+    await repo.addEvidence(ev("announced", T0));
+    await repo.addEvidence(ev("live", T0));
+    expect(await repo.listStatusEvidence(p.id)).toEqual([
+      { status: "announced", at: T0 },
+      { status: "live", at: T0 },
+      { status: "ended", at: later },
+    ]);
+  });
+
   it("replaces deadlines, tasks and upserts links per project", async () => {
     const repo = new MemoryRepo();
     const p = await repo.createProject(project(), T0);
@@ -218,6 +274,14 @@ describe("MemoryRepo risk and runs", () => {
     const p = await repo.createProject(project(), T0);
     await repo.saveRiskAssessment(p.id, assessment("medium"), new Date(T0.getTime() + 5000));
     await repo.saveRiskAssessment(p.id, assessment("low"), new Date(T0.getTime() + 1000));
+    expect(await repo.latestRiskLevel(p.id)).toBe("medium");
+  });
+
+  it("breaks equal computed_at ties by insertion order (latest insert wins)", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    await repo.saveRiskAssessment(p.id, assessment("high"), T0);
+    await repo.saveRiskAssessment(p.id, assessment("medium"), T0);
     expect(await repo.latestRiskLevel(p.id)).toBe("medium");
   });
 

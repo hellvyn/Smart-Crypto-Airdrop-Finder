@@ -39,6 +39,25 @@ async function main(): Promise<void> {
   assert.equal(await repo.getDocumentHash(doc("a").url), "h2");
   assert.ok((await repo.listPendingDocuments(1000)).some((d) => d.id === a.id));
 
+  // Deterministic pending order: fetched_at asc, url asc. Year-2000 dates sort before everything else.
+  const old = (n: number) => new Date(Date.UTC(2000, 0, 1, 0, 0, n));
+  // "t-b" sorts before "ta" in byte order (C collation) but after it in en_US, so this pins the collation.
+  await repo.upsertDocument(doc("ta", { fetchedAt: old(0) }), "ta");
+  await repo.upsertDocument(doc("t-b", { fetchedAt: old(0) }), "tb");
+  await repo.upsertDocument(doc("o3", { fetchedAt: old(2) }), "o3");
+  await repo.upsertDocument(doc("o1", { fetchedAt: old(1) }), "o1");
+  await repo.upsertDocument(doc("o2", { fetchedAt: old(2) }), "o2");
+  assert.deepEqual(
+    (await repo.listPendingDocuments(5)).map((d) => d.url),
+    [doc("t-b").url, doc("ta").url, doc("o1").url, doc("o2").url, doc("o3").url],
+  );
+  // A re-upsert with a newer fetched_at moves the document to the back.
+  await repo.upsertDocument(doc("o1", { fetchedAt: old(3) }), "o1");
+  assert.deepEqual(
+    (await repo.listPendingDocuments(5)).map((d) => d.url),
+    [doc("t-b").url, doc("ta").url, doc("o2").url, doc("o3").url, doc("o1").url],
+  );
+
   await repo.saveExtraction(
     a.id,
     { model: "m", httpStatus: 200, finishReason: "stop", latencyMs: 12.4, error: null, raw: "{}" },
@@ -65,7 +84,8 @@ async function main(): Promise<void> {
     { slug: `smoke-${suffix}-2`, name: "Smoke", nameKey, tokenSymbol: null, chains: [], officialDomains: [], status: "unknown", conflict: false, lookalikeOf: p.id },
     T0,
   );
-  assert.equal((await repo.findProjectsByNameKey(nameKey)).length, 2);
+  // Same first_seen, so slug breaks the tie: "smoke-<x>" before "smoke-<x>-2".
+  assert.deepEqual((await repo.findProjectsByNameKey(nameKey)).map((x) => x.id), [p.id, twin.id]);
   assert.equal(twin.lookalikeOf, p.id);
   const t1 = new Date(T0.getTime() + 1000);
   await repo.updateProject(p.id, { status: "live", conflict: true }, t1);
@@ -74,6 +94,14 @@ async function main(): Promise<void> {
   await repo.addEvidence(ev);
   await repo.addEvidence(ev);
   assert.deepEqual(await repo.listStatusEvidence(p.id), [{ status: "live", at: T0 }]);
+  // Equal `at`: insertion order decides (deriveStatus relies on a stable order).
+  const b = await repo.upsertDocument(doc("b"), "b1");
+  await repo.addEvidence({ ...ev, documentId: b.id, value: "ended", quote: "ended" });
+  await repo.addEvidence({ ...ev, documentId: b.id, value: "announced", quote: "announced" });
+  assert.deepEqual(
+    (await repo.listStatusEvidence(p.id)).map((x) => x.status),
+    ["live", "ended", "announced"],
+  );
 
   await repo.replaceTasks(p.id, a.id, ["Bridge", "Swap"]);
   await repo.replaceTasks(p.id, a.id, ["Bridge only"]);
@@ -98,51 +126,75 @@ async function main(): Promise<void> {
   await repo.saveRiskAssessment(p.id, assessment("low"), new Date(T0.getTime() + 2000));
   await repo.saveRiskAssessment(p.id, assessment("high"), new Date(T0.getTime() + 3000));
   assert.equal(await repo.latestRiskLevel(p.id), "high");
+  // Equal computed_at: the later insert wins.
+  await repo.saveRiskAssessment(p.id, assessment("low"), new Date(T0.getTime() + 3000));
+  assert.equal(await repo.latestRiskLevel(p.id), "low");
 
   const changes = await admin
     .from("project_changes")
     .select("field, old_value, new_value")
     .eq("project_id", p.id)
     .order("changed_at");
+  assert.equal(changes.error, null);
   assert.deepEqual(changes.data, [
     { field: "status", old_value: "announced", new_value: "live" },
     { field: "risk_level", old_value: null, new_value: "low" },
     { field: "risk_level", old_value: "low", new_value: "high" },
+    { field: "risk_level", old_value: "high", new_value: "low" },
   ]);
 
   // runs
   const runId = await repo.startRun(T0);
   await repo.finishRun(runId, { documents: 3, sourceFailed: 0 }, t1);
   const run = await admin.from("pipeline_runs").select("stats, finished_at").eq("id", runId).single();
+  assert.equal(run.error, null);
   assert.deepEqual(run.data?.stats, { documents: 3, sourceFailed: 0 });
 
   // purge: the smoke documents are fetched at T0, so purge relative to a far-future "now"
   const purged = await repo.purgeDocumentText(90, new Date(T0.getTime() + 100 * day));
-  assert.ok(purged >= 4);
+  assert.ok(purged >= 9);
   const after = await admin.from("documents").select("text, content_hash").eq("url", doc("a").url).single();
+  assert.equal(after.error, null);
   assert.deepEqual(after.data, { text: "", content_hash: "h2" });
   assert.equal(await repo.purgeDocumentText(90, new Date(T0.getTime() + 100 * day)), 0);
 
-  // RLS: anon reads display tables but not documents/extractions/project_changes
+  // RLS and privileges: anon reads display tables but not documents/extractions/project_changes, and cannot write.
   const anonKey = process.env.SUPABASE_ANON_KEY;
   if (anonKey) {
     const anon = createClient(url as string, anonKey, { auth: { persistSession: false } });
     const proj = await anon.from("projects").select("id").eq("id", p.id);
+    assert.equal(proj.error, null);
     assert.equal(proj.data?.length, 1);
     for (const table of ["documents", "extractions", "project_changes"]) {
       const res = await anon.from(table).select("*").limit(1);
       assert.deepEqual(res.data ?? [], [], `${table} must not be readable by anon`);
     }
-    const write = await anon.from("projects").update({ name: "hacked" }).eq("id", p.id).select();
-    assert.deepEqual(write.data ?? [], [], "anon must not update projects");
+    const update = await anon.from("projects").update({ name: "hacked" }).eq("id", p.id).select();
+    assert.ok(update.error !== null || (update.data ?? []).length === 0, "anon must not update projects");
+    const insert = await anon.from("projects").insert({
+      slug: `anon-${suffix}`, name: "x", name_key: nameKey, first_seen: T0.toISOString(), last_seen: T0.toISOString(),
+    });
+    assert.ok(insert.error !== null, "anon must not insert projects");
+    const del = await anon.from("projects").delete().eq("id", p.id).select();
+    assert.ok(del.error !== null || (del.data ?? []).length === 0, "anon must not delete projects");
+    const stillThere = await admin.from("projects").select("id, name").eq("id", p.id).single();
+    assert.equal(stillThere.error, null);
+    assert.equal(stillThere.data?.name, "Smoke");
+    const noAnonRow = await admin.from("projects").select("id").eq("slug", `anon-${suffix}`);
+    assert.equal(noAnonRow.data?.length, 0);
     console.log("rls ok");
+  } else {
+    console.log("rls checks skipped (SUPABASE_ANON_KEY not set)");
   }
 
-  // cleanup
-  await admin.from("projects").delete().in("id", [p.id, twin.id]);
-  await admin.from("documents").delete().like("source_key", `%${suffix}%`);
-  await admin.from("documents").delete().like("url", `https://t.me/${channel}/%`);
-  await admin.from("pipeline_runs").delete().eq("id", runId);
+  // cleanup (fail loudly so a broken cleanup is not silent)
+  const cleanup = [
+    await admin.from("projects").delete().in("id", [p.id, twin.id]),
+    await admin.from("documents").delete().like("source_key", `%${suffix}%`),
+    await admin.from("documents").delete().like("url", `https://t.me/${channel}/%`),
+    await admin.from("pipeline_runs").delete().eq("id", runId),
+  ];
+  for (const r of cleanup) assert.equal(r.error, null, `cleanup failed: ${r.error?.message ?? ""}`);
   console.log("repo smoke ok");
 }
 

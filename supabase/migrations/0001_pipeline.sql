@@ -5,7 +5,8 @@ create table documents (
   id uuid primary key default gen_random_uuid(),
   source_kind text not null check (source_kind in ('airdrops_io', 'telegram')),
   source_key text not null,
-  url text not null unique,
+  -- C collation: byte-order sorting, so ORDER BY url matches the in-memory repo whatever the database locale.
+  url text collate "C" not null unique,
   text text not null default '',
   content_hash text not null,
   published_at timestamptz,
@@ -57,9 +58,10 @@ create table evidence (
   value text not null,
   quote text not null,
   at timestamptz not null,
+  -- Insertion order, used as a deterministic tie-break when evidence shares the same `at`.
+  seq bigint generated always as identity,
   unique (project_id, document_id, field, value)
 );
-create index evidence_project_id_idx on evidence (project_id);
 create index evidence_document_id_idx on evidence (document_id);
 
 create table deadlines (
@@ -100,7 +102,9 @@ create table risk_assessments (
   points integer not null,
   reasons jsonb not null default '[]',
   checks jsonb not null default '[]',
-  computed_at timestamptz not null
+  computed_at timestamptz not null,
+  -- Insertion order, used as a deterministic tie-break when assessments share the same computed_at.
+  seq bigint generated always as identity
 );
 create index risk_assessments_project_computed_idx on risk_assessments (project_id, computed_at desc);
 
@@ -113,6 +117,7 @@ create table project_changes (
   new_value text not null,
   changed_at timestamptz not null
 );
+create index project_changes_project_id_idx on project_changes (project_id);
 create index project_changes_changed_at_idx on project_changes (changed_at);
 
 -- Aggregate numeric counters only (spec section 9: no emails, wallets or watchlists).
@@ -134,6 +139,11 @@ alter table links enable row level security;
 alter table risk_assessments enable row level security;
 alter table project_changes enable row level security;
 alter table pipeline_runs enable row level security;
+
+-- Defence in depth: even if a write policy is added by mistake, the web roles hold no write privileges.
+revoke insert, update, delete, truncate on
+  documents, extractions, projects, evidence, deadlines, tasks, links, risk_assessments, project_changes, pipeline_runs
+  from anon, authenticated;
 
 -- Public read on display tables only. No write policies: the pipeline writes with the service role.
 -- documents, extractions and project_changes get no policy, so anon/authenticated cannot read them.
