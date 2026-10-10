@@ -38,8 +38,10 @@ In **Settings > Secrets and variables > Actions**, add repository secrets:
 | `SITE_URL` | public base URL of the web app, e.g. `https://airdrops.example.com` (project and unsubscribe links) |
 
 The workflow installs dependencies without these secrets and only passes them to the pipeline step.
-`EMAIL_FROM` and `SITE_URL` are required once `BREVO_API_KEY` is set; a missing or invalid one stops the run with
-`{"config_error":1}` before anything is collected. Brevo setup, the Supabase Auth SMTP settings and the email
+`EMAIL_FROM` and `SITE_URL` are required once `BREVO_API_KEY` is set; a missing or invalid one fails only the
+notify stage (`run_error` 1, `failed_step` 7, exit code 1): collect, extract, score and purge still run. Only a
+missing `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` stops the run with `{"config_error":1}` before anything is
+collected. Brevo setup, the Supabase Auth SMTP settings and the email
 verification checklist are in [`docs/ops/email.md`](email.md).
 
 ## 3. Run it
@@ -50,6 +52,9 @@ verification checklist are in [`docs/ops/email.md`](email.md).
 - Two runs never overlap (`concurrency: daily-pipeline`). The job has a 60-minute limit; extraction stops starting
   LLM calls after 35 minutes (`extractBudgetMinutes`, each call cut off after 180 s) and leaves the rest pending for
   the next run.
+- The notify stage (email digest) runs after score and **before purge**, so its time counts toward the same
+  60-minute limit. Sends go out 5 at a time with a 10-second timeout each, so the worst case at the full budget of
+  240 recipients is about 8 minutes (48 rounds of 10 s) when Brevo is slow or unreachable.
 - Running it twice on the same day is safe: unchanged documents are not extracted again, and nobody gets a second
   digest (`notification_log` has one row per user per UTC day).
 
@@ -74,13 +79,15 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `digests_skipped_quota` | digests left out because the day's budget (300 × 0.8 minus digests already sent that day) ran out; deadlines go first, then risk changes |
 | `digests_failed` | digests that could not be built, sent or logged; not logged, so a later run can send them |
 | `digests_already_sent` | recipients who already got today's digest (an earlier run that day) |
+| `digests_duplicate` | digests sent but not logged because a concurrent run logged that user's digest first (the user got two emails); does not fail the job |
 | `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 5 score, 7 notify, 6 purge, in run order); the other stages still ran |
 
 The `digests_*` counters appear only when email is enabled. Recipients are users with digest on and a confirmed
 email; addresses, user ids and Brevo responses are never logged.
 
 Exit code (shown as the workflow status): **failed** when `run_error`, `source_failed`, `ingest_failed`,
-`merge_failed`, `score_failed` or `digests_failed` is above 0, or when configuration is missing (`{"config_error":1}`). Everything is
+`merge_failed`, `score_failed` or `digests_failed` is above 0 (a bad `EMAIL_FROM` or `SITE_URL` shows as
+`failed_step` 7), or when the Supabase settings are missing (`{"config_error":1}`). Everything is
 persisted before the job exits. `extract_failed` and `extract_deferred` alone do not fail the job.
 
 What to do:

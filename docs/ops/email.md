@@ -19,9 +19,12 @@ if needed `reserveRatio`) in that file.
 
 Digest rules, in short: at most one per user per UTC day, only to users with the digest turned on and a
 **confirmed** email, and only when it has content. Sections, in order: deadlines within 48 hours, status or risk
-changes since the last digest, and (only for users who opted in) new airdrops of the last 24 hours. When the
+changes since the last digest, and (only for users who opted in) new airdrops of the last 24 hours (at most 10,
+newest first; a project flagged as a lookalike of a known one is never listed). When the
 budget is too small, users with a deadline go first, then users with a risk change, then the rest. Every digest
-has an unsubscribe link, and the copy is in English.
+has an unsubscribe link (also sent as a `List-Unsubscribe` header), and the copy is in English. Project names
+come from scraped pages, so the email shows them cleaned: whitespace collapsed, anything that looks like a link or
+domain replaced by "[link removed]", and at most 80 characters. The only links in a digest point to `SITE_URL`.
 
 ## 2. Brevo setup
 
@@ -40,6 +43,12 @@ has an unsubscribe link, and the copy is in English.
    `https://airdrops.example.com`. It must be an absolute `http(s)` URL without query or fragment. Project links
    and the unsubscribe link in the digest are built only from it. Use the same value as `NEXT_PUBLIC_SITE_URL` in
    the web app.
+
+6. **Turn off click and open tracking for transactional email** in the Brevo transactional settings (the menu
+   names move between dashboard versions; look for "Tracking" under Transactional). With click tracking on, Brevo
+   rewrites every link into its own redirect URL: the digest would no longer show the real `SITE_URL` links, and
+   each user's unsubscribe token would pass through Brevo's redirector. Open tracking adds a tracking pixel we do
+   not need.
 
 Once `BREVO_API_KEY` is set, `EMAIL_FROM` and `SITE_URL` are required. A missing or invalid one fails the notify
 stage only (`failed_step` 7, exit code 1); the other stages still run (see `docs/ops/pipeline.md` for how stage
@@ -95,7 +104,8 @@ Each pipeline run prints one JSON line of numbers and stores the same numbers in
 | `digests_empty` | recipients with nothing to report today (no email sent) |
 | `digests_skipped_quota` | digests left out because today's budget ran out |
 | `digests_failed` | digests that could not be built, sent or logged |
-| `digests_already_sent` | recipients who already got today's digest (an earlier run, or a concurrent one that logged it first) |
+| `digests_already_sent` | recipients who already got today's digest from an earlier run (found in the log before sending) |
+| `digests_duplicate` | digests Brevo accepted that could not be logged because a concurrent run had already logged that user's digest for today: the user got two emails today (does not fail the job) |
 
 The `digests_*` counters are absent from the stats entirely when `BREVO_API_KEY` is unset (email disabled), so a
 missing `digests_sent` usually means the secret is not set or not reaching the job.
@@ -112,8 +122,11 @@ today from the 240 budget, and it cannot see auth emails.
 
 If `digests_skipped_quota` is above 0 on 3 consecutive days, the free plan is too small for the user base.
 Upgrade the Brevo plan, then raise `email.dailyLimit` in `pipeline/src/config.ts` to the new daily limit and
-deploy. Skipped digests are not retried automatically (a manual rerun the same day tries them again if budget remains), but users with a deadline were served first, so the damage
-is limited to the lowest-priority recipients.
+deploy. A skipped digest is not logged, so the user's last digest time does not move: their status and risk
+changes carry over into the next digest they get. Deadlines and new airdrops are taken fresh each day, so a
+deadline that has passed or a new airdrop older than 24 hours by then is not repeated. A manual rerun the same day
+tries the skipped users again if budget remains. Users with a deadline are served first, so the damage is limited
+to the lowest-priority recipients.
 
 ### `digests_failed` above 0
 
@@ -128,18 +141,23 @@ not logged, so the next run sends it again (as long as it still has content).
 - **Sent but not logged.** If the email was accepted but writing the log row failed, it counts as
   `digests_failed` (the job goes red). Re-running the workflow the same day can then send that user a second
   digest. If you see this, check the database before re-running.
-- **Which UTC day.** "Today" for the one-digest-per-day rule is the UTC date taken when the notify stage starts,
-  after the earlier stages. The scheduled run starts at 23:00 UTC, so it normally finishes the same day, but a
-  very long run that crosses 00:00 UTC logs its digests under the next date.
+- **Which UTC day.** "Today" for the one-digest-per-day rule is the UTC date of the **run start**, and the deadline
+  window, the change window and the new-airdrops window are taken from the run start too. The scheduled run starts
+  at 23:00 UTC; a long run that crosses 00:00 UTC still logs its digests under the start date, so the next day's
+  run sends normally.
 - **Same-day reruns are safe** otherwise: `notification_log` has one row per user per UTC day, so users who
   already got a digest are skipped (`digests_already_sent`).
+- **Two runs at the same time** (only possible by bypassing the workflow's concurrency group, for example running
+  the pipeline by hand while the scheduled job runs) can both send to a user before either logs it. The second log
+  write is rejected and counted as `digests_duplicate`: that user got two emails today.
 - Users who have not confirmed their email never get a digest.
 - A digest is only an email: a failed or skipped one has no effect on collecting, scoring or purging.
 
 ## 5. Unsubscribe
 
 Every digest contains a link to `<SITE_URL>/unsubscribe?token=<secret>`, where the token is the user's private
-unsubscribe token. The flow is built to survive mail clients and link scanners (Outlook and Gmail safe links)
+unsubscribe token. The same URL is sent in the `List-Unsubscribe` header, so mail clients that show an
+"Unsubscribe" button open the same page. The flow is built to survive mail clients and link scanners (Outlook and Gmail safe links)
 that open links automatically:
 
 - **GET** `/unsubscribe?token=...` only shows a page with an "Unsubscribe from daily digest" button. It changes
