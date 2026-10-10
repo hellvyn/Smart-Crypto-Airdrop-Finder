@@ -133,6 +133,40 @@ function checkOne<T>(op: string, result: { data: T | null; error: { message: str
   return data;
 }
 
+/** The part of `auth.admin` that `listConfirmedEmails` uses. */
+export interface UserLister {
+  listUsers(params: { page: number; perPage: number }): Promise<{
+    data: { users: { id: string; email?: string; email_confirmed_at?: string }[]; total?: number };
+    error: { message: string } | null;
+  }>;
+}
+
+/**
+ * Confirmed email per user id, from auth.users (only the admin API can read them). Pages until an empty page, or
+ * until `total` users (when the server reports it) have been seen. A short page is not the end: the server may cap
+ * `perPage` below what was asked. A page with no user not seen before also ends it, so a server that ignores
+ * `page` cannot loop forever.
+ */
+export async function listConfirmedEmails(admin: UserLister): Promise<Map<string, string>> {
+  const emails = new Map<string, string>();
+  const seen = new Set<string>();
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await admin.listUsers({ page, perPage: USERS_PAGE });
+    if (error) throw new Error(`supabase listDigestRecipients.users failed: ${error.message}`);
+    if (data.users.length === 0) break;
+    let added = 0;
+    for (const u of data.users) {
+      if (seen.has(u.id)) continue;
+      seen.add(u.id);
+      added += 1;
+      if (u.email && u.email_confirmed_at) emails.set(u.id, u.email);
+    }
+    if (added === 0) break;
+    if (typeof data.total === "number" && data.total > 0 && seen.size >= data.total) break;
+  }
+  return emails;
+}
+
 /** `PipelineRepo` backed by Supabase. Must use the service-role key (writes bypass RLS). */
 export class SupabaseRepo implements PipelineRepo {
   constructor(private readonly db: SupabaseClient) {}
@@ -547,16 +581,7 @@ export class SupabaseRepo implements PipelineRepo {
     );
     if (profiles.length === 0) return [];
 
-    // Confirmed emails from auth.users (only the admin API can read them).
-    const emails = new Map<string, string>();
-    for (let page = 1; ; page += 1) {
-      const { data, error } = await this.db.auth.admin.listUsers({ page, perPage: USERS_PAGE });
-      if (error) throw new Error(`supabase listDigestRecipients.users failed: ${error.message}`);
-      for (const u of data.users) {
-        if (u.email && u.email_confirmed_at) emails.set(u.id, u.email);
-      }
-      if (data.users.length < USERS_PAGE) break;
-    }
+    const emails = await listConfirmedEmails(this.db.auth.admin);
 
     const recipients: DigestRecipient[] = [];
     for (const p of profiles) {
