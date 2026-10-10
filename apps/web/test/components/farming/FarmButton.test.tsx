@@ -21,21 +21,19 @@ async function sent(button: HTMLElement, action: ReturnType<typeof vi.fn>): Prom
 }
 
 describe("FarmButton", () => {
-  it("sends a visitor to login and back to the project page, with no form", () => {
-    const { container } = render(<FarmButton projectId={PID} slug="nebula-perps" farming={null} />);
-    const link = screen.getByRole("link", { name: "Mulai garap" });
-    expect(link.getAttribute("href")).toBe(`/login?next=${encodeURIComponent("/projects/nebula-perps")}`);
-    expect(container.querySelector("form")).toBeNull();
+  it("renders nothing for a visitor: farming is for signed-in members only", () => {
+    const { container } = render(<FarmButton projectId={PID} farming={null} />);
+    expect(container.innerHTML).toBe("");
   });
 
   it("starts farming for a signed-in member who is not farming yet", async () => {
-    render(<FarmButton projectId={PID} slug="nebula-perps" farming={false} />);
+    render(<FarmButton projectId={PID} farming={false} />);
     expect(screen.queryByRole("button", { name: "Berhenti garap" })).toBeNull();
     expect(await sent(screen.getByRole("button", { name: "Mulai garap" }), actions.submitStartFarming)).toEqual({ projectId: PID });
   });
 
   it("offers Berhenti garap and a way to the tracker while farming", async () => {
-    render(<FarmButton projectId={PID} slug="nebula-perps" farming={true} />);
+    render(<FarmButton projectId={PID} farming={true} />);
     expect(screen.queryByRole("button", { name: "Mulai garap" })).toBeNull();
     expect(screen.getByRole("link", { name: "Buka Garapan saya" }).getAttribute("href")).toBe("/garapan");
     expect(await sent(screen.getByRole("button", { name: "Berhenti garap" }), actions.submitStopFarming)).toEqual({ projectId: PID });

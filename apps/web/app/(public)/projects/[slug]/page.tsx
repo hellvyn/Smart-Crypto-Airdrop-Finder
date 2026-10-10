@@ -33,7 +33,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
       <StaleBanner lastRunAt={lastRunAt} now={new Date()} />
       <div className="project-actions">
         <WatchButton projectId={project.id} slug={project.slug} watching={watching} />
-        <FarmButton projectId={project.id} slug={project.slug} farming={farming} />
+        <FarmButton projectId={project.id} farming={farming} />
       </div>
       <ProjectDetailView project={project} />
       <WalletActivitySection project={project} wallets={wallets} />

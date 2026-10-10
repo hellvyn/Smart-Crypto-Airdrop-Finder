@@ -45,12 +45,11 @@ async function startFarming(page: Page, slug: string): Promise<void> {
 const cardFor = (page: Page, name: string) => page.getByRole("article", { name });
 const todayCell = (card: Locator) => card.locator(".heat-today");
 
-test("a visitor's Mulai garap leads to login and back, and /garapan needs an account", async ({ page }) => {
+test("a visitor sees no Mulai garap on the project page, and /garapan needs an account", async ({ page }) => {
   await page.goto(`/projects/${seed.main.slug}`);
-  await expect(page.getByRole("link", { name: "Mulai garap" })).toHaveAttribute(
-    "href",
-    `/login?next=${encodeURIComponent(`/projects/${seed.main.slug}`)}`,
-  );
+  // The page did render its actions row (the visitor's watch link), but farming is for signed-in members only.
+  await expect(page.getByRole("link", { name: "Sign in to watch" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Mulai garap" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Mulai garap" })).toHaveCount(0);
   await page.goto("/garapan");
   await expect(page).toHaveURL(/\/login\?next=%2Fgarapan$/);
