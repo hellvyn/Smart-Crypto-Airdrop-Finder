@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Member bisa menandai project yang sedang digarap, mencentang task harian/mingguan hari ini, dan melihat
-konsistensinya sebagai heatmap 52 minggu + streak, semuanya privat.
+konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampanye) + streak, semuanya privat.
 
 **Architecture:**
 - Tiga tabel milik user (`farming_projects`, `farming_tasks`, `farming_checks`) dengan RLS pemilik-saja; centang lewat
@@ -13,7 +13,7 @@ konsistensinya sebagai heatmap 52 minggu + streak, semuanya privat.
 
 **Tech Stack:** Next.js 16 App Router, `@supabase/ssr`, Postgres/pgTAP, Vitest, Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` §14 (keputusan #35–#38)
+**Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` §14 (keputusan #35–#39)
 
 **Bergantung ke:** Plan 7 (akses member-only, halaman di `(app)`), Plan 4 Task 5 (`tasks.cadence`, `tasks.position`).
 **Urutan:** 7 → 4 → **8** → 5 → 6. Migrasi `0010_farming.sql`.
@@ -26,10 +26,14 @@ konsistensinya sebagai heatmap 52 minggu + streak, semuanya privat.
 - Warna heatmap 4 tingkat dari persen task Harian aktif yang dicentang: `0` = 0%, `1` = 1–49%, `2` = 50–99%,
   `3` = 100%; hari tanpa task Harian aktif = `null` (abu).
 - Streak = hari berturut-turut level `3`, berakhir hari ini atau kemarin (kalau hari ini belum `3`).
+- Rentang heatmap (spec #39): `start` = tanggal lokal `farming_projects.started_at`; `end` = deadline `snapshot` /
+  `campaign_end` (presisi `exact`/`approximate`) paling awal yang ≥ `start`; tanpa deadline `end` =
+  `max(today, start + 27 hari)`. Maksimal 364 hari: kalau lebih, `start` dimajukan ke `end − 363 hari`.
+  Hari > `today` = sel `upcoming`.
 - Mingguan = minggu ISO (Senin–Minggu) di zona waktu member.
 - Batas: 50 project aktif per member, 30 task aktif per project (pelanggaran → error `23514`, pesan Bahasa Indonesia di UI).
 - Teks UI Bahasa Indonesia (gaya "kamu"): "Mulai garap", "Berhenti garap", "Garapan saya", "Hari ini", "Mingguan",
-  "Minggu ini sudah", "Tambah task", "Ambil ulang langkah dari sumber", "Streak: {n} hari", heatmap tooltip
+  "Minggu ini sudah", "Tambah task", "Ambil ulang langkah dari sumber", "Streak: {n} hari", "Sisa {n} hari sampai snapshot", "Sisa {n} hari sampai akhir kampanye", heatmap tooltip
   "{tanggal}: {selesai}/{total} task harian".
 - Task awal cuma dari langkah `cadence` `daily`/`weekly`. Langkah `once` gak masuk tracker.
 
@@ -89,8 +93,12 @@ konsistensinya sebagai heatmap 52 minggu + streak, semuanya privat.
 - `interface TrackerTask { id: string; cadence: "daily" | "weekly"; createdDay: string; archivedDay: string | null }`
   (`createdDay`/`archivedDay` = tanggal lokal `YYYY-MM-DD`; task aktif di hari `d` kalau `createdDay <= d` dan
   (`archivedDay === null` atau `d < archivedDay`))
-- `buildHeatmap(tasks: TrackerTask[], checks: { taskId: string; day: string }[], today: string, weeks = 52): { day: string; level: HeatLevel; done: number; total: number }[]`
-  — kolom minggu Senin–Minggu, berakhir di minggu yang memuat `today`; hari setelah `today` gak dikembalikan.
+- `heatmapRange(startedDay: string, deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[], today: string): { start: string; end: string; endKind: "snapshot" | "campaign_end" | null }`
+  — aturan rentang di Global Constraints.
+- `buildHeatmap(tasks: TrackerTask[], checks: { taskId: string; day: string }[], range: { start: string; end: string }, today: string): { day: string; level: HeatLevel; done: number; total: number; upcoming: boolean }[]`
+  — satu sel per hari dari `start` sampai `end`; hari > `today` → `upcoming: true`, `level: null`.
+- `daysLeft(range, today): number | null` — hari dari `today` sampai `end` (inklusif), `null` kalau `endKind` null atau
+  `end` < `today`.
 - `streak(heat: { day: string; level: HeatLevel }[], today: string): number`
 - `weeklyDone(tasks: TrackerTask[], checks: { taskId: string; day: string }[], today: string): Record<string, boolean>` (per task weekly)
 - `localDay(now: Date, timeZone: string): string` (pakai `Intl.DateTimeFormat`, gak butuh `@types/node`)
@@ -101,13 +109,27 @@ konsistensinya sebagai heatmap 52 minggu + streak, semuanya privat.
 it("grades a day by the share of active daily tasks checked", () => {
   const tasks = [daily("a", "2026-10-01"), daily("b", "2026-10-01"), daily("c", "2026-10-01")];
   const heat = buildHeatmap(tasks, [{ taskId: "a", day: "2026-10-09" }, { taskId: "b", day: "2026-10-09" }, { taskId: "c", day: "2026-10-09" },
-    { taskId: "a", day: "2026-10-10" }], "2026-10-10");
+    { taskId: "a", day: "2026-10-10" }], { start: "2026-09-28", end: "2026-10-20" }, "2026-10-10");
   expect(at(heat, "2026-10-09")).toMatchObject({ level: 3, done: 3, total: 3 });
   expect(at(heat, "2026-10-10")).toMatchObject({ level: 1, done: 1, total: 3 });
   expect(at(heat, "2026-09-30")).toMatchObject({ level: null, total: 0 }); // before any task existed
+  expect(at(heat, "2026-10-15")).toMatchObject({ upcoming: true, level: null });
+  expect(heat.at(-1)!.day).toBe("2026-10-20");
+});
+it("spans from the start day to the earliest snapshot or campaign end", () => {
+  expect(heatmapRange("2026-10-01", [{ kind: "campaign_end", date: "2026-11-30", precision: "exact" },
+    { kind: "snapshot", date: "2026-11-15", precision: "approximate" }, { kind: "tge", date: "2026-10-20", precision: "exact" }], "2026-10-10"))
+    .toEqual({ start: "2026-10-01", end: "2026-11-15", endKind: "snapshot" });
+});
+it("runs to today (at least 4 weeks) without a deadline and caps at 364 days", () => {
+  expect(heatmapRange("2026-10-08", [], "2026-10-10")).toEqual({ start: "2026-10-08", end: "2026-11-04", endKind: null });
+  expect(heatmapRange("2025-01-01", [{ kind: "campaign_end", date: "2026-12-31", precision: "exact" }], "2026-10-10").start).toBe("2026-01-02");
+});
+it("counts days left until the end", () => {
+  expect(daysLeft({ start: "2026-10-01", end: "2026-10-20", endKind: "snapshot" }, "2026-10-10")).toBe(11);
 });
 it("counts an archived task only before it was archived", () => {
-  const heat = buildHeatmap([daily("a", "2026-10-01"), { ...daily("b", "2026-10-01"), archivedDay: "2026-10-05" }], [{ taskId: "a", day: "2026-10-06" }], "2026-10-10");
+  const heat = buildHeatmap([daily("a", "2026-10-01"), { ...daily("b", "2026-10-01"), archivedDay: "2026-10-05" }], [{ taskId: "a", day: "2026-10-06" }], { start: "2026-10-01", end: "2026-10-31" }, "2026-10-10");
   expect(at(heat, "2026-10-04")!.total).toBe(2); expect(at(heat, "2026-10-06")).toMatchObject({ total: 1, level: 3 });
 });
 it("ends the streak today or yesterday", () => {
@@ -146,7 +168,8 @@ it("computes the local day in a time zone", () => {
     belum ada), arsipkan task `origin = 'source'` yang teksnya sudah gak ada di sumber.
   - `setCheck(db, taskId, done: boolean): Promise<boolean>` → RPC `toggle_farming_check`.
   - `getFarmingBoard(db, now: Date): Promise<FarmingCard[]>` — per project aktif: nama, slug, deadline terdekat, task
-    aktif (urut `position`), `checkedToday`, `heatmap` (dari `buildHeatmap`, 52 minggu), `streak`, `weeklyDone`. Tanggal
+    aktif (urut `position`), `checkedToday`, `range` (dari `heatmapRange` dengan deadline project), `heatmap` (`buildHeatmap` atas rentang itu),
+    `daysLeft`, `streak`, `weeklyDone`. Tanggal
     lokal dari `profiles.timezone` + `localDay`.
   - `isFarming(db, projectId): Promise<boolean>`.
 - `actions.ts` (semua `requireUser`, validasi `isUuid`, `revalidatePath("/garapan")`): `submitStartFarming`,
@@ -171,15 +194,17 @@ it("computes the local day in a time zone", () => {
 - Test: `apps/web/test/components/farming/*.test.tsx`, `apps/web/e2e/farming.spec.ts`
 
 **Interfaces:**
-- `Heatmap({ cells, label })`: grid 7 baris × 52–53 kolom, warna dari `level` (4 tingkat + abu), label bulan di atas,
+- `Heatmap({ cells, label })`: grid 7 baris × jumlah minggu rentang (1–53 kolom), warna dari `level` (4 tingkat + abu),
+  sel `upcoming` bergaris tanpa warna, label bulan di atas,
   `aria-label`/`title` per sel sesuai teks Global Constraints; elemen grafis bukan satu-satunya informasi (ada
-  ringkasan "Streak: {n} hari" dan "{x} dari {y} task hari ini").
+  ringkasan "Streak: {n} hari", "{x} dari {y} task hari ini", dan "Sisa {n} hari sampai snapshot" / "Sisa {n} hari sampai
+  akhir kampanye" kalau ada deadline).
 - `FarmingCard`: nama project (link ke detail), deadline terdekat, checklist Harian (checkbox form → `submitCheck`),
   Mingguan dengan "Minggu ini sudah", form "Tambah task", tombol "Ambil ulang langkah dari sumber", "Berhenti garap",
   heatmap.
 - Kosong: "Kamu belum menggarap project apa pun. Buka sebuah airdrop dan klik Mulai garap."
 
-- [ ] **Step 1: Test yang gagal** — komponen: `Heatmap` merender 364–371 sel dengan kelas level yang benar dan tooltip;
+- [ ] **Step 1: Test yang gagal** — komponen: `Heatmap` merender satu sel per hari rentang dengan kelas level yang benar, sel `upcoming` bergaris, dan tooltip;
   `FarmingCard` tanpa task harian menampilkan "Belum ada task harian. Tambah task sendiri."; e2e: login → buka project →
   "Mulai garap" → `/garapan` menampilkan kartu; centang satu task → sel hari ini naik level dan teks "1 dari N task
   hari ini"; uncentang → turun; "Berhenti garap" → kartu hilang; user lain gak melihat apa pun di `/garapan`.

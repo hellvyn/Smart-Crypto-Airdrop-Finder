@@ -78,6 +78,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 33 | Akses data | Semua data airdrop cuma untuk user login, dikunci di RLS **dan** routing; non-login cuma landing (`/`) + `/login`. Menggantikan rencana paywall berbayar di web |
 | 34 | Info perubahan | Ditampilkan di web ("Perubahan sejak kunjungan terakhir"), gak lewat email |
 | 35 | Tracker garapan | Checklist + heatmap **per project** (bukan per wallet), warna = % task harian dicentang (4 tingkat), streak hari 100% |
+| 39 | Rentang heatmap | Sesuai masa garap: dari "Mulai garap" sampai snapshot/akhir kampanye paling awal; tanpa deadline sampai hari ini (min. 4 minggu); maks. 52 minggu |
 | 36 | Privasi tracker | Cuma member itu sendiri yang bisa melihat |
 | 37 | Asal task tracker | Langkah Harian/Mingguan dari sumber + task buatan member; centang cuma untuk hari ini (zona waktu member) |
 | 38 | Coach → tracker | Rekomendasi AI Farming Coach menampilkan tombol "Mulai garap" yang memakai aksi yang sama dengan halaman project |
@@ -455,12 +456,12 @@ Konsekuensi desain:
 ## 14. Tracker "Garapan saya" (keputusan #35–#38)
 
 **Tujuan:** kebiasaan harian. Member menandai project yang sedang digarap, mencentang task harian, dan melihat
-konsistensinya sebagai heatmap setahun (seperti grafik kontribusi GitHub). Tracker manual, tanpa cek onchain.
+konsistensinya sebagai heatmap sepanjang masa garap airdrop itu (seperti grafik kontribusi GitHub). Tracker manual, tanpa cek onchain.
 
 **Alur:**
 - Halaman project: tombol "Mulai garap" / "Berhenti garap" (beda dari Watch: Watch = memantau).
 - Halaman `/garapan` ("Garapan saya"): satu kartu per project aktif berisi checklist hari ini (task Harian), task
-  Mingguan (indikator "minggu ini sudah"), heatmap 52 minggu, streak, dan deadline terdekat. "Berhenti garap"
+  Mingguan (indikator "minggu ini sudah"), heatmap masa garap, streak, dan sisa hari sampai snapshot/akhir kampanye. "Berhenti garap"
   mengarsipkan; riwayat tetap.
 - AI Farming Coach (A5) memakai aksi `startFarming` yang sama.
 
@@ -469,6 +470,10 @@ konsistensinya sebagai heatmap setahun (seperti grafik kontribusi GitHub). Track
 - Warna kotak = persentase task Harian yang aktif hari itu dan dicentang: 0% / 1–49% / 50–99% / 100%. Hari tanpa task
   Harian aktif = kosong (abu).
 - Streak = jumlah hari berturut-turut 100%, berakhir hari ini (atau kemarin kalau hari ini belum 100%).
+- **Rentang heatmap (keputusan #39):** dari hari "Mulai garap" (tanggal lokal) sampai deadline `snapshot` atau
+  `campaign_end` (presisi `exact`/`approximate`) paling awal yang ≥ hari mulai. Hari yang belum lewat sampai deadline
+  tampil sebagai kotak "akan datang" + teks "Sisa {n} hari sampai {snapshot|akhir kampanye}". Tanpa deadline: dari hari
+  mulai sampai hari ini, minimal 4 minggu. Maksimal 52 minggu (yang dipotong bagian paling awal).
 - Task Mingguan gak masuk persentase harian; "sudah" kalau dicentang di minggu ISO yang sama (zona waktu member).
 - Task awal = langkah `daily`/`weekly` dari sumber (terjemahan AI kalau ada) saat "Mulai garap". Member bisa menambah dan
   mengarsipkan task sendiri. "Ambil ulang langkah dari sumber" menambah langkah baru (berdasar teks) dan mengarsipkan yang
