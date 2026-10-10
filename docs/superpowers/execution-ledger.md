@@ -87,3 +87,11 @@ Ruling: `/?deleted=1` stays on the landing with a notice — keeps the delete-ac
 - P7 Task 3: carried to P7.T4: the header links `/airdrops`, `/#cara` and `/#jejak` need T4's routes and ids. `<main>` is still max-width 48rem (T4 widens it to 1240 px with the 3 px container).
 - G1-1a merged: e6429b5, 9d2a066. Tests: core 134, pipeline 203, web 273 unit · typecheck ok · pgTAP 114 · e2e 63/63.
 - G1-1b started: P7.T2 ∥ P7.T5 from 96431c4 (workflow run wf_a2dd4ed7-55e)
+- P7 Task 2: complete (commits 96431c4..1a23920, review clean). Finding: `[auth.email] enable_signup = false` disables email login entirely, so signups are refused only by `[auth] enable_signup = false` (e2e proves the anon `signUp` returns `signup_disabled`). `siteUrl()` removed (no callers). `NEXT_PUBLIC_SITE_URL` kept.
+- P7 Task 2: minor (deferred): `auth-form.tsx` `message` state branch has no caller now. `login/page.tsx` metadata title still "Smart Airdrop Finder" (Plan 6 translates old pages). `NEXT_PUBLIC_SITE_URL` is now read only by Playwright and CI.
+- P7 Task 2: owner action: the hosted Supabase project must also disable signups (config.toml is local only). Covered in `docs/ops/web.md` (owner to-do).
+- P7 Task 5: complete (commits 96431c4..5c8860b, review clean). Controller verified the docs against the merged T2: the 0007 object list and the config.toml signup line match.
+- P7 Task 5: minor (deferred): the `web.md` curl fallback puts the new password in `-d` (visible in shell history). Use `-d @body.json`.
+- G1-1b merged: 615393e, 2bb58a8. Stack restarted with the new config.toml. Tests: core 134, pipeline 203, web 244 unit · typecheck ok · pgTAP 110 · e2e 60/60.
+- G1-1c ruling: landing anchors follow the locked mockup (`#cara`, `#jejak`; the header from T3 links them), not the plan's `#kenapa`. Ruling: mockup ids win — the brief says "persis mockup" and the header already uses them — costs one id rename if the owner prefers `#kenapa`.
+- G1-1c ruling: the header "Track record" link points at a block Plan 6 Task 4 renders later, so until then it scrolls to the top. Ruling: keep the link — removing and re-adding it is churn — costs a dead anchor until Plan 6.
