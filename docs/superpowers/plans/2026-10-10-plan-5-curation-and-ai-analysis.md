@@ -136,7 +136,8 @@ it("only applies to live, announced and speculative", () => {
   - Baca (#45): `project_signals` dan `link_checks` `for select to anon, authenticated using (true)`; `curations`
     policy select `to anon, authenticated using (true)` + `revoke select on curations from anon` lalu
     `grant select (id, project_id, passed, tab, status_at, ended_on, computed_at, seq) on curations to anon`;
-    `ai_analyses` dua policy: `to anon using (kind in ('scam','contradictions'))` dan `to authenticated using (true)`.
+    `ai_analyses` dua policy: `to anon using (kind = 'contradictions')` dan `to authenticated using (true)` (spec #54:
+    hasil scam analyst khusus member; flag scam yang ketemu tetap publik sebagai alasan risiko `ai_scam_pattern`).
     Revoke insert/update/delete/truncate dari anon dan authenticated di semua tabel baru.
 - Produces (repo):
   - `replaceSignals(projectId: string, signals: NewSignal[], at: Date): Promise<void>` (hapus semua sinyal project, tulis ulang)

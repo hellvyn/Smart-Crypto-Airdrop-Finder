@@ -159,12 +159,22 @@ a{color:#111111}a:hover{color:#C2410C}
 </div>
 </sc-for>
 </div>
-<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px">Advanced check</div>
+<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:4px">
+<span style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Advanced check</span>
+<sc-if value="{{visitor}}" hint-placeholder-val="{{ true }}">
+<span style="font-size:13px;color:#2B2B28">Hasil lengkapnya buat member. Kalau ada yang ketemu masalah, tetap kami tampilin ke semua orang.</span>
+</sc-if>
+</div>
 <div style="border:2px solid #111111">
 <sc-for list="{{extraChecks}}" as="x" hint-placeholder-count="3">
 <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:10px 12px;border-bottom:2px solid #111111">
 <span style="display:flex;flex-direction:column;gap:2px;min-width:0"><b style="font-size:14px;text-transform:uppercase">{{x.title}}</b><span style="font-size:13px;color:#2B2B28">{{x.detail}}</span></span>
+<sc-if value="{{member}}" hint-placeholder-val="{{ false }}">
 <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:18px;color:#1F7A45;text-transform:uppercase;white-space:nowrap">{{x.result}}</span><span style="font-size:11px;font-weight:700;text-transform:uppercase;border:2px solid #111111;padding:1px 6px;white-space:nowrap">{{x.source}}</span></span>
+</sc-if>
+<sc-if value="{{visitor}}" hint-placeholder-val="{{ true }}">
+<span style="{{x.stampStyle}}">Member only</span>
+</sc-if>
 </div>
 </sc-for>
 </div>
@@ -243,6 +253,7 @@ class Component extends DCLogic {
   constructor(props) { super(props); this.state = { member: false }; }
   renderVals() {
     const member = this.state.member;
+    const mStamp = (deg) => 'display:inline-block;white-space:nowrap;font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:15px;letter-spacing:1px;text-transform:uppercase;color:#C2410C;border:3px solid #C2410C;padding:3px 10px;transform:rotate(' + deg + 'deg)';
     const bOn = 'background:#111111;color:#F7F7F2;border:0;font:inherit;font-size:12px;font-weight:700;padding:6px 10px;cursor:pointer';
     const bOff = 'background:transparent;color:#111111;border:0;font:inherit;font-size:12px;font-weight:600;padding:6px 10px;cursor:pointer';
     return {
@@ -273,9 +284,9 @@ class Component extends DCLogic {
         { code: 'Cek 04', source: 'GoPlus Security', title: 'Database phishing', result: 'Bersih', detail: 'Domain official plus 7 link claim dan app dicocokin satu-satu ke database phishing.' }
       ],
       extraChecks: [
-        { title: 'Riwayat hack', result: '0 kasus', source: 'DefiLlama Hacks', detail: 'Nama project dicocokin ke database exploit DeFi.' },
-        { title: 'Cross-check antar source', result: '4 source', source: 'AirdropIQ', detail: 'Status, deadline, dan link dibandingin antar source. Yang beda cerita kami tulis di bagian 02.' },
-        { title: 'AI baca halaman claim', result: 'Gak ada pola scam', source: 'Analisis AI', detail: 'Dicari: desakan waktu, "connect wallet buat cek eligibility", admin palsu, minta seed phrase secara halus.' }
+        { stampStyle: mStamp(-4), title: 'Riwayat hack', result: '0 kasus', source: 'DefiLlama Hacks', detail: 'Nama project dicocokin ke database exploit DeFi.' },
+        { stampStyle: mStamp(3), title: 'Cross-check antar source', result: '4 source', source: 'AirdropIQ', detail: 'Status, deadline, dan link dibandingin antar source. Yang beda cerita kami tulis di bagian 02.' },
+        { stampStyle: mStamp(-2), title: 'AI baca halaman claim', result: 'Gak ada pola scam', source: 'Analisis AI', detail: 'Dicari: desakan waktu, "connect wallet buat cek eligibility", admin palsu, minta seed phrase secara halus.' }
       ]
     };
   }
