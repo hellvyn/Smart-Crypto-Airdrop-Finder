@@ -78,9 +78,76 @@ Script spike cuma buat sekali pakai dan **sengaja gak di-commit**.
 [INFERENCE] Model yang muncul di daftar belum tentu bisa dipanggil, dan model bisa end of life. Desain harus bisa ganti model lewat
 config dan punya fallback.
 
+### Spike 3: LLM NVIDIA pakai API key (2026-10-10)
+
+Script dan output mentah sekali pakai, **gak di-commit**. Ground truth dinilai manual oleh Claude dari teks sumber.
+Sampel kecil (8 teks, 1 run per kombinasi), jadi angka di bawah **indikatif, bukan benchmark**.
+
+**Input uji** (teks asli, diambil 2026-10-10):
+- 4 halaman airdrops.io: DeepBook (Sui, claim live), Variational (Arbitrum, points), Abstract (chain ditutup, tim batal bikin token), Raycash (Polygon, points tanpa token)
+- 4 pesan `t.me/s/airdrops_io`: $FLOP (testnet), $INK (rumor), berita hack Ledger (kasus negatif, bukan airdrop), weekly radar (28 project dalam 1 pesan)
+- Skema output: `is_airdrop_content` + `projects[]` {name, token_symbol, chains, status live/announced/speculative/ended, status_evidence, tasks, deadline, deadline_text, official_urls, confidence}
+
+**Ketersediaan model** (dari 15 kandidat chat yang di-ping):
+
+| Hasil | Model |
+|---|---|
+| ✅ Bisa dipanggil | `moonshotai/kimi-k3`, `z-ai/glm-5.3`, `z-ai/glm-5.3-flash`, `google/gemma-4-31b-it`, `openai/gpt-oss-20b`, `nvidia/nemotron-3-super-120b-a12b`, `nvidia/nemotron-3.5-lightning-30b-a3b`, `nvidia/nemotron-3-ultra-550b-a55b`, `meta/muse-glimmer-30b` |
+| ❌ 404 "Function not found for account" (pakai key) | `nvidia/llama-3.1-nemotron-70b-instruct`, `nvidia/llama-3.1-nemotron-ultra-253b-v1`, `nvidia/nemotron-nano-3-30b-a3b`, `moonshotai/kimi-k2.6`, `mistralai/mistral-large-2-instruct` |
+| ❌ 502 di semua 18 request (ping, non-streaming, streaming) | `deepseek-ai/deepseek-v4.1-flash` |
+
+**Temuan teknis**
+
+| # | Temuan | Label |
+|---|---|---|
+| 1 | Mode non-streaming: **semua 502 "upstream request failed" jatuh di 30,1–30,8 detik**, semua yang sukses < 27 detik. Pakai `stream: true`, 5/6 kasus yang tadinya 502 sukses dengan total waktu sampai 113 detik (TTFB 1–5 detik) | [FACT] |
+| 2 | Ada timeout ~30 detik buat byte pertama, entah di gateway NVIDIA atau proxy sandbox. **Wajib streaming** | [INFERENCE] |
+| 3 | Gagal diam-diam: HTTP 200 tapi konten kosong. Penyebabnya: stream putus tanpa `finish_reason` (nemotron-ultra), `finish=stop` dengan konten kosong (kimi-k3, 2 dari 4 percobaan di weekly radar), dan `finish=length` karena token habis buat reasoning. Validasi harus cek `finish_reason == stop` + JSON valid, gak cukup lihat HTTP 200 | [FACT] |
+| 4 | Model reasoning ngabisin 15–34 ribu karakter buat "mikir". Di input panjang, `max_tokens` 4096–8192 habis sebelum JSON keluar | [FACT] |
+| 5 | **Switch buat matiin reasoning beda per model.** `chat_template_kwargs: {thinking/enable_thinking: false}` jalan di kimi-k3, nemotron-super, nemotron-lightning, dan nemotron-ultra, tapi gak ngaruh di GLM. `reasoning_effort: "low"` jalan di GLM-5.3, GLM-5.3-flash, gpt-oss, dan muse, tapi gak ngaruh di nemotron-super dan nemotron-lightning. Jadi config harus per model | [FACT] |
+| 6 | Nemotron-lightning dan nemotron-ultra (dalam mode reasoning) nulis proses mikir di field `content`, makanya JSON gak bisa di-parse | [FACT] |
+| 7 | `response_format: json_object` gak nyelesain masalah reasoning yang ngabisin token (GLM, nemotron tetap `length`) | [FACT] |
+| 8 | Respon SSE gak nyantumin charset. Client harus maksa UTF-8, kalau gak karakter jadi rusak (`Ã\x97`) | [FACT] |
+| 9 | 429 "Too Many Requests" muncul 3× dari ~200 request, waktu 6–8 request jalan paralel. **Gak ada header rate-limit** di respon | [FACT] |
+| 10 | Limit free tier: sumber sekunder (forum dan blog) nyebut ~40 RPM, tapi belum ada dokumen resmi. Dokumen ToS resmi gak bisa diakses dari sandbox (domain diblokir) | [UNKNOWN] |
+
+**Kualitas ekstraksi** (matriks streaming, max_tokens 4096, reasoning default)
+
+| Model | Sukses /8 | Status benar /dinilai (+parsial) | Jebakan Abstract (`ended`) | Weekly radar (28 project) | p50 latensi |
+|---|---|---|---|---|---|
+| kimi-k3 | 7 (1× 429) | 5/5 | gak kenilai (429) | 22–25 project, deadline 5/6 | 9,7 s |
+| glm-5.3 | 7 | 5/6 (+1) | ✅ | 27 project, deadline 6/6 (pakai `reasoning_effort: low`) | 44 s |
+| glm-5.3-flash | 7 | 5/6 (+1) | ✅ | 23 project, deadline 5/6 (pakai `low`) | 43 s |
+| gemma-4-31b-it | 8 | 4/6 (+2) | ✅ | 22–24 project, deadline 4/6 | 9,8 s |
+| muse-glimmer-30b | 8 | 5/6 (+1) | ✅ | 12–15 project (recall rendah) | 68 s |
+| nemotron-3-ultra | 8 | 2/6 (+3) | ❌ `speculative` | 19–28 project, deadline 4–5/6 | 25 s |
+| gpt-oss-20b | 7 | 2/6 (+2) | ❌ `speculative` | 6–23 project, gak stabil | 5,2 s |
+| nemotron-3-super | 6 | 2/4 (+1) | ❌ `speculative` | 14 project (pakai `nothink`) | 12,9 s |
+| nemotron-3.5-lightning | 8 | 1/2 (+1), 5 parse gagal | – | 20 project (pakai `nothink`) | 136 s |
+
+"Parsial" = jawab `announced` padahal seharusnya `speculative`/`live`. Kesalahan paling sering: $FLOP/$INK (testnet/rumor) dilabelin `announced`.
+
+**Temuan kualitas yang ngaruh ke desain**
+
+- [FACT] **0 URL halusinasi** di semua output: setiap `official_urls` ada persis di teks sumber.
+- [FACT] URL resmi di airdrops.io disembunyiin di balik redirect `/visit/<kode>/`, dan tujuannya bawa **kode referral airdrops.io** (`?ref=OMNISHUKOC2R`, `?ref=qYPVZrJw`, `/r/V8P3TX`). Model ikut nyimpen link itu. [INFERENCE] Pipeline harus resolve redirect lalu buang parameter referral **sebelum** dikirim ke LLM dan sebelum ditampilin ke user.
+- [FACT] Halaman Abstract nulis "Airdrop ends 2026-12-15" di header, padahal isinya bilang tim batal bikin token dan tanggal itu cuma tanggal chain dimatiin. Hampir semua model ngisi `deadline=2026-12-15`. [INFERENCE] Skema butuh jenis deadline (claim / snapshot / tarik dana / kampanye), gak cukup satu field.
+- [FACT] Halaman airdrops.io punya sidebar "related airdrops". gpt-oss nyedot 6 project dari situ sebagai entri terpisah. [INFERENCE] Scraper harus motong cuma konten utama.
+- [FACT] Halaman sumber bisa kontradiktif (Variational: alokasi 50% vs 32%, "TGE Q4 2026" vs "belum umumin tanggal TGE"). [INFERENCE] Output LLM tetap harus dianggap klaim, bukan fakta, dan ditampilin dengan `status_evidence`.
+- [FACT] Kasus negatif (berita hack Ledger) ditolak dengan benar oleh **semua** model yang ngasih jawaban.
+- [FACT] "approximately Oct 11" diubah jadi tanggal pasti oleh hampir semua model, padahal aturan prompt bilang `null`. Aturan soal deadline perkiraan kurang dipatuhi.
+
+**Rekomendasi kandidat** [INFERENCE, confidence sedang: sampel kecil, 1 run]
+
+1. **`moonshotai/kimi-k3`** (utama): status paling akurat, cepat (p50 ~10 s). Risiko: kadang balikin konten kosong dengan `finish=stop`, dan paling sering kena 429. Pakai `thinking: false` buat input panjang.
+2. **`z-ai/glm-5.3-flash`** dengan `reasoning_effort: low` (fallback 1): lolos jebakan Abstract, recall weekly radar bagus, ~40 s.
+3. **`google/gemma-4-31b-it`** (fallback 2): non-reasoning, 8/8 sukses, lolos jebakan Abstract, cepat. Lebih sering salah ke `announced`, dan TTFB ~20 s di input panjang (aman cuma kalau streaming).
+
+Implikasi buat arsitektur: LLM dipanggil lewat adapter dengan config per model (nama model, switch reasoning, max_tokens), streaming, validasi `finish_reason` + skema JSON, retry ke model fallback, dan antrian dengan batas konkurensi kecil (≤ 4) karena 429 tanpa header.
+
 ## 4. Yang masih [UNKNOWN] (harus diverifikasi)
 
-1. **NVIDIA dengan API key**: model mana yang bisa dipanggil, kualitas ekstraksi JSON, limit free tier, syarat pemakaian buat produk publik
+1. **NVIDIA**: ToS resmi API trial (boleh atau gak buat produk publik) dan limit RPM resmi. Belum ada konsistensi kualitas antar-run (temperature 0 tetap pernah kosong). Umur model (end of life) gak bisa diprediksi
 2. Query aktivitas address di Sui GraphQL
 3. API key gratis toncenter (TON): limit
 4. Indexer Cosmos buat chain yang node REST-nya gak mengindeks transaksi
@@ -98,9 +165,7 @@ Prasyarat (sudah atau sedang dikerjakan owner):
   `toncenter.com`, `api.mainnet.aptoslabs.com`, `rest.cosmos.directory`, `integrate.api.nvidia.com`
 
 Langkah berikutnya, urut:
-1. **Spike LLM NVIDIA**: pakai `NVIDIA_API_KEY`, ambil daftar model, pilih 2–3 kandidat, tes ekstraksi info airdrop dari
-   teks pengumuman asli (misalnya pesan dari `t.me/s/...` atau halaman airdrops.io) ke format JSON (nama project, chain, status, task, deadline,
-   URL resmi). Catat latensi, error, limit, dan model yang end of life.
+1. ~~**Spike LLM NVIDIA**~~: selesai 2026-10-10, lihat Spike 3 di bagian 3.
 2. (Opsional) Tes riwayat address di Sui GraphQL.
 3. Lanjut brainstorming: pertanyaan klarifikasi yang tersisa (misalnya akun user atau anonim, privasi wallet, frekuensi scan),
    lalu 2–3 opsi pendekatan arsitektur, desain per bagian, dan spec di `docs/superpowers/specs/`.
