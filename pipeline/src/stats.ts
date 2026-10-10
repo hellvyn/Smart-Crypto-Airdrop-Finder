@@ -28,6 +28,8 @@ export interface DailyStats extends RunStats {
   phishing_list_failed: number;
   /** Of the failed domains, those GoPlus still rate-limited (429 or code 4029) after the one retry. */
   phishing_list_rate_limited: number;
+  /** Of the failed domains, those never asked because the GoPlus time budget ran out or too many failed in a row. */
+  phishing_list_skipped: number;
   /** Projects whose risk assessment threw. */
   score_failed: number;
   source_failed: number;
@@ -55,6 +57,7 @@ export function emptyStats(): DailyStats {
     phishing_list_ran: 0,
     phishing_list_failed: 0,
     phishing_list_rate_limited: 0,
+    phishing_list_skipped: 0,
     score_failed: 0,
     source_failed: 0,
     ingest_failed: 0,
