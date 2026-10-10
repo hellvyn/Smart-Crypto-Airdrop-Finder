@@ -10,6 +10,8 @@ export interface SpeculativeCandidate {
   tvl: number;
   change7d: number | null;
   category: string;
+  /** When DefiLlama first listed the protocol, or null when it gave no usable listing time. */
+  listedAt: Date | null;
 }
 
 const protocolSchema = z.object({
@@ -23,6 +25,11 @@ const protocolSchema = z.object({
   category: z.string(),
   gecko_id: z.string().nullish(),
   symbol: z.string(),
+  /** Unix seconds. */
+  listedAt: z.number().nullish(),
+  rugged: z.boolean().nullish(),
+  deadFrom: z.unknown().nullish(),
+  misrepresentedTokens: z.boolean().nullish(),
 });
 
 const TWITTER_HANDLE = /^[A-Za-z0-9_]{1,15}$/;
@@ -33,14 +40,24 @@ function twitterHandle(raw: string | null | undefined): string | null {
   return TWITTER_HANDLE.test(handle) ? handle : null;
 }
 
+const DAY_MS = 86_400_000;
+
+/** A Date for a DefiLlama unix-seconds listing time, or null when it is missing not a positive finite number, or out of Date range. */
+function listingDate(seconds: number | null | undefined): Date | null {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return null;
+  const date = new Date(seconds * 1000);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 /**
- * Picks DefiLlama protocols that look like pre-token ("speculative") airdrop candidates:
- * no CoinGecko id, no ticker symbol, TVL above the threshold, and not in an excluded category.
- * Sorted by 7-day TVL change (desc, nulls last), ties broken by TVL (desc), then limited.
+ * Picks DefiLlama protocols that look like pre-token ("speculative") airdrop candidates (spec 15.1):
+ * no CoinGecko id, no ticker symbol, TVL of at least the threshold, not in an excluded category, and not
+ * flagged rugged, dead or misrepresented. Protocols listed within `newWithinDays` of `now` come first, then
+ * 7-day TVL change (desc, nulls last), then TVL (desc); the result is limited.
  */
 export function selectSpeculativeCandidates(
   protocols: unknown[],
-  opts: { minTvl: number; excludedCategories: string[]; limit: number },
+  opts: { minTvl: number; excludedCategories: string[]; limit: number; newWithinDays: number; now: Date },
 ): SpeculativeCandidate[] {
   const excluded = new Set(opts.excludedCategories.map((c) => c.toLowerCase()));
   const candidates: SpeculativeCandidate[] = [];
@@ -52,8 +69,10 @@ export function selectSpeculativeCandidates(
 
     if (p.gecko_id) continue;
     if (p.symbol !== "-") continue;
-    if (typeof p.tvl !== "number" || !Number.isFinite(p.tvl) || p.tvl <= opts.minTvl) continue;
+    if (typeof p.tvl !== "number" || !Number.isFinite(p.tvl) || p.tvl < opts.minTvl) continue;
     if (excluded.has(p.category.toLowerCase())) continue;
+    if (p.rugged === true || p.misrepresentedTokens === true) continue;
+    if (p.deadFrom !== null && p.deadFrom !== undefined && p.deadFrom !== "") continue;
 
     candidates.push({
       name: p.name,
@@ -64,10 +83,15 @@ export function selectSpeculativeCandidates(
       tvl: p.tvl,
       change7d: typeof p.change_7d === "number" && Number.isFinite(p.change_7d) ? p.change_7d : null,
       category: p.category,
+      listedAt: listingDate(p.listedAt),
     });
   }
 
+  const youngSince = opts.now.getTime() - opts.newWithinDays * DAY_MS;
+  const isYoung = (c: SpeculativeCandidate): boolean => c.listedAt !== null && c.listedAt.getTime() >= youngSince;
+
   candidates.sort((a, b) => {
+    if (isYoung(a) !== isYoung(b)) return isYoung(a) ? -1 : 1;
     if (a.change7d !== b.change7d) {
       if (a.change7d === null) return 1;
       if (b.change7d === null) return -1;

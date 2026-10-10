@@ -22,7 +22,8 @@ export function contentHash(text: string): string {
 
 /**
  * Document for a DefiLlama candidate. Only stable fields go into the text (and so the hash), so daily TVL
- * moves do not count as a change; TVL and the 7-day change appear only in the evidence quote.
+ * moves do not count as a change; TVL and the 7-day change appear only in the evidence quote. The listing
+ * date (day precision) is stable and tells the reader how new the protocol is.
  */
 export function defillamaDocument(candidate: SpeculativeCandidate, now: Date): CollectedDocument {
   const text = [
@@ -30,6 +31,7 @@ export function defillamaDocument(candidate: SpeculativeCandidate, now: Date): C
     `Category: ${candidate.category}`,
     `Chains: ${candidate.chains.length > 0 ? candidate.chains.join(", ") : "n/a"}`,
     `Website: ${candidate.url ?? "n/a"}`,
+    `Listed on DefiLlama: ${candidate.listedAt ? candidate.listedAt.toISOString().slice(0, 10) : "n/a"}`,
     "No token listed on DefiLlama.",
   ].join("\n");
   return {
@@ -47,6 +49,7 @@ export function defillamaDocument(candidate: SpeculativeCandidate, now: Date): C
 async function collectDefillama(
   http: Http,
   config: PipelineConfig,
+  now: Date,
 ): Promise<{ failed: boolean; candidates: SpeculativeCandidate[] }> {
   const res = await http.get(PROTOCOLS_URL);
   if (res.status !== 200) return { failed: true, candidates: [] };
@@ -58,7 +61,7 @@ async function collectDefillama(
   }
   // An empty list means the API changed or broke, not that there are no protocols.
   if (!Array.isArray(raw) || raw.length === 0) return { failed: true, candidates: [] };
-  return { failed: false, candidates: selectSpeculativeCandidates(raw, config.defillama) };
+  return { failed: false, candidates: selectSpeculativeCandidates(raw, { ...config.defillama, now }) };
 }
 
 /** Stores a collected document when its hash is new or changed. */
@@ -112,7 +115,7 @@ export async function collectSources(
 
   let llama: { failed: boolean; candidates: SpeculativeCandidate[] };
   try {
-    llama = await collectDefillama(http, config);
+    llama = await collectDefillama(http, config, now);
   } catch {
     llama = { failed: true, candidates: [] };
   }
