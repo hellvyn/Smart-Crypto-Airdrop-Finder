@@ -7,6 +7,7 @@ import { ProjectRow } from "../components/ProjectRow";
 import { RiskBadge } from "../components/RiskBadge";
 import { StaleBanner } from "../components/StaleBanner";
 import { StatusBadge } from "../components/StatusBadge";
+import { WalletActivity } from "../components/WalletActivity";
 import type { ProjectDetail } from "../lib/view";
 
 afterEach(cleanup);
@@ -285,5 +286,75 @@ describe("Pagination", () => {
   it("links back to the last page when the page is past the end", () => {
     render(<Pagination page={9} pageSize={50} total={55} filters={{}} />);
     expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe("/?page=2");
+  });
+});
+
+describe("WalletActivity", () => {
+  const summary = {
+    chain: "ethereum",
+    txCount: 142,
+    firstTxAt: new Date("2021-03-05T10:00:00Z"),
+    lastTxAt: new Date("2026-09-30T23:59:59Z"),
+    activeMonths: { value: 12, exact: true },
+    source: "blockscout",
+    fetchedAt: new Date("2026-10-10T00:00:00Z"),
+  };
+
+  it("shows the transaction count, first and last dates and active months", () => {
+    render(<WalletActivity chainLabel="Ethereum" result={{ kind: "ok", summary, cached: false }} />);
+    expect(
+      screen.getByText("Wallet activity on Ethereum: 142 transactions, first 2021-03-05, last 2026-09-30, active 12 months"),
+    ).toBeTruthy();
+  });
+
+  it("appends + to the months when the count is not exact", () => {
+    render(<WalletActivity chainLabel="Ethereum" result={{ kind: "ok", summary: { ...summary, activeMonths: { value: 40, exact: false } }, cached: true }} />);
+    expect(screen.getByText(/active 40\+ months/)).toBeTruthy();
+  });
+
+  it("uses singular forms", () => {
+    render(
+      <WalletActivity
+        chainLabel="Ethereum"
+        result={{ kind: "ok", summary: { ...summary, txCount: 1, activeMonths: { value: 1, exact: true } }, cached: false }}
+      />,
+    );
+    expect(screen.getByText(/: 1 transaction, first .*active 1 month$/)).toBeTruthy();
+  });
+
+  it("says 'No activity on Ethereum' for a wallet without transactions", () => {
+    render(
+      <WalletActivity
+        chainLabel="Ethereum"
+        result={{
+          kind: "ok",
+          summary: { ...summary, txCount: 0, firstTxAt: null, lastTxAt: null, activeMonths: { value: 0, exact: true } },
+          cached: false,
+        }}
+      />,
+    );
+    expect(screen.getByText("No activity on Ethereum")).toBeTruthy();
+  });
+
+  it("an unavailable provider shows the retry copy and never a zero", () => {
+    const { container } = render(<WalletActivity chainLabel="Ethereum" result={{ kind: "unavailable" }} />);
+    expect(screen.getByText("Data unavailable, try again later.")).toBeTruthy();
+    expect(container.textContent).not.toMatch(/0/);
+    expect(container.textContent).not.toMatch(/No activity/);
+  });
+
+  it("explains the rate limit, the other failures, and never says eligible", () => {
+    const kinds = [
+      [{ kind: "rate_limited" }, "You've reached 10 checks per hour. Try again later."],
+      [{ kind: "chain_not_supported" }, "Chain not supported yet."],
+      [{ kind: "not_owner" }, "That wallet isn't in your list."],
+      [{ kind: "signed_out" }, "Sign in to check wallet activity."],
+    ] as const;
+    for (const [result, text] of kinds) {
+      const { container, unmount } = render(<WalletActivity chainLabel="Ethereum" result={result} />);
+      expect(screen.getByText(text)).toBeTruthy();
+      expect(container.textContent?.toLowerCase()).not.toContain("eligib");
+      unmount();
+    }
   });
 });
