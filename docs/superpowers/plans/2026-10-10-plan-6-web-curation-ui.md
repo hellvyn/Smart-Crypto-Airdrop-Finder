@@ -58,6 +58,7 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   | bagian halaman project | "01 · AI verdict", "02 · Sumber yang beda cerita", "03 · Step garap", "04 · Security check", "05 · Estimasi effort", "06 · Kenapa lolos"; samping "Ringkasan", "Update terbaru" |
   | navigasi & akun | "Airdrop", "Kenapa AirdropIQ", "Track record", "Garapan saya", "Watchlist", "Login", "← Balik ke list" |
   | footer | "Not financial advice. Tetap DYOR sebelum connect wallet." |
+  | hasil garapan (#51) | "Dapet berapa dari airdrop ini?", "Gak dapet", "Hasil kamu", "Total hasil garapan", "Boleh dipakai anonim buat rata-rata hasil member", "Rata-rata member yang garap {project}: ≈ ${x} (dari {n} member yang mau berbagi)" |
   Sumber kebenaran teks: mockup `docs/design/airdropiq-c/*.dc.html` (spec §16). Kalau glosarium dan mockup beda,
   glosarium yang dipakai.
 - Gak pernah ada teks "aman", "safe", "dijamin", atau "pasti untung".
@@ -308,6 +309,46 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   setelah "Tandai sudah dibaca" hilang.
 - [ ] **Step 2–4:** gagal → implementasi → pgTAP + test + e2e lulus.
 - [ ] **Step 5: Commit** — `git commit -m "feat(web): changes since last visit for watched projects"`
+
+---
+
+### Task 8: Hasil garapan (#51)
+
+**Files:**
+- Modify: `supabase/migrations/0012_curated_list.sql` (tabel + fungsi di bawah), `apps/web/lib/farming.ts`,
+  `apps/web/app/(app)/garapan/actions.ts`, `apps/web/components/farming/FarmingCard.tsx`, `apps/web/app/(app)/garapan/page.tsx`
+- Create: `apps/web/lib/prices.ts`, `apps/web/components/farming/ResultBox.tsx`, `supabase/tests/farming_results.test.sql`
+- Test: `apps/web/test/prices.test.ts`, `apps/web/test/components/farming/ResultBox.test.tsx`, e2e `farming.spec.ts`
+
+**Interfaces:**
+- SQL: `farming_results (user_id uuid, project_id uuid, amount numeric null check (amount > 0 and amount <= 1e15),
+  no_reward boolean not null default false, claimed_on date null, usd_at_claim numeric null, share_anonymous boolean not
+  null default false, updated_at timestamptz not null default now(), primary key (user_id, project_id), foreign key
+  (user_id, project_id) references farming_projects on delete cascade, check (no_reward or amount is not null))`. RLS
+  pemilik saja (select/insert/update/delete `user_id = (select auth.uid())`); anon gak punya akses.
+- SQL: `farming_result_stats(p_project_id uuid) returns table (contributors integer, avg_usd numeric)` security definer,
+  `set search_path = ''`, execute cuma `authenticated`: menghitung baris `share_anonymous` dengan `usd_at_claim` (yang
+  `no_reward` dihitung $0); `avg_usd` = null kalau `contributors < 5`. Gak pernah mengembalikan `user_id` atau jumlah per
+  orang.
+- `lib/prices.ts`: `geckoIdFor(db, projectId): Promise<string | null>` dari `project_signals` `coingecko_listed`;
+  `priceOn(geckoId, day): Promise<number | null>` (CoinGecko history, server-side, cache Next 24 jam) dan
+  `priceNow(geckoId): Promise<number | null>` (cache 1 jam). Error, 429, atau tanpa key → `null`, gak throw. [UNKNOWN:
+  batas API gratis CoinGecko dicek saat implementasi; kalau butuh key, `COINGECKO_API_KEY` server-side saja.]
+- `actions.ts`: `submitResult(projectId, { amount, claimedOn, noReward, shareAnonymous })` cuma untuk project yang
+  ended (curation `tab = 'ended'` atau status `ended`); validasi angka > 0, tanggal gak di masa depan; `usd_at_claim` =
+  `amount × priceOn` kalau ada.
+- UI persis mockup `CGarapan.dc.html`: "Dapet berapa dari airdrop ini?" (Jumlah token, Tanggal claim, "Simpan", "Gak
+  dapet"); "Hasil kamu" ({jumlah} {simbol}, "≈ ${x} waktu claim ({tanggal}) · sekarang ≈ ${y}", link "Ubah", checkbox
+  "Boleh dipakai anonim buat rata-rata hasil member"); harga gak ketemu → "Harga belum ketemu, jumlah token tetap
+  tersimpan."; ringkasan atas "Total hasil garapan" (jumlah `usd_at_claim`); rata-rata cuma kalau stats gak null.
+
+- [ ] **Step 1: Test yang gagal** — pgTAP: user A gak bisa baca/ubah hasil user B; `farming_result_stats` dengan 4
+  kontributor → `avg_usd` null, dengan 5 → angka; baris `share_anonymous = false` gak dihitung; amount 0 ditolak
+  `23514`. Vitest: `priceOn` dengan fetch 429 → `null`; `submitResult` menolak project yang belum ended dan tanggal
+  besok. Komponen: `ResultBox` tanpa harga menampilkan teks "Harga belum ketemu". e2e: project ended → isi 1250 →
+  "Hasil kamu" tampil dan "Total hasil garapan" bertambah.
+- [ ] **Step 2–4:** gagal → implementasi → pgTAP + `pnpm --filter web test && pnpm --filter web e2e` lulus.
+- [ ] **Step 5: Commit** — `git commit -m "feat(web): record airdrop results with USD value and opt-in anonymous average"`
 
 ---
 

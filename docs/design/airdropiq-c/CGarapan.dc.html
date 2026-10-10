@@ -45,7 +45,8 @@ a{color:#111111}a:hover{color:#C2410C}
 </div>
 <div style="display:flex;border:3px solid #111111;background:#FFFFFF">
 <div style="padding:10px 16px;border-right:2px solid #111111"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;line-height:1">{{projectCount}}</div><div style="font-size:12px;font-weight:700;text-transform:uppercase">project digarap</div></div>
-<div style="padding:10px 16px"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;line-height:1;color:#1F7A45">{{todayDone}}/{{todayTotal}}</div><div style="font-size:12px;font-weight:700;text-transform:uppercase">daily task hari ini</div></div>
+<div style="padding:10px 16px;border-right:2px solid #111111"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;line-height:1;color:#1F7A45">{{todayDone}}/{{todayTotal}}</div><div style="font-size:12px;font-weight:700;text-transform:uppercase">daily task hari ini</div></div>
+<div style="padding:10px 16px;background:#FFF1EA"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;line-height:1">≈ $412</div><div style="font-size:12px;font-weight:700;text-transform:uppercase">total hasil garapan</div></div>
 </div>
 </div>
 
@@ -108,6 +109,39 @@ a{color:#111111}a:hover{color:#C2410C}
 <sc-if value="{{p.noDaily}}" hint-placeholder-val="{{ false }}">
 <div style="font-size:15px;color:#3D3D3A;border:2px dashed #CFCFC8;padding:12px">{{p.emptyText}}</div>
 </sc-if>
+<sc-if value="{{p.hasResult}}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:8px;border:3px solid #111111;background:#FFF1EA;padding:14px">
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:20px;text-transform:uppercase">Hasil kamu</span>
+<button type="button" style="background:transparent;border:0;font:inherit;font-size:13px;font-weight:600;text-decoration:underline;cursor:pointer;padding:0">Ubah</button>
+</div>
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:36px;line-height:1">{{p.resultAmount}}</span>
+<span style="font-size:15px">{{p.resultValue}}</span>
+<span style="font-size:13px;color:#3D3D3A">{{p.resultNote}}</span>
+<label style="display:flex;align-items:center;gap:10px;font-size:14px;padding-top:4px;cursor:pointer">
+<input type="checkbox" checked style="width:20px;height:20px;accent-color:#111111">
+Boleh dipakai anonim buat rata-rata hasil member
+</label>
+</div>
+</sc-if>
+<sc-if value="{{p.askResult}}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:10px;border:3px solid #111111;padding:14px">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:20px;text-transform:uppercase">Dapet berapa dari airdrop ini?</span>
+<span style="font-size:14px;color:#3D3D3A">Isi sendiri ya. Nilai dolarnya kami hitung dari harga di tanggal claim.</span>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<label style="display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;flex:1 1 140px">Jumlah token
+<input type="text" inputmode="decimal" placeholder="contoh: 1250" style="height:44px;border:2px solid #111111;padding:0 10px;font:inherit;font-size:15px">
+</label>
+<label style="display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;flex:1 1 140px">Tanggal claim
+<input type="date" style="height:44px;border:2px solid #111111;padding:0 10px;font:inherit;font-size:15px">
+</label>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<button type="button" style="background:#FF5A1F;border:3px solid #111111;font:inherit;font-size:14px;font-weight:800;text-transform:uppercase;padding:10px 16px">Simpan</button>
+<button type="button" style="background:#FFFFFF;border:2px solid #111111;font:inherit;font-size:14px;font-weight:700;text-transform:uppercase;padding:10px 16px">Gak dapet</button>
+</div>
+</div>
+</sc-if>
 <sc-if value="{{p.hasWeekly}}" hint-placeholder-val="{{ true }}">
 <div style="display:flex;flex-direction:column;gap:6px;padding-top:6px">
 <span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:18px;text-transform:uppercase">Weekly</span>
@@ -154,7 +188,7 @@ a{color:#111111}a:hover{color:#C2410C}
 </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2100}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2800}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -212,29 +246,30 @@ class Component extends DCLogic {
     const nebula = build(Date.UTC(2026, 7, 24), Date.UTC(2026, 10, 30), levelOf(nebulaChecks));
     const orbitChecks = this.state.checks.orbit;
     const orbit = build(Date.UTC(2026, 8, 21), Date.UTC(2026, 9, 25), levelOf(orbitChecks));
-    const astraEnd = Date.UTC(2026, 9, 5);
-    const astra = (() => {
-      const start = Date.UTC(2026, 6, 13);
+    const endedWeeks = (start, end) => {
       const mondayOffset = (new Date(start).getUTCDay() + 6) % 7;
       const weeks = [];
-      for (let w = start - mondayOffset * DAY; w <= astraEnd; w += 7 * DAY) {
+      for (let w = start - mondayOffset * DAY; w <= end; w += 7 * DAY) {
         const days = [];
         for (let i = 0; i < 7; i++) {
           const t = w + i * DAY;
-          if (t < start || t > astraEnd) { days.push({ style: cell + 'background:transparent', title: '' }); continue; }
+          if (t < start || t > end) { days.push({ style: cell + 'background:transparent', title: '' }); continue; }
           const lvl = pattern[Math.round((t - start) / DAY) % pattern.length];
           days.push({ style: cell + colors[lvl], title: fmt(t) + ': ' + ['0%', '1–49%', '50–99%', '100%'][lvl] + ' daily task' });
         }
         weeks.push({ days });
       }
       return { weeks };
-    })();
+    };
+    const astra = endedWeeks(Date.UTC(2026, 6, 13), Date.UTC(2026, 9, 5));
+    const myriad = endedWeeks(Date.UTC(2026, 7, 3), Date.UTC(2026, 8, 28));
 
     const projects = [
       {
         name: 'Nebula Perps', meta: 'Perp DEX · Arbitrum · mulai garap 24 Agu', stampTop: 'LOLOS', stampBottom: '4/4 CEK', stampStyle: stamp(-7, '#1F7A45'),
         countdown: 'Sisa 51 hari sampai snapshot', countdownStyle: 'font-size:14px;font-weight:700;background:#111111;color:#F7F7F2;padding:6px 10px',
         streak: nebula.streak, done: nebulaChecks.filter(Boolean).length, total: nebulaChecks.length,
+        hasResult: false, askResult: false, resultAmount: '', resultValue: '', resultNote: '',
         hasMain: true, main: mkDaily('nebulaMain', ['Bridge aset ke Arbitrum lewat bridge official', 'Connect akun X di halaman points', 'Deposit minimal $100 ke akun trading', 'Isi kode referral dari teman (opsional)']),
         mainDone: this.state.checks.nebulaMain.filter(Boolean).length, mainTotal: this.state.checks.nebulaMain.length,
         hasDaily: true, noDaily: false, emptyText: '', daily: mkDaily('nebula', ['Trade minimal sekali di app official-nya', 'Check-in harian di halaman points', 'Cek posisi terbuka sebelum tidur']),
@@ -245,6 +280,7 @@ class Component extends DCLogic {
         name: 'Orbit Chain', meta: 'L2 · Ethereum · mulai garap 21 Sep', stampTop: 'LOLOS', stampBottom: '4/4 CEK', stampStyle: stamp(5, '#1F7A45'),
         countdown: 'Sisa 16 hari sampai akhir campaign', countdownStyle: 'font-size:14px;font-weight:700;background:#FF5A1F;border:2px solid #111111;padding:4px 10px',
         streak: orbit.streak, done: orbitChecks.filter(Boolean).length, total: orbitChecks.length,
+        hasResult: false, askResult: false, resultAmount: '', resultValue: '', resultNote: '',
         hasMain: true, main: mkDaily('orbitMain', ['Bridge ETH ke Orbit lewat bridge official', 'Mint NFT pass di halaman campaign']),
         mainDone: this.state.checks.orbitMain.filter(Boolean).length, mainTotal: this.state.checks.orbitMain.length,
         hasDaily: true, noDaily: false, emptyText: '', daily: mkDaily('orbit', ['Swap kecil di DEX official', 'Bridge balik kalau saldo L2 di bawah $20']),
@@ -257,7 +293,18 @@ class Component extends DCLogic {
         streak: 0, done: 0, total: 0, hasMain: false, main: [], mainDone: 0, mainTotal: 0,
         hasDaily: false, noDaily: true, emptyText: 'Campaign udah ended. Checklist dikunci, riwayat garapanmu tetap tersimpan di sini.', daily: [],
         hasWeekly: false, weekly: [],
+        hasResult: true, askResult: false, resultAmount: '1.250 ASTRA', resultValue: '≈ $412 waktu claim (7 Okt) · sekarang ≈ $380',
+        resultNote: 'Rata-rata member yang garap Astra Swap: ≈ $296 (dari 23 member yang mau berbagi).',
         active: false, weeks: astra.weeks, rangeLabel: '13 Jul sampai 5 Okt (ended)', note: 'Heatmap berhenti di tanggal ended.'
+      },
+      {
+        name: 'Myriad Points', meta: 'Social · Ethereum · mulai garap 3 Agu', stampTop: 'ENDED', stampBottom: 'ARSIP', stampStyle: stamp(6, '#55554F'),
+        countdown: 'Ended 28 Sep 2026', countdownStyle: 'font-size:14px;font-weight:700;border:2px solid #55554F;color:#55554F;padding:4px 10px',
+        streak: 0, done: 0, total: 0, hasMain: false, main: [], mainDone: 0, mainTotal: 0,
+        hasDaily: false, noDaily: false, emptyText: '', daily: [],
+        hasWeekly: false, weekly: [],
+        hasResult: false, askResult: true, resultAmount: '', resultValue: '', resultNote: '',
+        active: false, weeks: myriad.weeks, rangeLabel: '3 Agu sampai 28 Sep (ended)', note: 'Udah claim? Isi hasilnya di kiri biar total garapanmu ke-update.'
       }
     ];
     const todayDone = nebulaChecks.filter(Boolean).length + orbitChecks.filter(Boolean).length;

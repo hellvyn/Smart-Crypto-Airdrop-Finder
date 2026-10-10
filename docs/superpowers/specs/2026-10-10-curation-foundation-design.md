@@ -98,6 +98,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 48 | Desain | Arah C **"Sertifikat inspeksi"**: terang, garis hitam tebal, oranye keselamatan, strip hazard, cap bundar "LOLOS 4/4 CEK". Mockup acuan `docs/design/airdropiq-c/` (§16) |
 | 49 | Gaya tulisan | Ditulis dengan skill humanizer: tanpa klise AI dan em dash, panjang kalimat bervariasi, nada santai dengan opini "kami", boleh campur istilah Inggris yang umum di crypto Indonesia. Teks final = glosarium Plan 6 (§16) |
 | 50 | Task utama di tracker | Langkah sekali jalan (`once`) ikut masuk "Garapan saya" sebagai "Task utama" (dicentang sekali, gak masuk heatmap/streak). "Tambah task" dikecilkan jadi link teks "+ Tambah task sendiri" |
+| 51 | Hasil garapan | Member mengisi sendiri hasil airdrop yang udah ended (jumlah token + tanggal claim, atau "Gak dapet"); nilai dolar dihitung dari harga CoinGecko di tanggal claim dan hari ini. Privat. Opt-in "boleh dipakai anonim" untuk rata-rata hasil member, tampil kalau ≥ 5 member ikut. Deteksi otomatis dari wallet ditunda (risiko token palsu, cakupan chain) |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -519,6 +520,12 @@ konsistensinya sebagai heatmap sepanjang masa garap airdrop itu (seperti grafik 
   mengarsipkan task sendiri. "Ambil ulang langkah dari sumber" menambah langkah baru (berdasar teks) dan mengarsipkan yang
   sudah hilang; centang lama tetap tersimpan dengan teks task-nya.
 - Batas: 50 project aktif per member, 30 task aktif per project.
+- **Hasil garapan (#51):** kartu project yang ended menanyakan "Dapet berapa dari airdrop ini?" (jumlah token + tanggal
+  claim, atau "Gak dapet"). Nilai dolar dari harga CoinGecko (`gecko_id` dari sinyal `coingecko_listed` yang cocok
+  domain); kalau gak ada `gecko_id`, cuma jumlah token. Di atas halaman: "Total hasil garapan". Privat untuk member itu.
+  Opt-in anonim untuk "Rata-rata member yang garap {project}: ≈ ${x} (dari {n} member yang mau berbagi)", tampil kalau
+  n ≥ 5. Token yang masuk wallet **gak pernah** dicatat otomatis: token palsu dengan simbol sama sering dikirim ke banyak
+  wallet.
 
 **Data dan keamanan:** tabel `farming_projects`, `farming_tasks`, `farming_checks`; RLS: tiap baris cuma bisa dibaca
 dan diubah pemiliknya (`user_id = auth.uid()`); centang lewat fungsi `SECURITY DEFINER` yang menghitung tanggal lokal di
