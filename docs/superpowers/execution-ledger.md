@@ -216,3 +216,4 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 - P8 Task 2: complete (commits a583164..bedbce6, review clean). The no-deadline range is 365 cells (ruled).
 - P8 Task 2: minor (deferred): the unused `_today` param. `toMs`/`fromMs` do not validate input. `localDay` produces garbage when a part is missing.
 - G3-3a merged. Tests: core 194, pipeline 369, web 285 unit · typecheck ok · pgTAP 209 · e2e 67/67.
+- G3-3b started: P8.T3 ∥ P8.FX3 from 772ec41
