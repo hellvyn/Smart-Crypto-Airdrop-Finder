@@ -318,6 +318,7 @@ git commit -m "feat(llm): multi-provider models, freellm auto first with NVIDIA 
   - `latest_update: { text: string; date: string | null } | null` (`date` = YYYY-MM-DD kalender valid)
   - `claimed_backers: { investor: string; quote: string }[]`
   - `capital_required: "none" | "low" | "high" | "unknown"` (default `"unknown"`)
+  - `capital_min_usd: number | null` (default `null`; kalau angka harus > 0 dan finite; spec #52)
   - `tasks` tetap ada untuk kompatibilitas; `postProcess` mengisinya dari `steps[].text` kalau `tasks` kosong.
   - Helper core baru: `quoteInSource(quote: string, text: string): boolean` (bandingkan setelah whitespace dirapatkan
     dan lowercase).
@@ -331,6 +332,7 @@ git commit -m "feat(llm): multi-provider models, freellm auto first with NVIDIA 
 it("accepts v3 fields and defaults missing ones", () => {
   const p = extractionSchema.parse({ is_airdrop_content: true, projects: [minimalV2Project] }).projects[0]!;
   expect(p.steps).toEqual([]); expect(p.capital_required).toBe("unknown"); expect(p.latest_update).toBeNull();
+  expect(p.capital_min_usd).toBeNull();
 });
 it("rejects an unknown cadence and an invalid latest_update date", () => {
   expect(() => extractionSchema.parse(withSteps([{ text: "x", cadence: "hourly" }]))).toThrow();
@@ -369,6 +371,8 @@ Prompt: tambah field ke blok Schema, plus definisi:
 - `claimed_backers`: investor yang disebut teks mendukung project; `quote` = kalimat aslinya. Jangan menebak.
 - `capital_required`: `high` kalau teks menyebut deposit/modal minimal ≥ $500 atau setara, `low` kalau di bawahnya atau
   cuma gas, `none` kalau gratis, `unknown` kalau gak disebut.
+- `capital_min_usd`: angka deposit/modal minimal dalam USD kalau teks menyebutnya persis (USDC/USDT dihitung 1:1),
+  selain itu null. Jangan mengonversi dari ETH atau token lain, jangan menebak.
 Aturan untrusted-text yang ada tetap di atas aturan baru.
 
 - [ ] **Step 4: Jalankan test, pastikan lulus**
@@ -402,7 +406,8 @@ git commit -m "feat(extract): v3 schema - steps with cadence, key parameters, so
   - `ProjectInput` mendapat `steps`, `facts: { field: string; value: string; quote: string }[]`.
   - Field evidence baru (tabel `evidence` yang ada, pola hapus-lalu-tulis per dokumen seperti `status`):
     `key_parameter:<name>`, `source_rating:<name>`, `latest_update` (value = tanggal atau ""), `claimed_backer`
-    (value = nama investor), `capital_required` (value = level; gak ditulis kalau `unknown`).
+    (value = nama investor), `capital_required` (value = level; gak ditulis kalau `unknown`), `capital_min_usd`
+    (value = angka sebagai teks; gak ditulis kalau null).
   - `ProjectForScoring` mendapat `steps: { text: string; cadence: string }[]` dan `facts: { field: string; value: string; quote: string }[]`
     (dipakai Plan 5).
 

@@ -58,6 +58,7 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   | bagian halaman project | "01 · AI verdict", "02 · Sumber yang beda cerita", "03 · Step garap", "04 · Security check", "05 · Estimasi effort", "06 · Kenapa lolos"; samping "Ringkasan", "Update terbaru" |
   | navigasi & akun | "Airdrop", "Kenapa AirdropIQ", "Track record", "Garapan saya", "Watchlist", "Login", "← Balik ke list" |
   | footer | "Not financial advice. Tetap DYOR sebelum connect wallet." |
+  | sub-filter modal (#52) | label "Modal:"; pilihan "Semua" / "Modal dengkul" / "Ada deposit" (+ " · {n}"); tag baris "Modal dengkul" / "Ada deposit · mulai ${x}" / "Ada deposit" / "Modal belum jelas" |
   | hasil garapan (#51) | "Dapet berapa dari airdrop ini?", "Gak dapet", "Hasil kamu", "Total hasil garapan", "Boleh dipakai anonim buat rata-rata hasil member", "Rata-rata member yang garap {project}: ≈ ${x} (dari {n} member yang mau berbagi)" |
   Sumber kebenaran teks: mockup `docs/design/airdropiq-c/*.dc.html` (spec §16). Kalau glosarium dan mockup beda,
   glosarium yang dipakai.
@@ -160,11 +161,15 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   - `public_list` (security_invoker) = kolom `project_list` + `tab`, `ended_on`, `checked_at` (`computed_at` curation
     terbaru), `signals` (jsonb array `{kind, value, verified}` dari `project_signals`), `claim_open_checked` (boolean:
     ada deadline `claim` ≥ hari ini dan semua link `claim` project berstatus `official` di `link_checks`), cuma baris
-    yang curation terbarunya (`computed_at desc, seq desc`) `passed = true`. **Tanpa** `worth_level`. `grant select` ke
+    yang curation terbarunya (`computed_at desc, seq desc`) `passed = true`, `capital` (`free` | `deposit` | `unknown`)
+    dan `capital_min_usd` (numeric | null) dari evidence terbaru per dokumen: ada `low`/`high` → `deposit`; semua
+    yang menyebut `none` → `free`; gak ada → `unknown`; angka = `min(capital_min_usd)` (#52). **Tanpa** `worth_level`. `grant select` ke
     anon dan authenticated (#45).
   - `curated_list` = `public_list` + `worth_level`; `grant select` ke **authenticated saja**.
 - Produces (TS):
-  - `listCurated(db, tab: Tab, f: ListFilters & { worth?: WorthLevel[] }, page: number, member: boolean): Promise<CuratedPage>`;
+  - `listCurated(db, tab: Tab, f: ListFilters & { worth?: WorthLevel[]; capital?: CapitalFilter }, page: number, member: boolean): Promise<CuratedPage>`;
+    `CapitalFilter = "all" | "free" | "deposit"`; `CuratedPage` mendapat `capitalCounts: { all; free; deposit }`
+    (dihitung dari tab yang sama setelah filter lain, sebelum filter modal);
     member: dari `curated_list`, urutan worth (`high`→`insufficient_data`), sinyal terkuat (vc_backer → tvl →
     coingecko_listed → curated_source), deadline terdekat, `last_seen` desc. Pengunjung: dari `public_list`, urutan
     `checked_at` desc lalu nama, filter `worth` diabaikan. Tab `ended` (keduanya): `ended_on` desc, lalu nama; tanpa
@@ -175,11 +180,16 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   - `getRunSummary(db): Promise<{ checked: number; passed: number; at: Date } | null>` dari `pipeline_runs` sukses terakhir
     (`stats.curation_checked`, `stats.curation_passed`).
   - `parseTab(v: string | undefined): Tab` (`live_now` | `early_bets` | `ended`, default `live_now`).
+  - `parseCapital(v: string | undefined): CapitalFilter` (default `all`) dan
+    `capitalLabel(capital: "free" | "deposit" | "unknown", minUsd: number | null): string` (teks glosarium #52;
+    angka diformat `id-ID` tanpa desimal, mis. "Ada deposit · mulai $1.000").
 
 - [ ] **Step 1: Test yang gagal** — pgTAP: project dengan curation terbaru `passed=false` gak muncul walau yang lama
   `passed=true`; project tanpa curation gak muncul; anon bisa select `public_list` tapi gak punya kolom `worth_level`
   dan ditolak di `curated_list` (`42501`); authenticated bisa keduanya. Vitest: `parseTab("x") === "live_now"`,
-  `parseTab("ended") === "ended"`; `checkedLabel` untuk 0/1/3 hari dan > 48 jam; `getTrackRecord` → `null` saat
+  `parseTab("ended") === "ended"`; `parseCapital("x") === "all"`; `capitalLabel("deposit", 1000)` =
+  "Ada deposit · mulai $1.000", `capitalLabel("deposit", null)` = "Ada deposit"; pgTAP: project dengan evidence `none`
+  dari satu dokumen dan `high` dari dokumen lain → `capital = 'deposit'`; `checkedLabel` untuk 0/1/3 hari dan > 48 jam; `getTrackRecord` → `null` saat
   `total = 9`; urutan
   `listCurated` sesuai aturan (mock rows), termasuk tab `ended` urut `ended_on` terbaru dulu; `getFarmingBoard` untuk
   project dengan `ended_on` memberi `range.endKind = "ended"`.
@@ -202,7 +212,11 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   jt`; `Terdaftar di CoinGecko`; `Sumber kurasi`), badge "Claim open · link dicek" kalau `claim_open_checked`,
   deadline terdekat.
 - Filter: status, risiko, chain (yang ada) + Worth it (member saja). Tab lewat `?tab=live_now|early_bets|ended`,
-  filter lain dipertahankan. Pengunjung melihat label urutan "Baru dicek".
+  filter lain dipertahankan.
+- Sub-filter modal (#52, publik): baris "Modal:" tepat di bawah `TabBar`, pilihan lewat `?modal=all|free|deposit`
+  dengan jumlah dari `capitalCounts`; ganti tab mempertahankan `?modal`. "Modal belum jelas" cuma muncul di "Semua".
+  Tiap baris punya tag `capitalLabel` (komponen `Tag`: free = `verified`, deposit = `plain` isian `--member-fill`,
+  unknown = `reported`). Di 360 px pilihan membungkus ke baris baru, gak scroll ke samping. Pengunjung melihat label urutan "Baru dicek".
 - Rekam jejak (#43): kalimat glosarium di atas list kalau `getTrackRecord` gak `null`; juga dipasang di landing Plan 7.
 - **Desain visual:** sebelum task ini dikerjakan, sistem desain (warna, tipografi, kartu/baris, state) yang disetujui
   owner ditambahkan sebagai Global Constraint plan ini; komponen task ini dan Task 5 mengikutinya.
@@ -212,7 +226,8 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
 - [ ] **Step 1: Test yang gagal** — e2e: seed 1 project lolos `live_now`, 1 lolos `early_bets`, 1 lolos `ended`, 1 gagal →
   tab default cuma menampilkan yang `live_now`; klik "Early" menampilkan yang speculative; klik "Ended"
   menampilkan yang berakhir dengan "Ended {tanggal}"; yang gagal gak ada di tab mana pun;
-  `?tab=xyz` menampilkan tab default; ringkasan "4 dicek" dan "3 lolos"; sebagai pengunjung gak ada
+  `?tab=xyz` menampilkan tab default; `?modal=free` cuma menampilkan project `free` dan tetap ada setelah klik tab
+  "Early"; tag "Modal belum jelas" gak muncul di `?modal=deposit`; ringkasan "4 dicek" dan "3 lolos"; sebagai pengunjung gak ada
   teks "Worth it" dan `?sort=worth&worth=high` diabaikan; sebagai member "Worth it" tampil; tiap baris punya "Dicek".
   Komponen: `SignalBadges` gak pernah merender "✓" untuk `claimed_backer`/`reported_backer`.
 - [ ] **Step 2–4:** gagal → implementasi → `pnpm --filter web test && pnpm --filter web e2e` lulus.
