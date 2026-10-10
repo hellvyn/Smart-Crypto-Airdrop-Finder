@@ -1,7 +1,7 @@
 # Fondasi Kurasi (sub-proyek #1) — Desain
 
 Tanggal: 2026-10-10
-Status: **draft, menunggu review owner**
+Status: **draft rev. 2, menunggu review owner** (rev. 2: perbaikan skor setelah simulasi terhadap data run pertama)
 Dibangun di atas: `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md` (spec v1, sudah live)
 
 Label: **[FACT]** dari data/kode/run, **[INFERENCE]** kesimpulan dari bukti, **[UNKNOWN]** belum terverifikasi.
@@ -24,8 +24,15 @@ aman = pembeda dari list lain, bukti = sumber untuk tiap label + track record (s
 punya minimal satu sinyal legit. Tiap airdrop yang lolos punya level **Worth it** (potensi dibanding effort) dengan
 alasan yang bisa dicek. Sampai paywall (sub-proyek #2) jadi, halaman tetap bisa dibuka siapa saja seperti sekarang.
 
-**Yang gak dijanjikan:** "dijamin legit" atau "pasti untung". Kurasi mengurangi risiko, gak menghapusnya (prinsip spec v1
-§1: gak pernah ada label "AMAN"). Tiap klaim di UI harus bisa ditelusuri ke sinyal dan sumbernya.
+**Target owner:** produk ini jadi "superpower" buat orang yang garap airdrop: mau untung **dan** mau aman, dan semua yang
+ditampilkan bisa dipegang.
+
+**Janji kualitas (cara spec ini menerjemahkan "semua yang dikasih pasti ok"):** gak ada sistem yang bisa menjamin
+sebuah airdrop legit atau pasti untung (prinsip spec v1 §1: gak pernah ada label "AMAN"). Yang dijanjikan dan diukur:
+1. **Gak ada yang tampil tanpa cek keamanan kuncinya benar-benar jalan.** "Gak ditemukan masalah" baru berarti sesuatu
+   kalau ceknya jalan (§6.2 syarat 5).
+2. **Tiap label punya sumber** yang bisa ditelusuri member.
+3. **Akurasi diukur sebelum paywall dinyalakan** dan harus memenuhi gerbang kualitas di §12.
 
 ## 2. Pemecahan scope
 
@@ -61,6 +68,8 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 24 | Model akses | Cuma member berbayar yang bisa akses isi web |
 | 25 | Pengunjung non-member | Landing page + contoh terbatas (detail di sub-proyek #2) |
 | 26 | Alert Telegram | Gak dibikin |
+| 27 | Dua jenis peluang | List dipisah jadi tab **"Live now"** (live/announced) dan **"Early bets"** (speculative); `worth()` meranking di dalam tab |
+| 28 | Standar tampil | Project cuma tampil kalau cek keamanan kuncinya jalan; paywall baru dinyalakan setelah gerbang kualitas §12 terpenuhi |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
 penuh oleh owner (gak skalabel). API funding berbayar ditunda (lihat §11).
@@ -103,12 +112,14 @@ halaman. Gak bisa dibaca publik.
 ### 4.4 Perubahan tabel yang ada
 
 - `project_changes.field`: tambah `curated` (old/new = `true`/`false`), selain `status` dan `risk_level`.
-- Statistik `pipeline_runs.stats`: tambah `curation_checked`, `curation_passed`, `vc_portfolios_failed`.
+- Statistik `pipeline_runs.stats`: tambah `curation_checked`, `curation_passed`, `curation_hidden_insufficient_checks`,
+  `vc_portfolios_failed`, dan cakupan cek kunci: `projects_with_official_domain`, `domain_age_ran`, `phishing_list_ran`.
 
 ### 4.5 View `curated_list` (baru)
 
 Turunan `project_list` (security_invoker), cuma project yang curation terbarunya `passed = true`. Menambah kolom
-`worth_level` dan ringkasan sinyal (untuk badge). Urutan default di §6.3.
+`tab` (`live_now` untuk status live/announced, `early_bets` untuk speculative), `worth_level`, dan ringkasan sinyal (untuk
+badge). Urutan default di §6.3.
 
 ### 4.6 Ekstraksi LLM (versi prompt naik)
 
@@ -118,6 +129,28 @@ Field baru per project. LLM **cuma mengekstrak**, gak menilai:
 - `capital_required`: `none` | `low` | `high` | `unknown`. Contoh: "deposit min. $1,000" = `high`.
 
 ## 5. Pipeline
+
+### 5.0 Perbaikan data dasar (dikerjakan pertama, sebelum `curate()`)
+
+Simulasi aturan rev. 1 terhadap run pertama menunjukkan kurasi dibangun di atas data yang bolong [FACT, run 2026-10-10]:
+
+| Tahap | Angka |
+|---|---|
+| Dokumen airdrops.io | 39; **21 tanpa URL sama sekali** di teks yang diambil |
+| Project dari teks (airdrops.io + Telegram) | 47; 18 punya link apa pun; **7 punya website resmi** |
+| Dokumen Telegram | 17; **1 diekstrak**, 16 tertunda (kimi-k3 timeout, sudah diperbaiki di PR #2) |
+| Cek kunci yang jalan (dari 96 project) | `dangerous_asks` 96, `lookalike` 56, `phishing_list` 30, **`domain_age` 10**, `token_security`/`contract_verified` 0 |
+
+Tanpa domain resmi, cek domain (umur, phishing, lookalike) dan semua sinyal terverifikasi gak bisa jalan. Jadi:
+
+1. **Cakupan domain resmi.** Cari di mana link website/sosmed project berada di HTML halaman detail airdrops.io
+   [INFERENCE: kemungkinan di luar blok `.airdrop-info`…`.airdrop-bottom` yang sekarang diambil] dan ikutkan ke dokumen,
+   tetap lewat aturan "URL harus ada di sumber". Target: **≥ 80%** project live/announced dari teks punya domain resmi.
+2. **Cakupan cek domain.** Cari kenapa `domain_age` (RDAP) cuma jalan di 10 dan `phishing_list` (GoPlus) di 30 project
+   (TLD gak didukung RDAP, rate limit, timeout, atau project tanpa domain). Perbaiki yang bisa; TLD yang memang gak punya
+   RDAP dicatat sebagai keterbatasan. Target: **≥ 95%** project yang punya domain resmi menjalankan `domain_age` dan
+   `phishing_list`.
+3. Angka cakupan di atas masuk `pipeline_runs.stats` (§4.4) supaya regresi kelihatan tiap hari.
 
 ### 5.1 Urutan tahap
 
@@ -180,19 +213,35 @@ Lolos kalau **semua**:
 2. Risiko terbaru ∈ {`low`, `medium`} (bukan `high`, `critical`, `insufficient_data`).
 3. Minimal satu sinyal legit: `vc_backer` terverifikasi, `tvl` ≥ $10 jt, `coingecko_listed`, atau `curated_source`.
 4. `lookalike_of` kosong.
+5. **Cek keamanan kunci jalan semua:** `dangerous_asks`, `lookalike`, `domain_age`, dan `phishing_list` untuk domain resmi
+   project. Project tanpa domain resmi otomatis gagal di sini (alasan "insufficient checks"). Ini yang membuat "low risk"
+   berarti "dicek dan bersih", bukan "gak sempat dicek".
 
 Alasan gagal disimpan (untuk owner dan peringatan di halaman detail).
 
-**Konsekuensi yang diterima owner** [INFERENCE]: `curated_source` itu longgar, hampir semua project dari airdrops.io
-memenuhinya. Penyaring utama dalam praktik = risiko; sinyal kuat (VC/TVL/CoinGecko) dipakai untuk ranking dan badge.
+**Konsekuensi** [INFERENCE dari data run pertama]: dengan cakupan domain sekarang (7 dari 47 project teks), syarat 5
+akan menyembunyikan hampir semua airdrop live. Itu disengaja: perbaikan §5.0 harus selesai lebih dulu, dan gerbang §12
+memastikan paywall gak nyala dengan list yang kosong atau yang belum dicek. `curated_source` tetap longgar; sinyal kuat
+(VC/TVL/CoinGecko) dipakai untuk ranking dan badge.
 
 ### 6.3 `worth()` — potensi dibanding effort
+
+**Kenapa direvisi** [FACT dari simulasi rev. 1 terhadap 96 project]: rev. 1 akan menaruh 50 kandidat DefiLlama
+(speculative, belum ada pengumuman airdrop, rata-rata 0,1 task) di atas airdrop live/announced, karena kandidat DefiLlama
+otomatis dapat poin TVL + "belum ada token", sedangkan airdrop live hampir gak punya domain resmi dan umumnya sudah
+menyebut ticker. Rev. 2 memperbaiki tiga hal:
+
+1. **Diranking di dalam tab** (`live_now` vs `early_bets`), bukan di satu skala. Taruhan awal dan kerjaan yang bisa
+   dimulai sekarang gak dibandingkan langsung.
+2. **Proxy "belum ada token yang diperdagangkan"** diganti: bukan `token_symbol` kosong (airdrop live umumnya sudah
+   menyebut ticker), tapi **gak `coingecko_listed` dan gak ada deadline `tge` yang sudah lewat**.
+3. **Kalibrasi jadi syarat**, bukan catatan (§12).
 
 | Faktor | Poin |
 |---|---|
 | `vc_backer` terverifikasi tier 1 / tier lain | +3 / +2 (diambil yang tertinggi) |
 | TVL ≥ $100 jt / ≥ $10 jt | +2 / +1 |
-| Belum ada token (tanpa `token_symbol` dan tanpa `coingecko_listed`) | +2 |
+| Belum ada token yang diperdagangkan (gak `coingecko_listed`, gak ada `tge` yang lewat) | +2 |
 | Sinyal dari > 1 sumber independen | +1 |
 | `capital_required` high / low / none | −2 / −1 / 0 (`unknown` = 0, disebut di alasan) |
 | Task > 8 | −1 |
@@ -200,10 +249,12 @@ memenuhinya. Penyaring utama dalam praktik = risiko; sinyal kuat (VC/TVL/CoinGec
 Level: ≥ 4 `high`, 2–3 `medium`, ≤ 1 `low`. `insufficient_data` kalau satu-satunya sinyal potensi adalah
 `curated_source` **dan** `capital_required` = `unknown`.
 
-Bobot dan ambang ini **tebakan awal** [INFERENCE]. Plan menyertakan langkah kalibrasi terhadap data produksi (≥ 33
-project saat ini), dan angka akhir dicatat di spec ini.
+Bobot dan ambang di atas **titik awal kalibrasi** [INFERENCE], bukan angka final. Prosedur kalibrasi (setelah §5.0
+selesai dan minimal 3 run harian dengan data hasil perbaikan):
+- Jalankan `worth()` ke semua project; owner me-review **top 20 per tab** dan menandai yang urutannya gak masuk akal.
+- Ubah bobot sampai owner setuju; bobot final dan alasannya dicatat di spec ini.
 
-**Urutan list kurasi:** worth (`high` → `medium` → `low` → `insufficient_data`), lalu sinyal terkuat (VC → TVL →
+**Urutan di dalam tab:** worth (`high` → `medium` → `low` → `insufficient_data`), lalu sinyal terkuat (VC → TVL →
 CoinGecko → sumber kurasi), lalu deadline terdekat, lalu `last_seen` terbaru.
 
 ## 7. Tampilan (UI bahasa Inggris)
@@ -213,7 +264,9 @@ Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall d
 
 ### 7.1 Halaman list (sekarang `/`)
 - Sumber data: `curated_list`. Project yang gak lolos gak muncul di list mana pun.
+- Dua tab: **"Live now"** (bisa dikerjakan sekarang; default) dan **"Early bets"** (belum ada pengumuman, taruhan awal).
 - Baris ringkasan dari run terakhir: "N airdrops checked today · M passed curation".
+- Tiap baris menampilkan cakupan cek: "4/4 key safety checks ran".
 - Tiap baris: nama, status, level **Worth it**, level risiko, badge sinyal (`VC-backed: Paradigm ✓`, `TVL $45M`,
   `Listed on CoinGecko`, `Curated source`), deadline terdekat.
 - Filter: status, risiko, chain (sudah ada) + Worth it.
@@ -257,7 +310,14 @@ Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall d
 - pgTAP: RLS tabel baru, `vc_portfolios` gak terbaca anon/authenticated, view `curated_list` cuma berisi yang lolos.
 - e2e: list cuma menampilkan yang lolos; halaman project yang gak lolos menampilkan peringatan + `noindex`; badge klaim
   gak pernah tampil sebagai verified.
-- Eval LLM: kasus baru untuk `claimed_backers` dan `capital_required`; syarat lulus eval v1 tetap berlaku.
+- **Eval LLM diperluas:** dari 8 jadi **≥ 30 kasus** berlabel tangan, dan menilai field yang sekarang gak dinilai padahal
+  jadi dasar aturan: **tanggal + jenis deadline** (dasar `expireStatus`), **URL resmi** (dasar semua cek domain), plus
+  `claimed_backers` dan `capital_required`. [FACT] Eval sekarang cuma menilai status, token, chain, halusinasi URL, dan
+  recall.
+- **Set uji scam:** ≥ 30 kasus fake-airdrop nyata (domain/halaman yang dilaporkan publik: daftar phishing, laporan
+  korban) + ≥ 30 airdrop legit yang sudah terbukti bayar. Risk engine + `curate()` dijalankan ke keduanya, hasilnya jadi
+  angka tangkap-scam dan salah-sembunyi di §12. Data uji disimpan seperti `eval/cases` (gak di-commit kalau ToS
+  sumbernya gak jelas).
 
 ## 11. Harus diverifikasi
 
@@ -268,3 +328,25 @@ Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall d
 | 3 | Kalibrasi bobot `worth()` terhadap data produksi | Level worth gak mencerminkan potensi; ubah bobot |
 | 4 | Seberapa banyak project lolos per hari. Data run pertama [FACT]: 85 dari 96 project berisiko low/medium (0 high/critical), jadi aturan §6.2 akan meloloskan hampir semua | Kurasi gak terasa menyaring. Diputuskan setelah kalibrasi `worth()`: opsi utamanya list default cuma worth `medium` ke atas, sisanya di tab "All checked" |
 | 5 | RootData: owner melaporkan gak ada API gratis (2026-10-10) [FACT dari owner]; CryptoRank Sandbox gak memuat funding [INFERENCE dari review pihak ketiga]; DefiLlama `/raises` berbayar (HTTP 402) [FACT] | Sumber funding lengkap butuh budget; Apify (~$0,002/round) jadi upgrade pertama |
+| 6 | Lokasi link website/sosmed di HTML halaman airdrops.io (§5.0 nomor 1) | Cakupan domain gak naik; perlu sumber domain lain (mis. DefiLlama `url` dengan pencocokan yang aman) |
+
+## 12. Gerbang kualitas sebelum paywall dinyalakan
+
+Sub-proyek #2 (paywall) **gak boleh menerima pembayaran** sebelum semua gerbang ini terpenuhi dan angkanya dicatat di
+spec ini. Angka target adalah usulan [INFERENCE]; owner boleh mengubahnya, tapi gak boleh menghapus gerbangnya.
+
+| # | Gerbang | Target | Diukur dari |
+|---|---|---|---|
+| G1 | Cakupan domain resmi project live/announced | ≥ 80% | `pipeline_runs.stats`, rata-rata 3 run terakhir |
+| G2 | Cek kunci jalan untuk project ber-domain | ≥ 95% | `pipeline_runs.stats` |
+| G3 | Project tampil tanpa 4 cek kunci | 0 | aturan §6.2 nomor 5 + test pgTAP/e2e |
+| G4 | Akurasi status LLM | ≥ 90% di ≥ 30 kasus | eval §10 |
+| G5 | Akurasi tanggal + jenis deadline | ≥ 90% | eval §10 |
+| G6 | URL halusinasi | 0 | eval §10 |
+| G7 | Scam dari set uji yang **lolos kurasi** | 0 dari ≥ 30 | set uji scam §10 |
+| G8 | Airdrop legit dari set uji yang tersembunyi | ≤ 20% | set uji scam §10 |
+| G9 | Isi list | ≥ 5 project lolos di tab "Live now", rata-rata 3 run | `curation_passed` |
+| G10 | Urutan worth disetujui owner | top 20 per tab di-review | prosedur §6.3 |
+
+Kalau G7 gagal (ada scam yang lolos), penyebabnya diperbaiki di aturan risiko/kurasi dulu, lalu set uji dijalankan
+ulang. Kalau G9 gagal karena syarat cek kunci, perbaikannya di cakupan data (§5.0), bukan melonggarkan syarat.
