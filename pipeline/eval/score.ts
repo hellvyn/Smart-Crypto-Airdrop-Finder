@@ -1,18 +1,32 @@
-import { extractionSchema, filterUrlsInSource, normalizeName } from "@saf/core";
-import type { ExtractionResult, Status } from "@saf/core";
+import { extractionSchema, filterUrlsInSource, normalizeName, registrableDomain } from "@saf/core";
+import type { DeadlineKind, ExtractionResult, Status } from "@saf/core";
 import type { ExtractionAttempt } from "../src/llm/extract.js";
 import { parseJson } from "../src/llm/extract.js";
 
 type Project = ExtractionResult["projects"][number];
 
+/** A labelled deadline. `date` is `YYYY-MM-DD`, or null when the text gives none. */
+export interface TruthDeadline {
+  kind: DeadlineKind;
+  date: string | null;
+}
+
 export type CaseTruth =
-  | { kind: "project"; project: string; status: Status; token: string | null; chain: string | null }
+  | {
+      kind: "project";
+      project: string;
+      status: Status;
+      token: string | null;
+      chain: string | null;
+      /** Every deadline the text states; omitted when the case is not labelled for deadlines. */
+      deadlines?: TruthDeadline[];
+      /** Registrable domains of the project's own site, app and docs as the text links them; omitted when not labelled. */
+      officialDomains?: string[];
+    }
   | { kind: "negative" }
   | { kind: "radar"; slugs: string[]; minRecall: number };
 
 export interface GroundTruth {
-  /** Minimum number of status-scored cases that must have the right status. */
-  baselineStatusAccuracy: number;
   cases: Record<string, CaseTruth>;
 }
 
@@ -30,7 +44,20 @@ export interface CaseScore {
   negativeOk: boolean | null;
   /** Distinct expected slugs matched by an extracted project; null unless the case is the radar. */
   radarRecall: number | null;
+  /** Labelled deadlines (0 when the case has none labelled). */
+  deadlinesExpected: number;
+  /** Labelled deadlines for which the extracted project has a deadline with the same kind and date. */
+  deadlinesMatched: number;
+  /** Labelled official domains (0 when the case has none labelled). */
+  officialDomainsExpected: number;
+  /** Labelled official domains that an `official_urls` entry found in the case text belongs to. */
+  officialDomainsMatched: number;
 }
+
+/** Minimum share of correct answers per gate (spec section 12: G4 status, G5 deadlines, official domains). */
+const MIN_STATUS_ACCURACY = 0.9;
+const MIN_DEADLINE_ACCURACY = 0.9;
+const MIN_OFFICIAL_DOMAIN_ACCURACY = 0.8;
 
 /** Name key for comparing an extracted project name with an expected key or slug. */
 function key(value: string): string {
@@ -63,6 +90,18 @@ function chainMatches(expected: string | null, chains: string[]): boolean {
   return chains.some((c) => c.trim().toLowerCase() === wanted);
 }
 
+function deadlinesMatched(expected: TruthDeadline[], found: Project | null): number {
+  if (found === null) return 0;
+  return expected.filter((e) => found.deadlines.some((d) => d.kind === e.kind && d.date === e.date)).length;
+}
+
+/** Counts expected domains that some `official_urls` entry belongs to, after dropping URLs missing from `text`. */
+function officialDomainsMatched(expected: string[], found: Project | null, text: string): number {
+  if (found === null) return 0;
+  const domains = new Set(filterUrlsInSource(found.official_urls, text).map((u) => registrableDomain(u)?.toLowerCase()));
+  return expected.filter((d) => domains.has(d.toLowerCase())).length;
+}
+
 /** All `official_urls` of a raw model answer; [] if it is not a schema-valid extraction. */
 export function rawOfficialUrls(raw: string): string[] {
   const parsed = parseJson(raw);
@@ -80,7 +119,8 @@ export function rawOfficialUrlsOfOutcome(attempts: ExtractionAttempt[]): string[
 /**
  * Scores one extraction against the ground truth. Status, token, chain, negative and radar
  * come from the post-processed `result`; a null `result` (every model failed) fails every
- * applicable check. `hallucinatedUrls` counts `rawUrls` (the model's `official_urls` before
+ * applicable check. Deadlines match on kind and date; official domains count only for
+ * `official_urls` entries that appear in the case `text`. `hallucinatedUrls` counts `rawUrls` (the model's `official_urls` before
  * cleanup) that are not in the case `text`.
  */
 export function scoreCase(
@@ -102,6 +142,10 @@ export function scoreCase(
     hallucinatedUrls,
     negativeOk: null,
     radarRecall: null,
+    deadlinesExpected: 0,
+    deadlinesMatched: 0,
+    officialDomainsExpected: 0,
+    officialDomainsMatched: 0,
   };
   if (!expected) return score;
 
@@ -110,6 +154,10 @@ export function scoreCase(
     score.statusOk = found !== null && found.status === expected.status;
     score.tokenOk = found !== null && tokenMatches(expected.token, found.token_symbol);
     score.chainOk = found !== null && chainMatches(expected.chain, found.chains);
+    score.deadlinesExpected = expected.deadlines?.length ?? 0;
+    score.deadlinesMatched = deadlinesMatched(expected.deadlines ?? [], found);
+    score.officialDomainsExpected = expected.officialDomains?.length ?? 0;
+    score.officialDomainsMatched = officialDomainsMatched(expected.officialDomains ?? [], found, text);
   } else if (expected.kind === "negative") {
     score.negativeOk = result !== null && !result.is_airdrop_content;
   } else {
@@ -124,12 +172,20 @@ export interface PassCheck {
   detail: string;
 }
 
-/** The pass conditions of spec §11, evaluated over all case scores. */
+/** `matched / expected >= min`. With nothing labelled the gate cannot be measured, so it fails instead of passing. */
+function ratioCheck(label: string, matched: number, expected: number, min: number): PassCheck {
+  const name = `${label} >= ${Math.round(min * 100)}%`;
+  if (expected === 0) return { name, ok: false, detail: "nothing labelled, cannot be measured" };
+  return { name, ok: matched / expected >= min, detail: `${matched}/${expected} (${((matched / expected) * 100).toFixed(1)}%)` };
+}
+
+/** The pass conditions of spec section 12 (G4 to G6), evaluated over all case scores. */
 export function evaluatePass(scores: CaseScore[], truth: GroundTruth): PassCheck[] {
   const byId = new Map(scores.map((s) => [s.caseId, s]));
   const hallucinated = scores.reduce((sum, s) => sum + s.hallucinatedUrls, 0);
   const statusScored = scores.filter((s) => s.statusOk !== null);
   const statusCorrect = statusScored.filter((s) => s.statusOk === true).length;
+  const sum = (pick: (s: CaseScore) => number): number => scores.reduce((total, s) => total + pick(s), 0);
 
   const checks: PassCheck[] = [
     { name: "no hallucinated URLs", ok: hallucinated === 0, detail: `${hallucinated} found` },
@@ -143,11 +199,14 @@ export function evaluatePass(scores: CaseScore[], truth: GroundTruth): PassCheck
       ok: byId.get("aio_abstract")?.statusOk === true,
       detail: String(byId.get("aio_abstract")?.statusOk ?? "not run"),
     },
-    {
-      name: "status accuracy >= baseline",
-      ok: statusCorrect >= truth.baselineStatusAccuracy,
-      detail: `${statusCorrect}/${statusScored.length} (baseline ${truth.baselineStatusAccuracy})`,
-    },
+    ratioCheck("status accuracy", statusCorrect, statusScored.length, MIN_STATUS_ACCURACY),
+    ratioCheck("deadline accuracy", sum((s) => s.deadlinesMatched), sum((s) => s.deadlinesExpected), MIN_DEADLINE_ACCURACY),
+    ratioCheck(
+      "official domain accuracy",
+      sum((s) => s.officialDomainsMatched),
+      sum((s) => s.officialDomainsExpected),
+      MIN_OFFICIAL_DOMAIN_ACCURACY,
+    ),
   ];
 
   for (const [id, expected] of Object.entries(truth.cases)) {

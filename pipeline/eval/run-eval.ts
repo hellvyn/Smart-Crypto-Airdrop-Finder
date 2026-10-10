@@ -19,6 +19,7 @@ interface CaseMeta {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const ratio = (matched: number, expected: number): string => (expected === 0 ? "-" : `${matched}/${expected}`);
 const cell = (value: unknown, width: number): string => String(value).padEnd(width);
 
 async function run(): Promise<number> {
@@ -82,6 +83,8 @@ async function run(): Promise<number> {
         cell(mark(score.statusOk), 7),
         cell(mark(score.tokenOk), 7),
         cell(mark(score.chainOk), 7),
+        cell(ratio(score.deadlinesMatched, score.deadlinesExpected), 7),
+        cell(ratio(score.officialDomainsMatched, score.officialDomainsExpected), 7),
         cell(score.hallucinatedUrls, 7),
         cell(mark(score.negativeOk), 7),
         cell(score.radarRecall ?? "-", 7),
@@ -94,7 +97,7 @@ async function run(): Promise<number> {
 
   console.log("");
   console.log(
-    ["case".padEnd(20), "status ", "token  ", "chain  ", "halluc ", "negat  ", "recall ", "time    ", "model"].join(" "),
+    ["case".padEnd(20), "status ", "token  ", "chain  ", "dlines ", "domains", "halluc ", "negat  ", "recall ", "time    ", "model"].join(" "),
   );
   for (const row of rows) console.log(row);
 

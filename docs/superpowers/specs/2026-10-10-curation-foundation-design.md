@@ -466,6 +466,24 @@ cocok untuk nama 4 huruf yang menempel dengan kata lain dalam satu label (Jito, 
 foundation/klaim milik project harus masuk daftar domain resmi, kalau tidak aturan lookalike menyembunyikan project
 legit. Detail: `pipeline/eval/scam-set/README.md`.
 
+**Eval LLM diperluas (Task P4.T6; `pipeline/eval/`).** Penilaian G4–G6 sekarang ada di kode: status ≥ 90% dari kasus
+berstatus (G4), tanggal + jenis deadline cocok ≥ 90% (G5), URL halusinasi 0 (G6), dan domain resmi (registrable domain
+dari `official_urls` yang ada di teks sumber) cocok ≥ 80%. Syarat v1 (negatif ditolak, Abstract `ended`, recall radar)
+tetap. Gerbang deadline/domain yang belum punya label dinilai **gagal**, bukan lolos, supaya gerbang yang belum
+terukur gak terlihat terpenuhi.
+
+| Gerbang | Hasil terakhir | Catatan |
+|---|---|---|
+| G4 akurasi status | belum diukur | Baru 8 kasus berlabel; butuh ≥ 30 |
+| G5 akurasi deadline | belum diukur | Belum ada label `deadlines` |
+| G6 URL halusinasi | belum diukur | Run eval butuh teks kasus |
+| Domain resmi (≥ 80%) | belum diukur | Belum ada label `officialDomains` |
+
+Belum ada angka karena dua hal yang butuh owner: (1) `export-cases.ts` perlu `SUPABASE_URL` dan
+`SUPABASE_SERVICE_ROLE_KEY` produksi untuk mengambil teks dokumen, dan (2) ≥ 22 kasus baru harus diberi label tangan
+(owner me-review semua label baru). Perintah dan cara melabel ada di `pipeline/eval/README.md`. Angka hasil run
+dicatat di tabel ini setelah dua hal itu selesai.
+
 Kalau G7 gagal (ada scam yang lolos), penyebabnya diperbaiki di aturan risiko/kurasi dulu, lalu set uji dijalankan
 ulang. Kalau G9 gagal karena syarat cek kunci, perbaikannya di cakupan data (§5.0), bukan melonggarkan syarat.
 
