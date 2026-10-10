@@ -180,41 +180,54 @@ describe("buildDigest changes", () => {
 
 describe("buildDigest first-seen rule", () => {
   const fresh = proj("a", { firstSeen: new Date("2026-10-10T05:00:00Z") });
-  it("drops changes of projects first seen at/after lastDigestAt", () => {
+  it("drops a change made in the run that created the project (changedAt == firstSeen)", () => {
     const d = buildDigest(
       base({
         watched: [fresh, b],
-        lastDigestAt: new Date("2026-10-10T05:00:00Z"),
-        changes: [chg("status", "live", "ended", "2026-10-10T06:00:00Z", "a")],
+        lastDigestAt: new Date("2026-10-09T08:00:00Z"),
+        changes: [chg("risk_level", null, "low", "2026-10-10T05:00:00Z", "a")],
       }),
     );
     expect(d).toBeNull();
   });
-  it("keeps changes of projects first seen before lastDigestAt", () => {
-    const early = proj("a", { firstSeen: new Date("2026-10-10T04:59:59Z") });
+  it("keeps a later change of a project first seen after lastDigestAt", () => {
     const d = buildDigest(
       base({
-        watched: [early, b],
-        lastDigestAt: new Date("2026-10-10T05:00:00Z"),
+        watched: [fresh, b],
+        lastDigestAt: new Date("2026-10-10T04:00:00Z"),
         changes: [chg("status", "live", "ended", "2026-10-10T06:00:00Z", "a")],
       }),
     );
     expect(d?.changes).toHaveLength(1);
   });
-  it("with null lastDigestAt uses now - 24h as threshold", () => {
-    const justInside = proj("a", { firstSeen: new Date("2026-10-09T23:30:00Z") }); // == now-24h -> new
-    const justBefore = proj("b", { firstSeen: new Date("2026-10-09T23:29:59Z") }); // older -> changed
+  it("keeps a change of a project first seen after a stale lastDigestAt (10 days ago, first seen 5 days ago)", () => {
+    const fiveDays = proj("a", { firstSeen: new Date("2026-10-05T23:00:00Z") });
     const d = buildDigest(
       base({
-        watched: [justInside, justBefore],
+        watched: [fiveDays, b],
+        lastDigestAt: new Date("2026-09-30T23:00:00Z"),
+        changes: [chg("status", "announced", "live", "2026-10-09T23:00:00Z", "a")],
+      }),
+    );
+    expect(d?.changes).toEqual([{ project: fiveDays, field: "status", oldValue: "announced", newValue: "live" }]);
+  });
+  it("with null lastDigestAt drops only changes at or before firstSeen", () => {
+    const created = proj("a", { firstSeen: new Date("2026-10-10T06:00:00Z") });
+    const d = buildDigest(
+      base({
+        watched: [created, b],
         lastDigestAt: null,
         changes: [
-          chg("status", "live", "ended", "2026-10-10T06:00:00Z", "a"),
+          chg("risk_level", null, "low", "2026-10-10T06:00:00Z", "a"),
+          chg("status", "live", "ended", "2026-10-10T06:00:00.001Z", "a"),
           chg("status", "live", "ended", "2026-10-10T07:00:00Z", "b"),
         ],
       }),
     );
-    expect(d?.changes.map((c) => c.project.id)).toEqual(["b"]);
+    expect(d?.changes.map((c) => [c.project.id, c.field])).toEqual([
+      ["a", "status"],
+      ["b", "status"],
+    ]);
   });
   it("does not affect deadlines or newProjects", () => {
     const d = buildDigest(

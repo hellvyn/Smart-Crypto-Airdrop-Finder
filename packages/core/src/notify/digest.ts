@@ -11,6 +11,7 @@ export interface DigestProject {
 }
 export interface DigestInput {
   now: Date;
+  /** When the user last got a digest (null = never). The repo selects `changes` after it; not used to filter here. */
   lastDigestAt: Date | null;
   watched: DigestProject[];
   deadlines: { projectId: string; kind: DeadlineKind; date: string; precision: DatePrecision; text: string }[];
@@ -43,7 +44,7 @@ const HOUR_MS = 3_600_000;
 const utcDate = (d: Date): string => d.toISOString().slice(0, 10);
 
 export function buildDigest(input: DigestInput): Digest | null {
-  const { now, lastDigestAt } = input;
+  const { now } = input;
   const watched = new Map(input.watched.map((p) => [p.id, p]));
   const today = utcDate(now);
   const windowEnd = utcDate(new Date(now.getTime() + 48 * HOUR_MS));
@@ -57,12 +58,12 @@ export function buildDigest(input: DigestInput): Digest | null {
     deadlinesSoon.push({ project, kind: d.kind, date: d.date, precision: d.precision, isToday: d.date === today });
   }
 
-  // Projects first seen since the last digest are "new", not "changed".
-  const newSince = (lastDigestAt ?? new Date(now.getTime() - 24 * HOUR_MS)).getTime();
+  // A change made in the run that created the project (changedAt <= firstSeen, e.g. its first risk level or a
+  // same-run merge) is part of it being new, not a change; any later change is kept.
   const sorted = input.changes
     .filter((c) => {
       const p = watched.get(c.projectId);
-      return p !== undefined && p.firstSeen.getTime() < newSince;
+      return p !== undefined && c.changedAt.getTime() > p.firstSeen.getTime();
     })
     .sort((x, y) => x.changedAt.getTime() - y.changedAt.getTime());
 
