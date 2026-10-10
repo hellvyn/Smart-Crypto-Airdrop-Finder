@@ -6,6 +6,8 @@ export interface DailyStats extends RunStats {
   docs_changed: number;
   extract_ok: number;
   extract_failed: number;
+  /** Pending documents left for the next run because the extraction budget ran out. */
+  extract_deferred: number;
   not_airdrop: number;
   projects_created: number;
   projects_updated: number;
@@ -24,6 +26,7 @@ export function emptyStats(): DailyStats {
     docs_changed: 0,
     extract_ok: 0,
     extract_failed: 0,
+    extract_deferred: 0,
     not_airdrop: 0,
     projects_created: 0,
     projects_updated: 0,

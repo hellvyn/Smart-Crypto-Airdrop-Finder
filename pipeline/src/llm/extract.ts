@@ -17,7 +17,8 @@ export interface ExtractionAttempt {
 
 export type ExtractOutcome =
   | { ok: true; result: ExtractionResult; model: string; attempts: ExtractionAttempt[] }
-  | { ok: false; attempts: ExtractionAttempt[] };
+  /** `stopped`: `shouldStop` ended the chain before every model was tried. */
+  | { ok: false; attempts: ExtractionAttempt[]; stopped: boolean };
 
 /** `streamChat` with its transport deps (fetch, API key, base URL) already bound. */
 export type ChatFn = (model: ModelConfig, messages: ChatMessage[]) => Promise<ChatResult>;
@@ -67,17 +68,19 @@ function postProcess(result: ExtractionResult, doc: CollectedDocument): Extracti
 /**
  * Tries each model in order until one returns a complete, schema-valid extraction.
  * A 429 is retried on the same model after 2 s and then 4 s; any other failure moves on.
+ * `shouldStop` is checked before every model call; once it returns true no further call starts.
  */
 export async function extractWithFallback(
   doc: CollectedDocument,
   models: ModelConfig[],
-  deps: { chat: ChatFn; sleep: (ms: number) => Promise<void> },
+  deps: { chat: ChatFn; sleep: (ms: number) => Promise<void>; shouldStop?: () => boolean },
 ): Promise<ExtractOutcome> {
   const messages = buildMessages(doc);
   const attempts: ExtractionAttempt[] = [];
 
   for (const model of models) {
     for (let retry = 0; retry <= RATE_LIMIT_BACKOFF_MS.length; retry++) {
+      if (deps.shouldStop?.() === true) return { ok: false, attempts, stopped: true };
       const chat = await deps.chat(model, messages);
       const record = (error: string | null, raw: string): ExtractionAttempt => {
         const attempt: ExtractionAttempt = {
@@ -124,5 +127,5 @@ export async function extractWithFallback(
     }
   }
 
-  return { ok: false, attempts };
+  return { ok: false, attempts, stopped: false };
 }

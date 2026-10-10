@@ -3,7 +3,7 @@ import type { CollectedDocument } from "../src/collectors/types.js";
 import { extractWithFallback } from "../src/llm/extract.js";
 import type { ChatFn } from "../src/llm/extract.js";
 import type { ChatResult, ModelConfig } from "../src/llm/nvidia.js";
-import { streamChat } from "../src/llm/nvidia.js";
+import { REQUEST_TIMEOUT_MS, streamChat } from "../src/llm/nvidia.js";
 import { buildMessages, PROMPT_VERSION } from "../src/llm/prompt.js";
 
 const enc = new TextEncoder();
@@ -105,6 +105,10 @@ describe("streamChat", () => {
       stream_options: { include_usage: true },
       reasoning_effort: "low",
     });
+  });
+
+  it("aborts a request after 180 seconds", () => {
+    expect(REQUEST_TIMEOUT_MS).toBe(180_000);
   });
 
   it("uses the default base URL and omits Authorization for an empty key", async () => {
@@ -347,6 +351,35 @@ describe("extractWithFallback", () => {
     expect(out.attempts).toHaveLength(3);
     expect(calls).toEqual(["m/one", "m/two", "m/three"]);
     expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("starts no further model call once shouldStop is true, and reports stopped", async () => {
+    const bad = reply({ content: "" });
+    const { chat, calls } = scripted([bad, bad, bad]);
+    let stop = false;
+    const out = await extractWithFallback(DOC, MODELS, {
+      chat: (async (m: ModelConfig, msgs: unknown) => {
+        const r = await chat(m, msgs as never);
+        stop = true;
+        return r;
+      }) as Chat,
+      sleep: async () => {},
+      shouldStop: () => stop,
+    });
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.stopped).toBe(true);
+    expect(calls).toEqual(["m/one"]);
+    expect(out.attempts).toHaveLength(1);
+  });
+
+  it("reports stopped false when every model really failed", async () => {
+    const bad = reply({ content: "" });
+    const { chat } = scripted([bad, bad, bad]);
+    const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {}, shouldStop: () => false });
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.stopped).toBe(false);
   });
 
   it("passes system and user messages to the chat function", async () => {

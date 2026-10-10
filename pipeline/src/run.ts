@@ -5,8 +5,8 @@ import type { PipelineConfig } from "./config.js";
 import type { ChatFn } from "./llm/extract.js";
 import { collectSources } from "./steps/collect.js";
 import type { SpeculativeItem } from "./steps/collect.js";
+import type { ExtractionResult } from "@saf/core";
 import { extractPending } from "./steps/extract.js";
-import type { ExtractedDocument } from "./steps/extract.js";
 import { mergeDocument } from "./steps/merge.js";
 import type { ProjectInput } from "./steps/merge.js";
 import { purgeOldText } from "./steps/purge.js";
@@ -26,8 +26,26 @@ export interface PipelineDeps {
   now: () => Date;
 }
 
-/** Stage numbers reported in `failed_step` for the first stage-level error. */
-const STEP = { collect: 1, extract: 2, merge: 3, speculative: 4, score: 5, purge: 6 } as const;
+/**
+ * Stage numbers reported in `failed_step` for the first stage-level error. Merging runs inside the extract
+ * stage (each document is merged as soon as it is extracted), so 3 is no longer reported.
+ */
+const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6 } as const;
+
+function extractionInputs(result: ExtractionResult): ProjectInput[] {
+  return result.projects.map((p) => ({
+    name: p.name,
+    tokenSymbol: p.token_symbol,
+    chains: p.chains,
+    status: p.status,
+    quote: p.status_evidence,
+    tasks: p.tasks,
+    deadlines: p.deadlines,
+    urls: p.official_urls,
+    websiteUrl: null,
+    source: "extraction",
+  }));
+}
 
 function speculativeInput(c: SpeculativeCandidate): ProjectInput {
   let websiteUrl: string | null = null;
@@ -54,7 +72,13 @@ function speculativeInput(c: SpeculativeCandidate): ProjectInput {
 }
 
 /**
- * One daily pipeline run: collect, extract, merge, DefiLlama speculative merge, score, purge.
+ * One daily pipeline run: collect, extract (each document merged right after its extraction), DefiLlama
+ * speculative merge, score, purge.
+ *
+ * Merges go through a single-slot queue: they run one at a time, in the order extractions finish, while
+ * other extractions continue. The extract stage waits for the queue to drain, even when it fails.
+ * Extraction stops starting LLM calls after `extractBudgetMinutes`, so score and purge always get their turn
+ * within the job's time limit.
  *
  * Item-level failures (one document's merge, one project's assessment, one extraction) are counted
  * (`merge_failed`, `score_failed`, `extract_failed`) and never stop the run. A stage-level failure is
@@ -101,23 +125,16 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   const speculative = await stage(STEP.collect, [] as SpeculativeItem[], () =>
     collectSources(deps, config, now, stats),
   );
-  const extracted = await stage(STEP.extract, [] as ExtractedDocument[], () => extractPending(deps, config, stats));
-
-  await stage(STEP.merge, undefined, async () => {
-    for (const { document, result } of extracted) {
-      const inputs: ProjectInput[] = result.projects.map((p) => ({
-        name: p.name,
-        tokenSymbol: p.token_symbol,
-        chains: p.chains,
-        status: p.status,
-        quote: p.status_evidence,
-        tasks: p.tasks,
-        deadlines: p.deadlines,
-        urls: p.official_urls,
-        websiteUrl: null,
-        source: "extraction",
-      }));
-      await mergeOne(document, inputs, true);
+  // Single-slot merge queue: each merge starts after the previous one settled. mergeOne never rejects.
+  let mergeTail: Promise<void> = Promise.resolve();
+  const enqueueMerge = (document: StoredDocument, result: ExtractionResult): void => {
+    mergeTail = mergeTail.then(() => mergeOne(document, extractionInputs(result), true));
+  };
+  await stage(STEP.extract, undefined, async () => {
+    try {
+      await extractPending(deps, config, stats, enqueueMerge);
+    } finally {
+      await mergeTail;
     }
   });
 

@@ -16,6 +16,9 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    # Hard limit. The pipeline stops starting LLM calls after its 35-minute extraction budget
+    # (extractBudgetMinutes; each call is cut off after 180 s), merges each document as soon as it is
+    # extracted, and leaves the rest pending, so score and purge finish well within this limit.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

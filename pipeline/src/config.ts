@@ -7,6 +7,11 @@ export interface PipelineConfig {
   models: ModelConfig[];
   llmConcurrency: number;
   maxDocumentsPerRun: number;
+  /**
+   * Extraction time budget per run. After it no new LLM call starts; the remaining documents stay pending
+   * (counted as `extract_deferred`), so merge, score and purge finish within the job's 60-minute limit.
+   */
+  extractBudgetMinutes: number;
   scoreActiveSinceDays: number;
   textRetentionDays: number;
 }
@@ -24,6 +29,7 @@ export const defaultConfig: PipelineConfig = {
   models: MODELS,
   llmConcurrency: 3,
   maxDocumentsPerRun: 150,
+  extractBudgetMinutes: 35,
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
 };

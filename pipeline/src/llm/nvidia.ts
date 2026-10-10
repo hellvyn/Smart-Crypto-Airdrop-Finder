@@ -19,7 +19,11 @@ export interface ChatResult {
 }
 
 const DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
-const REQUEST_TIMEOUT_MS = 300_000;
+/**
+ * Total time one request may take. Spike 3 saw slow reasoning streams near 320 s, but the daily job has a
+ * 60-minute limit and a 35-minute extraction budget, so a stuck model is cut off after 3 minutes.
+ */
+export const REQUEST_TIMEOUT_MS = 180_000;
 const ERROR_BODY_MAX_CHARS = 500;
 
 interface StreamChunk {

@@ -470,6 +470,97 @@ describe("runDaily", () => {
   });
 });
 
+describe("runDaily extraction budget and merge queue", () => {
+  it("starts no LLM call after the budget, leaves the rest pending, and still scores and purges", async () => {
+    let current = NOW;
+    const inner = fakeChat();
+    const chat: FakeChat = {
+      ...inner,
+      chat: async (model, messages) => {
+        const r = await inner.chat(model, messages);
+        current = new Date(current.getTime() + 36 * 60_000);
+        return r;
+      },
+    };
+    const repo = new MemoryRepo();
+    let purgeCalls = 0;
+    const purge = repo.purgeDocumentText.bind(repo);
+    repo.purgeDocumentText = async (days, now) => {
+      purgeCalls += 1;
+      return purge(days, now);
+    };
+    const { deps, config } = setup({ repo, chat, config: { ...defaultConfig, llmConcurrency: 1 } });
+    const stats = await runDaily({ ...deps, now: () => current }, config);
+
+    expect(inner.calls).toEqual([DEEPBOOK]);
+    expect(stats.extract_ok).toBe(1);
+    expect(stats.extract_deferred).toBe(3);
+    expect(stats.extract_failed).toBe(0);
+    expect(stats.run_error).toBeUndefined();
+    const pending = repo.allDocuments().filter((d) => d.extractionStatus === "pending").map((d) => d.url);
+    expect(pending.sort()).toEqual([INK_PAGE, "https://t.me/airdrops_io/101", "https://t.me/airdrops_io/102"]);
+    expect(stats.assessed).toBe(2); // DeepBook and the DefiLlama project
+    expect(purgeCalls).toBe(1);
+  });
+
+  it("stops between fallback models when the budget runs out and keeps the document pending", async () => {
+    let current = NOW;
+    const inner = fakeChat(REPLIES, new Set([INK_PAGE]));
+    const chat: FakeChat = {
+      ...inner,
+      chat: async (model, messages) => {
+        const r = await inner.chat(model, messages);
+        if (r.httpStatus !== 200) current = new Date(current.getTime() + 36 * 60_000);
+        return r;
+      },
+    };
+    const { repo, deps, config } = setup({ chat, config: { ...defaultConfig, llmConcurrency: 1 } });
+    const stats = await runDaily({ ...deps, now: () => current }, config);
+    expect(inner.calls.filter((u) => u === INK_PAGE)).toHaveLength(1);
+    expect(stats.extract_deferred).toBe(3);
+    expect(stats.extract_failed).toBe(0);
+    const ink = repo.allDocuments().find((d) => d.url === INK_PAGE);
+    expect(ink?.extractionStatus).toBe("pending");
+    expect(repo.extractions.filter((e) => e.documentId === ink?.id)).toHaveLength(1);
+  });
+
+  it("merges a document right after its extraction, before later extractions finish", async () => {
+    const repo = new MemoryRepo();
+    const inner = fakeChat();
+    let deepbookAtLastCall: boolean | null = null;
+    const chat: FakeChat = {
+      ...inner,
+      chat: async (model, messages) => {
+        if (messages[1]?.content.startsWith("Source: https://t.me/airdrops_io/102")) {
+          deepbookAtLastCall = (await repo.findProjectsByNameKey("deepbook")).length > 0;
+        }
+        return inner.chat(model, messages);
+      },
+    };
+    const { deps, config } = setup({ repo, chat, config: { ...defaultConfig, llmConcurrency: 1 } });
+    await runDaily(deps, config);
+    expect(deepbookAtLastCall).toBe(true);
+  });
+
+  it("never runs two merges at the same time", async () => {
+    const repo = new MemoryRepo();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const find = repo.findProjectsByNameKey.bind(repo);
+    repo.findProjectsByNameKey = async (key) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 3));
+      inFlight--;
+      return find(key);
+    };
+    const { deps, config } = setup({ repo });
+    const stats = await runDaily(deps, config);
+    expect(stats.projects_created).toBe(3);
+    expect(maxInFlight).toBe(1);
+  });
+});
+
 describe("config", () => {
   it("uses the model order and limits from the global constraints", () => {
     expect(defaultConfig.models.map((m) => m.id)).toEqual([
@@ -484,6 +575,7 @@ describe("config", () => {
     expect(defaultConfig.maxDocumentsPerRun).toBe(150);
     expect(defaultConfig.scoreActiveSinceDays).toBe(60);
     expect(defaultConfig.textRetentionDays).toBe(90);
+    expect(defaultConfig.extractBudgetMinutes).toBe(35);
     expect(defaultConfig.telegramChannels).toEqual(["airdrops_io"]);
     expect(defaultConfig.defillama).toEqual({ minTvl: 10_000_000, excludedCategories: ["CEX"], limit: 50 });
     expect(sourceCount(defaultConfig)).toBe(3);
