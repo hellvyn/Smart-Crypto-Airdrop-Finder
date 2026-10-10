@@ -37,6 +37,20 @@ describe("safeNextPath (open-redirect guard)", () => {
     expect(safeNextPath("/watch\u0000list")).toBe(DEFAULT_NEXT);
   });
 
+  it("rejects dot segments that normalise to a protocol-relative path", () => {
+    expect(safeNextPath("/.//evil.example")).toBe(DEFAULT_NEXT);
+    expect(safeNextPath("/a/..//evil.example")).toBe(DEFAULT_NEXT);
+    expect(safeNextPath("/%2e//evil.example")).toBe(DEFAULT_NEXT);
+    expect(safeNextPath("/%2E%2E//evil.example")).toBe(DEFAULT_NEXT);
+    expect(safeNextPath("/x/%2e%2e//evil.example/p")).toBe(DEFAULT_NEXT);
+  });
+
+  it("returns valid paths exactly as given, without normalising them", () => {
+    for (const path of ["/watchlist", "/a/../watchlist", "/./settings", "/wallets/%2e%2e/x", "/p?q=a%20b#h", "/a//b"]) {
+      expect(safeNextPath(path)).toBe(path);
+    }
+  });
+
   it("keeps encoded slashes as a harmless path", () => {
     expect(safeNextPath("/%2F%2Fevil.example")).toBe("/%2F%2Fevil.example");
   });

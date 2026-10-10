@@ -37,6 +37,7 @@ export default defineConfig({
     env: {
       NEXT_PUBLIC_SUPABASE_URL: url,
       NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey,
+      NEXT_PUBLIC_SITE_URL: baseURL,
       // The web server must never see the service role key; it is for the test harness only.
       SUPABASE_SERVICE_ROLE_KEY: "",
     },

@@ -1,9 +1,11 @@
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { safeNextPath } from "./safe-next";
 
-const EMAIL_OTP_TYPES: readonly EmailOtpType[] = ["signup", "invite", "magiclink", "recovery", "email_change", "email"];
+// Only the link types the app's email templates produce (supabase/templates/): signup confirmation (`email`) and
+// password recovery. Magic links, invites and email changes are not features of this app, so their links are refused.
+const EMAIL_OTP_TYPES: readonly EmailOtpType[] = ["email", "recovery"];
 
-/** The `type` of a `token_hash` email link, or null when it is not one Supabase issues. */
+/** The `type` of a `token_hash` email link, or null when it is not one this app uses. */
 export function parseEmailOtpType(raw: string | null): EmailOtpType | null {
   return EMAIL_OTP_TYPES.find((t) => t === raw) ?? null;
 }

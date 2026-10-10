@@ -10,3 +10,10 @@ export function supabaseAnonKey(): string {
   if (!value) throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY is not set");
   return value;
 }
+
+/** Public base URL of the web app (no trailing slash). Every auth email redirect URL is built from it. */
+export function siteUrl(): string {
+  const value = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!value) throw new Error("NEXT_PUBLIC_SITE_URL is not set");
+  return value.replace(/\/+$/, "");
+}

@@ -6,12 +6,14 @@ dashboard) of `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md`
 
 ## 1. Environment
 
-The web app holds exactly two settings (see `apps/web/.env.example`):
+The web app holds three settings, none of them secret (see `apps/web/.env.example`). They are inlined at build
+time, so set them before `build`:
 
 | Variable | Value |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | project URL (`https://<ref>.supabase.co`; locally `http://127.0.0.1:54321`) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the project's anon (public) key |
+| `NEXT_PUBLIC_SITE_URL` | public base URL of the web app (locally `http://127.0.0.1:3000`); every auth email redirect URL is built from it, never from request headers |
 
 The service role key never goes into the web app, its env or the browser. Row Level Security protects user data;
 the anon key is meant to be public.
@@ -23,7 +25,7 @@ From the repo root:
 ```
 npx -y supabase@2.120.0 start
 npx -y supabase@2.120.0 status          # API URL and anon key
-cp apps/web/.env.example apps/web/.env.local   # fill in the two values
+cp apps/web/.env.example apps/web/.env.local   # fill in the anon key
 pnpm --filter web dev                   # http://127.0.0.1:3000
 ```
 
@@ -32,11 +34,14 @@ files as `./x.js`, which only webpack's `extensionAlias` can map to `./x.ts`.
 
 Pages: `/login`, `/signup`, `/reset-password`, `/update-password`, and the signed-in pages (`/watchlist`, later
 `/wallets` and `/settings`). Signed-out visits to a signed-in page redirect to `/login?next=<page>`; after login the
-user goes back there. `next` only accepts same-site paths (`apps/web/lib/safe-next.ts`).
+user goes back there. `next` only accepts same-site paths and is used exactly as given (`apps/web/lib/safe-next.ts`;
+anything that is, or normalises to, `//...` is replaced by `/watchlist`).
 
-Auth email links land on `/auth/callback`, which verifies the token (`token_hash` + `type`, or a PKCE `code`),
-sets the session cookies and redirects: recovery links to `/update-password`, everything else to `next` or
-`/watchlist`. An invalid or used link goes to `/login?error=link`.
+Auth email links land on `/auth/callback`, which verifies the token (`token_hash` with `type=email` or
+`type=recovery`, the only types the app accepts; or a PKCE `code`), sets the session cookies and redirects: recovery
+links to `/update-password`, a verified signup to `/watchlist`. Email links carry no `next` (the templates do not
+pass one), so a page asked for before signup is not restored after verification. An invalid, used or unsupported
+link (magic link, invite, email change) goes to `/login?error=link`.
 
 ## 3. Tests
 
@@ -47,7 +52,8 @@ sets the session cookies and redirects: recovery links to `/update-password`, ev
   pnpm --filter web e2e
   ```
 
-  The config builds and starts the app on `127.0.0.1:3000` (CI builds in its own step). It reads the URL, anon key
+  The config builds and starts the app on `127.0.0.1:3000` with `NEXT_PUBLIC_SITE_URL` set to that address (CI
+  builds in its own step and exports the same value). It reads the URL, anon key
   and service role key from the environment or, if missing, from `supabase status`. The service role key is used
   only by the test harness (`apps/web/e2e/support/`) to create users and to generate the verification and
   recovery links Supabase would email (`auth.admin.generateLink`), because there is no inbox in CI. The web server
@@ -68,11 +74,16 @@ The hosted project must be configured differently. In the Supabase dashboard (Au
    your account, then log in." and no session exists until the link is opened.
 2. **Emails > SMTP Settings:** set up custom SMTP. The built-in sender is rate-limited and for testing only
    (Plan 3 Task 6 sets up the email provider).
-3. **URL Configuration:** Site URL = the production web URL; add `https://<web-host>/**` to Redirect URLs.
+3. **URL Configuration:** Site URL = the production web URL (same value as `NEXT_PUBLIC_SITE_URL`); add
+   `https://<web-host>/**` to Redirect URLs.
 4. **Emails > Templates:** use the link formats from `supabase/templates/` so links go through the web app's
    callback and work in any browser:
    - Confirm signup: `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email`
    - Reset password: `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery`
+5. **Sign In / Providers > Email:** turn on **Secure password change** (`secure_password_change = true`), so changing
+   the password needs a recent login (reauthentication). The recovery link creates a fresh session just before
+   `/update-password`, which should satisfy it; re-run the reset flow once after turning it on. Locally it stays off.
 
-`/auth/callback` also accepts the PKCE `code` that the default templates (`{{ .ConfirmationURL }}`) produce, but that
-only works in the browser where the user signed up or asked for the reset (and is not covered by the e2e tests).
+`/auth/callback` also accepts the PKCE `code` that the default templates (`{{ .ConfirmationURL }}`) produce (signup
+redirects to `<site>/auth/callback`, reset to `<site>/auth/callback?type=recovery`), but that only works in the
+browser where the user signed up or asked for the reset (and is not covered by the e2e tests).

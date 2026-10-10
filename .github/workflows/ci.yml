@@ -39,12 +39,13 @@ jobs:
           npx -y supabase@2.120.0 start
           -x studio,imgproxy,mailpit,vector,logflare,edge-runtime,realtime,storage-api,postgres-meta,supavisor
       - name: Export the web app's Supabase env
-        # Only the URL and anon key go to the job env (the web build and server). The e2e harness reads the local
+        # Only the URL, anon key and site URL go to the job env (the web build and server). The e2e harness reads the local
         # service role key itself from `supabase status` (apps/web/e2e/support/supabase-env.ts).
         run: |
           eval "$(npx -y supabase@2.120.0 status -o env 2>/dev/null)"
           echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
           echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3000" >> "$GITHUB_ENV"
       - run: pnpm --filter web build
       - name: Install Chromium for Playwright
         run: pnpm --filter web exec playwright install --with-deps chromium

@@ -92,12 +92,12 @@ test("password reset: request, recovery link, new password, login with it", asyn
   const newPassword = "new-battery-staple-2";
   await createConfirmedUser(email, PASSWORD);
 
-  // The request form posts to Supabase and shows its answer. Without an SMTP server (CI, sandbox) that answer
-  // is Supabase's send error; with one it is the confirmation. Either way a message is rendered.
+  // The request form posts to Supabase and shows its answer as-is. The local stack (CI, sandbox) runs without an
+  // SMTP server, so Supabase answers with its send error; the link itself comes from the admin API below.
   await page.goto("/reset-password");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Send reset link" }).click();
-  await expect(page.locator("main").locator("[role=status], [role=alert]")).toBeVisible();
+  await expect(formError(page)).toHaveText("Error sending recovery email");
 
   await page.goto(await recoveryLink(email));
   await expect(page).toHaveURL(/\/update-password$/);
@@ -117,8 +117,34 @@ test("password reset: request, recovery link, new password, login with it", asyn
   await expectSignedInAs(page, email);
 });
 
+test("a verification link with an off-site next lands on the same-origin default", async ({ page }) => {
+  const email = uniqueEmail("cbnext");
+  const link = await signupVerificationLink(email, PASSWORD);
+
+  await page.goto(`${link}&next=${encodeURIComponent("/%2e//evil.example")}`);
+  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/watchlist$/);
+  await expectSignedInAs(page, email);
+});
+
+test("link types the app does not use are refused, even with a valid token", async ({ page }) => {
+  const email = uniqueEmail("types");
+  const link = await signupVerificationLink(email, PASSWORD);
+  const tokenHash = new URL(link, "http://x.invalid").searchParams.get("token_hash") ?? "";
+
+  for (const type of ["signup", "magiclink", "invite", "email_change"]) {
+    await page.goto(`/auth/callback?${new URLSearchParams({ token_hash: tokenHash, type }).toString()}`);
+    await expect(page).toHaveURL(/\/login\?error=link$/);
+    await expect(page.getByTestId("user-email")).toHaveCount(0);
+  }
+
+  // The token was not used up by the refused attempts: the real link still works.
+  await page.goto(link);
+  await expect(page).toHaveURL(/\/watchlist$/);
+  await expectSignedInAs(page, email);
+});
+
 test("an invalid or used link shows an error on the login page", async ({ page }) => {
-  await page.goto("/auth/callback?token_hash=not-a-real-token&type=signup");
+  await page.goto("/auth/callback?token_hash=not-a-real-token&type=email");
   await expect(page).toHaveURL(/\/login\?error=link$/);
   await expect(formError(page)).toHaveText("This link is invalid or has expired. Request a new one.");
 });
