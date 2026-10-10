@@ -97,7 +97,7 @@ browser where the user signed up or asked for the reset (and is not covered by t
 
 Order matters: the web app expects the database objects of every migration, so the database goes first.
 
-1. **Migrations.** Apply `supabase/migrations/0001` → `0004` to the hosted project before deploying the web app:
+1. **Migrations.** Apply `supabase/migrations/0001` through `0006` to the hosted project before deploying the web app:
 
    ```
    npx -y supabase@2.120.0 link --project-ref <ref>
@@ -106,6 +106,8 @@ Order matters: the web app expects the database objects of every migration, so t
 
    `0004_wallet_rate_limit.sql` adds `claim_wallet_check()`, which the wallet activity API calls on every cache
    miss; a web build without it answers every uncached check with "Data unavailable, try again later.".
+   `0005_notifications.sql` adds `notification_log` and `unsubscribe_digest()` (the unsubscribe page needs it);
+   `0006_project_changes_seq.sql` orders project changes for the digest.
 2. **Build-time env.** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_SITE_URL` (the
    public `https://` URL of the web app) are inlined by `next build`: set them in the host's build environment, and
    rebuild after changing any of them. No other secret belongs in the web app (never the service role key).

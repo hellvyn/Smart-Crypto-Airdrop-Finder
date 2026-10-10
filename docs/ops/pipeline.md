@@ -19,7 +19,8 @@ purges old text. Spec: section 4
    ```
 
    `db push` applies everything in `supabase/migrations/` (`0001_pipeline.sql`: tables, RLS, public read
-   policies). Run it again after pulling a new migration.
+   policies; later files add users, web views, the digest log and unsubscribe function, through
+   `0006_project_changes_seq.sql`). Run it again after pulling a new migration.
 3. In **Project Settings > API**, copy the project URL and the `service_role` key. The service role key bypasses
    RLS: it goes only into GitHub Secrets, never into the web app or a browser.
 

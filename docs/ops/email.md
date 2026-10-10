@@ -73,7 +73,9 @@ In the Supabase dashboard of the hosted project:
 
    `/auth/callback` (`apps/web/app/auth/callback/route.ts`) verifies `token_hash` with `type=email` or
    `type=recovery`, the only two types the app accepts, then redirects (recovery to `/update-password`, a verified
-   signup to `/watchlist`). Any other type, or an invalid or used link, goes to `/login?error=link`. Because the
+   signup to `/watchlist`). It also accepts the PKCE `?code=` exchange (what the default `{{ .ConfirmationURL }}`
+   templates produce), but that works only in the browser where the user signed up; the templates above use
+   `token_hash`. Any other type, or an invalid or used link, goes to `/login?error=link`. Because the
    link starts with `{{ .SiteURL }}`, a wrong Site URL breaks every auth email.
 5. Secure password change and the rest of the web auth settings are in `docs/ops/web.md`, sections 4 and 5.
 
@@ -95,6 +97,9 @@ Each pipeline run prints one JSON line of numbers and stores the same numbers in
 | `digests_failed` | digests that could not be built, sent or logged |
 | `digests_already_sent` | recipients who already got today's digest (an earlier run, or a concurrent one that logged it first) |
 
+The `digests_*` counters are absent from the stats entirely when `BREVO_API_KEY` is unset (email disabled), so a
+missing `digests_sent` usually means the secret is not set or not reaching the job.
+
 Logs and stats contain numbers only: never email addresses, user ids or Brevo response bodies.
 
 ### Checking the quota
@@ -107,7 +112,7 @@ today from the 240 budget, and it cannot see auth emails.
 
 If `digests_skipped_quota` is above 0 on 3 consecutive days, the free plan is too small for the user base.
 Upgrade the Brevo plan, then raise `email.dailyLimit` in `pipeline/src/config.ts` to the new daily limit and
-deploy. Skipped digests are not retried the same day, but users with a deadline were served first, so the damage
+deploy. Skipped digests are not retried automatically (a manual rerun the same day tries them again if budget remains), but users with a deadline were served first, so the damage
 is limited to the lowest-priority recipients.
 
 ### `digests_failed` above 0
@@ -151,7 +156,10 @@ visitor also sees a "Turn it back on in Settings" link on the confirmation page.
 The pipeline code is tested with fake HTTP, so nothing above has been run against the real Brevo account or the
 real Supabase project. Do this once after setup:
 
-1. Complete sections 2 and 3, including the GitHub secrets `BREVO_API_KEY`, `EMAIL_FROM` and `SITE_URL`.
+1. **Apply the migrations** to the hosted project: `npx -y supabase@2.120.0 link --project-ref <ref>` then
+   `npx -y supabase@2.120.0 db push`, so everything through `0006_project_changes_seq.sql` is applied. Without
+   `0005` there is no `notification_log` or `unsubscribe_digest`, and the notify stage and the unsubscribe page fail.
+   Then complete sections 2 and 3, including the GitHub secrets `BREVO_API_KEY`, `EMAIL_FROM` and `SITE_URL`.
 2. **Auth email:** sign up a test account on the real web app. The verification email must arrive from the Brevo
    sender (check the From header and that it is not in spam), and its link must land on `/watchlist` after
    `/auth/callback`. Also request a password reset and confirm the recovery link reaches `/update-password`.
@@ -159,7 +167,7 @@ real Supabase project. Do this once after setup:
    page). Make sure Settings has the daily digest on.
 4. Run the workflow: Actions > **Daily pipeline** > **Run workflow** (or `gh workflow run daily.yml`).
 5. Expect one digest email in the inbox listing that deadline, and in the job log a stats line with
-   `"digests_sent"` at least 1 and `"digests_failed"` 0 (the same numbers are in `pipeline_runs.stats`).
+   `"digests_sent"` at least 1 (these counters only exist when `BREVO_API_KEY` is set, see section 4) and `"digests_failed"` 0 (the same numbers are in `pipeline_runs.stats`).
 6. Run the workflow again: no second email, and `digests_already_sent` is at least 1.
 7. **Unsubscribe:** click the link in the digest, press the button, and see "You are unsubscribed." In the
    Supabase table editor, the test user's `profiles.digest_enabled` must now be `false`. Tick the setting in
