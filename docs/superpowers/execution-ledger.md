@@ -217,3 +217,11 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 - P8 Task 2: minor (deferred): the unused `_today` param. `toMs`/`fromMs` do not validate input. `localDay` produces garbage when a part is missing.
 - G3-3a merged. Tests: core 194, pipeline 369, web 285 unit · typecheck ok · pgTAP 209 · e2e 67/67.
 - G3-3b started: P8.T3 ∥ P8.FX3 from 772ec41
+- P8 Task 3: complete (commits 772ec41..baa5462, review clean). Steps are copied only in the call that created or resumed the row (no double copy across tabs). Texts over 200 chars are cut. The copy stops at the 30-task limit. Fixable errors redirect to `/garapan?error=<code>`. Controller verified: no direct `farming_checks` delete, and unarchive runs before the step copy.
+- P8 FX3: complete (commits 772ec41..0c753ee, review clean). `farming_checks` are written and removed only through `toggle_farming_check`. Task inserts into a stopped project raise 23514. A re-insert of an existing project skips the limit.
+- Ruling: a source step the member archived by hand comes back on "Ambil ulang step dari source" — that button is an explicit request to re-take source steps — costs a re-archive click if unwanted.
+- Ruling: park the trigger existence oracle (inserting with another user's id returns 23514 or 42501 depending on their project state) — it needs two guessed UUIDs and reveals only a stopped flag — costs a one-line early return later if wanted.
+- Carried to P8.T4: the empty state for a farmed project with no tasks must offer "Ambil ulang step dari source" (`syncSourceSteps` is not atomic with the start). Map the toggle's 22023 (task or project archived in another tab) to a friendly code in `actions.ts`. Render `/garapan?error=` messages. The UI archives ("Berhenti garap", archive task) and never deletes a task or project, because a delete cascades away past-day checks (spec §14 history).
+- P8: minor (deferred): the board reads every check without a lower bound (limit to `day >= range.start`). Test gaps around the resume race guard and 23514 on resume. `farming.ts` is 458 lines. Stale test-number comments in `farming.test.sql`. The on-conflict exists check runs outside the advisory lock.
+- G3-3b merged. Tests: core 194, pipeline 369, web 318 unit · typecheck ok · pgTAP 218 · e2e 67/67.
+- G3-3c started: P8.T4
