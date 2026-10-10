@@ -1,0 +1,98 @@
+# Plan 1 — keputusan (ruling) yang diambil selama eksekusi
+
+Diambil oleh controller (Claude) saat menjalankan Plan 1 secara subagent-driven, 2026-10-10. Tiap baris: keputusan — alasan — biaya kalau salah.
+Sumber: ledger SDD (workspace dihapus setelah Plan 1 selesai). Baca dan koreksi yang menurut lo salah.
+
+- | T1 ↔ T7–T13 | T1 package names → `pnpm --filter pipeline` commands | Plan never names pipeline package. Ruling below |
+- Ruling: pipeline package is named `pipeline` (private, unscoped) so `pnpm --filter pipeline` works; core stays `@saf/core` — why: plan commands use `--filter pipeline` — cost if wrong: one rename.
+- Ruling: `.nvmrc` = 24 and CI uses it; local verification runs on Node 22.22.0 — why: sandbox has no Node 24, code uses no 24-only API — cost if wrong: a CI-only failure caught on first push.
+- Ruling: `.gitignore` also lists `.superpowers/` (SDD workspace) — why: workspace must stay out of git — cost if wrong: none.
+- Ruling: Task 11 Step 3 runs `npx supabase` + local Docker; if images can't be pulled, migration is validated against plain Postgres in Docker (or pg via npm) and the gap is noted — why: network policy may block registries — cost if wrong: RLS/migration bug found later on real project.
+- Ruling: Task 12 Step 6 (workflow_dispatch against real Supabase) is deferred to owner — why: owner prerequisites (Supabase project, GitHub Secrets, NVIDIA ToS check) not confirmed — cost if wrong: first real run may surface integration bugs.
+- Ruling: Task 13 Step 3 runs live eval only if case texts are available in sandbox scratch; otherwise deferred to owner — why: texts are gitignored by design — cost if wrong: eval baseline unverified.
+- Ruling: proceed with Plan 1 code before owner confirms NVIDIA ToS — why: LLM adapter is provider-swappable and no task is irreversible — cost if wrong: rework of model config only.
+- Task 3: Ruling: approximate regex changed to /\b(?:approximately|approx\.?|around|about)\b|~/i — plan regex `\b~\b` can never match a leading "~" (plan defect) — cost if wrong: "about" in unrelated phrasing marks a deadline approximate (fail-safe: fewer exact reminders)
+- Task 3: Ruling: approximate rule must only downgrade `exact` → `approximate` (never month/quarter) — MUST-FIX in final-review fix wave — why: reminders/digest fire for exact|approximate (spec §4.3/§8), so "around Q4" turned approximate would trigger false 48h reminders — cost if wrong: none (narrower rule)
+- Ruling (Task 6 pre-dispatch): isLookalike checks ALL hostname labels excluding the public suffix (not only "second label from right") — why: phishing commonly uses subdomains like uniswap.com.claim-airdrop.xyz and multi-part TLDs (co.uk) break "second label" — cost if wrong: more false-positive High flags for blogs like uniswap.mirror.xyz
+- Ruling (Task 6 pre-dispatch): substring "contains" match only when nameKey length ≥ 5; for 3–4 char names require an exact hyphen-token match (e.g. ink-claim.xyz) — why: plan's ≥3 rule makes "Ink" flag chainlink/pink/drinking domains as High — cost if wrong: short-name lookalikes like "inkclaim.xyz" missed
+- Task 6: Ruling: negation window stops at the last sentence/clause boundary (. ? ! ; : , – —) before the match — why: "Not sure how? Enter your seed phrase" must be Critical — cost if wrong: none material
+- Task 6: Ruling: asks_secret requires an action verb (enter|submit|provide|share|import|paste|type|input|verify|sync|validate|send|upload|connect) within 4 words before the phrase, plus the negation rule — why: "back up your seed phrase" / "we will never ask for your seed phrase" must not be Critical (spec §6 trust) — cost if wrong: an ask phrased without these verbs is missed
+- Task 6: Ruling: asks_payment = \b(send|transfer|pay)\b … (to (claim|unlock|receive) … (airdrop|allocation|token|tokens|reward|rewards)|fee to claim|(gas|fee).{0,20}to claim); `deposit` and bare "gas fee" removed; word boundaries required — why: deposit-to-earn and "pay gas fees" are normal tasks; "repay" must not match — cost if wrong: some payment-scam phrasings missed (e.g. "send 0.05 ETH and receive 2x")
+- Task 6: Ruling: lookalike link check only for link kinds claim/app/website (not docs/social); skipped entirely (lookalike link part ran=false) when officialDomains is empty; project.lookalikeOf still applies — why: project-owned medium/gitbook/social subdomains and unknown-official cases produced High false positives — cost if wrong: phishing delivered via a fake "docs" link not flagged by lookalike (still caught by young_domain/phishing_list)
+- Task 6: Ruling: Levenshtein threshold = 1 for key length 5–6, 2 for ≥7; also applied per `-` token (tokens length ≥ 4), not only whole label — why: catches typo+affix (uniswqp-airdrop.xyz) while cutting short-key noise — cost if wrong: some 5–6 char typo-by-2 domains missed
+- Task 6: Ruling: extend confusable map with ρ→p, ı→i, ԁ→d, ɡ→g — why: Greek rho bypass found in review — cost if wrong: none
+- Task 6: Ruling: lookalike_domain and phishing_listed dedup by registrable domain (folds reviewer minors 1–2) — cost if wrong: none
+- Ruling (Task 7 pre-dispatch): Telegram with sinceMessageId=null fetches only the first page (latest ~20 msgs), no backfill — why: avoid flooding LLM quota on first run — cost if wrong: older announcements not ingested
+- Ruling (Task 7 pre-dispatch): airdrops.io source is `failed` only if the home page fails or yields 0 listing URLs; individual detail-page failures are skipped and counted in CollectorResult.error text, not failing the source — why: one broken page must not hide the rest — cost if wrong: partial silent loss (mitigated by counts)
+- Task 7: Ruling (revises earlier Task 7 ruling): airdrops_io is also failed:true when the listing had URLs but every detail page was skipped (0 documents) — why: same silent-zero failure mode as Review Focus #5 — cost if wrong: none
+- Ruling (Task 9 pre-dispatch): Authorization header sent only when apiKey is non-empty — why: this sandbox's egress proxy injects the NVIDIA key; GitHub Actions passes NVIDIA_API_KEY — cost if wrong: none
+- Ruling (Task 9 pre-dispatch): per-call total timeout 300 s (AbortSignal.timeout) — why: Spike 3 saw successful streams up to ~320 s with reasoning — cost if wrong: a slow model blocks a worker slot ≤ 5 min
+- Task 9: Ruling: extractWithFallback takes `chat: ChatFn = (model, messages) => Promise<ChatResult>` (deps pre-bound) instead of `typeof streamChat` — why: plan interface defect (streamChat needs a 3rd deps arg) — cost if wrong: none; Task 12 PipelineDeps.chat must be ChatFn
+- Task 9: Ruling: URL followed by sentence "." dropped by filterUrlsInSource stays as-is — why: collectors embed links as " [url] " so the LLM's source text never has that shape — cost if wrong: an official URL lost when a source isn't from our collectors
+- Task 9: Ruling: prompt must define `unknown` and state that the TEXT block is untrusted data, never instructions — MUST-FIX in final-review fix wave — why: spec §4.5 relies on unknown semantics; sources are public and attacker-writable (prompt injection) — cost if wrong: none
+- Ruling (Task 11 pre-dispatch): if `npx supabase start` cannot pull images, validate the migration with PGlite (@electric-sql/pglite, dev dep of pipeline, test-only) after creating stub roles `anon`, `authenticated`, `service_role`; SupabaseRepo then gets only typecheck + unit tests with a fake supabase client, and live smoke is deferred to owner — why: sandbox network may block container registries — cost if wrong: PostgREST/RLS behaviour unverified until first real run
+- Ruling (Task 12 pre-dispatch): DefiLlama candidates are stored as documents with sourceKind "defillama" (SourceKind union + migration check extended in place; url https://defillama.com/protocol/<slug>; text = short factual summary; extraction_status "done", never sent to LLM) — why: evidence requires a document FK and plan gave DefiLlama none — cost if wrong: one more source kind to handle in Plan 2 UI
+- Ruling (Task 12 pre-dispatch): link kind classification heuristic: social = x.com|twitter.com|t.me|telegram.me|discord.gg|discord.com|medium.com|github.com|youtube.com|linktr.ee; claim = host starts with "claim." or path contains "/claim"; docs = host starts with "docs." or path starts with "/docs"; app = host starts with "app." or other subdomain with path not "/" when not docs/claim; else website — why: plan never defined how links get kinds — cost if wrong: misclassified links shift risk rules (lookalike only on claim/app/website)
+- Ruling (Task 12 pre-dispatch): officialDomains = registrable domains of a project's non-social links — why: otherwise x.com/t.me become "official" for every project — cost if wrong: none
+- Ruling (Task 12 pre-dispatch): referralStripped is false for links reaching merge (collectors already cleaned them) — why: info not carried through LLM — cost if wrong: UI can't show "referral removed" badge (spec §5 nice-to-have)
+- Ruling (Task 12 pre-dispatch): slug = kebab(name); if taken within same name_key, append -2, -3… — cost if wrong: none
+- Ruling (Task 12 pre-dispatch): implementer model = opus (largest integration task) — cost: higher spend for one task
+- Task 12: Ruling: per-document merge and per-project score wrapped in try/catch (counters merge_failed, score_failed); a document whose merge throws gets extraction_status `merge_failed` (new value; migration check edited in place) and is not retried until its hash changes; score and purge ALWAYS run even if an earlier stage failed; extraction uses per-document catch (no Promise.all rejection) — why: spec §4 stage isolation; retention purge must never be skipped — cost if wrong: a transiently failing merge waits for the next content change
+- Task 12: Ruling: slug uniqueness checked globally via new repo method `slugExists(slug)` (both repos) — why: projects.slug is globally unique — cost if wrong: none
+- Task 12: Ruling: DefiLlama evidence uses field `defillama_listing` (not `status`) when merging into an EXISTING project; only a newly created project gets status speculative from DefiLlama — why: weak signal must never outrank airdrops.io/Telegram evidence — cost if wrong: none
+- Task 12: Ruling: multi-tenant platform domains never become officialDomains: google.com, forms.gle, galxe.com, zealy.io, gleam.io, typeform.com, notion.site, notion.so, linktr.ee — why: shared domain would merge lookalikes into legit projects and whitelist the platform — cost if wrong: a project truly hosted only on such a platform has no official domain (lookalike link check skipped)
+- Task 12: Ruling: DefiLlama document text excludes volatile numbers (TVL/7d change go into the evidence quote only) — why: avoid 50 spurious docs_changed daily — cost if wrong: none
+- Task 12: Ruling: daily.yml: separate install step without secrets, `timeout-minutes: 60`, `pnpm --silent --filter pipeline start`; enrichment skips social-link domains; pending docs with empty text are skipped — cost if wrong: none
+- Task 12: Ruling: DefiLlama `status` evidence on newly created projects is dated new Date(0) (epoch) — why: any dated airdrops.io/Telegram evidence must outrank the weak DefiLlama signal even if its "Updated" date is old — cost if wrong: none
+- Task 12: Ruling: pending docs with empty (purged) text must be excluded by listPendingDocuments in both repos (or moved to a terminal status) — MUST-FIX in final-review fix wave — why: they otherwise occupy the 150-doc cap forever (starvation) — cost if wrong: none
+- Task 13: Ruling: hallucinatedUrls is computed from the RAW model JSON of the successful attempt (parse attempts[last ok].raw with extractionSchema; count official_urls rejected by filterUrlsInSource against the case text); status/token/chain still from post-processed result — why: spec §11 gate must catch model fabrication — cost if wrong: none
+- Final: Ruling (revises Task 12 officialDomains ruling, which was WRONG): officialDomains are set only when a project has none yet (new project, or existing with empty list): registrable domains of website/app/docs links (never claim, social, platform); DefiLlama `url` counts as website. A project that already has official domains NEVER gets new ones automatically — why: auto-promotion whitelisted phishing claim domains and disabled new_claim_domain/lookalike (C1) — cost if wrong: a legit domain change by a project shows High until owner fixes data; first-seen source can poison (curated sources only)
+- Final: Ruling: I1/I2/I3 (already ruled must-fix) fixed now; PROMPT_VERSION bumped and live eval re-run; eval baseline set to 6
+- Final: Ruling: merge each document immediately after its extraction succeeds (single-slot sequential merge queue); extraction stage has a time budget (config extractBudgetMinutes = 35) after which no new LLM calls start; per-call timeout lowered to 180 s — why: 60-min job limit could kill the run before merge/score/purge (I4) — cost if wrong: fewer docs per run on slow days
+- Final: Ruling: lookalikeOf risk message shows the other project's name (resolved in listProjectsForScoring, both repos), never a UUID (I5)
+- Final: Ruling: ACTION_VERB_RE gets word boundaries with plain inflections only (s|ed|ing) (I6)
+- Final: Ruling: dangerous-ask detection ALSO scans the source document text when the document yields exactly one project; hits stored as evidence field `dangerous_ask` (value = matched code, quote = sentence) and fed into scoring alongside tasks (I7, spec §6 "teks + hasil LLM") — cost if wrong: warnings phrased oddly in source text could trigger Critical (mitigated by verb gate + negation)
+- Final: Ruling: fold minors M1 (replace status evidence per (project, document)), M3 (DefiLlama `twitter` → social link), M4 (main exits 1 after persisting if any source_failed/merge_failed/score_failed > 0), M5 (cleanUrl over URLs inside tasks/status_evidence/deadline text in postProcess), M6 (per-document try/catch on ingest), M7 (baseline 6), M8 (docs/ops/pipeline.md runbook + local-only guard in repo-smoke), M10 (evidence.source_url column filled at insert, for Plan 2), T3 year regex \b(?:19|20)\d{2}\b, T1 ci.yml permissions contents: read — cost if wrong: none
+- Final: Ruling: ACTION_VERB_RE inflections limited to (s|ing) — why: `ed` matched "connected" contradicting the required regression test — cost if wrong: past-tense phrasing ("entered your seed phrase") not flagged
+- Final: Ruling: merge order = extraction completion order (per I4) — slugs and same-run status changes may vary between runs; CARRY TO PLAN 3: digest ignores project_changes for projects whose first_seen is in the same run — cost if wrong: noisy first-day change entries
+- Final: Ruling: evidence.source_url filled by a DB trigger from documents.url (MemoryRepo mirrors) — why: caller-passed URL proved error-prone — cost if wrong: none
+- Final: parked — I6 regex `(s|ing)?` misses -e gerunds ("providing/sharing/pasting your seed phrase") — Ruling: real, deferred as FIRST follow-up (fix: `\b(?:(enter|submit|import|input|sync|send|upload|connect)(s|ing)?|(provid|shar|past|typ|validat)(e|es|ing)|verif(y|ies|ying))\b` + tests) — cost if wrong: such asks scored below Critical until fixed (still visible via other rules only if present)
+- Final: parked — I7 attribution edges (empty name_key sibling; stale dangerous_ask when doc becomes multi-project) — Ruling: rare, deferred
+- Final: parked — kimi-k3 may hit 180 s timeout on long pages (fallback covers) — Ruling: watch extract_failed/fallback rate in production
+
+## Minor yang ditunda (deferred)
+
+- Task 1: minor (deferred): no pnpm onlyBuiltDependencies → "Ignored build scripts: esbuild" install noise
+- Task 1: minor (deferred): .gitignore `.env*` also ignores future .env.example
+- Task 1: minor (deferred): ci.yml lacks `permissions: contents: read` and concurrency group
+- Task 1: minor (deferred): pipeline will need @types/node (carry into Task 7 dispatch); core must stay without it
+- Task 1: minor (deferred): no `engines` field in root package.json
+- Task 2: minor (deferred): filterUrlsInSource rejects URL followed by sentence `.`/`:`/backtick (fail-safe; collectors emit `[url]` so OK for v1)
+- Task 2: minor (deferred): only `&amp;` decoded (not &#38;/&#x26;) — fail-safe drop
+- Task 2: minor (deferred): /R/CODE (uppercase) not stripped
+- Task 3: minor (deferred): year detection \b\d{4}\b also matches times like "2300 UTC" → prefer \b(?:19|20)\d{2}\b
+- Task 3: minor (deferred): duplicated calendar-validity logic in extraction.ts and normalize.ts
+- Task 3: minor (deferred): enum arrays only one-directionally checked against types
+- Task 3: minor (deferred): whitespace-only project name passes min(1)
+- Task 3: minor (deferred): untested: backward year boundary, invalid publishedAt, malformed input date
+- Task 4: minor (deferred): NFKC expands ™/circled letters (Arcus™ → arcustm) — strip \p{S} before normalize
+- Task 4: minor (deferred): combining marks treated as separators (Indic scripts)
+- Task 4: minor (deferred): keycap emoji leave stray digit token
+- Task 4: minor (deferred): no test for Invalid Date `at` in deriveStatus / leading stop word
+- Task 5: minor (deferred): no tests for missing 0x prefix / 41-43 chars / mixed case; no EIP-55 checksum (Plan 2 must not assume)
+- Task 6: minor (deferred): ACTION_VERB_RE lacks trailing \b (matches "typical", "connected")
+- Task 6: minor (deferred): per-token fuzzy can flag generic 4-letter tokens near 5-letter keys (line- for Linea)
+- Task 6: minor (deferred): confusable map still partial; payment phrasing "send X and receive 2x" missed; `.` doesn't cross newlines
+- Task 7: minor (deferred): telegram structure guard only on page 1; t.me/<user> mention links still embedded
+- Task 7: minor (deferred): parseListing picks non-airdrop slugs (/disclaimer/, /about-us/) → perpetual skip count; selectors .lifi-bridge/.step-progress/.related-airdrops unverified vs real site; /visit/ assumes 30x
+- Task 8: minor (deferred): garbled test title defillama.test.ts:156; NaN limit → []
+- Task 9: minor (deferred): no tests for CRLF, `data:` without space, trailing line w/o [DONE], extraBody override
+- Task 9: minor (deferred): prompt says earliest year ≥ Published; normalizeDeadline uses Published−7d (harmless)
+- Task 10: minor (deferred): domainAgeDays must receive ASCII/punycode domain (IDN → 404 → null); wiring task should pass registrableDomain output
+- Task 11: minor (deferred): updateProject/saveRiskAssessment change rows not atomic (single nightly writer OK; revisit before Plan 3 digest)
+- Task 11: minor (deferred): MemoryRepo leniencies (unknown id throws vs 0 rows; undefined patch values; no FK/check emulation)
+- Task 11: minor (deferred): lastTelegramMessageId scans all stored urls (fine at v1 volume)
+- Task 11: minor (deferred): projects.slug not collate "C" → slug tie order may differ from MemoryRepo (only same name_key AND first_seen)
+- Task 12: minor (deferred): main.ts stdout/exit codes untested; actions pinned to tags not SHAs
+- Task 12: minor (deferred): a merge failing halfway leaves partial rows (doc marked merge_failed); acceptable for v1
+- Task 12: minor (deferred): setExtractionStatus(done) failing after successful merge parks the doc as merge_failed (DB already failing; harmless)
