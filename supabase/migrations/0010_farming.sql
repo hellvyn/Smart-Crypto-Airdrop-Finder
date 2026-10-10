@@ -74,22 +74,29 @@ create policy "own farming tasks update" on farming_tasks for update to authenti
 create policy "own farming tasks delete" on farming_tasks for delete to authenticated
   using (user_id = (select auth.uid()));
 
--- No insert or update grant: checks are written only by toggle_farming_check().
-grant select, delete on farming_checks to authenticated;
+-- Read only: checks are written and removed only by toggle_farming_check(), and only for today, so a past day never
+-- changes. No insert, update or delete grant (a direct delete fails with 42501). Cascades from the task, the farming
+-- project, the project and the user do not need the privilege.
+grant select on farming_checks to authenticated;
 create policy "own farming checks read" on farming_checks for select to authenticated
-  using (user_id = (select auth.uid()));
-create policy "own farming checks delete" on farming_checks for delete to authenticated
   using (user_id = (select auth.uid()));
 
 -- Limits: 50 active farming projects per member, 30 active tasks per farming project. They apply when a row becomes
 -- active: on insert, and when an archived row is resumed. The advisory lock (per member, its own key space)
 -- serialises concurrent writers so two tabs cannot both take the last slot.
+-- A BEFORE INSERT trigger runs before ON CONFLICT is decided, so an insert of a (user_id, project_id) that already
+-- exists skips the check: "insert ... on conflict do nothing" on an already-farmed project stays a no-op at 50 active.
+-- Without ON CONFLICT such an insert still ends in the primary key error (23505).
 create function public.enforce_farming_project_limit() returns trigger
   language plpgsql
   security definer
   set search_path = ''
 as $$
 begin
+  if tg_op = 'INSERT' and exists (select 1 from public.farming_projects fp
+                                  where fp.user_id = new.user_id and fp.project_id = new.project_id) then
+    return new;
+  end if;
   if new.archived_at is null and (tg_op = 'INSERT' or old.archived_at is not null) then
     perform pg_advisory_xact_lock(hashtextextended('farming:' || new.user_id::text, 0));
     if (select count(*) from public.farming_projects fp
@@ -106,12 +113,27 @@ create trigger farming_projects_limit
   before insert or update of archived_at on farming_projects
   for each row execute function public.enforce_farming_project_limit();
 
+-- A task cannot be inserted into a stopped (archived) farming project: toggle_farming_check() refuses such tasks anyway
+-- (22023), so a task there could never be checked. The insert fails with 23514 instead. The parent row is locked FOR
+-- SHARE so a concurrent "Berhenti garap" cannot slip in between this check and the insert. A missing parent is left
+-- to the foreign key (23503).
 create function public.enforce_farming_task_limit() returns trigger
   language plpgsql
   security definer
   set search_path = ''
 as $$
+declare
+  v_project_active boolean;
 begin
+  if tg_op = 'INSERT' then
+    select fp.archived_at is null into v_project_active
+    from public.farming_projects fp
+    where fp.user_id = new.user_id and fp.project_id = new.project_id
+    for share;
+    if v_project_active is false then
+      raise exception 'farming project is stopped' using errcode = '23514';
+    end if;
+  end if;
   if new.archived_at is null and (tg_op = 'INSERT' or old.archived_at is not null) then
     perform pg_advisory_xact_lock(hashtextextended('farming:' || new.user_id::text, 0));
     if (select count(*) from public.farming_tasks ft

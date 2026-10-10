@@ -1,11 +1,11 @@
 -- pgTAP tests for 0010_farming.sql: the private farming tracker ("Garapan saya"). Owner-only RLS, no anon access,
--- checks written only through toggle_farming_check() for the server's "today" in the member's timezone, active
--- limits (50 projects, 30 tasks per project) and cascades from projects.
+-- checks written and removed only through toggle_farming_check() for the server's "today" in the member's timezone,
+-- active limits (50 projects, 30 tasks per project), no tasks in a stopped project, and cascades from projects.
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(73);
+select plan(82);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS).
 -- user A: 55555555-..., user B: 66666666-..., user C: 77777777-... (limits only)
@@ -19,10 +19,11 @@ insert into projects (id, slug, name, name_key, first_seen, last_seen) values
   ('eeeeeeee-0000-0000-0000-000000000002', 'farm-two', 'Farm Two', 'farmtwo', now(), now()),
   ('eeeeeeee-0000-0000-0000-000000000003', 'farm-three', 'Farm Three', 'farmthree', now(), now());
 
--- A farms p1 (active) and p2 (stopped). B farms p1.
+-- A farms p1 (active) and p2 (stopped further down, once it holds a task: a stopped project accepts no new tasks).
+-- B farms p1.
 insert into farming_projects (user_id, project_id, archived_at) values
   ('55555555-5555-5555-5555-555555555555', 'eeeeeeee-0000-0000-0000-000000000001', null),
-  ('55555555-5555-5555-5555-555555555555', 'eeeeeeee-0000-0000-0000-000000000002', now()),
+  ('55555555-5555-5555-5555-555555555555', 'eeeeeeee-0000-0000-0000-000000000002', null),
   ('66666666-6666-6666-6666-666666666666', 'eeeeeeee-0000-0000-0000-000000000001', null);
 
 insert into farming_tasks (id, user_id, project_id, text, cadence, origin, archived_at) values
@@ -36,6 +37,9 @@ insert into farming_tasks (id, user_id, project_id, text, cadence, origin, archi
    'eeeeeeee-0000-0000-0000-000000000002', 'Task di project yang udah berhenti', 'daily', 'source', null),
   ('fb000000-0000-0000-0000-000000000001', '66666666-6666-6666-6666-666666666666',
    'eeeeeeee-0000-0000-0000-000000000001', 'Task B', 'daily', 'source', null);
+
+update farming_projects set archived_at = now()
+where user_id = '55555555-5555-5555-5555-555555555555' and project_id = 'eeeeeeee-0000-0000-0000-000000000002';
 
 insert into farming_checks (task_id, user_id, day) values
   ('fb000000-0000-0000-0000-000000000001', '66666666-6666-6666-6666-666666666666', date '2026-10-01');
@@ -167,12 +171,13 @@ select throws_ok(
   $$ update farming_tasks set text = 'Teks baru' where id = 'fa000000-0000-0000-0000-000000000001' $$,
   '42501', null, 'A cannot rewrite a task''s text (past checks keep their task text)');
 
--- 29-31. Writes on B's rows are silent no-ops under RLS (verified as owner below).
+-- 29-31. Writes on B's rows are silent no-ops under RLS, except delete on checks, which has no privilege at all
+-- (verified as owner below).
 select lives_ok(
   $$ update farming_tasks set archived_at = now() where id = 'fb000000-0000-0000-0000-000000000001' $$,
   'A archiving B''s task raises nothing');
-select lives_ok($$ delete from farming_checks where task_id = 'fb000000-0000-0000-0000-000000000001' $$,
-  'A deleting B''s checks raises nothing');
+select throws_ok($$ delete from farming_checks where task_id = 'fb000000-0000-0000-0000-000000000001' $$,
+  '42501', null, 'A cannot delete checks directly, B''s or their own');
 select lives_ok(
   $$ delete from farming_projects where user_id = '66666666-6666-6666-6666-666666666666' $$,
   'A deleting B''s farming projects raises nothing');
@@ -270,10 +275,40 @@ select results_eq(
   $$ values ('fb000000-0000-0000-0000-000000000001'::text, date '2026-10-01') $$,
   'B''s check is unchanged');
 
+-- ---------- past days never change: no direct delete on farming_checks ----------
+-- A check of a past day (set up as owner) cannot be removed through the table, only today's check through the function.
+-- 57-60.
+insert into farming_checks (task_id, user_id, day) values
+  ('fa000000-0000-0000-0000-000000000001', '55555555-5555-5555-5555-555555555555', date '2026-09-01');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"55555555-5555-5555-5555-555555555555","role":"authenticated"}';
+select throws_ok(
+  $$ delete from farming_checks where task_id = 'fa000000-0000-0000-0000-000000000001' and day = date '2026-09-01' $$,
+  '42501', null, 'A cannot delete a past-day check directly');
+select is(public.toggle_farming_check('fa000000-0000-0000-0000-000000000001', true), true,
+  'A checks the daily task for today');
+select is(public.toggle_farming_check('fa000000-0000-0000-0000-000000000001', false), false,
+  'A unchecks the daily task for today');
+select results_eq(
+  $$ select day from farming_checks where task_id = 'fa000000-0000-0000-0000-000000000001' order by day $$,
+  $$ values (date '2026-09-01'), ((now() at time zone 'Pacific/Kiritimati')::date) $$,
+  'unchecking today leaves the past days checked');
+reset role;
+
+-- ---------- no tasks in a stopped project ----------
+-- p2 is still stopped here (the matching insert after the resume is 63-65 below).
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"55555555-5555-5555-5555-555555555555","role":"authenticated"}';
+select throws_ok(
+  $$ insert into farming_tasks (user_id, project_id, text, cadence, origin)
+     values ('55555555-5555-5555-5555-555555555555', 'eeeeeeee-0000-0000-0000-000000000002', 'Task di project berhenti', 'daily', 'custom') $$,
+  '23514', null, 'a task cannot be added to a stopped farming project');
+reset role;
+
 -- ---------- starting to farm again: the startFarming contract of Plan 8 Task 3 ----------
 -- A new project is a plain insert of (user_id, project_id), covered by the limit tests below. Resuming a stopped one
 -- is update(archived_at = null): the column grants refuse an upsert, which also writes archived_at and the key columns.
--- 57-58.
+-- 63-64.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"55555555-5555-5555-5555-555555555555","role":"authenticated"}';
 select lives_ok(
@@ -281,6 +316,10 @@ select lives_ok(
   'A can resume a stopped farming project');
 select ok(public.toggle_farming_check('fa000000-0000-0000-0000-000000000004', true),
   'a task of the resumed project can be checked again');
+select lives_ok(
+  $$ insert into farming_tasks (user_id, project_id, text, cadence, origin)
+     values ('55555555-5555-5555-5555-555555555555', 'eeeeeeee-0000-0000-0000-000000000002', 'Task setelah resume', 'daily', 'custom') $$,
+  'a task can be added once the project is resumed');
 reset role;
 
 -- ---------- limits: 50 active projects per member, 30 active tasks per project ----------
@@ -291,7 +330,7 @@ from generate_series(1, 52) i;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"77777777-7777-7777-7777-777777777777","role":"authenticated"}';
 
--- 59-64. Projects.
+-- 65-73. Projects.
 select lives_ok(
   $$ insert into farming_projects (user_id, project_id)
      select '77777777-7777-7777-7777-777777777777', ('dddddddd-0000-0000-0000-' || lpad(i::text, 12, '0'))::uuid
@@ -315,7 +354,23 @@ select throws_ok(
   $$ update farming_projects set started_at = now() - interval '30 days' where project_id = 'dddddddd-0000-0000-0000-000000000001' $$,
   '42501', null, 'C cannot rewrite started_at');
 
--- 65-70. Tasks.
+-- Starting an already-farmed project again (insert ... on conflict do nothing) is a no-op, not a limit error, even at
+-- 50 active; only a really new project hits the limit. C has 50 active here (project 50 is stopped).
+select lives_ok(
+  $$ insert into farming_projects (user_id, project_id)
+     values ('77777777-7777-7777-7777-777777777777', 'dddddddd-0000-0000-0000-000000000001'),
+            ('77777777-7777-7777-7777-777777777777', 'dddddddd-0000-0000-0000-000000000050')
+     on conflict do nothing $$,
+  'restarting existing farming projects with on conflict do nothing raises nothing at 50 active');
+select is((select count(*)::int from farming_projects where archived_at is null), 50,
+  'the no-op restart changed nothing: still 50 active, the stopped project stays stopped');
+select throws_ok(
+  $$ insert into farming_projects (user_id, project_id)
+     values ('77777777-7777-7777-7777-777777777777', 'dddddddd-0000-0000-0000-000000000052')
+     on conflict do nothing $$,
+  '23514', null, 'a new 51st project with on conflict do nothing still hits the limit');
+
+-- Tasks.
 select lives_ok(
   $$ insert into farming_tasks (user_id, project_id, text, cadence, origin, position)
      select '77777777-7777-7777-7777-777777777777', 'dddddddd-0000-0000-0000-000000000001', 'Task ' || i, 'daily', 'source', i
@@ -344,10 +399,10 @@ select throws_ok(
 reset role;
 
 -- ---------- cascade: a project deleted from the database takes its trackers along (review focus 5) ----------
--- 71-73.
+-- 80-82.
 select is((select count(*)::int from farming_checks c join farming_tasks t on t.id = c.task_id
-           where t.project_id = 'eeeeeeee-0000-0000-0000-000000000001'), 3,
-  'fixtures: p1 has checks from A and B before the delete');
+           where t.project_id = 'eeeeeeee-0000-0000-0000-000000000001'), 4,
+  'fixtures: p1 has checks from A (incl. a past day) and B before the delete');
 select lives_ok($$ delete from projects where id = 'eeeeeeee-0000-0000-0000-000000000001' $$,
   'deleting a farmed project raises no error');
 select results_eq(
