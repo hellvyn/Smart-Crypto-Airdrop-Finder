@@ -77,7 +77,28 @@ Label: **[FACT]** dari data, **[INFERENCE]** kesimpulan dari bukti, **[UNKNOWN]*
 4. **"Terakhir dicek: hari ini"** di tiap baris dan halaman, sebagai pembeda langsung dari status basi mereka.
 5. **Lewati dulu**: checker per protokol, kalkulator, perps hub, NFT pass. Effort besar, bukan inti positioning.
 
-## 6. Yang belum diketahui
+## 6. UI/UX AlphaDrops (screenshot owner, 2026-10-10)
+
+[FACT dari screenshot]:
+- Tema gelap, sidebar kiri (Airdrops, Perps, Tracker, Claims, Checkers, Raises), aksen oranye, tombol "Join Now".
+- **Iklan di ruang paling mahal:** dua banner di atas judul tiap halaman + kolom kanan berisi iklan "Taba" dan tiga
+  checker. Konten utama cuma ±50% lebar layar desktop.
+- **Grid kartu Perps rusak:** nama project terpotong jadi 2–3 huruf ("Ca", "Txl", "Po", "Ar"), baris "Funding" dan
+  chain bertumpuk/terpotong.
+- **Claims:** tombol oranye besar "Claim ↗" di tiap kartu tanpa info apa pun soal keaslian link; satu baris peringatan
+  umum "Use official claim portals only".
+- **Raises:** tabel rapi (project, funding + jenis ronde, investor, tanggal), "7,314 raises", filter kategori/ronde/tahun.
+- **Home:** hero carousel kartu pastel, angka "40 Active · 81 Ended · 4 Claimable · 34K+ Community", blok NFT Alpha
+  Pass, "More than a list", FAQ generik.
+- **List airdrop:** ±169 kartu seragam tanpa hierarki (gak ada yang menonjol sebagai "paling layak"), diakhiri dinding
+  teks SEO.
+- Angka komunitas di situs sendiri tiga versi: "80K+" (teks home), "34K+" (statistik home), "13k+" (halaman project).
+  [FACT] Mana yang benar [UNKNOWN].
+
+[INFERENCE] Peluang UI kita: konten tanpa iklan dengan lebar penuh, hierarki yang jelas (yang paling layak menonjol),
+bahasa visual kepercayaan (status cek, status link, "Dicek"), dan tampilan mobile yang gak rusak.
+
+## 7. Yang belum diketahui
 
 - Trafik, jumlah member premium, dan pendapatan AlphaDrops. [UNKNOWN]
 - Sumber data fundraising mereka (label "Synced" mengarah ke sinkronisasi otomatis dari pihak ketiga). [UNKNOWN]

@@ -15,7 +15,7 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 
 **Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` §14 (keputusan #35–#39)
 
-**Bergantung ke:** Plan 7 (akses member-only, halaman di `(app)`), Plan 4 Task 5 (`tasks.cadence`, `tasks.position`).
+**Bergantung ke:** Plan 7 (route akun terlindungi di `(app)`, halaman project publik), Plan 4 Task 5 (`tasks.cadence`, `tasks.position`).
 **Urutan:** 7 → 4 → **8** → 5 → 6. Migrasi `0010_farming.sql`.
 
 ## Global Constraints
@@ -196,8 +196,9 @@ it("computes the local day in a time zone", () => {
 **Files:**
 - Create: `apps/web/app/(app)/garapan/page.tsx`, `apps/web/components/farming/FarmingCard.tsx`,
   `apps/web/components/farming/Heatmap.tsx`, `apps/web/components/farming/FarmButton.tsx`
-- Modify: `apps/web/components/site-header.tsx` (link "Garapan saya"), `apps/web/components/ProjectDetailView.tsx`
-  (tombol di sebelah Watch), CSS global
+- Modify: `apps/web/components/site-header.tsx` (link "Garapan saya", cuma untuk user login),
+  `apps/web/components/ProjectDetailView.tsx` (tombol di sebelah Watch, cuma untuk user login; halaman project publik
+  sejak Plan 7), `apps/web/lib/routes.ts` (`PROTECTED_PREFIXES` + `"/garapan"`), CSS global
 - Test: `apps/web/test/components/farming/*.test.tsx`, `apps/web/e2e/farming.spec.ts`
 
 **Interfaces:**

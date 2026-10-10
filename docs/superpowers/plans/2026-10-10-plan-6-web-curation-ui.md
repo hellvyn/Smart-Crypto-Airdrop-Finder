@@ -5,19 +5,26 @@
 **Goal:** Web sepenuhnya Bahasa Indonesia; list cuma menampilkan airdrop yang lolos kurasi dalam tiga tab
 (termasuk "Sudah berakhir" untuk yang berakhir setelah lolos, keputusan #40);
 halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan masuk list, dengan label yang jujur
-(terverifikasi vs diklaim vs analisis AI); project yang gak lolos diberi peringatan dan `noindex`.
+(terverifikasi vs diklaim vs analisis AI); project yang gak lolos diberi peringatan dan `noindex`. Web publik untuk
+pengunjung; Kelayakan, urutan "paling cuan", Keputusan AI, dan effort khusus member (#45); status link klaim (#42),
+"Dicek" (#44), dan rekam jejak (#43) tampil untuk semua.
 
 **Architecture:**
 - Semua teks UI dipusatkan di modul copy (`apps/web/lib/copy.ts`) + label di `lib/view.ts`; pesan alasan risiko dan
   kurasi di `@saf/core` diterjemahkan di sumbernya.
-- View SQL baru `curated_list` (security_invoker) di atas `project_list` + curation terbaru + ringkasan sinyal.
+- Dua view SQL (security_invoker): `public_list` (anon + authenticated, tanpa `worth_level`) dan `curated_list`
+  (authenticated saja, dengan `worth_level`), keduanya di atas `project_list` + curation terbaru + ringkasan sinyal.
+  Halaman memilih view dari sesi; pemisahan dijaga RLS/grant Plan 5, bukan cuma UI.
+- **Desain visual** (UI/UX lebih baik dari AlphaDrops) disusun terpisah dan disetujui owner dulu; komponen di plan ini
+  mengikuti sistem desain itu begitu ada (lihat catatan di Task 4).
 - Halaman tetap server components; data dari query baru di `lib/queries.ts`.
 
 **Tech Stack:** Next.js 16 App Router, `@supabase/ssr`, Vitest, Playwright, pgTAP (sama dengan Plan 2).
 
-**Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` (rev. 3: §7, §8, keputusan #27–#29, #40)
+**Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` (rev. 3: §7, §8, §15, keputusan #27–#29,
+#40–#46)
 
-**Bergantung ke:** Plan 7 (route `/airdrops` dan `(app)/projects`, gak ada digest/signup), Plan 5 (`curations`, `project_signals`, `ai_analyses`, `curate` reasons, stats kurasi), Plan 4
+**Bergantung ke:** Plan 7 (route publik `(public)/airdrops` dan `(public)/projects`, gak ada digest/signup), Plan 5 (`curations`, `project_signals`, `ai_analyses`, `curate` reasons, stats kurasi), Plan 4
 (`tasks.cadence`, evidence v3).
 
 ## Global Constraints
@@ -40,6 +47,13 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
   | peringatan gak lolos | "Tidak masuk daftar kurasi: {alasan}" |
   | status kedaluwarsa | "Berakhir (deadline lewat)" |
   | cadence `daily`/`weekly`/`once` | "Harian" / "Mingguan" / "Sekali" |
+  | bagian khusus member (#46) | "Khusus member" (tanpa tombol/link daftar) |
+  | waktu cek (#44) | "Dicek hari ini" / "Dicek kemarin" / "Dicek {n} hari lalu"; > 48 jam: "Belum dicek ulang sejak {tanggal}"; dibekukan: "Cek terakhir {tanggal}" |
+  | status link (#42) `official`/`different_domain`/`phishing`/`unchecked` | "✓ Domain resmi" / "⚠ Domain beda dari situs resmi" / "Link disembunyikan: terdeteksi phishing" / "Belum dicek" |
+  | badge klaim (#42) | "Klaim terbuka · link dicek" |
+  | backer laporan (#41) | "Menurut AlphaDrops: {investor} (lead), …" |
+  | rekam jejak (#43) | "Dari {total} airdrop yang lolos kurasi sebelum tokennya diperdagangkan dan sudah berakhir: {listed} punya token diperdagangkan, {noToken} berakhir tanpa token, {riskRaised} belakangan berisiko tinggi." |
+  | urutan publik | "Terbaru dicek" |
 - Gak pernah ada teks "aman", "safe", "dijamin", atau "pasti untung".
 - Badge "terverifikasi" cuma untuk sinyal `verified = true`. `claimed_backer` selalu tampil sebagai klaim.
 - Semua link keluar lewat `ExternalLink` (rel noopener noreferrer nofollow) dan URL yang sudah dibersihkan referral.
@@ -58,6 +72,10 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 5. **Parameter `?tab=` gak dikenal** → default "Bisa digarap sekarang", gak error 500. Test di Task 4.
 6. **Project berakhir setelah lolos kurasi** (#40) → pindah ke tab "Sudah berakhir", halaman detailnya tanpa banner
    "Tidak masuk daftar kurasi" dan tanpa `noindex`, perubahannya tampil sebagai "Sudah berakhir". Test di Task 4, 6, 7.
+7. **Pengunjung membuka `?sort=worth` atau `?worth=high`** → parameter diabaikan (urut "Terbaru dicek"), gak error dan
+   gak membocorkan urutan Kelayakan. Test di Task 4.
+8. **Link klaim berstatus `phishing`** → dirender sebagai teks peringatan, bukan `<a>`, di halaman project mana pun.
+   Test di Task 5.
 
 ---
 
@@ -106,7 +124,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 
 ---
 
-### Task 3: View `curated_list` + query
+### Task 3: View `public_list` + `curated_list` + query
 
 **Files:**
 - Create: `supabase/migrations/0012_curated_list.sql`, `supabase/tests/curated_list.test.sql`
@@ -115,19 +133,31 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 - Test: `apps/web/test/queries.test.ts` (atau file test query yang ada), test `getFarmingBoard` yang ada
 
 **Interfaces:**
-- Produces (SQL): `curated_list` (security_invoker) = kolom `project_list` + `tab`, `ended_on`, `worth_level`, `curated_at`, dan
-  `signals` (jsonb array `{kind, value, verified}` dari `project_signals`), cuma baris yang curation terbarunya
-  (`computed_at desc, seq desc`) `passed = true`. `grant select` ke **authenticated saja** (keputusan #33).
+- Produces (SQL):
+  - `public_list` (security_invoker) = kolom `project_list` + `tab`, `ended_on`, `checked_at` (`computed_at` curation
+    terbaru), `signals` (jsonb array `{kind, value, verified}` dari `project_signals`), `claim_open_checked` (boolean:
+    ada deadline `claim` ≥ hari ini dan semua link `claim` project berstatus `official` di `link_checks`), cuma baris
+    yang curation terbarunya (`computed_at desc, seq desc`) `passed = true`. **Tanpa** `worth_level`. `grant select` ke
+    anon dan authenticated (#45).
+  - `curated_list` = `public_list` + `worth_level`; `grant select` ke **authenticated saja**.
 - Produces (TS):
-  - `listCurated(db, tab: Tab, f: ListFilters & { worth?: WorthLevel[] }, page: number): Promise<CuratedPage>`;
-    urutan: worth (`high`→`insufficient_data`), sinyal terkuat (vc_backer → tvl → coingecko_listed → curated_source),
-    deadline terdekat, `last_seen` desc. Tab `ended`: `ended_on` desc, lalu nama; tanpa batas umur (#40).
+  - `listCurated(db, tab: Tab, f: ListFilters & { worth?: WorthLevel[] }, page: number, member: boolean): Promise<CuratedPage>`;
+    member: dari `curated_list`, urutan worth (`high`→`insufficient_data`), sinyal terkuat (vc_backer → tvl →
+    coingecko_listed → curated_source), deadline terdekat, `last_seen` desc. Pengunjung: dari `public_list`, urutan
+    `checked_at` desc lalu nama, filter `worth` diabaikan. Tab `ended` (keduanya): `ended_on` desc, lalu nama; tanpa
+    batas umur (#40).
+  - `checkedLabel(checkedAt: Date, now: Date, frozen: boolean): string` — teks glosarium #44.
+  - `getTrackRecord(db): Promise<{ total; listed; noToken; riskRaised } | null>` dari `pipeline_runs` sukses terakhir
+    (`stats.track_record_*`); `null` kalau `total < 10` (#43).
   - `getRunSummary(db): Promise<{ checked: number; passed: number; at: Date } | null>` dari `pipeline_runs` sukses terakhir
     (`stats.curation_checked`, `stats.curation_passed`).
   - `parseTab(v: string | undefined): Tab` (`live_now` | `early_bets` | `ended`, default `live_now`).
 
 - [ ] **Step 1: Test yang gagal** — pgTAP: project dengan curation terbaru `passed=false` gak muncul walau yang lama
-  `passed=true`; project tanpa curation gak muncul; authenticated bisa select, anon ditolak. Vitest: `parseTab("x") === "live_now"`, `parseTab("ended") === "ended"`; urutan
+  `passed=true`; project tanpa curation gak muncul; anon bisa select `public_list` tapi gak punya kolom `worth_level`
+  dan ditolak di `curated_list` (`42501`); authenticated bisa keduanya. Vitest: `parseTab("x") === "live_now"`,
+  `parseTab("ended") === "ended"`; `checkedLabel` untuk 0/1/3 hari dan > 48 jam; `getTrackRecord` → `null` saat
+  `total = 9`; urutan
   `listCurated` sesuai aturan (mock rows), termasuk tab `ended` urut `ended_on` terbaru dulu; `getFarmingBoard` untuk
   project dengan `ended_on` memberi `range.endKind = "ended"`.
 - [ ] **Step 2–4:** gagal → implementasi → pgTAP + `pnpm --filter web test` lulus.
@@ -138,23 +168,30 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 ### Task 4: Halaman list: tiga tab, badge, ringkasan
 
 **Files:**
-- Modify: `apps/web/app/(app)/airdrops/page.tsx`, `apps/web/components/ProjectRow.tsx`
+- Modify: `apps/web/app/(public)/airdrops/page.tsx`, `apps/web/components/ProjectRow.tsx`
 - Create: `apps/web/components/SignalBadges.tsx`, `apps/web/components/WorthBadge.tsx`, `apps/web/components/TabNav.tsx`
 - Test: `apps/web/test/components/*.test.tsx`, `apps/web/e2e/projects.spec.ts`
 
 **Interfaces:**
 - Consumes: Task 3.
-- Baris: nama, status, Kelayakan, risiko, "{k}/4 cek keamanan kunci jalan", badge sinyal (`VC: Paradigm ✓` hanya
-  untuk `vc_backer` verified; `TVL $45 jt`; `Terdaftar di CoinGecko`; `Sumber kurasi`), deadline terdekat.
-- Filter: status, risiko, chain (yang ada) + Kelayakan. Tab lewat `?tab=live_now|early_bets|ended`, filter lain dipertahankan.
+- Baris: nama, status, Kelayakan (member saja), risiko, "{k}/4 cek keamanan kunci jalan", "Dicek …" (#44), badge
+  sinyal (`VC: Paradigm ✓` hanya untuk `vc_backer` verified; "Menurut AlphaDrops: …" untuk `reported_backer`; `TVL $45
+  jt`; `Terdaftar di CoinGecko`; `Sumber kurasi`), badge "Klaim terbuka · link dicek" kalau `claim_open_checked`,
+  deadline terdekat.
+- Filter: status, risiko, chain (yang ada) + Kelayakan (member saja). Tab lewat `?tab=live_now|early_bets|ended`,
+  filter lain dipertahankan. Pengunjung melihat label urutan "Terbaru dicek".
+- Rekam jejak (#43): kalimat glosarium di atas list kalau `getTrackRecord` gak `null`; juga dipasang di landing Plan 7.
+- **Desain visual:** sebelum task ini dikerjakan, sistem desain (warna, tipografi, kartu/baris, state) yang disetujui
+  owner ditambahkan sebagai Global Constraint plan ini; komponen task ini dan Task 5 mengikutinya.
 - Baris di tab "Sudah berakhir": status "Berakhir" + "Berakhir {tanggal}" (dari `ended_on`) menggantikan deadline terdekat.
 - Kosong: "Belum ada airdrop yang lolos kurasi di tab ini." + ringkasan.
 
 - [ ] **Step 1: Test yang gagal** — e2e: seed 1 project lolos `live_now`, 1 lolos `early_bets`, 1 lolos `ended`, 1 gagal →
   tab default cuma menampilkan yang `live_now`; klik "Peluang awal" menampilkan yang speculative; klik "Sudah berakhir"
   menampilkan yang berakhir dengan "Berakhir {tanggal}"; yang gagal gak ada di tab mana pun;
-  `?tab=xyz` menampilkan tab default; ringkasan "4 airdrop dicek hari ini · 3 lolos kurasi". Komponen: `SignalBadges`
-  gak pernah merender "✓" untuk `claimed_backer`.
+  `?tab=xyz` menampilkan tab default; ringkasan "4 airdrop dicek hari ini · 3 lolos kurasi"; sebagai pengunjung gak ada
+  teks "Kelayakan" dan `?sort=worth&worth=high` diabaikan; sebagai member "Kelayakan" tampil; tiap baris punya "Dicek".
+  Komponen: `SignalBadges` gak pernah merender "✓" untuk `claimed_backer`/`reported_backer`.
 - [ ] **Step 2–4:** gagal → implementasi → `pnpm --filter web test && pnpm --filter web e2e` lulus.
 - [ ] **Step 5: Commit** — `git commit -m "feat(web): curated list with tabs, worth and signal badges"`
 
@@ -163,7 +200,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 ### Task 5: Halaman project baru
 
 **Files:**
-- Modify: `apps/web/app/(app)/projects/[slug]/page.tsx`, `apps/web/components/ProjectDetailView.tsx`,
+- Modify: `apps/web/app/(public)/projects/[slug]/page.tsx`, `apps/web/components/ProjectDetailView.tsx`,
   `apps/web/lib/queries.ts` (`getProjectDetail` diperluas)
 - Create: `apps/web/components/detail/AiDecision.tsx`, `Contradictions.tsx`, `StepsList.tsx`, `EffortBox.tsx`,
   `WhyListed.tsx`, `SafetyBox.tsx`, `LatestUpdate.tsx`
@@ -182,11 +219,20 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
   ada di sub-proyek ini (sub-proyek checklist, #3, #4).
 - Teks AI dirender sebagai teks biasa; `source_url` jadi `ExternalLink` hanya kalau URL itu salah satu URL dokumen
   sumber project.
+- **Publik vs member (#45):** pengunjung melihat Kepala ("Dicek …", tanpa Kelayakan), Kontradiksi, Langkah (dari
+  `tasks.text_id`, jatuh ke `tasks.text`), Keamanan, Update terbaru, Kenapa masuk list. Bagian Keputusan AI dan Effort
+  untuk pengunjung = kotak berjudul sama berisi "Khusus member" saja (tanpa tombol, #46); data `analyst` gak pernah
+  di-query untuk pengunjung.
+- **Link (#42):** tiap link di Langkah dan Keamanan menampilkan status dari `link_checks` (glosarium); `phishing` →
+  teks peringatan, bukan `<a>`; `different_domain` → link + peringatan. Kepala menampilkan "Klaim terbuka · link dicek"
+  kalau `claim_open_checked`.
 
 - [ ] **Step 1: Test yang gagal** — komponen: `AiDecision` dengan `analyst = null` → "Analisis AI belum tersedia";
   poin berisi `<b>x</b>` dirender sebagai teks; `WhyListed` menulis "Diklaim project, belum terverifikasi" untuk
-  `claimed_backer`; `StepsList` mengelompokkan cadence. e2e: halaman project lolos menampilkan bagian dalam urutan di
-  atas dan label "Analisis AI".
+  `claimed_backer`; `StepsList` mengelompokkan cadence; `LinkStatus` dengan `phishing` gak merender `<a>`. e2e: halaman
+  project lolos sebagai member menampilkan bagian dalam urutan di atas dan label "Analisis AI"; sebagai pengunjung
+  bagian Keputusan AI dan Effort berisi "Khusus member", gak ada teks verdict ("Garap"/"Pantau"/"Lewati"), dan gak ada
+  teks "Daftar".
 - [ ] **Step 2–4:** gagal → implementasi → test + e2e lulus.
 - [ ] **Step 5: Commit** — `git commit -m "feat(web): project page with AI decision, safety, effort, steps and why-listed"`
 
@@ -195,7 +241,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 ### Task 6: Project yang gak lolos: peringatan, `noindex`, watchlist
 
 **Files:**
-- Modify: `apps/web/app/(app)/projects/[slug]/page.tsx` (`generateMetadata` → `robots: { index: false }` kalau gak
+- Modify: `apps/web/app/(public)/projects/[slug]/page.tsx` (`generateMetadata` → `robots: { index: false }` kalau gak
   lolos), `ProjectDetailView.tsx`, `apps/web/app/(app)/watchlist/page.tsx`, `apps/web/lib/watchlist.ts`
 - Create: `apps/web/components/NotCuratedBanner.tsx`
 - Test: komponen + `apps/web/e2e/projects.spec.ts`, `apps/web/e2e/watchlist.spec.ts`
@@ -218,8 +264,8 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 
 **Files:**
 - Modify: `supabase/migrations/0012_curated_list.sql` (tambah `profiles.changes_seen_at timestamptz` + `grant update (changes_seen_at) on profiles to authenticated`)
-- Create: `apps/web/components/ChangesSinceLastVisit.tsx`, `apps/web/app/(app)/airdrops/actions.ts` (`markChangesSeen`)
-- Modify: `apps/web/lib/queries.ts`, `apps/web/app/(app)/airdrops/page.tsx`, `apps/web/app/(app)/watchlist/page.tsx`
+- Create: `apps/web/components/ChangesSinceLastVisit.tsx`, `apps/web/app/(public)/airdrops/actions.ts` (`markChangesSeen`)
+- Modify: `apps/web/lib/queries.ts`, `apps/web/app/(public)/airdrops/page.tsx`, `apps/web/app/(app)/watchlist/page.tsx`
 - Test: komponen, `supabase/tests/curated_list.test.sql`, e2e `watchlist.spec.ts`
 
 **Interfaces:**

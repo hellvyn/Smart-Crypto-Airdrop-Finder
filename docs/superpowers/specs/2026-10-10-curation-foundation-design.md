@@ -3,7 +3,9 @@
 Tanggal: 2026-10-10
 Status: **rev. 3, disetujui owner untuk dibuat plan (2026-10-10)**. Rev. 2: perbaikan skor setelah simulasi terhadap data run
 pertama. Rev. 3: akar masalah domain, halaman project vs airdrops.io, fitur AI (§13, detail provider belum lengkap),
-Bahasa Indonesia. Tambahan 2026-10-10: keputusan #40 (airdrop yang berakhir setelah lolos kurasi tetap tampil).
+Bahasa Indonesia. Tambahan 2026-10-10: keputusan #40 (airdrop yang berakhir setelah lolos kurasi tetap tampil);
+keputusan #41–#46 (head-to-head AlphaDrops, §15): sumber baru, cek link klaim, rekam jejak, "Dicek", web publik + fitur AI
+khusus member.
 Dibangun di atas: `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md` (spec v1, sudah live)
 
 Label: **[FACT]** dari data/kode/run, **[INFERENCE]** kesimpulan dari bukti, **[UNKNOWN]** belum terverifikasi.
@@ -15,8 +17,9 @@ Label: **[FACT]** dari data/kode/run, **[INFERENCE]** kesimpulan dari bukti, **[
 **Masalah** (dari owner): list v1 terlalu "mentah". Semua orang lihat isi yang sama, info airdrop kurang menarik, dan belum
 ada pembeda antara airdrop yang legit dan yang gak jelas.
 
-**Tujuan produk (keputusan owner, direvisi 2026-10-10):** produk **berbayar**. Isi web cuma bisa diakses member yang
-**ditambahkan manual oleh owner** (pembayaran diurus owner di luar web); pengunjung lain cuma lihat landing page. Ukuran suksesnya: konversi ke berbayar. Target user:
+**Tujuan produk (keputusan owner, direvisi 2026-10-10, lalu #45):** produk **berbayar** dengan model **freemium**.
+List kurasi dan lapisan keamanan bisa dilihat semua pengunjung (seperti AlphaDrops); keputusan dan fitur AI penghemat
+waktu khusus member yang **ditambahkan manual oleh owner**. Pendaftaran dan pembayaran di web menyusul (#46). Ukuran suksesnya: konversi ke berbayar. Target user:
 pemula **dan** farmer berpengalaman.
 
 **Positioning:** "Airdrop paling cuan, yang udah dicek aman, dan ada buktinya." Cuan = pengait (skor Worth it, top picks),
@@ -45,10 +48,12 @@ Permintaan owner dipecah jadi sub-proyek, masing-masing punya spec → plan → 
 |---|---|---|
 | 1 | **Fondasi kurasi**: sinyal legit, `curate()`, `worth()`, status kedaluwarsa, tampilan list kurasi | **spec ini** |
 | 2 | **Akses member manual** (Plan 7, dikerjakan lebih dulu): hapus signup/email, data khusus user login, landing page. Sisa: top picks, pindah dari Vercel Hobby, ToS/privasi/disclaimer | Plan 7 + berikutnya |
-| 3 | Track record: hasil nyata airdrop dibanding level Worth it (riset sumber data dulu) | nanti |
+| 3 | Track record: hasil nyata airdrop dibanding level Worth it. Versi pertama = rekam jejak #43 (§15.3) | §15 |
 | 4 | **Tracker "Garapan saya"**: checklist harian + heatmap per project (§14, Plan 8, dikerjakan setelah Plan 4) | Plan 8 |
-| 5 | Link klaim terverifikasi | nanti |
+| 5 | Link klaim terverifikasi: versi pertama = cek link klaim #42 (§15.2) | §15 |
 | 6 | Cek eligibility lebih dalam | paling belakang |
+| 7 | **AI Daily Briefing + Change Detector (A4)**: plan berikutnya setelah Plan 6, sebelum Coach (#41–#46) | setelah Plan 6 |
+| 8 | Pendaftaran + pembayaran di web (#46) | nanti |
 
 **Dicoret:** alert Telegram (keputusan owner). Notifikasi tetap lewat email digest yang ada.
 
@@ -67,7 +72,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 21 | Arsitektur | Pendekatan A: tahap sinyal + fungsi deterministik di core. LLM cuma mengekstrak, gak pernah menilai |
 | 22 | Sumber VC terverifikasi | Cek silang ke halaman portfolio VC top (opsi A) + sinyal lain tetap jalan (opsi B). Scraper Apify jadi upgrade kalau ada budget |
 | 23 | Positioning | "Paling cuan, udah dicek aman, ada buktinya" |
-| 24 | Model akses | Cuma member berbayar yang bisa akses isi web |
+| 24 | Model akses | ~~Cuma member berbayar yang bisa akses isi web~~ Diganti #45 |
 | 25 | Pengunjung non-member | Landing page + contoh terbatas (detail di sub-proyek #2) |
 | 26 | Alert Telegram | Gak dibikin |
 | 27 | Dua jenis peluang | List dipisah jadi tab **"Live now"** (live/announced) dan **"Early bets"** (speculative); `worth()` meranking di dalam tab. Tab ketiga "Sudah berakhir" (#40) |
@@ -75,7 +80,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 29 | Bahasa | **Bahasa Indonesia saja** untuk UI web, email, dan semua output AI (menggantikan asumsi v1 "UI bahasa Inggris dulu"). Konten sumber berbahasa Inggris diterjemahkan/diringkas AI |
 | 31 | Pendaftaran member | Gak ada signup; owner menambah user satu per satu di Supabase (Auto Confirm); signup dimatikan di Supabase Auth |
 | 32 | Email | Gak ada email sama sekali: email digest dihapus, lupa password = owner reset manual |
-| 33 | Akses data | Semua data airdrop cuma untuk user login, dikunci di RLS **dan** routing; non-login cuma landing (`/`) + `/login`. Menggantikan rencana paywall berbayar di web |
+| 33 | Akses data | ~~Diganti #45.~~ Semua data airdrop cuma untuk user login, dikunci di RLS **dan** routing; non-login cuma landing (`/`) + `/login`. Menggantikan rencana paywall berbayar di web |
 | 34 | Info perubahan | Ditampilkan di web ("Perubahan sejak kunjungan terakhir"), gak lewat email |
 | 35 | Tracker garapan | Checklist + heatmap **per project** (bukan per wallet), warna = % task harian dicentang (4 tingkat), streak hari 100% |
 | 39 | Rentang heatmap | Sesuai masa garap: dari "Mulai garap" sampai snapshot/akhir kampanye paling awal; tanpa tanggal selesai = 1 tahun (52 minggu) dari hari mulai; maks. 52 minggu |
@@ -83,6 +88,12 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 37 | Asal task tracker | Langkah Harian/Mingguan dari sumber + task buatan member; centang cuma untuk hari ini (zona waktu member) |
 | 38 | Coach → tracker | Rekomendasi AI Farming Coach menampilkan tombol "Mulai garap" yang memakai aksi yang sama dengan halaman project |
 | 40 | Airdrop yang berakhir | Yang **pernah lolos kurasi** tetap tampil setelah berakhir, di tab ketiga **"Sudah berakhir"**, dengan status "Berakhir", **selamanya** (arsip rekam jejak). Yang belum pernah lolos tetap tersembunyi. Risiko tetap dicek: kalau naik ke high/critical, keluar dari list |
+| 41 | Sumber baru | DefiLlama v2 (TVL ≥ $1 jt, listing < 180 hari diprioritaskan, buang rugged/dead/misrepresented, 80 kandidat), collector AlphaDrops (listing), backer dari data fundraising AlphaDrops (`reported_backer`, gak terverifikasi) (§15.1) |
+| 42 | Cek link klaim | Tiap link `claim`/`app` dicek domain resmi, umur domain, phishing; AI Scam Analyst membaca halaman portal klaim; link phishing gak bisa diklik (§15.2) |
+| 43 | Rekam jejak | Angka agregat dari airdrop yang lolos sebelum token diperdagangkan; tampil publik setelah ≥ 10 berakhir (§15.3) |
+| 44 | "Dicek" | Waktu cek terakhir di tiap baris dan halaman; peringatan kalau > 48 jam (§15.4) |
+| 45 | Web publik + fitur member | Menggantikan #24/#33: list, keamanan, kontradiksi, langkah, rekam jejak publik; Kelayakan, urutan "paling cuan", Keputusan AI, effort, Briefing, Coach, tracker, watchlist, wallet khusus member. Dikunci di RLS, bukan cuma UI (§15.5) |
+| 46 | Jalan jadi member | Belum ada tombol/CTA; bagian member menampilkan "Khusus member" saja. Pendaftaran + pembayaran di update berikutnya |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -97,10 +108,10 @@ Satu baris per sinyal per project. Diperbarui tiap run; baris sinyal yang gak di
 | Kolom | Isi |
 |---|---|
 | `project_id` | FK ke `projects`, `on delete cascade` |
-| `kind` | `vc_backer`, `tvl`, `coingecko_listed`, `curated_source`, `claimed_backer` |
-| `value` | jsonb. `vc_backer`: `{investor, tier}`. `tvl`: `{tvl_usd}`. `coingecko_listed`: `{gecko_id}`. `curated_source`: `{source_kind}`. `claimed_backer`: `{investor, quote}` |
-| `source` | `vc_portfolio`, `defillama`, `airdrops_io`, `telegram`, `llm_text` |
-| `verified` | `true` hanya untuk sinyal dari sumber independen yang cocok domain. `claimed_backer` **selalu** `false` |
+| `kind` | `vc_backer`, `tvl`, `coingecko_listed`, `curated_source`, `claimed_backer`, `reported_backer` (#41) |
+| `value` | jsonb. `vc_backer`: `{investor, tier}`. `tvl`: `{tvl_usd}`. `coingecko_listed`: `{gecko_id}`. `curated_source`: `{source_kind}`. `claimed_backer`: `{investor, quote}`. `reported_backer`: `{investor, lead, amount_usd, round, round_date, source_url}` |
+| `source` | `vc_portfolio`, `defillama`, `airdrops_io`, `telegram`, `llm_text`, `alphadrops` |
+| `verified` | `true` hanya untuk sinyal dari sumber independen yang cocok domain. `claimed_backer` dan `reported_backer` **selalu** `false` |
 | `observed_at` | waktu sinyal terakhir dicek |
 
 Unik per `(project_id, kind, value->>'investor')` untuk backer, dan per `(project_id, kind)` untuk sinyal lain.
@@ -200,6 +211,8 @@ collect → extract+merge → speculative → signals (baru) → score (diperlua
 | `tvl`, `coingecko_listed` | Cocokkan project ke daftar `/protocols` DefiLlama yang **sudah diambil** di tahap collect (daftar lengkap, bukan hasil filter collector yang sengaja membuang protocol ber-`gecko_id`) | 0 |
 | `curated_source` | Dari `source_kind` dokumen project (airdrops.io atau channel Telegram di config) | 0 |
 | `claimed_backer` | Dari `claimed_backers` hasil ekstraksi | 0 |
+| `curated_source` (AlphaDrops) | Project dari collector `alphadrops` (#41) | 0 |
+| `reported_backer` | Halaman `/raises/<slug>` AlphaDrops, diterima cuma kalau "Official Website" cocok domain (§15.1) | ≤ 40 halaman **seminggu sekali** |
 | `vc_backer` | Cek domain project terhadap cache `vc_portfolios` | 0 per project; ~10–15 request **seminggu sekali** untuk menyegarkan cache |
 
 **Aturan pencocokan (anti-scam, wajib):** sinyal terverifikasi (`tvl`, `coingecko_listed`, `vc_backer`) hanya menempel
@@ -285,6 +298,7 @@ menyebut ticker. Rev. 2 memperbaiki tiga hal:
 | TVL ≥ $100 jt / ≥ $10 jt | +2 / +1 |
 | Belum ada token yang diperdagangkan (gak `coingecko_listed`, gak ada `tge` yang lewat) | +2 |
 | Sinyal dari > 1 sumber independen | +1 |
+| Funding dilaporkan (`reported_backer`) ≥ $5 jt, gak dijumlah dengan `vc_backer` terverifikasi (diambil yang tertinggi) | +1 (#41, ikut kalibrasi) |
 | `capital_required` high / low / none | −2 / −1 / 0 (`unknown` = 0, disebut di alasan) |
 | Task > 8 | −1 |
 
@@ -313,7 +327,7 @@ Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall d
   **"Sudah berakhir"** (#40: pernah lolos kurasi lalu berakhir; status "Berakhir" + tanggal berakhir, urut terbaru dulu,
   tanpa batas waktu).
 - Baris ringkasan dari run terakhir: "N airdrops checked today · M passed curation".
-- Tiap baris menampilkan cakupan cek: "4/4 key safety checks ran".
+- Tiap baris menampilkan cakupan cek: "4/4 key safety checks ran" dan "Dicek {waktu}" (#44).
 - Tiap baris: nama, status, level **Worth it**, level risiko, badge sinyal (`VC-backed: Paradigm ✓`, `TVL $45M`,
   `Listed on CoinGecko`, `Curated source`), deadline terdekat.
 - Filter: status, risiko, chain (sudah ada) + Worth it.
@@ -356,8 +370,8 @@ Berakhir setelah lolos (#40) **bukan** "keluar dari kurasi": halaman detailnya t
 
 ## 8. Keamanan dan privasi
 
-- Semua tabel baru RLS on. `project_signals`, `curations`, `ai_analyses` dan view `curated_list` cuma bisa dibaca
-  `authenticated` (keputusan #33; tabel tampilan lama dikunci di Plan 7). `vc_portfolios` tanpa akses web.
+- Semua tabel baru RLS on. Pembagian baca publik vs member mengikuti #45 dan §15.5 (menggantikan "cuma
+  `authenticated`" dari #33). `vc_portfolios` tanpa akses web.
 - Gak ada data user baru. Log run tetap angka saja (spec v1 §9).
 - Teks halaman portfolio VC gak disimpan, cuma domain.
 - LLM gak pernah memutuskan lolos/worth; teks project (termasuk klaim "backed by X") gak bisa menaikkan status verified.
@@ -507,3 +521,97 @@ dan diubah pemiliknya (`user_id = auth.uid()`); centang lewat fungsi `SECURITY D
 server, jadi klien gak bisa menulis tanggal lain. Hapus akun ikut menghapus semuanya (cascade dari `auth.users`).
 
 **Gak termasuk:** cek onchain otomatis, versi per wallet, leaderboard/profil publik, pengingat email.
+
+## 15. Head-to-head AlphaDrops (keputusan #41–#46)
+
+Riset: `docs/research/2026-10-10-alphadrops-head-to-head.md`. Ringkas [FACT]: AlphaDrops punya 169 airdrop + 881
+proyek fundraising, tanpa cek keamanan per project, 25% link website berupa referral, 42 dari 63 entri aktif ditambahkan
+sebelum April 2026, tanpa AI, Inggris saja, Premium $5/bulan. Irisan dengan data kita: 11 dari 63 airdrop aktif mereka.
+Strategi: **tutup celah isi, menang di kepercayaan dan keputusan.**
+
+### 15.1 Sumber baru (#41)
+
+**DefiLlama v2** (mengganti seleksi kandidat collector `defillama`): gak ada `gecko_id`/symbol; TVL ≥ $1.000.000;
+buang `rugged = true`, `deadFrom` terisi, `misrepresentedTokens = true`; urut: `listedAt` < 180 hari dulu, lalu
+`change_7d` desc, lalu TVL desc; maksimal 80. Syarat sinyal legit TVL di §6.2 tetap ≥ $10 jt.
+
+**Collector `alphadrops`** (`source_kind` baru):
+- Listing `https://alphadrops.net/airdrops`: data terstruktur di HTML (Next.js), ambil status `active`, `upcoming`,
+  `claimable`. Satu dokumen per project untuk ekstraksi LLM: nama, deskripsi, kategori, chain, funding, status, plus teks
+  halaman detail kalau diambil.
+- Halaman detail `/airdrops/<slug>` untuk tiap item yang diambil, maksimal 80 per run, jeda ≥ 1,5 detik. Hash dokumen
+  yang sudah ada mencegah ekstraksi LLM ulang kalau isinya sama.
+- Link website: buang parameter referral (pembersih yang ada), resolve redirect (maks. 3 lompatan). Kalau host akhir
+  persis ada di daftar host perantara di config (`s.kaito.ai`, `linktr.ee`, `galxe.com`, `app.galxe.com`, `zealy.io`,
+  `layer3.xyz`, `bit.ly`, `t.co`) atau `alphadrops.net`, link itu **bukan** domain resmi dan gak ditulis ke dokumen.
+  Cocok host persis, bukan registrable domain, supaya project yang memang beralamat di `kaito.ai` tetap punya domain.
+- Gagal ambil = `CollectorResult.failed`, run tetap jalan (pola collector yang ada).
+
+**`reported_backer`** (tahap `signals`; halaman diambil seminggu sekali dan disimpan di cache `alphadrops_raises`
+(`slug` pk, `official_domain`, `rounds` jsonb, `fetched_at`), service role saja, karena sinyal ditulis ulang tiap run): untuk project kita yang belum punya `reported_backer` segar,
+cari slug di daftar fundraising `https://alphadrops.net/llms-full.txt` (nama dinormalisasi; **cuma untuk memilih halaman
+yang diambil**), ambil `/raises/<slug>`, terima ronde hanya kalau link "Official Website" di halaman itu punya
+registrable domain yang sama dengan domain resmi project. Simpan investor (lead ditandai), jumlah, jenis ronde, tanggal,
+URL. Maksimal 40 halaman per minggu. Tampil "Menurut AlphaDrops: …"; jadi terverifikasi cuma lewat `vc_backer`.
+
+**Ditunda:** membuat kandidat baru dari 881 data fundraising (butuh crawl ±881 halaman).
+
+### 15.2 Cek link klaim (#42)
+
+- Per link berjenis `claim` atau `app` (tahap `score`): `official` = host-nya domain resmi atau subdomainnya; umur domain
+  (RDAP/crt.sh yang ada); phishing (GoPlus yang ada).
+- Status per link: `official` ("✓ Domain resmi"), `different_domain` ("⚠ Domain beda dari situs resmi"), `phishing`
+  ("Link disembunyikan: terdeteksi phishing"), `unchecked` ("Belum dicek"). Link `phishing` gak pernah dirender sebagai
+  link; `different_domain` tetap bisa diklik dengan peringatan.
+- **AI Scam Analyst (A2)** juga membaca teks halaman portal klaim (diambil sekali, maks. 20 halaman per run, dicache per
+  URL 7 hari). Hasilnya cuma bisa menaikkan risiko (batas keras §13).
+- Project ber-deadline `claim` yang masih terbuka mendapat badge "Klaim terbuka · link dicek" kalau semua link klaimnya
+  `official`.
+- Link `phishing` pada project yang lolos kurasi menaikkan risiko project ke `high` (lewat alasan risiko baru
+  `phishing_claim_link`), jadi project keluar dari list.
+
+Hasil cek per link disimpan di tabel `link_checks` (`url` pk, `status`, `checked_at`), baca publik; link yang sama di
+beberapa project cukup dicek sekali per run.
+
+### 15.3 Rekam jejak (#43)
+
+- Populasi: project yang **curation lolos pertamanya** terjadi saat project belum `coingecko_listed`, dan sekarang
+  `tab = ended` (#40).
+- Angka: (a) jumlah yang sekarang `coingecko_listed`; (b) jumlah yang berakhir tanpa token diperdagangkan; (c) jumlah yang
+  setelah lolos pernah berisiko `high`/`critical`. Tiga angka + total populasi, tanpa nama project.
+- Dihitung harian di pipeline, disimpan di `pipeline_runs.stats` (`track_record_total`, `_listed`, `_no_token`,
+  `_risk_raised`).
+- Tampil di landing dan halaman list publik **hanya kalau populasi ≥ 10**; sebelum itu gak ditampilkan sama sekali.
+
+### 15.4 "Dicek" (#44)
+
+- `checked_at` = `computed_at` curation terbaru. Baris dan kepala halaman: "Dicek {relatif}" ("hari ini", "kemarin",
+  "{n} hari lalu").
+- > 48 jam: "Belum dicek ulang sejak {tanggal}" dengan warna peringatan. Project `ended` yang dibekukan (§5.3, > 90 hari)
+  menampilkan "Cek terakhir {tanggal}" tanpa warna peringatan.
+
+### 15.5 Publik vs member (#45, #46)
+
+| Isi | Pengunjung | Member |
+|---|---|---|
+| List kurasi 3 tab (urut "terbaru dicek"), status, risiko, deadline, chain, "Dicek", ringkasan run | ✓ | ✓ |
+| Badge sinyal (terverifikasi, "Menurut AlphaDrops", TVL, CoinGecko, sumber kurasi) | ✓ | ✓ |
+| Keamanan: 4 cek kunci, A2, cek link klaim | ✓ | ✓ |
+| Kontradiksi (A3) | ✓ | ✓ |
+| Langkah (terjemahan A6) | ✓ | ✓ |
+| Rekam jejak | ✓ | ✓ |
+| Level Kelayakan, urutan "paling cuan" (§6.3) | ✗ | ✓ |
+| Keputusan AI (A1) | "Khusus member" | ✓ |
+| Estimasi effort (A6: menit/hari, modal, gas) | ✗ | ✓ |
+| Daily Briefing (A4), Farming Coach (A5), "Tanya AI" | ✗ | ✓ |
+| Garapan saya, watchlist, wallet, "Perubahan sejak kunjungan terakhir" | ✗ | ✓ |
+
+- **Dikunci di database**, bukan cuma UI (anon key publik bisa query REST langsung): view publik `public_list` tanpa
+  `worth_level`; `curated_list` (dengan `worth_level`) cuma `authenticated`; `ai_analyses` kind `analyst` cuma
+  `authenticated`, kind `scam`/`contradictions` publik; terjemahan langkah disimpan terpisah dari hasil Analyst (kolom
+  `tasks.text_id`) supaya bisa publik; `curations.reasons` worth dibaca lewat view member.
+- Halaman publik bisa di-index; yang gak lolos kurasi tetap `noindex` (§7.3). Root `/` = landing + cuplikan list;
+  `/airdrops` = list publik; `/login` tetap; signup tetap mati (#31).
+- Bagian khusus member menampilkan "Khusus member" tanpa tombol atau link pendaftaran (#46).
+- Gerbang §12 tetap syarat sebelum owner menarik bayaran dari member.
+

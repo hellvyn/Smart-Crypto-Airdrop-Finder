@@ -16,9 +16,9 @@ gak + level Worth it) yang tersimpan dan bisa diukur terhadap gerbang kualitas.
 
 **Tech Stack:** sama dengan Plan 4.
 
-**Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` (rev. 3: §4.1–4.5, §5.1–5.3, §6, §9, §12, §13)
+**Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` (rev. 3: §4.1–4.5, §5.1–5.3, §6, §9, §12, §13, §15)
 
-**Bergantung ke:** Plan 7 (tanpa digest, RLS member-only), Plan 8 (migrasi `0010`, dikerjakan sebelum plan ini), Plan 4 (ekstraksi v3, `ProjectForScoring.steps/facts`, `ModelConfig.provider`, `loadProviders`,
+**Bergantung ke:** Plan 7 (tanpa digest, web publik + route akun terlindungi), Plan 8 (migrasi `0010`, dikerjakan sebelum plan ini), Plan 4 (ekstraksi v3, `ProjectForScoring.steps/facts`, `ModelConfig.provider`, `loadProviders`,
 stats cakupan, set uji scam). Plan 6 bergantung ke plan ini (tabel `project_signals`, `curations`, `ai_analyses`).
 
 ## Global Constraints
@@ -36,6 +36,10 @@ stats cakupan, set uji scam). Plan 6 bergantung ke plan ini (tabel `project_sign
 - Level worth: total ≥ 4 `high`, 2–3 `medium`, ≤ 1 `low`; `insufficient_data` kalau satu-satunya sinyal potensi
   `curated_source` dan `capital_required = unknown`.
 - Migrasi baru: `0011_curation.sql`. Stats baru tetap angka.
+- **Publik vs member (spec §15.5, #45)** dikunci di database: `project_signals`, `link_checks`, kolom kurasi non-worth
+  (`id, project_id, passed, tab, status_at, ended_on, computed_at, seq`), dan `ai_analyses` kind `scam`/`contradictions`
+  bisa dibaca `anon`; `curations.worth_level`/`reasons`/`coverage` dan `ai_analyses` kind `analyst` cuma `authenticated`;
+  `vc_portfolios`, `alphadrops_raises` service role saja.
 - Batas analisis AI per run: `analyzeBudgetMinutes = 10`, `maxAnalysesPerRun = 60`; analisis di-skip (pakai cache) kalau
   hash masukan sama.
 
@@ -53,6 +57,10 @@ stats cakupan, set uji scam). Plan 6 bergantung ke plan ini (tabel `project_sign
 6. **Airdrop yang lolos lalu berakhir** (keputusan #40) → tetap lolos di tab `ended`, gak menulis `curated` true→false;
    yang berakhir tanpa pernah lolos tetap tersembunyi; cek domain yang berhenti jalan setelah berakhir gak
    menggugurkannya. Test di Task 8 dan 9.
+7. **Pengunjung (anon) query REST langsung ke `curations.worth_level` atau `ai_analyses` kind `analyst`** → ditolak /
+   0 baris; data publik (lolos, tab, scam, kontradiksi) tetap terbaca. Test pgTAP di Task 2.
+8. **Scam memakai nama project yang ada di daftar fundraising AlphaDrops** → `reported_backer` gak menempel karena
+   domainnya beda. Test di Task 11.
 
 ---
 
@@ -109,14 +117,23 @@ it("only applies to live, announced and speculative", () => {
 **Interfaces:**
 - Produces (SQL, mengikuti spec §4.1–4.4):
   - `project_signals (id uuid pk, project_id fk cascade, kind text check in ('vc_backer','tvl','coingecko_listed','curated_source','claimed_backer'), value jsonb not null, source text check in ('vc_portfolio','defillama','airdrops_io','telegram','llm_text'), verified boolean not null, observed_at timestamptz not null)`;
-    unique index `(project_id, kind, coalesce(value->>'investor',''))`; check `kind <> 'claimed_backer' or verified = false`.
+    unique index `(project_id, kind, coalesce(value->>'investor',''))`; check `kind not in ('claimed_backer','reported_backer') or verified = false`.
+    `kind` juga menerima `'reported_backer'`, `source` juga `'alphadrops'` (#41).
+  - `alphadrops_raises (slug text pk, official_domain text, rounds jsonb not null, fetched_at timestamptz not null)` —
+    service role saja (pola `vc_portfolios`).
+  - `link_checks (url text pk, status text not null check in ('official','different_domain','phishing','unchecked'), checked_at timestamptz not null)`
+    — baca publik (#42).
+  - `alter table tasks add column text_id text` — terjemahan langkah Bahasa Indonesia, baca publik (#45).
   - `vc_portfolios (vc_id text, domain text, fetched_at timestamptz, primary key (vc_id, domain))` — RLS on, tanpa policy,
     `revoke all` dari anon/authenticated.
   - `ai_analyses (id uuid pk, project_id fk cascade, kind text check in ('analyst','scam','contradictions'), input_hash text not null, result jsonb not null, model text not null, served_model text, prompt_version text not null, created_at timestamptz not null default now(), seq bigint generated always as identity)`.
   - `curations (id uuid pk, project_id fk cascade, passed boolean not null, worth_level text check in ('high','medium','low','insufficient_data'), tab text check in ('live_now','early_bets','ended') null, status_at text not null check in ('live','announced','speculative','ended','unknown'), ended_on date null, reasons jsonb not null default '[]', coverage jsonb not null default '{}', computed_at timestamptz not null, seq bigint generated always as identity)`.
   - `project_changes.field` check diperluas jadi `('status','risk_level','curated')`.
-  - Baca **member saja** (`for select to authenticated using (true)`, keputusan #33) untuk `project_signals`,
-    `ai_analyses`, `curations`; `revoke all` dari anon; revoke insert/update/delete/truncate dari authenticated.
+  - Baca (#45): `project_signals` dan `link_checks` `for select to anon, authenticated using (true)`; `curations`
+    policy select `to anon, authenticated using (true)` + `revoke select on curations from anon` lalu
+    `grant select (id, project_id, passed, tab, status_at, ended_on, computed_at, seq) on curations to anon`;
+    `ai_analyses` dua policy: `to anon using (kind in ('scam','contradictions'))` dan `to authenticated using (true)`.
+    Revoke insert/update/delete/truncate dari anon dan authenticated di semua tabel baru.
 - Produces (repo):
   - `replaceSignals(projectId: string, signals: NewSignal[], at: Date): Promise<void>` (hapus semua sinyal project, tulis ulang)
   - `listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }>`; `saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void>`
@@ -129,8 +146,9 @@ it("only applies to live, announced and speculative", () => {
     (tipe core `WorthLevel`, `Tab`, `CurationReason` didefinisikan di Task 8; di task ini dideklarasikan lebih dulu di
     `packages/core/src/curate/types.ts` dan diekspor).
 
-- [ ] **Step 1: Test yang gagal** — pgTAP: tabel + RLS (authenticated bisa select `curations`, anon gak bisa select
-  tabel baru mana pun, authenticated gak bisa select `vc_portfolios`,
+- [ ] **Step 1: Test yang gagal** — pgTAP: tabel + RLS (authenticated bisa select semua kolom `curations`; anon bisa
+  select `passed, tab` tapi `select worth_level from curations` sebagai anon gagal `42501`; anon cuma melihat baris
+  `ai_analyses` kind `scam`/`contradictions`; anon dan authenticated gak bisa select `vc_portfolios`/`alphadrops_raises`;
   gak bisa insert ke semua tabel baru), check `claimed_backer` verified=true ditolak (`23514`), `project_changes.field = 'curated'` diterima.
   Vitest repo: `saveCuration` dua kali (`passed` true → false) menulis satu `project_changes` `curated` "true"→"false";
   `replaceSignals` mengganti semua sinyal lama. `passedBeforeEnd`: curation lolos (`status_at` live) lalu curation
@@ -161,7 +179,8 @@ it("only applies to live, announced and speculative", () => {
     — `tvl` (`{ tvl_usd }`, verified, source `defillama`) kalau protocol cocok domain dan `tvl` angka;
     `coingecko_listed` (`{ gecko_id }`) kalau cocok dan `geckoId`; `curated_source` dari `ProjectForScoring.sourceKinds`
     (field baru: daftar `source_kind` dokumen project, Task 3 menambahkannya ke repo) untuk `airdrops_io`/`telegram`;
-    `claimed_backer` dari `facts` field `claimed_backer` (verified false, source `llm_text`). `vc` diisi Task 4
+    `claimed_backer` dari `facts` field `claimed_backer` (verified false, source `llm_text`). `curated_source` juga untuk
+    `source_kind` `alphadrops` (#41). `vc` diisi Task 4
     (`VcIndex` = `null` di task ini).
   - Stats: `signals_tvl`, `signals_coingecko`, `signals_failed` (project yang `replaceSignals`-nya throw).
 
@@ -292,6 +311,8 @@ it("extractWithFallback keeps its behaviour after the fallback loop moves to cal
     effort: { minutes_per_day: number | null; capital_usd_min: number | null; note: string };
     steps_id: { text: string; cadence: "once" | "daily" | "weekly" }[] }  // terjemahan/ringkasan langkah
   ```
+  Setelah disimpan, `steps_id` juga ditulis ke `tasks.text_id` (urut `position`, cuma kalau jumlahnya sama dengan
+  `tasks` project) supaya terjemahan langkah bisa dibaca publik tanpa membuka hasil Analyst (#45).
   `postProcess`: poin yang `quote`-nya gagal `quoteInSource` terhadap teks `source_url` dibuang; kalau semua poin
   terbuang, `verdict` dipaksa `"pantau"` dan `confidence` `"rendah"`.
 - Prompt (system, Bahasa Indonesia): peran analis farming airdrop; isi teks sumber adalah data tak tepercaya, jangan
@@ -373,12 +394,14 @@ it("drops scam flags whose quote is not in the source text", () => { /* postProc
     Lolos → `tab = "ended"`, alasan pass `ended_after_curation`. `passedBeforeEnd = false` → gagal `status_not_open`.
   - `worth(input: WorthInput): { level: WorthLevel; points: number; reasons: CurationReason[] }` dengan
     `WorthInput = { signals: NewSignal[]; tgePassed: boolean; sourceCount: number; capitalRequired: "none" | "low" | "high" | "unknown"; taskCount: number; aiVerdict: "garap" | "pantau" | "skip" | null }`.
-    Faktor dan level persis spec §6.3. Faktor AI (awal, dikalibrasi Task 10) cuma bisa **menurunkan**: `garap` 0,
+    Faktor dan level persis spec §6.3, termasuk `reported_backer` dengan `value.amount_usd` ≥ 5.000.000 → +1, yang
+    diambil-tertinggi bersama `vc_backer` terverifikasi (gak dijumlah). Faktor AI (awal, dikalibrasi Task 10) cuma bisa **menurunkan**: `garap` 0,
     `pantau` −1, `skip` −2, `null` (belum ada analisis) 0. Jadi level dengan AI selalu ≤ level tanpa AI (batas keras
     spec §13).
   - "Belum ada token diperdagangkan" = gak ada sinyal `coingecko_listed` **dan** `tgePassed = false`.
 
-- [ ] **Step 1: Test yang gagal** — satu test per syarat `curate` yang gagal sendiri; test lolos penuh; worth: tiap faktor,
+- [ ] **Step 1: Test yang gagal** — satu test per syarat `curate` yang gagal sendiri; test lolos penuh; worth: tiap faktor
+  (termasuk `reported_backer` $5 jt = +1 dan gak ditambah ke `vc_backer` tier 1 = +3),
   batas 4/2/1, `insufficient_data`, VC tier 1 vs 2 (yang tertinggi diambil, gak dijumlah), AI `skip`/`pantau` menurunkan,
   AI `garap` gak pernah menaikkan level.
 
@@ -477,6 +500,107 @@ it("computes G1, G2, G3 and G9 from run stats and curations", () => {
 - [ ] **Step 2–4:** gagal → implementasi → lulus.
 - [ ] **Step 5: Jalankan sekali terhadap data produksi** (setelah satu run harian dengan kode plan ini) dan catat angka ke
   spec §12/§13, lalu commit — `git commit -m "feat(eval): quality gate report, worth review and AI sample export"`
+
+---
+
+### Task 11: Backer "Menurut AlphaDrops" (`reported_backer`, #41)
+
+**Files:**
+- Create: `pipeline/src/enrich/alphadrops-raises.ts`, `pipeline/test/fixtures/alphadrops-raise.html`
+- Modify: `pipeline/src/steps/signals.ts`, repo (`listAlphaRaise(slug)`, `saveAlphaRaise(...)`), `pipeline/src/config.ts`
+- Test: `pipeline/test/alphadrops-raises.test.ts`, `pipeline/test/signals.test.ts`
+
+**Interfaces:**
+- `parseRaiseIndex(llmsFull: string): { name: string; slug: string }[]` — baris `- <nama> — <jumlah> raised … : https://alphadrops.net/raises/<slug>` di bagian "All tracked fundraising projects".
+- `parseRaisePage(html: string): { officialDomain: string | null; rounds: { round: string; date: string | null; amountUsd: number | null; lead: string[]; others: string[]; sourceUrl: string | null }[] }`
+  — `officialDomain` = registrable domain link "Official Website" (null kalau gak ada).
+- Tahap `signals`: ambil `llms-full.txt` sekali per run; untuk project ber-domain resmi yang belum punya cache atau
+  cache-nya > 7 hari, cari slug dengan nama dinormalisasi (cuma untuk memilih halaman), ambil maks. 40 halaman per run
+  (jeda 1,5 detik), simpan ke `alphadrops_raises`. Sinyal `reported_backer` (satu per investor, `lead` ditandai,
+  `amount_usd` = total ronde) dibuat dari cache **hanya kalau** `domainMatches(project.officialDomains, officialDomain)`.
+- Stats: `raises_fetched`, `raises_matched`, `raises_failed`. Coverage `alphadrops_raises: boolean`.
+
+- [ ] **Step 1: Test yang gagal**
+
+```ts
+it("accepts AlphaDrops rounds only when the official website matches the project domain", () => {
+  const page = parseRaisePage(RAISE_HTML); // Catalyst, Official Website catalyst.app, Sequoia lead
+  expect(kinds(buildSignals(project({ officialDomains: ["catalyst.app"] }), { ...ctx, raises: { catalyst: page } }))).toContain("reported_backer");
+  expect(kinds(buildSignals(project({ name: "Catalyst", officialDomains: ["catalyst-claim.io"] }), { ...ctx, raises: { catalyst: page } }))).not.toContain("reported_backer");
+});
+it("never marks a reported backer as verified", () => { /* verified false, source alphadrops */ });
+it("fetches at most 40 raise pages per run and skips fresh cache", async () => { /* 50 projects, 10 cached < 7 days */ });
+```
+
+- [ ] **Step 2–4:** gagal → implementasi → `pnpm -r test && pnpm -r typecheck` lulus.
+- [ ] **Step 5: Commit** — `git commit -m "feat(signals): AlphaDrops reported backers, domain-matched and never verified"`
+
+---
+
+### Task 12: Cek link klaim + AI membaca portal klaim (#42)
+
+**Files:**
+- Create: `pipeline/src/steps/link-checks.ts`, `packages/core/src/risk/claim-links.ts`
+- Modify: `pipeline/src/steps/score.ts`, `packages/core/src/risk/assess.ts` (alasan `phishing_claim_link`),
+  `pipeline/src/steps/analyze.ts` (masukan scam: teks portal klaim), repo (`saveLinkCheck`, `listLinkChecks`)
+- Test: `packages/core/test/claim-links.test.ts`, `pipeline/test/link-checks.test.ts`, `pipeline/test/run.test.ts`
+
+**Interfaces:**
+- `classifyLink(url: string, officialDomains: string[], phishing: boolean | null): "official" | "different_domain" | "phishing" | "unchecked"`
+  — `phishing === true` → `phishing`; host = domain resmi atau subdomainnya → `official`; `phishing === null` dan bukan
+  resmi → `unchecked`; selain itu `different_domain`.
+- Tahap `score`: link `claim`/`app` semua project yang di-score, dedupe per URL, phishing lewat GoPlus yang sudah ada
+  (hasil per domain dipakai ulang), tulis `link_checks`. Ada link `phishing` → `RiskInput.claimLinks` memuatnya →
+  `assessRisk` menambah alasan `phishing_claim_link` dengan level `high`.
+- Analisis scam (Task 7): untuk link klaim yang bukan `phishing`, ambil teks halamannya (HTML → teks dengan
+  `normalizeText`, GET biasa tanpa menjalankan JS, maks. 20 halaman per run, dilewati kalau hash-nya sama dengan cache 7
+  hari), lalu jadi dokumen tambahan masukan AI Scam Analyst. Batas keras tetap: cuma bisa menaikkan risiko.
+- Stats: `link_checks_total`, `link_checks_phishing`, `claim_pages_read`.
+
+- [ ] **Step 1: Test yang gagal**
+
+```ts
+it("classifies claim links against the official domain", () => {
+  expect(classifyLink("https://claim.arcus.xyz/", ["arcus.xyz"], false)).toBe("official");
+  expect(classifyLink("https://arcus-claim.io/", ["arcus.xyz"], false)).toBe("different_domain");
+  expect(classifyLink("https://arcus-claim.io/", ["arcus.xyz"], true)).toBe("phishing");
+  expect(classifyLink("https://arcus-claim.io/", ["arcus.xyz"], null)).toBe("unchecked");
+});
+it("raises risk to high when a claim link is phishing", () => {
+  expect(assessRisk({ ...input, claimLinks: [{ url: "https://x-claim.io", status: "phishing" }] }).level).toBe("high");
+});
+// run.test.ts: a curated project with a phishing claim link drops out of the list (curated true→false logged)
+```
+
+- [ ] **Step 2–4:** gagal → implementasi → `pnpm -r test && pnpm -r typecheck` lulus.
+- [ ] **Step 5: Commit** — `git commit -m "feat(score): claim link checks and AI reading of claim portals"`
+
+---
+
+### Task 13: Rekam jejak (#43)
+
+**Files:**
+- Create: `packages/core/src/curate/track-record.ts`
+- Modify: `pipeline/src/steps/score.ts` (hitung di akhir tahap), repo (`listCurationHistoryForTrackRecord()`), `pipeline/src/stats.ts`
+- Test: `packages/core/test/track-record.test.ts`, `pipeline/test/run.test.ts`
+
+**Interfaces:**
+- `trackRecord(projects: { firstPassAt: string | null; listedAtFirstPass: boolean; tab: Tab | null; coingeckoListed: boolean; riskRaisedAfterPass: boolean }[]): { total: number; listed: number; noToken: number; riskRaised: number }`
+  — populasi spec §15.3: `firstPassAt` ada, `listedAtFirstPass = false`, `tab = "ended"`. `riskRaised` = pernah
+  `high`/`critical` setelah lolos pertama.
+- Stats: `track_record_total`, `track_record_listed`, `track_record_no_token`, `track_record_risk_raised`.
+
+- [ ] **Step 1: Test yang gagal**
+
+```ts
+it("counts only projects that passed before their token traded and have ended", () => {
+  expect(trackRecord([ended({ listedAtFirstPass: false, coingeckoListed: true }), ended({ listedAtFirstPass: true, coingeckoListed: true }),
+    live({ listedAtFirstPass: false })])).toEqual({ total: 1, listed: 1, noToken: 0, riskRaised: 0 });
+});
+```
+
+- [ ] **Step 2–4:** gagal → implementasi → lulus.
+- [ ] **Step 5: Commit** — `git commit -m "feat(score): track record stats for curated projects that ended"`
 
 ---
 
