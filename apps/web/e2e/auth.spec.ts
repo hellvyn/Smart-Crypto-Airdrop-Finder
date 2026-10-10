@@ -126,6 +126,16 @@ test("a verification link with an off-site next lands on the same-origin default
   await expectSignedInAs(page, email);
 });
 
+test("a verification link with a non-ASCII next lands on the default instead of a 500", async ({ page }) => {
+  const email = uniqueEmail("cbascii");
+  const link = await signupVerificationLink(email, PASSWORD);
+
+  const response = await page.goto(`${link}&next=${encodeURIComponent("/café")}`);
+  expect(response?.status()).toBe(200);
+  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/watchlist$/);
+  await expectSignedInAs(page, email);
+});
+
 test("link types the app does not use are refused, even with a valid token", async ({ page }) => {
   const email = uniqueEmail("types");
   const link = await signupVerificationLink(email, PASSWORD);

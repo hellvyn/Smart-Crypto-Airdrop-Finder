@@ -51,6 +51,19 @@ describe("safeNextPath (open-redirect guard)", () => {
     }
   });
 
+  it("rejects non-ASCII and non-printable characters (they cannot go in a Location header)", () => {
+    expect(safeNextPath("/日本")).toBe(DEFAULT_NEXT);
+    expect(safeNextPath("/\u0085")).toBe(DEFAULT_NEXT);
+    expect(safeNextPath("/café")).toBe(DEFAULT_NEXT);
+    expect(safeNextPath("/watch\u00a0list")).toBe(DEFAULT_NEXT);
+    expect(safeNextPath("/\u2028x")).toBe(DEFAULT_NEXT);
+  });
+
+  it("keeps printable ASCII paths, including percent-encoded non-ASCII", () => {
+    expect(safeNextPath("/caf%C3%A9")).toBe("/caf%C3%A9");
+    expect(safeNextPath("/a~b!$&'()*+,;=:@-._")).toBe("/a~b!$&'()*+,;=:@-._");
+  });
+
   it("keeps encoded slashes as a harmless path", () => {
     expect(safeNextPath("/%2F%2Fevil.example")).toBe("/%2F%2Fevil.example");
   });

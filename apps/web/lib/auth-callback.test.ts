@@ -34,5 +34,7 @@ describe("callbackDestination", () => {
     expect(callbackDestination("email", "https://evil.example")).toBe("/watchlist");
     expect(callbackDestination("email", "/%2e//evil.example")).toBe("/watchlist");
     expect(callbackDestination(null, "//evil.example")).toBe("/watchlist");
+    expect(callbackDestination("email", "/日本")).toBe("/watchlist");
+    expect(callbackDestination("email", "/\u0085")).toBe("/watchlist");
   });
 });
