@@ -14,3 +14,8 @@ export { deriveStatus, pickEvidenceDate } from "./status/derive.js";
 export type { StatusEvidence } from "./status/derive.js";
 export { isEvmAddress } from "./chain/adapter.js";
 export type { ActivitySummary, ChainAdapter } from "./chain/adapter.js";
+export type { Severity, RiskLevel, RiskReason } from "./types.js";
+export { detectDangerousAsks } from "./risk/dangerous-asks.js";
+export { isLookalike } from "./risk/lookalike.js";
+export { assessRisk } from "./risk/assess.js";
+export type { CheckId, RiskCheck, RiskInput, RiskAssessment } from "./risk/assess.js";
