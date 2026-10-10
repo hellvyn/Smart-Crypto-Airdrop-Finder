@@ -116,6 +116,7 @@ describe("notifyStep", () => {
       digests_skipped_quota: 0,
       digests_failed: 0,
       digests_already_sent: 0,
+      digests_duplicate: 0,
     });
     expect(sender.sent.map((m) => m.to).sort()).toEqual(["alice@example.test", "bob@example.test"]);
     expect(repo.notificationLog.map((l) => [l.userId, l.kind, l.refDate]).sort()).toEqual(
@@ -251,7 +252,7 @@ describe("notifyStep", () => {
     expect(sender.maxInFlight).toBeGreaterThan(1);
   });
 
-  it("treats a unique violation on the log (a concurrent run logged it) as already sent, not failed", async () => {
+  it("counts a unique violation on the log after a successful send (a concurrent run logged it) as duplicate", async () => {
     const repo = new MemoryRepo();
     const alice = repo.seedTestUser({ email: "alice@example.test" });
     await withDeadline(repo, alice, "alpha");
@@ -261,7 +262,8 @@ describe("notifyStep", () => {
     const stats = await notifyStep(deps(repo, fakeSender()), EMAIL);
     expect(stats.digests_failed).toBe(0);
     expect(stats.digests_sent).toBe(0);
-    expect(stats.digests_already_sent).toBe(1);
+    expect(stats.digests_already_sent).toBe(0);
+    expect(stats.digests_duplicate).toBe(1);
   });
 
   it("counts a send whose log write fails as failed", async () => {

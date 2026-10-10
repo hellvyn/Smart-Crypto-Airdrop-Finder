@@ -19,8 +19,13 @@ export interface NotifyStats extends RunStats {
   digests_skipped_quota: number;
   /** Digests that could not be built, sent or logged. They are not logged, so a later run can send them. */
   digests_failed: number;
-  /** Recipients who already got today's digest (an earlier run, or a concurrent one that logged it first). */
+  /** Recipients who already got today's digest from an earlier run (found in the log before sending). */
   digests_already_sent: number;
+  /**
+   * Digests that were sent but could not be logged because a concurrent run had already logged that user's
+   * digest for today: the user got two emails today.
+   */
+  digests_duplicate: number;
 }
 
 /**
@@ -53,6 +58,7 @@ export async function notifyStep(deps: NotifyDeps, cfg: EmailConfig): Promise<No
     digests_skipped_quota: 0,
     digests_failed: 0,
     digests_already_sent: 0,
+    digests_duplicate: 0,
   };
 
   const recipients = await repo.listDigestRecipients();
@@ -123,8 +129,8 @@ async function sendOne(
     await deps.repo.logDigest(recipient.userId, refDate, deps.now());
     stats.digests_sent += 1;
   } catch (error) {
-    // A unique violation means another run logged today's digest for this user first.
-    if (error instanceof DuplicateDigestError) stats.digests_already_sent += 1;
+    // A unique violation means another run logged today's digest for this user first: this one was a second email.
+    if (error instanceof DuplicateDigestError) stats.digests_duplicate += 1;
     // Sent but not logged: a rerun today could send it again, so this fails the job (runExitCode).
     else stats.digests_failed += 1;
   }
