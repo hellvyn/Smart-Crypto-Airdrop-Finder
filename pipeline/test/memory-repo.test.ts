@@ -73,6 +73,16 @@ describe("MemoryRepo documents", () => {
     expect(await repo.listPendingDocuments(10)).toHaveLength(2);
   });
 
+  it("does not list merge_failed documents until their hash changes", async () => {
+    const repo = new MemoryRepo();
+    const a = await repo.upsertDocument(doc(), "h1");
+    await repo.setExtractionStatus(a.id, "merge_failed");
+    expect(await repo.listPendingDocuments(10)).toEqual([]);
+    expect((await repo.upsertDocument(doc(), "h1")).extractionStatus).toBe("merge_failed");
+    expect((await repo.upsertDocument(doc({ text: "new" }), "h2")).extractionStatus).toBe("pending");
+    expect(await repo.listPendingDocuments(10)).toHaveLength(1);
+  });
+
   it("orders pending documents by fetched_at then url, and a re-upserted document moves back", async () => {
     const repo = new MemoryRepo();
     const at = (n: number) => new Date(T0.getTime() + n * 1000);
@@ -158,6 +168,13 @@ describe("MemoryRepo projects", () => {
     const found = await repo.findProjectsByNameKey("ink");
     expect(found.map((p) => p.id).sort()).toEqual([a.id, b.id].sort());
     expect(await repo.findProjectsByNameKey("nothing")).toEqual([]);
+  });
+
+  it("checks slugs across all name keys", async () => {
+    const repo = new MemoryRepo();
+    await repo.createProject(project({ slug: "pump-2", name: "Pump 2", nameKey: "pump2" }), T0);
+    expect(await repo.slugExists("pump-2")).toBe(true);
+    expect(await repo.slugExists("pump")).toBe(false);
   });
 
   it("writes one project_changes row when status changes, none otherwise", async () => {

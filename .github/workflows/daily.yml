@@ -16,6 +16,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -23,9 +24,12 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      # Install without secrets in the environment (dependency install scripts never see them).
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - name: Run pipeline
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: pnpm install --frozen-lockfile && pnpm --filter pipeline start
+        run: pnpm --silent --filter pipeline start

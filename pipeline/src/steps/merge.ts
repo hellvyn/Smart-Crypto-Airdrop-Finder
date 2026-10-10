@@ -40,27 +40,43 @@ export function classifyLink(url: string): LinkKind | null {
   return "website";
 }
 
-/**
- * Kebab-case slug of the name (ASCII letters and digits, diacritics folded). Names without any
- * ASCII letter or digit get a stable hash slug. `taken` are the slugs of projects with the same
- * name key; a clash appends -2, -3, ...
- */
-export function pickSlug(name: string, taken: readonly string[]): string {
-  let base = name
+/** Kebab-case ASCII slug base (diacritics folded); a stable hash slug for names without ASCII letters or digits. */
+export function slugBase(name: string): string {
+  const base = name
     .normalize("NFKD")
     .replace(/\p{M}+/gu, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  if (base === "") {
-    base = `p-${createHash("sha256").update(name.normalize("NFKC")).digest("hex").slice(0, 10)}`;
-  }
-  const used = new Set(taken);
-  if (!used.has(base)) return base;
+  if (base !== "") return base;
+  return `p-${createHash("sha256").update(name.normalize("NFKC")).digest("hex").slice(0, 10)}`;
+}
+
+/** First free slug among base, base-2, base-3, ... Slugs are unique across all projects, whatever their name key. */
+export async function pickSlug(name: string, exists: (slug: string) => Promise<boolean>): Promise<string> {
+  const base = slugBase(name);
+  if (!(await exists(base))) return base;
   for (let n = 2; ; n++) {
     const slug = `${base}-${n}`;
-    if (!used.has(slug)) return slug;
+    if (!(await exists(slug))) return slug;
   }
+}
+
+/** Multi-tenant platforms (forms, quest boards, page hosts): a link there never makes the platform an official domain. */
+const PLATFORM_DOMAINS: readonly string[] = [
+  "google.com",
+  "forms.gle",
+  "galxe.com",
+  "zealy.io",
+  "gleam.io",
+  "typeform.com",
+  "notion.site",
+  "notion.so",
+  "linktr.ee",
+];
+
+function isPlatformDomain(domain: string): boolean {
+  return PLATFORM_DOMAINS.some((p) => domain === p || domain.endsWith(`.${p}`));
 }
 
 export interface ProjectInput {
@@ -74,6 +90,11 @@ export interface ProjectInput {
   deadlines: ExtractedDeadline[];
   /** Cleaned official URLs. */
   urls: string[];
+  /**
+   * `defillama`: a listing without a confirmed status. On an existing project its evidence is stored as
+   * `defillama_listing`, so `deriveStatus` ignores it; only a newly created project gets `status` evidence.
+   */
+  source: "extraction" | "defillama";
 }
 
 const union = (a: readonly string[], b: readonly string[]): string[] => [...new Set([...a, ...b])];
@@ -96,7 +117,10 @@ async function mergeProject(
   }
   const officialDomains = [
     ...new Set(
-      links.filter((l) => l.kind !== "social").flatMap((l) => registrableDomain(l.url) ?? []),
+      links
+        .filter((l) => l.kind !== "social")
+        .flatMap((l) => registrableDomain(l.url) ?? [])
+        .filter((d) => !isPlatformDomain(d)),
     ),
   ];
 
@@ -108,11 +132,12 @@ async function mergeProject(
   const at = pickEvidenceDate(document);
 
   let project: ProjectRow;
+  let evidenceField = "status";
   if (decision.action === "create") {
     const initial = deriveStatus([{ status: input.status, at }], null);
     project = await repo.createProject(
       {
-        slug: pickSlug(input.name, existing.map((p) => p.slug)),
+        slug: await pickSlug(input.name, (slug) => repo.slugExists(slug)),
         name: input.name,
         nameKey,
         tokenSymbol: input.tokenSymbol,
@@ -130,12 +155,13 @@ async function mergeProject(
     if (!match) throw new Error("merge target not found");
     project = match;
     stats.projects_updated += 1;
+    if (input.source === "defillama") evidenceField = "defillama_listing";
   }
 
   await repo.addEvidence({
     projectId: project.id,
     documentId: document.id,
-    field: "status",
+    field: evidenceField,
     value: input.status,
     quote: input.quote,
     at,

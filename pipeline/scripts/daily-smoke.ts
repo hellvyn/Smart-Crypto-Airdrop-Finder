@@ -96,6 +96,11 @@ async function main(): Promise<void> {
 
   assert.equal(first.source_failed, 0);
   assert.equal(first.projects_created, 3);
+  for (const s of [first, second]) {
+    assert.equal(s.merge_failed, 0);
+    assert.equal(s.score_failed, 0);
+    assert.equal(s.run_error, undefined);
+  }
   assert.equal(second.docs_changed, 1); // only the new Telegram post
   const deepbook = await repo.findProjectsByNameKey("deepbook");
   assert.equal(deepbook.length, 1);

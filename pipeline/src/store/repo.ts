@@ -2,7 +2,8 @@ import type { ExtractedDeadline, RiskAssessment, RiskLevel, Status, StatusEviden
 import type { CollectedDocument } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 
-export type ExtractionStatus = "pending" | "done" | "not_airdrop";
+/** `merge_failed`: extracted, but merging threw; it goes back to `pending` only when its hash changes. */
+export type ExtractionStatus = "pending" | "done" | "not_airdrop" | "merge_failed";
 
 export interface StoredDocument extends CollectedDocument {
   id: string;
@@ -49,6 +50,8 @@ export interface PipelineRepo {
   saveExtraction(documentId: string, attempt: ExtractionAttempt, promptVersion: string): Promise<void>;
   setExtractionStatus(documentId: string, status: ExtractionStatus): Promise<void>;
   findProjectsByNameKey(nameKey: string): Promise<ProjectRow[]>;
+  /** True when any project (whatever its name key) already uses this slug. */
+  slugExists(slug: string): Promise<boolean>;
   createProject(p: NewProject, at: Date): Promise<ProjectRow>;
   /** Always bumps `lastSeen` to `at`. A status change also writes a `project_changes` row. */
   updateProject(id: string, patch: Partial<ProjectRow>, at: Date): Promise<void>;

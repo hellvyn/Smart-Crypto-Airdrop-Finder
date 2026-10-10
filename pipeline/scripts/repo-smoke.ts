@@ -38,6 +38,12 @@ async function main(): Promise<void> {
   assert.equal((await repo.upsertDocument(doc("a", { text: "changed" }), "h2")).extractionStatus, "pending");
   assert.equal(await repo.getDocumentHash(doc("a").url), "h2");
   assert.ok((await repo.listPendingDocuments(1000)).some((d) => d.id === a.id));
+  // merge_failed is not pending, survives a same-hash upsert, and re-pends on a hash change.
+  const mf = await repo.upsertDocument(doc("mf"), "m1");
+  await repo.setExtractionStatus(mf.id, "merge_failed");
+  assert.ok(!(await repo.listPendingDocuments(1000)).some((d) => d.id === mf.id));
+  assert.equal((await repo.upsertDocument(doc("mf"), "m1")).extractionStatus, "merge_failed");
+  assert.equal((await repo.upsertDocument(doc("mf", { text: "changed" }), "m2")).extractionStatus, "pending");
 
   // Deterministic pending order: fetched_at asc, url asc. Year-2000 dates sort before everything else.
   const old = (n: number) => new Date(Date.UTC(2000, 0, 1, 0, 0, n));
@@ -84,6 +90,8 @@ async function main(): Promise<void> {
     { slug: `smoke-${suffix}-2`, name: "Smoke", nameKey, tokenSymbol: null, chains: [], officialDomains: [], status: "unknown", conflict: false, lookalikeOf: p.id },
     T0,
   );
+  assert.equal(await repo.slugExists(`smoke-${suffix}-2`), true);
+  assert.equal(await repo.slugExists(`smoke-${suffix}-3`), false);
   // Same first_seen, so slug breaks the tie: "smoke-<x>" before "smoke-<x>-2".
   assert.deepEqual((await repo.findProjectsByNameKey(nameKey)).map((x) => x.id), [p.id, twin.id]);
   assert.equal(twin.lookalikeOf, p.id);

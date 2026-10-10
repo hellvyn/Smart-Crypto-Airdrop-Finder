@@ -149,6 +149,11 @@ export class MemoryRepo implements PipelineRepo {
       .map(cloneProject);
   }
 
+  async slugExists(slug: string): Promise<boolean> {
+    for (const p of this.projects.values()) if (p.slug === slug) return true;
+    return false;
+  }
+
   async createProject(p: NewProject, at: Date): Promise<ProjectRow> {
     for (const existing of this.projects.values()) {
       if (existing.slug === p.slug) throw new Error("duplicate slug");

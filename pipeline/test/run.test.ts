@@ -6,6 +6,7 @@ import { defaultConfig, sourceCount } from "../src/config.js";
 import type { PipelineConfig } from "../src/config.js";
 import { runDaily } from "../src/run.js";
 import { classifyLink, pickSlug } from "../src/steps/merge.js";
+import type { StoredDocument } from "../src/store/repo.js";
 import { MemoryRepo } from "../src/store/memory-repo.js";
 
 const fixture = (name: string): string =>
@@ -63,7 +64,10 @@ function basePages(): Pages {
     [DEEPBOOK]: { status: 200, body: fixture("airdrops-detail.html") },
     [INK_PAGE]: {
       status: 200,
-      body: detailPage("Ink Chain", 'Bridge to Ink now. Official site <a href="https://inkonchain.com/">Ink</a>.'),
+      body: detailPage(
+        "Ink Chain",
+        'Bridge to Ink now. Official site <a href="https://inkonchain.com/">Ink</a>. Follow <a href="https://x.com/inkonchain">X</a>.',
+      ),
     },
     [TG]: { status: 200, body: fixture("telegram.html") },
     [PROTOCOLS]: { status: 200, body: JSON.stringify(PROTOCOL_LIST) },
@@ -136,7 +140,14 @@ const REPLIES: Record<string, unknown> = {
   },
   [INK_PAGE]: {
     is_airdrop_content: true,
-    projects: [project({ name: "Ink Chain", status: "speculative", chains: ["Ink"], official_urls: ["https://inkonchain.com/"] })],
+    projects: [
+      project({
+        name: "Ink Chain",
+        status: "speculative",
+        chains: ["Ink"],
+        official_urls: ["https://inkonchain.com/", "https://x.com/inkonchain"],
+      }),
+    ],
   },
   "https://t.me/airdrops_io/101": { is_airdrop_content: false, projects: [] },
   "https://t.me/airdrops_io/102": {
@@ -328,7 +339,8 @@ describe("runDaily", () => {
     expect(llama?.sourceKind).toBe("defillama");
     expect(llama?.sourceKey).toBe("defillama");
     expect(llama?.text).toContain("Hyperdrive Lend");
-    expect(llama?.text).toContain("25000000");
+    // Volatile numbers stay out of the hashed text; they are only in the evidence quote.
+    expect(llama?.text).not.toContain("25000000");
 
     const hyper = (await repo.findProjectsByNameKey("hyperdrivelend"))[0];
     expect(hyper?.status).toBe("speculative");
@@ -336,6 +348,8 @@ describe("runDaily", () => {
     expect(hyper?.officialDomains).toEqual(["hyperdrive.fi"]);
     const evidence = await repo.listStatusEvidence(hyper?.id ?? "");
     expect(evidence).toEqual([{ status: "speculative", at: NOW }]);
+    const quotes = repo["evidence"].filter((e) => e.projectId === hyper?.id).map((e) => e.quote);
+    expect(quotes).toEqual(["No token listed; TVL $25000000, 7d change 12.50% (DefiLlama)"]);
     // Excluded category and tokened protocols are not candidates.
     expect(repo.allDocuments().filter((d) => d.sourceKind === "defillama")).toHaveLength(1);
   });
@@ -366,6 +380,9 @@ describe("runDaily", () => {
     const goplus = http.gets.filter((u) => u.startsWith("https://api.gopluslabs.io/"));
     const rdap = http.gets.filter((u) => u.startsWith("https://rdap.org/"));
     expect(goplus.length).toBe(new Set(goplus).size);
+    expect(goplus).toHaveLength(3);
+    // Social links (x.com) are not enriched.
+    expect(goplus.some((u) => u.includes("x.com"))).toBe(false);
     expect(rdap.sort()).toEqual([
       "https://rdap.org/domain/deepbook.tech",
       "https://rdap.org/domain/hyperdrive.fi",
@@ -382,17 +399,51 @@ describe("runDaily", () => {
     expect(repo.allDocuments().filter((d) => d.extractionStatus === "pending")).toHaveLength(2);
   });
 
-  it("finishes the run with run_error and rethrows when a step throws", async () => {
+  it("still purges, finishes the run with run_error and rethrows when scoring fails at stage level", async () => {
     const repo = new MemoryRepo();
     repo.listProjectsForScoring = async () => {
       throw new Error("db down");
     };
+    let purgeCalls = 0;
+    const purge = repo.purgeDocumentText.bind(repo);
+    repo.purgeDocumentText = async (days, now) => {
+      purgeCalls += 1;
+      return purge(days, now);
+    };
     const { deps, config } = setup({ repo });
     await expect(runDaily(deps, config)).rejects.toThrow("db down");
+    expect(purgeCalls).toBe(1);
     expect(repo.runs).toHaveLength(1);
     expect(repo.runs[0]?.stats.run_error).toBe(1);
+    expect(repo.runs[0]?.stats.failed_step).toBe(5);
     expect(repo.runs[0]?.stats.docs_collected).toBe(5);
+    expect(repo.runs[0]?.stats.projects_created).toBe(3);
     expect(repo.runs[0]?.finishedAt).not.toBeNull();
+  });
+
+  it("still scores and purges when collection fails at stage level, then rethrows", async () => {
+    const repo = new MemoryRepo();
+    // A project from an earlier run, so there is something to score.
+    await repo.createProject(
+      { slug: "old", name: "Old", nameKey: "old", tokenSymbol: null, chains: [], officialDomains: [], status: "live", conflict: false, lookalikeOf: null },
+      NOW,
+    );
+    repo.getDocumentHash = async () => {
+      throw new Error("db read failed");
+    };
+    let purgeCalls = 0;
+    const purge = repo.purgeDocumentText.bind(repo);
+    repo.purgeDocumentText = async (days, now) => {
+      purgeCalls += 1;
+      return purge(days, now);
+    };
+    const { deps, config } = setup({ repo });
+    await expect(runDaily(deps, config)).rejects.toThrow("db read failed");
+    const stats = repo.runs[0]?.stats;
+    expect(stats?.failed_step).toBe(1);
+    expect(stats?.run_error).toBe(1);
+    expect(stats?.assessed).toBe(1);
+    expect(purgeCalls).toBe(1);
   });
 
   it("purges document text past the retention window", async () => {
@@ -456,22 +507,26 @@ describe("classifyLink", () => {
 });
 
 describe("pickSlug", () => {
-  it("kebab-cases the name", () => {
-    expect(pickSlug("Ink Chain", [])).toBe("ink-chain");
-    expect(pickSlug("  $INK!! ", [])).toBe("ink");
-    expect(pickSlug("Café Protocol", [])).toBe("cafe-protocol");
+  const taken = (...slugs: string[]) => async (slug: string) => slugs.includes(slug);
+
+  it("kebab-cases the name", async () => {
+    expect(await pickSlug("Ink Chain", taken())).toBe("ink-chain");
+    expect(await pickSlug("  $INK!! ", taken())).toBe("ink");
+    expect(await pickSlug("Café Protocol", taken())).toBe("cafe-protocol");
   });
 
-  it("appends a counter when a same-name project already uses the slug", () => {
-    expect(pickSlug("Ink", ["ink"])).toBe("ink-2");
-    expect(pickSlug("Ink", ["ink", "ink-2"])).toBe("ink-3");
+  it("appends a counter until the slug is free across all projects", async () => {
+    expect(await pickSlug("Ink", taken("ink"))).toBe("ink-2");
+    expect(await pickSlug("Ink", taken("ink", "ink-2"))).toBe("ink-3");
+    // "Pump 2" (another name key) already owns pump-2.
+    expect(await pickSlug("Pump", taken("pump", "pump-2"))).toBe("pump-3");
   });
 
-  it("falls back to a stable non-empty slug for names without ASCII letters", () => {
-    const slug = pickSlug("以太", []);
+  it("falls back to a stable non-empty slug for names without ASCII letters", async () => {
+    const slug = await pickSlug("以太", taken());
     expect(slug).toMatch(/^[a-z0-9-]+$/);
-    expect(pickSlug("以太", [])).toBe(slug);
-    expect(pickSlug("以太", [slug])).toBe(`${slug}-2`);
+    expect(await pickSlug("以太", taken())).toBe(slug);
+    expect(await pickSlug("以太", taken(slug))).toBe(`${slug}-2`);
   });
 });
 
@@ -496,5 +551,166 @@ describe("runDaily lookalikes", () => {
     const rows = await repo.findProjectsByNameKey("deepbook");
     expect(rows.map((r) => r.slug)).toEqual(["deepbook", "deepbook-2"]);
     expect(rows[1]?.lookalikeOf).toBe(rows[0]?.id);
+  });
+});
+
+describe("runDaily fault tolerance", () => {
+  it("marks a document merge_failed when its merge throws and keeps going", async () => {
+    const repo = new MemoryRepo();
+    const create = repo.createProject.bind(repo);
+    repo.createProject = async (p, at) => {
+      if (p.nameKey === "ink") throw new Error("insert failed");
+      return create(p, at);
+    };
+    let purgeCalls = 0;
+    const purge = repo.purgeDocumentText.bind(repo);
+    repo.purgeDocumentText = async (days, now) => {
+      purgeCalls += 1;
+      return purge(days, now);
+    };
+    const { deps, config } = setup({ repo });
+    const stats = await runDaily(deps, config);
+
+    // Both Ink documents try to create the "ink" project and fail; DeepBook and DefiLlama still merge.
+    expect(stats.merge_failed).toBe(2);
+    expect(stats.run_error).toBeUndefined();
+    expect(stats.projects_created).toBe(2);
+    expect(stats.assessed).toBe(2);
+    expect(purgeCalls).toBe(1);
+    const status = (url: string) => repo.allDocuments().find((d) => d.url === url)?.extractionStatus;
+    expect(status(INK_PAGE)).toBe("merge_failed");
+    expect(status("https://t.me/airdrops_io/102")).toBe("merge_failed");
+    expect(status(DEEPBOOK)).toBe("done");
+    expect((await repo.findProjectsByNameKey("deepbook"))[0]?.status).toBe("live");
+    expect((await repo.listPendingDocuments(100)).map((d) => d.url)).toEqual([]);
+
+    // Not retried while the content is unchanged.
+    const chat2 = fakeChat();
+    await runDaily({ ...deps, chat: chat2.chat }, config);
+    expect(chat2.calls).toEqual([]);
+  });
+
+  it("assesses the other projects when one assessment fails", async () => {
+    const repo = new MemoryRepo();
+    const save = repo.saveRiskAssessment.bind(repo);
+    repo.saveRiskAssessment = async (id, a, at) => {
+      const [deepbook] = await repo.findProjectsByNameKey("deepbook");
+      if (id === deepbook?.id) throw new Error("write failed");
+      return save(id, a, at);
+    };
+    const { deps, config } = setup({ repo });
+    const stats = await runDaily(deps, config);
+    expect(stats.score_failed).toBe(1);
+    expect(stats.assessed).toBe(2);
+    expect(repo.riskAssessments).toHaveLength(2);
+  });
+
+  it("keeps extracting the other documents when storing one extraction throws", async () => {
+    const repo = new MemoryRepo();
+    const saveExtraction = repo.saveExtraction.bind(repo);
+    const byId = new Map<string, StoredDocument>();
+    repo.saveExtraction = async (documentId, attempt, version) => {
+      if (byId.size === 0) for (const d of repo.allDocuments()) byId.set(d.id, d);
+      if (byId.get(documentId)?.url === INK_PAGE) throw new Error("insert failed");
+      return saveExtraction(documentId, attempt, version);
+    };
+    const { deps, config } = setup({ repo });
+    const stats = await runDaily(deps, config);
+    expect(stats.extract_failed).toBe(1);
+    expect(stats.extract_ok).toBe(3);
+    expect(stats.run_error).toBeUndefined();
+    expect(repo.allDocuments().find((d) => d.url === INK_PAGE)?.extractionStatus).toBe("pending");
+    expect(repo.allDocuments().find((d) => d.url === DEEPBOOK)?.extractionStatus).toBe("done");
+  });
+
+  it("does not send pending documents with purged (empty) text to the LLM", async () => {
+    const repo = new MemoryRepo();
+    await repo.upsertDocument(
+      { sourceKind: "telegram", sourceKey: "telegram:old", url: "https://t.me/old/1", text: "", publishedAt: null, pageUpdatedAt: null, fetchedAt: new Date(0) },
+      "h",
+    );
+    const { deps, config, chat } = setup({ repo });
+    const stats = await runDaily(deps, config);
+    expect(chat.calls).not.toContain("https://t.me/old/1");
+    expect(stats.extract_failed).toBe(0);
+    expect(repo.allDocuments().find((d) => d.url === "https://t.me/old/1")?.extractionStatus).toBe("pending");
+  });
+});
+
+describe("runDaily slugs, platforms and DefiLlama", () => {
+  it("picks a slug that is free across name keys", async () => {
+    const repo = new MemoryRepo();
+    // "Déepbook" keeps its accent in the name key but folds to the slug "deepbook".
+    await repo.createProject(
+      { slug: "deepbook", name: "Déepbook", nameKey: "déepbook", tokenSymbol: null, chains: [], officialDomains: [], status: "unknown", conflict: false, lookalikeOf: null },
+      NOW,
+    );
+    const { deps, config } = setup({ repo });
+    const stats = await runDaily(deps, config);
+    expect(stats.merge_failed).toBe(0);
+    const [deepbook] = await repo.findProjectsByNameKey("deepbook");
+    expect(deepbook?.slug).toBe("deepbook-2");
+  });
+
+  it("never makes a multi-tenant platform an official domain", async () => {
+    const pages = basePages();
+    pages[INK_PAGE] = {
+      status: 200,
+      body: detailPage(
+        "Ink Chain",
+        'Site <a href="https://inkonchain.com/">Ink</a>. Form <a href="https://docs.google.com/forms/d/abc/viewform">apply</a>.',
+      ),
+    };
+    const replies = {
+      ...REPLIES,
+      [INK_PAGE]: {
+        is_airdrop_content: true,
+        projects: [
+          project({
+            name: "Ink Chain",
+            status: "speculative",
+            official_urls: ["https://inkonchain.com/", "https://docs.google.com/forms/d/abc/viewform"],
+          }),
+        ],
+      },
+    };
+    const { repo, deps, config } = setup({ pages, chat: fakeChat(replies) });
+    await runDaily(deps, config);
+    const [ink] = await repo.findProjectsByNameKey("ink");
+    expect(ink?.officialDomains).toEqual(["inkonchain.com"]);
+    const scored = (await projects(repo)).find((p) => p.nameKey === "ink");
+    expect(scored?.links.map((l) => l.url)).toContain("https://docs.google.com/forms/d/abc/viewform");
+  });
+
+  it("does not let a DefiLlama listing override the status of an existing project", async () => {
+    const pages = basePages();
+    pages[PROTOCOLS] = {
+      status: 200,
+      body: JSON.stringify([
+        ...PROTOCOL_LIST,
+        { name: "DeepBook", slug: "deepbook", url: "https://deepbook.tech", chains: ["Sui"], tvl: 3e7, change_7d: 1, category: "Dexs", gecko_id: null, symbol: "-" },
+      ]),
+    };
+    const { repo, deps, config } = setup({ pages });
+    const stats = await runDaily(deps, config);
+    expect(stats.merge_failed).toBe(0);
+    const rows = await repo.findProjectsByNameKey("deepbook");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("live");
+    expect((await repo.listStatusEvidence(rows[0]?.id ?? "")).map((e) => e.status)).toEqual(["live"]);
+    const fields = repo["evidence"].filter((e) => e.projectId === rows[0]?.id).map((e) => e.field);
+    expect(fields.sort()).toEqual(["defillama_listing", "status"]);
+  });
+
+  it("does not count a DefiLlama TVL change as a document change", async () => {
+    const { deps, config } = setup();
+    await runDaily(deps, config);
+    const pages = basePages();
+    pages[PROTOCOLS] = {
+      status: 200,
+      body: JSON.stringify(PROTOCOL_LIST.map((p) => ({ ...p, tvl: p.tvl * 2, change_7d: -3 }))),
+    };
+    const stats = await runDaily({ ...deps, http: fakeHttp(pages), now: () => new Date(NOW.getTime() + DAY) }, config);
+    expect(stats.docs_changed).toBe(0);
   });
 });

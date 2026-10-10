@@ -32,6 +32,7 @@ function linkDomains(project: ProjectForScoring): RiskInput["linkDomains"] {
 /**
  * Scores every project seen within `scoreActiveSinceDays`. Enrichment is fetched once per registrable
  * domain per run (the job is daily, so this replaces a longer-lived cache), and hacks once per run.
+ * One project failing to save counts as `score_failed` and does not stop the others.
  */
 export async function scoreProjects(
   deps: { repo: PipelineRepo; http: Http },
@@ -44,7 +45,10 @@ export async function scoreProjects(
   if (projects.length === 0) return;
 
   const domainsByProject = new Map(projects.map((p) => [p.id, linkDomains(p)]));
-  const domains = [...new Set([...domainsByProject.values()].flat().map((d) => d.domain))];
+  // Social platforms (x.com, t.me, ...) are not the project's own domains: no phishing or age lookups.
+  const enrichDomains = (links: RiskInput["linkDomains"]): string[] =>
+    [...new Set(links.filter((l) => l.kind !== "social").map((l) => l.domain))];
+  const domains = [...new Set([...domainsByProject.values()].flatMap(enrichDomains))];
 
   const limit = pLimit(ENRICH_CONCURRENCY);
   const phishing = new Map<string, boolean | null>();
@@ -59,27 +63,31 @@ export async function scoreProjects(
 
   for (const project of projects) {
     const projectLinks = domainsByProject.get(project.id) ?? [];
-    const projectDomains = [...new Set(projectLinks.map((l) => l.domain))];
-    const input: RiskInput = {
-      project: {
-        name: project.name,
-        officialDomains: project.officialDomains,
-        status: project.status,
-        tokenSymbol: project.tokenSymbol,
-        conflict: project.conflict,
-        sourceCount: project.sourceCount,
-        hasOfficialSocial: projectLinks.some((l) => l.kind === "social"),
-        lookalikeOf: project.lookalikeOf,
-      },
-      tasks: project.tasks,
-      linkDomains: projectLinks,
-      domainAgeDays: Object.fromEntries(projectDomains.map((d) => [d, ages.get(d) ?? null])),
-      phishingFlags: Object.fromEntries(projectDomains.map((d) => [d, phishing.get(d) ?? null])),
-      token: null,
-      contractVerified: null,
-      hackCount: hacks ? countHacks(hacks, project.name) : null,
-    };
-    await repo.saveRiskAssessment(project.id, assessRisk(input), now);
-    stats.assessed += 1;
+    const projectDomains = enrichDomains(projectLinks);
+    try {
+      const input: RiskInput = {
+        project: {
+          name: project.name,
+          officialDomains: project.officialDomains,
+          status: project.status,
+          tokenSymbol: project.tokenSymbol,
+          conflict: project.conflict,
+          sourceCount: project.sourceCount,
+          hasOfficialSocial: projectLinks.some((l) => l.kind === "social"),
+          lookalikeOf: project.lookalikeOf,
+        },
+        tasks: project.tasks,
+        linkDomains: projectLinks,
+        domainAgeDays: Object.fromEntries(projectDomains.map((d) => [d, ages.get(d) ?? null])),
+        phishingFlags: Object.fromEntries(projectDomains.map((d) => [d, phishing.get(d) ?? null])),
+        token: null,
+        contractVerified: null,
+        hackCount: hacks ? countHacks(hacks, project.name) : null,
+      };
+      await repo.saveRiskAssessment(project.id, assessRisk(input), now);
+      stats.assessed += 1;
+    } catch {
+      stats.score_failed += 1;
+    }
   }
 }

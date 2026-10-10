@@ -12,7 +12,7 @@ create table documents (
   published_at timestamptz,
   page_updated_at timestamptz,
   fetched_at timestamptz not null,
-  extraction_status text not null default 'pending' check (extraction_status in ('pending', 'done', 'not_airdrop'))
+  extraction_status text not null default 'pending' check (extraction_status in ('pending', 'done', 'not_airdrop', 'merge_failed'))
 );
 create index documents_extraction_status_idx on documents (extraction_status);
 create index documents_source_key_idx on documents (source_key);

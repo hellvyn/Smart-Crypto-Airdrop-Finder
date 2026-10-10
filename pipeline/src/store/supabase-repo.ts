@@ -220,6 +220,14 @@ export class SupabaseRepo implements PipelineRepo {
     return rows.map(toProject);
   }
 
+  async slugExists(slug: string): Promise<boolean> {
+    const row = check(
+      "slugExists",
+      await this.db.from("projects").select("id").eq("slug", slug).limit(1).maybeSingle<{ id: string }>(),
+    );
+    return row !== null;
+  }
+
   async createProject(p: NewProject, at: Date): Promise<ProjectRow> {
     const row = checkOne(
       "createProject",

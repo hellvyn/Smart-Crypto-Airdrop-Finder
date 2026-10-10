@@ -20,14 +20,15 @@ export function contentHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
+/**
+ * Document for a DefiLlama candidate. Only stable fields go into the text (and so the hash), so daily TVL
+ * moves do not count as a change; TVL and the 7-day change appear only in the evidence quote.
+ */
 export function defillamaDocument(candidate: SpeculativeCandidate, now: Date): CollectedDocument {
-  const change = candidate.change7d === null ? "n/a" : `${candidate.change7d.toFixed(2)}%`;
   const text = [
     candidate.name,
     `Category: ${candidate.category}`,
     `Chains: ${candidate.chains.length > 0 ? candidate.chains.join(", ") : "n/a"}`,
-    `TVL: $${Math.round(candidate.tvl)}`,
-    `7d TVL change: ${change}`,
     `Website: ${candidate.url ?? "n/a"}`,
     "No token listed on DefiLlama.",
   ].join("\n");

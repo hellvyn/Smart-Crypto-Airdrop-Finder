@@ -9,7 +9,11 @@ export interface DailyStats extends RunStats {
   not_airdrop: number;
   projects_created: number;
   projects_updated: number;
+  /** Documents (or DefiLlama candidates) whose merge threw; such documents are stored as `merge_failed`. */
+  merge_failed: number;
   assessed: number;
+  /** Projects whose risk assessment threw. */
+  score_failed: number;
   source_failed: number;
   purged: number;
 }
@@ -23,7 +27,9 @@ export function emptyStats(): DailyStats {
     not_airdrop: 0,
     projects_created: 0,
     projects_updated: 0,
+    merge_failed: 0,
     assessed: 0,
+    score_failed: 0,
     source_failed: 0,
     purged: 0,
   };
