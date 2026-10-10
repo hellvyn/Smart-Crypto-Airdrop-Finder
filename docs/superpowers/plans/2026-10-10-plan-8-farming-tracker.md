@@ -26,6 +26,7 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 - Warna heatmap 4 tingkat dari persen task Harian aktif yang dicentang: `0` = 0%, `1` = 1–49%, `2` = 50–99%,
   `3` = 100%; hari tanpa task Harian aktif = `null` (abu).
 - Streak = hari berturut-turut level `3`, berakhir hari ini atau kemarin (kalau hari ini belum `3`).
+- Mockup acuan: `docs/design/airdropiq-c/CGarapan.dc.html`.
 - Rentang heatmap (spec #39): `start` = tanggal lokal `farming_projects.started_at`; `end` = deadline `snapshot` /
   `campaign_end` (presisi `exact`/`approximate`) paling awal yang ≥ `start`; tanpa deadline `end` =
   `start + 364 hari` (1 tahun). Maksimal 364 hari: kalau lebih, `start` dimajukan ke `end − 363 hari`.
