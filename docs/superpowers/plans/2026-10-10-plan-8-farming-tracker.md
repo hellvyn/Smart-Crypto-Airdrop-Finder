@@ -29,11 +29,12 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 - Rentang heatmap (spec #39): `start` = tanggal lokal `farming_projects.started_at`; `end` = deadline `snapshot` /
   `campaign_end` (presisi `exact`/`approximate`) paling awal yang ≥ `start`; tanpa deadline `end` =
   `start + 364 hari` (1 tahun). Maksimal 364 hari: kalau lebih, `start` dimajukan ke `end − 363 hari`.
-  Hari > `today` = sel `upcoming`.
+  Hari > `today` = sel `upcoming`. Project yang sudah berakhir (spec #40): kalau `endedOn` (tanggal berakhir dari
+  curation) ≥ `start` dan lebih awal dari `end`, `end = endedOn` dan `endKind = "ended"`.
 - Mingguan = minggu ISO (Senin–Minggu) di zona waktu member.
 - Batas: 50 project aktif per member, 30 task aktif per project (pelanggaran → error `23514`, pesan Bahasa Indonesia di UI).
 - Teks UI Bahasa Indonesia (gaya "kamu"): "Mulai garap", "Berhenti garap", "Garapan saya", "Hari ini", "Mingguan",
-  "Minggu ini sudah", "Tambah task", "Ambil ulang langkah dari sumber", "Streak: {n} hari", "Sisa {n} hari sampai snapshot", "Sisa {n} hari sampai akhir kampanye", heatmap tooltip
+  "Minggu ini sudah", "Tambah task", "Ambil ulang langkah dari sumber", "Streak: {n} hari", "Sisa {n} hari sampai snapshot", "Sisa {n} hari sampai akhir kampanye", "Berakhir {tanggal}", heatmap tooltip
   "{tanggal}: {selesai}/{total} task harian".
 - Task awal cuma dari langkah `cadence` `daily`/`weekly`. Langkah `once` gak masuk tracker.
 
@@ -93,7 +94,7 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 - `interface TrackerTask { id: string; cadence: "daily" | "weekly"; createdDay: string; archivedDay: string | null }`
   (`createdDay`/`archivedDay` = tanggal lokal `YYYY-MM-DD`; task aktif di hari `d` kalau `createdDay <= d` dan
   (`archivedDay === null` atau `d < archivedDay`))
-- `heatmapRange(startedDay: string, deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[], today: string): { start: string; end: string; endKind: "snapshot" | "campaign_end" | null }`
+- `heatmapRange(startedDay: string, deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[], today: string, endedOn: string | null = null): { start: string; end: string; endKind: "snapshot" | "campaign_end" | "ended" | null }`
   — aturan rentang di Global Constraints.
 - `buildHeatmap(tasks: TrackerTask[], checks: { taskId: string; day: string }[], range: { start: string; end: string }, today: string): { day: string; level: HeatLevel; done: number; total: number; upcoming: boolean }[]`
   — satu sel per hari dari `start` sampai `end`; hari > `today` → `upcoming: true`, `level: null`.
@@ -124,6 +125,11 @@ it("spans from the start day to the earliest snapshot or campaign end", () => {
 it("spans one year without an end date and caps at 364 days", () => {
   expect(heatmapRange("2026-10-08", [], "2026-10-10")).toEqual({ start: "2026-10-08", end: "2027-10-07", endKind: null });
   expect(heatmapRange("2025-01-01", [{ kind: "campaign_end", date: "2026-12-31", precision: "exact" }], "2026-10-10").start).toBe("2026-01-02");
+});
+it("stops at the day the project ended", () => {
+  expect(heatmapRange("2026-10-01", [{ kind: "campaign_end", date: "2026-11-30", precision: "exact" }], "2026-10-10", "2026-10-07"))
+    .toEqual({ start: "2026-10-01", end: "2026-10-07", endKind: "ended" });
+  expect(heatmapRange("2026-10-08", [], "2026-10-10", "2026-10-01").endKind).toBeNull(); // ended before start: ignored
 });
 it("counts days left until the end", () => {
   expect(daysLeft({ start: "2026-10-01", end: "2026-10-20", endKind: "snapshot" }, "2026-10-10")).toBe(11);
@@ -168,7 +174,8 @@ it("computes the local day in a time zone", () => {
     belum ada), arsipkan task `origin = 'source'` yang teksnya sudah gak ada di sumber.
   - `setCheck(db, taskId, done: boolean): Promise<boolean>` → RPC `toggle_farming_check`.
   - `getFarmingBoard(db, now: Date): Promise<FarmingCard[]>` — per project aktif: nama, slug, deadline terdekat, task
-    aktif (urut `position`), `checkedToday`, `range` (dari `heatmapRange` dengan deadline project), `heatmap` (`buildHeatmap` atas rentang itu),
+    aktif (urut `position`), `checkedToday`, `range` (dari `heatmapRange` dengan deadline project; `endedOn = null` di plan ini karena tabel `curations` baru
+    dibuat di Plan 5, disambungkan di Plan 6 Task 3), `heatmap` (`buildHeatmap` atas rentang itu),
     `daysLeft`, `streak`, `weeklyDone`. Tanggal
     lokal dari `profiles.timezone` + `localDay`.
   - `isFarming(db, projectId): Promise<boolean>`.

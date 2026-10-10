@@ -3,7 +3,7 @@
 Tanggal: 2026-10-10
 Status: **rev. 3, disetujui owner untuk dibuat plan (2026-10-10)**. Rev. 2: perbaikan skor setelah simulasi terhadap data run
 pertama. Rev. 3: akar masalah domain, halaman project vs airdrops.io, fitur AI (§13, detail provider belum lengkap),
-Bahasa Indonesia.
+Bahasa Indonesia. Tambahan 2026-10-10: keputusan #40 (airdrop yang berakhir setelah lolos kurasi tetap tampil).
 Dibangun di atas: `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md` (spec v1, sudah live)
 
 Label: **[FACT]** dari data/kode/run, **[INFERENCE]** kesimpulan dari bukti, **[UNKNOWN]** belum terverifikasi.
@@ -70,7 +70,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 24 | Model akses | Cuma member berbayar yang bisa akses isi web |
 | 25 | Pengunjung non-member | Landing page + contoh terbatas (detail di sub-proyek #2) |
 | 26 | Alert Telegram | Gak dibikin |
-| 27 | Dua jenis peluang | List dipisah jadi tab **"Live now"** (live/announced) dan **"Early bets"** (speculative); `worth()` meranking di dalam tab |
+| 27 | Dua jenis peluang | List dipisah jadi tab **"Live now"** (live/announced) dan **"Early bets"** (speculative); `worth()` meranking di dalam tab. Tab ketiga "Sudah berakhir" (#40) |
 | 28 | Standar tampil | Project cuma tampil kalau cek keamanan kuncinya jalan; paywall baru dinyalakan setelah gerbang kualitas §12 terpenuhi |
 | 29 | Bahasa | **Bahasa Indonesia saja** untuk UI web, email, dan semua output AI (menggantikan asumsi v1 "UI bahasa Inggris dulu"). Konten sumber berbahasa Inggris diterjemahkan/diringkas AI |
 | 31 | Pendaftaran member | Gak ada signup; owner menambah user satu per satu di Supabase (Auto Confirm); signup dimatikan di Supabase Auth |
@@ -82,6 +82,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 36 | Privasi tracker | Cuma member itu sendiri yang bisa melihat |
 | 37 | Asal task tracker | Langkah Harian/Mingguan dari sumber + task buatan member; centang cuma untuk hari ini (zona waktu member) |
 | 38 | Coach → tracker | Rekomendasi AI Farming Coach menampilkan tombol "Mulai garap" yang memakai aksi yang sama dengan halaman project |
+| 40 | Airdrop yang berakhir | Yang **pernah lolos kurasi** tetap tampil setelah berakhir, di tab ketiga **"Sudah berakhir"**, dengan status "Berakhir", **selamanya** (arsip rekam jejak). Yang belum pernah lolos tetap tersembunyi. Risiko tetap dicek: kalau naik ke high/critical, keluar dari list |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -112,6 +113,9 @@ Riwayat, pola sama dengan `risk_assessments`: "terbaru" = `computed_at` terbesar
 |---|---|
 | `project_id` | FK ke `projects` |
 | `passed` | boolean |
+| `tab` | `live_now`, `early_bets`, `ended` (#40), atau null kalau gak lolos |
+| `status_at` | status project (setelah `expireStatus`) saat kurasi dihitung; dasar aturan "pernah lolos sebelum berakhir" (§6.2) |
+| `ended_on` | tanggal berakhir (date, null kalau belum berakhir): tanggal deadline dasar `expireStatus` kalau ada, kalau gak ada tanggal pertama status tercatat `ended` (dibawa dari curation sebelumnya) |
 | `worth_level` | `high`, `medium`, `low`, `insufficient_data` |
 | `reasons` | jsonb: alasan lolos/gagal + alasan worth (kode + pesan, seperti `RiskReason`) |
 | `coverage` | jsonb: sinyal mana yang dicek vs belum (mis. portfolio VC gagal diambil) |
@@ -131,8 +135,9 @@ halaman. Gak bisa dibaca publik.
 ### 4.5 View `curated_list` (baru)
 
 Turunan `project_list` (security_invoker), cuma project yang curation terbarunya `passed = true`. Menambah kolom
-`tab` (`live_now` untuk status live/announced, `early_bets` untuk speculative), `worth_level`, dan ringkasan sinyal (untuk
-badge). Urutan default di §6.3.
+`tab` (`live_now` untuk status live/announced, `early_bets` untuk speculative, `ended` untuk yang berakhir setelah lolos,
+#40), `ended_on`, `worth_level`, dan ringkasan sinyal (untuk badge). Urutan default di §6.3; tab `ended` diurutkan
+`ended_on` terbaru dulu.
 
 ### 4.6 Ekstraksi LLM (versi prompt naik)
 
@@ -214,7 +219,9 @@ gak menggagalkan run.
 
 ### 5.3 Tahap `score` (diperluas)
 
-Per project aktif, urut:
+Per project aktif, urut (project berstatus `ended` yang curation terbarunya lolos tetap ikut di-score sampai 90 hari
+setelah `ended_on`, karena masa klaim adalah waktu paling rawan situs klaim palsu; setelah itu hasil terakhir dibekukan
+dan halaman menampilkan tanggal cek terakhir):
 1. `expireStatus()`: status kedaluwarsa (§6.1). Perubahan status masuk `project_changes`.
 2. `assessRisk()`: tetap seperti v1.
 3. `curate()` + `worth()`: hasil masuk `curations`. Perubahan `passed` masuk `project_changes` (`field = curated`).
@@ -246,6 +253,13 @@ Lolos kalau **semua**:
    berarti "dicek dan bersih", bukan "gak sempat dicek".
 
 Alasan gagal disimpan (untuk owner dan peringatan di halaman detail).
+
+**Project yang berakhir (keputusan #40).** Kalau status (setelah `expireStatus`) = `ended`, syarat 1, 3, dan 5 diganti
+dengan "**pernah lolos sebelum berakhir**": curation terbaru dengan `status_at` ≠ `ended` punya `passed = true`. Syarat 2
+dilonggarkan jadi risiko ∉ {`high`, `critical`} (`insufficient_data` gak menggugurkan, karena cek domain bisa berhenti
+jalan setelah kampanye selesai), syarat 4 tetap. Lolos → `tab = ended`, alasan `ended_after_curation`. Yang gak pernah
+lolos sebelum berakhir tetap gagal (`status_not_open`), jadi filter gak bocor. Kalau status balik ke live/announced/
+speculative, aturan normal berlaku lagi.
 
 **Konsekuensi** [INFERENCE dari data run pertama]: dengan cakupan domain sekarang (7 dari 47 project teks), syarat 5
 akan menyembunyikan hampir semua airdrop live. Itu disengaja: perbaikan §5.0 harus selesai lebih dulu, dan gerbang §12
@@ -295,7 +309,9 @@ Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall d
 
 ### 7.1 Halaman list (sekarang `/`)
 - Sumber data: `curated_list`. Project yang gak lolos gak muncul di list mana pun.
-- Dua tab: **"Live now"** (bisa dikerjakan sekarang; default) dan **"Early bets"** (belum ada pengumuman, taruhan awal).
+- Tiga tab: **"Live now"** (bisa dikerjakan sekarang; default), **"Early bets"** (belum ada pengumuman, taruhan awal), dan
+  **"Sudah berakhir"** (#40: pernah lolos kurasi lalu berakhir; status "Berakhir" + tanggal berakhir, urut terbaru dulu,
+  tanpa batas waktu).
 - Baris ringkasan dari run terakhir: "N airdrops checked today · M passed curation".
 - Tiap baris menampilkan cakupan cek: "4/4 key safety checks ran".
 - Tiap baris: nama, status, level **Worth it**, level risiko, badge sinyal (`VC-backed: Paradigm ✓`, `TVL $45M`,
@@ -329,6 +345,9 @@ Aturan yang tetap: backer klaim ditulis "Diklaim project, belum terverifikasi"; 
 (deadline lewat)" + deadline dasarnya; semua link keluar lewat pembersih referral yang sudah ada.
 
 ### 7.3 Project yang gak lolos / keluar dari kurasi
+Berakhir setelah lolos (#40) **bukan** "keluar dari kurasi": halaman detailnya tanpa peringatan, dengan status "Berakhir"
++ tanggal berakhir, dan perubahannya tampil sebagai perubahan status ("X sudah berakhir"), bukan `curated` true→false.
+
 - Halaman detail tetap bisa dibuka lewat link langsung (oleh yang punya akses), dengan peringatan di paling atas:
   "Not in the curated list: <alasan>". Halaman diberi `noindex`.
 - Watchlist tetap menampilkannya dengan label peringatan yang sama.
@@ -354,7 +373,8 @@ Aturan yang tetap: backer klaim ditulis "Diklaim project, belum terverifikasi"; 
 
 ## 10. Testing
 
-- Unit (core): `expireStatus` (termasuk fixture CZR), `curate` (tiap syarat gagal sendiri-sendiri), `worth` (tiap faktor,
+- Unit (core): `expireStatus` (termasuk fixture CZR), `curate` (tiap syarat gagal sendiri-sendiri; berakhir setelah
+  lolos → `ended`; berakhir tanpa pernah lolos → gagal; berakhir + risiko high → gagal), `worth` (tiap faktor,
   batas level, `insufficient_data`), pencocokan domain (nama sama + domain beda = **gak** cocok).
 - Unit (pipeline): tahap `signals` dengan fake DefiLlama/portfolio, kegagalan sumber → coverage, cache portfolio mingguan.
 - pgTAP: RLS tabel baru, `vc_portfolios` gak terbaca anon/authenticated, view `curated_list` cuma berisi yang lolos.
@@ -474,7 +494,8 @@ konsistensinya sebagai heatmap sepanjang masa garap airdrop itu (seperti grafik 
   `campaign_end` (presisi `exact`/`approximate`) paling awal yang ≥ hari mulai. Hari yang belum lewat sampai deadline
   tampil sebagai kotak "akan datang" + teks "Sisa {n} hari sampai {snapshot|akhir kampanye}". Tanpa tanggal selesai: 1 tahun
   (364 hari) dari hari mulai, tanpa teks "Sisa n hari"; begitu sumber menyebut snapshot/akhir kampanye, rentang ikut
-  berubah (dihitung ulang tiap kali dibuka). Maksimal 52 minggu (yang dipotong bagian paling awal).
+  berubah (dihitung ulang tiap kali dibuka). Maksimal 52 minggu (yang dipotong bagian paling awal). Project yang sudah
+  berakhir (#40): rentang berhenti di `ended_on` kalau itu lebih awal, dengan teks "Berakhir {tanggal}".
 - Task Mingguan gak masuk persentase harian; "sudah" kalau dicentang di minggu ISO yang sama (zona waktu member).
 - Task awal = langkah `daily`/`weekly` dari sumber (terjemahan AI kalau ada) saat "Mulai garap". Member bisa menambah dan
   mengarsipkan task sendiri. "Ambil ulang langkah dari sumber" menambah langkah baru (berdasar teks) dan mengarsipkan yang

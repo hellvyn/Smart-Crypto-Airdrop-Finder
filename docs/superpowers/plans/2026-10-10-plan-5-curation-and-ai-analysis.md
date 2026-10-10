@@ -50,6 +50,9 @@ stats cakupan, set uji scam). Plan 6 bergantung ke plan ini (tabel `project_sign
 4. **Router AI habis kuota sepanjang run** → analisis lama dari cache dipakai, project tanpa analisis tetap dinilai
    aturan (worth tanpa faktor AI), run gak gagal. Test di Task 5.
 5. **Deadline tanpa tanggal atau presisi month/quarter** → gak pernah memicu kedaluwarsa. Test di Task 1.
+6. **Airdrop yang lolos lalu berakhir** (keputusan #40) → tetap lolos di tab `ended`, gak menulis `curated` true→false;
+   yang berakhir tanpa pernah lolos tetap tersembunyi; cek domain yang berhenti jalan setelah berakhir gak
+   menggugurkannya. Test di Task 8 dan 9.
 
 ---
 
@@ -110,7 +113,7 @@ it("only applies to live, announced and speculative", () => {
   - `vc_portfolios (vc_id text, domain text, fetched_at timestamptz, primary key (vc_id, domain))` — RLS on, tanpa policy,
     `revoke all` dari anon/authenticated.
   - `ai_analyses (id uuid pk, project_id fk cascade, kind text check in ('analyst','scam','contradictions'), input_hash text not null, result jsonb not null, model text not null, served_model text, prompt_version text not null, created_at timestamptz not null default now(), seq bigint generated always as identity)`.
-  - `curations (id uuid pk, project_id fk cascade, passed boolean not null, worth_level text check in ('high','medium','low','insufficient_data'), tab text check in ('live_now','early_bets') null, reasons jsonb not null default '[]', coverage jsonb not null default '{}', computed_at timestamptz not null, seq bigint generated always as identity)`.
+  - `curations (id uuid pk, project_id fk cascade, passed boolean not null, worth_level text check in ('high','medium','low','insufficient_data'), tab text check in ('live_now','early_bets','ended') null, status_at text not null check in ('live','announced','speculative','ended','unknown'), ended_on date null, reasons jsonb not null default '[]', coverage jsonb not null default '{}', computed_at timestamptz not null, seq bigint generated always as identity)`.
   - `project_changes.field` check diperluas jadi `('status','risk_level','curated')`.
   - Baca **member saja** (`for select to authenticated using (true)`, keputusan #33) untuk `project_signals`,
     `ai_analyses`, `curations`; `revoke all` dari anon; revoke insert/update/delete/truncate dari authenticated.
@@ -118,9 +121,11 @@ it("only applies to live, announced and speculative", () => {
   - `replaceSignals(projectId: string, signals: NewSignal[], at: Date): Promise<void>` (hapus semua sinyal project, tulis ulang)
   - `listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }>`; `saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void>`
   - `latestAiAnalysis(projectId: string, kind: AiKind): Promise<StoredAiAnalysis | null>`; `saveAiAnalysis(a: NewAiAnalysis): Promise<void>`
-  - `latestCuration(projectId: string): Promise<{ passed: boolean } | null>`; `saveCuration(projectId: string, c: CurationRecord, at: Date): Promise<void>` — perubahan `passed` (atau curation pertama yang `passed`) menulis `project_changes` field `curated`, old/new `"true"`/`"false"`.
+  - `latestCuration(projectId: string): Promise<{ passed: boolean; endedOn: string | null } | null>`;
+    `passedBeforeEnd(projectId: string): Promise<boolean>` (curation terbaru dengan `status_at <> 'ended'` punya
+    `passed = true`; gak ada → `false`); `saveCuration(projectId: string, c: CurationRecord, at: Date): Promise<void>` — perubahan `passed` (atau curation pertama yang `passed`) menulis `project_changes` field `curated`, old/new `"true"`/`"false"`.
   - Tipe: `NewSignal = { kind: SignalKind; value: Record<string, unknown>; source: SignalSource; verified: boolean }`,
-    `AiKind = "analyst" | "scam" | "contradictions"`, `CurationRecord = { passed: boolean; worthLevel: WorthLevel | null; tab: Tab | null; reasons: CurationReason[]; coverage: Record<string, boolean> }`
+    `AiKind = "analyst" | "scam" | "contradictions"`, `CurationRecord = { passed: boolean; worthLevel: WorthLevel | null; tab: Tab | null; statusAt: Status; endedOn: string | null; reasons: CurationReason[]; coverage: Record<string, boolean> }`
     (tipe core `WorthLevel`, `Tab`, `CurationReason` didefinisikan di Task 8; di task ini dideklarasikan lebih dulu di
     `packages/core/src/curate/types.ts` dan diekspor).
 
@@ -128,7 +133,8 @@ it("only applies to live, announced and speculative", () => {
   tabel baru mana pun, authenticated gak bisa select `vc_portfolios`,
   gak bisa insert ke semua tabel baru), check `claimed_backer` verified=true ditolak (`23514`), `project_changes.field = 'curated'` diterima.
   Vitest repo: `saveCuration` dua kali (`passed` true → false) menulis satu `project_changes` `curated` "true"→"false";
-  `replaceSignals` mengganti semua sinyal lama.
+  `replaceSignals` mengganti semua sinyal lama. `passedBeforeEnd`: curation lolos (`status_at` live) lalu curation
+  `status_at` ended → `true`; cuma curation `status_at` ended → `false`. pgTAP: `tab = 'ended'` diterima, `tab = 'x'` ditolak.
 - [ ] **Step 2: Jalankan, pastikan gagal** — `npx -y supabase@2.120.0 db reset && npx -y supabase@2.120.0 test db` → FAIL; vitest → FAIL.
 - [ ] **Step 3: Implementasi** migrasi + repo memory + supabase.
 - [ ] **Step 4: Jalankan** — pgTAP + `pnpm -r test` → PASS.
@@ -355,13 +361,16 @@ it("drops scam flags whose quote is not in the source text", () => { /* postProc
 
 **Interfaces:**
 - Produces:
-  - `type Tab = "live_now" | "early_bets"`; `type WorthLevel = "high" | "medium" | "low" | "insufficient_data"`;
+  - `type Tab = "live_now" | "early_bets" | "ended"`; `type WorthLevel = "high" | "medium" | "low" | "insufficient_data"`;
     `CurationReason = { code: string; message: string; kind: "pass" | "fail" | "worth" }` (pesan Bahasa Indonesia).
   - `curate(input: CurateInput): { passed: boolean; tab: Tab | null; reasons: CurationReason[] }` dengan
-    `CurateInput = { status: Status; riskLevel: RiskLevel | null; checks: RiskCheck[]; lookalikeOf: string | null; hasOfficialDomain: boolean; signals: NewSignal[] }`.
+    `CurateInput = { status: Status; riskLevel: RiskLevel | null; checks: RiskCheck[]; lookalikeOf: string | null; hasOfficialDomain: boolean; signals: NewSignal[]; passedBeforeEnd: boolean }`.
     Syarat persis spec §6.2 (5 syarat); kode alasan gagal: `status_not_open`, `risk_too_high`, `no_legit_signal`,
     `lookalike`, `insufficient_checks`. Cek kunci = `dangerous_asks`, `lookalike`, `domain_age`, `phishing_list` semua
     `ran`. `tab` = `live_now` untuk live/announced, `early_bets` untuk speculative.
+    **Status `ended` (keputusan #40, spec §6.2):** lolos kalau `passedBeforeEnd` **dan** risiko ∉ {`high`,`critical`}
+    **dan** `lookalikeOf` null; syarat sinyal legit dan cek kunci gak dipakai, `insufficient_data` gak menggugurkan.
+    Lolos → `tab = "ended"`, alasan pass `ended_after_curation`. `passedBeforeEnd = false` → gagal `status_not_open`.
   - `worth(input: WorthInput): { level: WorthLevel; points: number; reasons: CurationReason[] }` dengan
     `WorthInput = { signals: NewSignal[]; tgePassed: boolean; sourceCount: number; capitalRequired: "none" | "low" | "high" | "unknown"; taskCount: number; aiVerdict: "garap" | "pantau" | "skip" | null }`.
     Faktor dan level persis spec §6.3. Faktor AI (awal, dikalibrasi Task 10) cuma bisa **menurunkan**: `garap` 0,
@@ -378,6 +387,16 @@ it("fails with insufficient_checks when domain_age did not run", () => {
   expect(curate({ ...passing, checks: checksWithout("domain_age") })).toMatchObject({ passed: false, reasons: [expect.objectContaining({ code: "insufficient_checks" })] });
 });
 it("puts speculative projects in early_bets", () => { expect(curate({ ...passing, status: "speculative" }).tab).toBe("early_bets"); });
+it("keeps an ended project that passed before it ended, in the ended tab", () => {
+  expect(curate({ ...passing, status: "ended", passedBeforeEnd: true, checks: checksWithout("domain_age"), riskLevel: "insufficient_data" }))
+    .toMatchObject({ passed: true, tab: "ended", reasons: [expect.objectContaining({ code: "ended_after_curation" })] });
+});
+it("hides an ended project that never passed", () => {
+  expect(curate({ ...passing, status: "ended", passedBeforeEnd: false })).toMatchObject({ passed: false, tab: null });
+});
+it("hides an ended project whose risk became high", () => {
+  expect(curate({ ...passing, status: "ended", passedBeforeEnd: true, riskLevel: "high" }).passed).toBe(false);
+});
 it("never raises the level because of the AI verdict", () => {
   for (const input of [lowInput, mediumInput, highInput])
     expect(rank(worth({ ...input, aiVerdict: "garap" }).level)).toBeLessThanOrEqual(rank(worth({ ...input, aiVerdict: null }).level));
@@ -398,7 +417,10 @@ it("never raises the level because of the AI verdict", () => {
 **Interfaces:**
 - Consumes: Task 1–8.
 - Produces: per project aktif setelah `assessRisk`: `curate` + `worth` (worth dihitung juga untuk yang gagal, untuk
-  halaman detail) → `saveCuration`. `curate`/`worth`/`saveCuration` yang throw untuk satu project dihitung `score_failed`
+  halaman detail) → `saveCuration`. Untuk status `ended`: `passedBeforeEnd` dari repo; `endedOn` = `basis.date` dari
+  `expireStatus` kalau ada, kalau gak `latestCuration().endedOn`, kalau gak tanggal hari ini (UTC); status lain
+  `endedOn = null`. `listProjectsForScoring` juga mengembalikan project `ended` yang curation terbarunya lolos dan
+  `ended_on` ≥ hari ini − 90 hari (spec §5.3), walau sudah di luar `scoreActiveSinceDays`. `curate`/`worth`/`saveCuration` yang throw untuk satu project dihitung `score_failed`
   dan project lain tetap diproses (spec §9). Stats: `curation_checked`, `curation_passed`, `curation_hidden_insufficient_checks`.
   Perubahan `curated` dipakai halaman web "Perubahan sejak kunjungan terakhir" (Plan 6 Task 7); gak ada email
   (Plan 7 menghapus digest).
@@ -412,6 +434,11 @@ it("saves a curation per active project and counts passes", async () => {
   expect(repo.curations.length).toBe(stats.assessed);
 });
 it("logs a curated change when a watched project drops out", async () => { /* run 2 with high risk → project_changes curated true→false */ });
+it("keeps a curated project listed when it ends and logs only a status change", async () => {
+  /* run 1: live + passes; run 2: claim deadline passed → curation tab "ended", passed true, endedOn = claim date;
+     project_changes has status live→ended and no curated row */
+});
+it("keeps scoring ended curated projects for 90 days after they ended", async () => { /* ended_on today−89 → scored; today−91 → not */ });
 ```
 
 - [ ] **Step 2–4:** gagal → implementasi → `pnpm -r test && pnpm -r typecheck` lulus.
