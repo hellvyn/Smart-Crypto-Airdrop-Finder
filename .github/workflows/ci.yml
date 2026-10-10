@@ -38,6 +38,8 @@ jobs:
         run: >-
           npx -y supabase@2.120.0 start
           -x studio,imgproxy,mailpit,vector,logflare,edge-runtime,realtime,storage-api,postgres-meta,supavisor
+      - name: Database tests (pgTAP)
+        run: npx -y supabase@2.120.0 test db
       - name: Export the web app's Supabase env
         # Only the URL, anon key and site URL go to the job env (the web build and server). The e2e harness reads the local
         # service role key itself from `supabase status` (apps/web/e2e/support/supabase-env.ts).

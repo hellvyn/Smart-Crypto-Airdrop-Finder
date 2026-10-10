@@ -29,8 +29,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // CI builds in its own step; locally build first so the run uses production output.
-    command: process.env.CI ? "pnpm start" : "pnpm build && pnpm start",
+    // CI builds in its own step; locally build first so the run uses production output. The host and port are the
+    // test server's (baseURL), not defaults of `pnpm start`, which stays a plain `next start` for deployments.
+    command: `${process.env.CI ? "" : "pnpm build && "}pnpm exec next start --hostname 127.0.0.1 --port 3000`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 300_000,
