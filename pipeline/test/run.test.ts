@@ -1282,7 +1282,7 @@ describe("runDaily domain check coverage", () => {
     const stats = await runDaily({ ...deps, http, sleep: async (ms) => void sleeps.push(ms) }, config);
 
     expect(gets.filter((u) => u.includes(encodeURIComponent("https://inkonchain.com")))).toHaveLength(2);
-    expect(sleeps.filter((ms) => ms === 2000)).toHaveLength(1);
+    expect(sleeps.filter((ms) => ms === 5000)).toHaveLength(1);
     expect(stats.run_error).toBeUndefined();
     expect(stats.phishing_list_failed).toBe(1);
     expect(stats.phishing_list_ran).toBe(2);
@@ -1308,6 +1308,74 @@ describe("runDaily domain check coverage", () => {
     const { deps, config } = setup();
     await runDaily({ ...deps, http: slow }, config);
     expect(maxGoplus).toBe(1);
+  });
+});
+
+describe("runDaily GoPlus pacing", () => {
+  const GOPLUS = "https://api.gopluslabs.io/";
+  const RATE_LIMITED: { status: number; body: string } = {
+    status: 200,
+    body: JSON.stringify({ code: 4029, message: "too many requests", result: {} }),
+  };
+
+  /** The standard fake network; every GoPlus request and every sleep is appended to one ordered log. */
+  function logged(goplus: (url: string) => { status: number; body: string } | undefined = () => undefined) {
+    const base = fakeHttp(basePages());
+    const log: string[] = [];
+    const http: Http = {
+      resolveRedirect: base.resolveRedirect,
+      get: async (url) => {
+        if (!url.startsWith(GOPLUS)) return base.get(url);
+        log.push("goplus");
+        return goplus(url) ?? base.get(url);
+      },
+    };
+    const sleep = async (ms: number): Promise<void> => void log.push(`sleep:${ms}`);
+    return { http, sleep, log };
+  }
+
+  it("leaves a pause of at least 1500 ms between consecutive GoPlus requests, and none before the first", async () => {
+    const { http, sleep, log } = logged();
+    const { deps, config } = setup();
+    await runDaily({ ...deps, http, sleep }, config);
+
+    const goplusLog = log.filter((e) => e === "goplus" || e.startsWith("sleep:1500"));
+    expect(goplusLog).toEqual(["goplus", "sleep:1500", "goplus", "sleep:1500", "goplus"]);
+  });
+
+  it("waits the rate-limit pause before the retry and keeps the spacing for the next domain", async () => {
+    const { http, sleep, log } = logged((url) =>
+      url.includes(encodeURIComponent("https://inkonchain.com")) ? RATE_LIMITED : undefined,
+    );
+    const { deps, config } = setup();
+    await runDaily({ ...deps, http, sleep }, config);
+
+    const goplusLog = log.filter((e) => e === "goplus" || e === "sleep:1500" || e === "sleep:5000");
+    // 3 domains, ink limited twice: its retry is preceded by exactly one 5000 ms pause.
+    expect(goplusLog.filter((e) => e === "sleep:5000")).toHaveLength(1);
+    expect(goplusLog.filter((e) => e === "goplus")).toHaveLength(4);
+    // No two GoPlus requests are adjacent: something (spacing or rate-limit pause) always sits between them.
+    for (let i = 1; i < goplusLog.length; i++) expect(goplusLog[i] === "goplus" && goplusLog[i - 1] === "goplus").toBe(false);
+  });
+
+  it("counts a domain still rate limited after the retry, next to the failed count", async () => {
+    const { http, sleep } = logged((url) =>
+      url.includes(encodeURIComponent("https://inkonchain.com")) ? RATE_LIMITED : undefined,
+    );
+    const { deps, config } = setup();
+    const stats = await runDaily({ ...deps, http, sleep }, config);
+
+    expect(stats.phishing_list_rate_limited).toBe(1);
+    expect(stats.phishing_list_failed).toBe(1);
+    expect(stats.phishing_list_ran).toBe(2);
+    expect(stats.assessed).toBe(3);
+  });
+
+  it("reports zero rate-limited domains when GoPlus never limits", async () => {
+    const { http, sleep } = logged();
+    const { deps, config } = setup();
+    const stats = await runDaily({ ...deps, http, sleep }, config);
+    expect(stats.phishing_list_rate_limited).toBe(0);
   });
 });
 
