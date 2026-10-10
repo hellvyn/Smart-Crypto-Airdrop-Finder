@@ -70,7 +70,11 @@ async function run(): Promise<number> {
     };
 
     const started = Date.now();
-    const outcome = await extractWithFallback(doc, models, { chat, sleep });
+    const outcome = await extractWithFallback(doc, models, {
+      chat,
+      sleep,
+      intermediaryHosts: defaultConfig.alphadrops.intermediaryHosts,
+    });
     const result: ExtractionResult | null = outcome.ok ? outcome.result : null;
     const score = scoreCase(id, result, truth, text, rawOfficialUrlsOfOutcome(outcome.attempts));
     scores.push(score);

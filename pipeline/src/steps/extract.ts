@@ -57,6 +57,7 @@ export async function extractPending(
         sleep: deps.sleep,
         shouldStop: budgetSpent,
         breaker,
+        intermediaryHosts: config.alphadrops.intermediaryHosts,
       });
       for (const attempt of outcome.attempts) await repo.saveExtraction(document.id, attempt, PROMPT_VERSION);
       if (!outcome.ok) {

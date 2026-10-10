@@ -23,6 +23,29 @@ const INK_PAGE = "https://airdrops.io/ink-chain/";
 const TG = "https://t.me/s/airdrops_io";
 const PROTOCOLS = "https://api.llama.fi/protocols";
 const LLAMA_DOC = "https://defillama.com/protocol/hyperdrive-lend";
+const ALPHA_LISTING = "https://alphadrops.net/airdrops";
+const alphaPage = (slug: string): string => `https://alphadrops.net/airdrops/${slug}`;
+
+/** An AlphaDrops listing page whose Next.js payload holds `items` (each merged over an active item). */
+function alphaListing(items: Record<string, unknown>[]): string {
+  const full = items.map((over) => ({
+    name: "Item",
+    slug: "item",
+    status: "active",
+    shortDescription: "Short.",
+    description: "",
+    categories: ["DeFi"],
+    blockchains: ["Ethereum"],
+    fundingAmount: "$$5M",
+    website: null,
+    hasPoints: false,
+    claimDeadline: null,
+    addedDate: "2026-09-01T00:00:00+00:00",
+    ...over,
+  }));
+  const row = `7:${JSON.stringify(["$", "$L8", null, { initialAirdrops: full }])}\n`;
+  return `<html><body><script>self.__next_f.push(${JSON.stringify([1, row])})</script></body></html>`;
+}
 
 /** Minimal hand-written airdrops.io detail page with the structure the collector expects. */
 function detailPage(title: string, body: string): string {
@@ -75,6 +98,8 @@ function basePages(): Pages {
     [TG]: { status: 200, body: fixture("telegram.html") },
     [PROTOCOLS]: { status: 200, body: JSON.stringify(PROTOCOL_LIST) },
     "https://api.llama.fi/hacks": { status: 200, body: "[]" },
+    // Only an ended item: the AlphaDrops collector runs without adding documents to the base scenario.
+    [ALPHA_LISTING]: { status: 200, body: alphaListing([{ slug: "gone", name: "Gone", status: "ended" }]) },
   };
 }
 
@@ -1308,6 +1333,125 @@ describe("runDaily domain check coverage", () => {
     const { deps, config } = setup();
     await runDaily({ ...deps, http: slow }, config);
     expect(maxGoplus).toBe(1);
+  });
+});
+
+describe("runDaily AlphaDrops", () => {
+  const ZETA = alphaPage("zeta");
+
+  it("an alphadrops document never yields alphadrops.net as an official domain", async () => {
+    const pages = basePages();
+    pages[ALPHA_LISTING] = {
+      status: 200,
+      body: alphaListing([{ slug: "zeta", name: "Zeta", website: "https://s.kaito.ai/zeta" }]),
+    };
+    pages[ZETA] = {
+      status: 200,
+      body: "<html><body><h1>Zeta</h1><p>Guide https://alphadrops.net/airdrops/zeta and https://s.kaito.ai/zeta or site https://zeta.xyz/</p></body></html>",
+    };
+    const replies = {
+      ...REPLIES,
+      [ZETA]: {
+        is_airdrop_content: true,
+        projects: [
+          project({
+            name: "Zeta",
+            status: "live",
+            official_urls: ["https://alphadrops.net/airdrops/zeta", "https://s.kaito.ai/zeta", "https://zeta.xyz/"],
+          }),
+        ],
+      },
+    };
+    const { repo, deps, config } = setup({ pages, chat: fakeChat(replies) });
+    const stats = await runDaily(deps, config);
+
+    expect(stats.source_failed).toBe(0);
+    expect(stats.docs_collected).toBe(6);
+    const doc = repo.allDocuments().find((d) => d.url === ZETA);
+    expect(doc?.sourceKind).toBe("alphadrops");
+    expect(doc?.extractionStatus).toBe("done");
+    // The intermediary website link is not written to the document.
+    expect(doc?.text).not.toContain("Website:");
+    const [zeta] = await repo.findProjectsByNameKey("zeta");
+    expect(zeta?.officialDomains).toEqual(["zeta.xyz"]);
+    const scored = (await projects(repo)).find((p) => p.nameKey === "zeta");
+    expect(scored?.links.map((l) => l.url)).toEqual(["https://zeta.xyz/"]);
+  });
+
+  it("keeps the other sources running when the AlphaDrops listing fails", async () => {
+    const pages = basePages();
+    pages[ALPHA_LISTING] = { status: 200, body: "<html><body>maintenance</body></html>" };
+    const { deps, config } = setup({ pages });
+    const stats = await runDaily(deps, config);
+
+    expect(stats.source_failed).toBe(1);
+    expect(stats.docs_collected).toBe(5);
+    expect(stats.projects_created).toBe(3);
+  });
+
+  it("ingests the AlphaDrops documents collected before the connection broke", async () => {
+    const pages = basePages();
+    pages[ALPHA_LISTING] = {
+      status: 200,
+      body: alphaListing([
+        { slug: "zeta", name: "Zeta" },
+        { slug: "eta", name: "Eta" },
+      ]),
+    };
+    pages[ZETA] = { status: 200, body: "<html><body><h1>Zeta</h1><p>Zeta points program.</p></body></html>" };
+    pages[alphaPage("eta")] = { status: 0, body: "" };
+    const { repo, deps, config } = setup({ pages });
+    const stats = await runDaily(deps, config);
+
+    expect(stats.source_failed).toBe(1);
+    expect(repo.allDocuments().filter((d) => d.sourceKind === "alphadrops").map((d) => d.url)).toEqual([ZETA]);
+  });
+
+  it("pauses the configured 1500 ms before every AlphaDrops detail page", async () => {
+    const pages = basePages();
+    pages[ALPHA_LISTING] = {
+      status: 200,
+      body: alphaListing([
+        { slug: "zeta", name: "Zeta" },
+        { slug: "eta", name: "Eta", status: "claimable" },
+      ]),
+    };
+    const base = fakeHttp(pages);
+    const log: string[] = [];
+    const http: Http = {
+      resolveRedirect: base.resolveRedirect,
+      get: async (url) => {
+        if (url.startsWith("https://alphadrops.net/")) log.push(url);
+        return base.get(url);
+      },
+    };
+    const { deps, config } = setup({ pages });
+    await runDaily({ ...deps, http, sleep: async (ms) => void log.push(`sleep:${ms}`) }, config);
+
+    // Collection runs first, so the AlphaDrops requests and their pauses open the log (GoPlus pauses come later).
+    expect(log.slice(0, 5)).toEqual([ALPHA_LISTING, "sleep:1500", ZETA, "sleep:1500", alphaPage("eta")]);
+    expect(log.filter((e) => e.startsWith("https://"))).toEqual([ALPHA_LISTING, ZETA, alphaPage("eta")]);
+  });
+
+  it("sends no request to AlphaDrops when the collector is disabled", async () => {
+    const config = { ...defaultConfig, alphadrops: { ...defaultConfig.alphadrops, enabled: false } };
+    const { http, deps } = setup({ config });
+    const stats = await runDaily(deps, config);
+    expect(http.gets.filter((u) => u.startsWith("https://alphadrops.net/"))).toEqual([]);
+    expect(stats.source_failed).toBe(0);
+  });
+
+  it("never makes an intermediary host an official domain, whatever the source", async () => {
+    const pages = basePages();
+    pages[PROTOCOLS] = {
+      status: 200,
+      body: JSON.stringify([{ ...PROTOCOL_LIST[0], url: "https://bit.ly/hyperdrive" }]),
+    };
+    const { repo, deps, config } = setup({ pages });
+    await runDaily(deps, config);
+    const [hyperdrive] = await repo.findProjectsByNameKey("hyperdrivelend");
+    expect(hyperdrive).toBeDefined();
+    expect(hyperdrive?.officialDomains).toEqual([]);
   });
 });
 

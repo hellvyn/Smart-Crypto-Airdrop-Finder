@@ -27,6 +27,11 @@ describe("cleanUrl", () => {
     expect(r).toEqual({ url: "https://a.io/?keep=1", referralStripped: true });
   });
 
+  it("strips an r query param (the referral key AlphaDrops website links use)", () => {
+    expect(cleanUrl("https://catalyst.app/?r=gVe0u")).toEqual({ url: "https://catalyst.app/", referralStripped: true });
+    expect(cleanUrl("https://entropy.io/?R=alphadrops&lang=en").url).toBe("https://entropy.io/?lang=en");
+  });
+
   it("keeps remaining params in original order", () => {
     expect(cleanUrl("https://a.io/p?b=2&ref=1&a=1").url).toBe("https://a.io/p?b=2&a=1");
   });

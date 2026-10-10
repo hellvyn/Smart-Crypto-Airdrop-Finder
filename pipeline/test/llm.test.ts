@@ -312,6 +312,26 @@ describe("extractWithFallback", () => {
     expect(sleep).not.toHaveBeenCalled();
   });
 
+  it("drops official URLs on aggregator and intermediary hosts, even when they are in the source", async () => {
+    const doc: CollectedDocument = {
+      ...DOC,
+      text: "Zeta. Guide https://alphadrops.net/airdrops/zeta via https://s.kaito.ai/zeta or https://bridge.airdrops.io/ — site https://kaito.ai/",
+    };
+    const urls = ["https://alphadrops.net/airdrops/zeta", "https://s.kaito.ai/zeta", "https://bridge.airdrops.io/", "https://kaito.ai/"];
+    const content = okJson([project({ official_urls: urls })]);
+
+    const withHosts = await extractWithFallback(doc, MODELS, {
+      chat: scripted([reply({ content })]).chat,
+      sleep: async () => {},
+      intermediaryHosts: ["s.kaito.ai"],
+    });
+    expect(withHosts.ok && withHosts.result.projects[0]?.official_urls).toEqual(["https://kaito.ai/"]);
+
+    // The aggregators are refused even when no intermediary list is given.
+    const without = await extractWithFallback(doc, MODELS, { chat: scripted([reply({ content })]).chat, sleep: async () => {} });
+    expect(without.ok && without.result.projects[0]?.official_urls).toEqual(["https://s.kaito.ai/zeta", "https://kaito.ai/"]);
+  });
+
   it("falls back when a model stops with empty content", async () => {
     const { chat, calls } = scripted([reply({ content: "" }), reply()]);
     const out = await extractWithFallback(DOC, MODELS, { chat, sleep: async () => {} });

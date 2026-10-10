@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { collectAirdropsIo } from "../collectors/airdrops-io.js";
+import { collectAlphaDrops } from "../collectors/alphadrops.js";
 import { selectSpeculativeCandidates } from "../collectors/defillama.js";
 import type { SpeculativeCandidate } from "../collectors/defillama.js";
 import { collectTelegram } from "../collectors/telegram.js";
 import type { CollectedDocument, CollectorResult, Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
+import { defaultSleep } from "../enrich/goplus.js";
 import type { DailyStats } from "../stats.js";
 import type { PipelineRepo, StoredDocument } from "../store/repo.js";
 
@@ -86,10 +88,11 @@ async function ingestSafely(repo: PipelineRepo, doc: CollectedDocument, stats: D
  * Collects every source. A source that throws or reports `failed` counts toward `source_failed`;
  * any documents it still returned are ingested. Each document is ingested on its own: one that cannot be
  * stored counts as `ingest_failed` and the rest (and the other sources) continue. DefiLlama documents are
- * stored as `done` (never sent to the LLM) and returned for the speculative merge.
+ * stored as `done` (never sent to the LLM) and returned for the speculative merge. `sleep` paces the AlphaDrops
+ * detail pages.
  */
 export async function collectSources(
-  deps: { repo: PipelineRepo; http: Http },
+  deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void> },
   config: PipelineConfig,
   now: Date,
   stats: DailyStats,
@@ -111,6 +114,9 @@ export async function collectSources(
   await runCollector(() => collectAirdropsIo(http, now));
   for (const channel of config.telegramChannels) {
     await runCollector(async () => collectTelegram(http, channel, await repo.lastTelegramMessageId(channel), now));
+  }
+  if (config.alphadrops.enabled) {
+    await runCollector(() => collectAlphaDrops(http, now, config.alphadrops, deps.sleep ?? defaultSleep));
   }
 
   let llama: { failed: boolean; candidates: SpeculativeCandidate[] };

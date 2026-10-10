@@ -1,6 +1,6 @@
 # Daily pipeline runbook
 
-How to set up, run and check the daily pipeline (`pipeline/`). It collects airdrops.io, Telegram and DefiLlama,
+How to set up, run and check the daily pipeline (`pipeline/`). It collects airdrops.io, Telegram, AlphaDrops and DefiLlama,
 extracts with LLMs (freellm `auto` first, NVIDIA-hosted models as fallback; see section 7), merges into Supabase, scores risk and purges old text. It sends no email.
 Spec: section 4 (pipeline), 5 (data model), 9 (privacy) and 11 (errors and testing) of
 `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md`.
@@ -77,6 +77,20 @@ limit is 60 minutes and extraction stops starting LLM calls after 35 minutes (th
 so collect plus extraction plus `score` ends at about 45 minutes. If GoPlus rate-limited every single domain even
 after the retry, `score` would take about 18 minutes (150 x (1.8 s + 5.3 s)) and the whole job about 58 minutes: barely
 inside the limit, so a day like that is the point to lower `maxDocumentsPerRun` or the extraction budget.
+
+### AlphaDrops pacing
+
+The AlphaDrops collector (`pipeline/src/collectors/alphadrops.ts`, config `alphadrops`) reads the listing
+`https://alphadrops.net/airdrops` and keeps the `active`, `upcoming` and `claimable` items (about 70 on 2026-10-10).
+It fetches their detail pages one at a time with a 1.5 s pause before each (`delayMs`), at most 80 per run
+(`maxDetails`), with the same User-Agent as the other collectors. That is about 2 to 3 minutes before extraction
+starts; the extraction budget counts from the start of extraction, so it adds to the job time. Website links are
+cleaned of referral parts and their redirects followed (at most 3); a link that ends on `alphadrops.net` or on one of
+`intermediaryHosts` (exact host: `s.kaito.ai`, `linktr.ee`, `galxe.com`, ...) is left out of the document. The same
+hosts never become a project's official domain (`isNonProjectHost` in `pipeline/src/collectors/html-text.ts`).
+
+A changed listing (no Next.js payload, no items) or a connection that breaks during the detail pages counts in
+`source_failed`; the documents built before the break are still stored and the other sources run as usual.
 
 ## 4. Read the result
 

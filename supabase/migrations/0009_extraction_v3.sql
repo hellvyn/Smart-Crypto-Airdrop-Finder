@@ -8,3 +8,8 @@
 alter table tasks
   add column position integer not null default 0,
   add column cadence text not null default 'once' check (cadence in ('once', 'daily', 'weekly'));
+
+-- AlphaDrops collector (Plan 4, Task 9; curation spec §15.1): a new documents.source_kind.
+alter table documents drop constraint documents_source_kind_check;
+alter table documents add constraint documents_source_kind_check
+  check (source_kind in ('airdrops_io', 'telegram', 'defillama', 'alphadrops'));

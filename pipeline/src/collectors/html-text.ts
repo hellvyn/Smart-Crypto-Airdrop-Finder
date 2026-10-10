@@ -10,6 +10,18 @@ export function isAggregatorHost(hostname: string): boolean {
 }
 
 /**
+ * The single check for hosts that are never a project's own: the aggregators we collect from (airdrops.io,
+ * alphadrops.net and their subdomains) and the intermediary hosts of the config (`alphadrops.intermediaryHosts`:
+ * short links, link pages, quest boards). Intermediary hosts match exactly, so a project that really lives on
+ * `kaito.ai` keeps its domain while `s.kaito.ai` is refused.
+ */
+export function isNonProjectHost(hostname: string, intermediaryHosts: readonly string[]): boolean {
+  const host = hostname.toLowerCase();
+  if (isAggregatorHost(host) || host === "alphadrops.net" || host.endsWith(".alphadrops.net")) return true;
+  return intermediaryHosts.some((h) => h.toLowerCase() === host);
+}
+
+/**
  * Appends ` [<cleaned url>] ` after every outbound anchor so the LLM can copy URLs verbatim.
  * Links to the aggregator itself are dropped; `onVisit` may turn `/visit/<code>/` links into a placeholder and
  * receives the anchor's `data-outbound-host` (the destination host airdrops.io declares), if any.

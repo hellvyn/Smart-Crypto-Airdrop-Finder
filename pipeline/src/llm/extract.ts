@@ -1,5 +1,6 @@
 import { cleanUrl, extractionSchema, filterUrlsInSource, normalizeDeadline, quoteInSource } from "@saf/core";
 import type { ExtractionResult } from "@saf/core";
+import { isNonProjectHost } from "../collectors/html-text.js";
 import type { CollectedDocument } from "../collectors/types.js";
 import type { CircuitBreaker } from "./circuit-breaker.js";
 import { modelKey } from "./nvidia.js";
@@ -75,14 +76,28 @@ export function cleanUrlsInText(text: string): string {
   });
 }
 
+/** Whether a cleaned official URL is on a host that is never a project's own (see `isNonProjectHost`). */
+function onNonProjectHost(url: string, intermediaryHosts: readonly string[]): boolean {
+  try {
+    return isNonProjectHost(new URL(url).hostname, intermediaryHosts);
+  } catch {
+    return true;
+  }
+}
+
 /**
- * Applies the source-text rules to a schema-valid extraction: official URLs must appear in the source and lose
- * their referral parts; quoted v3 entries (`key_parameters`, `source_ratings`, `claimed_backers`, and
+ * Applies the source-text rules to a schema-valid extraction: official URLs must appear in the source, lose
+ * their referral parts and are dropped on aggregator and intermediary hosts (`isNonProjectHost`); quoted v3
+ * entries (`key_parameters`, `source_ratings`, `claimed_backers`, and
  * `latest_update` by its `text`) are dropped when the quote is not in the source (a backer also when its `investor` is not in its own quote), while the rest of the project
  * stays. The quote check runs on the model's wording before referral parts are removed from URLs in free text.
  * `tasks` is filled from `steps` when the model left it empty.
  */
-function postProcess(result: ExtractionResult, doc: CollectedDocument): ExtractionResult {
+function postProcess(
+  result: ExtractionResult,
+  doc: CollectedDocument,
+  intermediaryHosts: readonly string[],
+): ExtractionResult {
   const inSource = (quote: string): boolean => quoteInSource(quote, doc.text);
   return {
     ...result,
@@ -90,7 +105,8 @@ function postProcess(result: ExtractionResult, doc: CollectedDocument): Extracti
       const urls = new Set<string>();
       for (const url of filterUrlsInSource(project.official_urls, doc.text)) {
         try {
-          urls.add(cleanUrl(url).url);
+          const clean = cleanUrl(url).url;
+          if (!onNonProjectHost(clean, intermediaryHosts)) urls.add(clean);
         } catch {
           // Not a valid absolute URL: drop it.
         }
@@ -130,11 +146,19 @@ function postProcess(result: ExtractionResult, doc: CollectedDocument): Extracti
  * A model whose `breaker` circuit (keyed `"<provider>:<id>"`) is open is skipped; every final non-200 reply counts
  * against its model. An HTTP 200 with an unusable answer (bad JSON, schema, truncated) moves the same document on
  * to the next model at once and is not an endpoint failure.
+ * `intermediaryHosts` (the config's `alphadrops.intermediaryHosts`) are refused as official URL hosts, next to the
+ * aggregator hosts, which are always refused.
  */
 export async function extractWithFallback(
   doc: CollectedDocument,
   models: ModelConfig[],
-  deps: { chat: ChatFn; sleep: (ms: number) => Promise<void>; shouldStop?: () => boolean; breaker?: CircuitBreaker },
+  deps: {
+    chat: ChatFn;
+    sleep: (ms: number) => Promise<void>;
+    shouldStop?: () => boolean;
+    breaker?: CircuitBreaker;
+    intermediaryHosts?: readonly string[];
+  },
 ): Promise<ExtractOutcome> {
   const messages = buildMessages(doc);
   const attempts: ExtractionAttempt[] = [];
@@ -193,7 +217,7 @@ export async function extractWithFallback(
         break;
       }
       record(null, chat.content);
-      return { ok: true, result: postProcess(validated.data, doc), model: key, attempts };
+      return { ok: true, result: postProcess(validated.data, doc, deps.intermediaryHosts ?? []), model: key, attempts };
     }
   }
 

@@ -3,6 +3,12 @@ import type { ModelConfig, ProviderId } from "./llm/nvidia.js";
 export interface PipelineConfig {
   telegramChannels: string[];
   defillama: { minTvl: number; excludedCategories: string[]; limit: number; newWithinDays: number };
+  /**
+   * AlphaDrops collector (curation spec §15.1): at most `maxDetails` detail pages per run, `delayMs` apart.
+   * `intermediaryHosts` (exact host match) are never a project's domain: the collector drops a website link that
+   * ends there, and extraction and merge refuse them as official URLs and domains (`isNonProjectHost`).
+   */
+  alphadrops: { enabled: boolean; maxDetails: number; delayMs: number; intermediaryHosts: string[] };
   /** Tried in order until one returns a valid extraction. */
   models: ModelConfig[];
   llmConcurrency: number;
@@ -58,6 +64,12 @@ export function loadProviders(env: Record<string, string | undefined>): Record<P
 export const defaultConfig: PipelineConfig = {
   telegramChannels: ["airdrops_io"],
   defillama: { minTvl: 1_000_000, excludedCategories: ["CEX"], limit: 80, newWithinDays: 180 },
+  alphadrops: {
+    enabled: true,
+    maxDetails: 80,
+    delayMs: 1500,
+    intermediaryHosts: ["s.kaito.ai", "linktr.ee", "galxe.com", "app.galxe.com", "zealy.io", "layer3.xyz", "bit.ly", "t.co"],
+  },
   models: MODELS,
   llmConcurrency: 3,
   maxDocumentsPerRun: 150,

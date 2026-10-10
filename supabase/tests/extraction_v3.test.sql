@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(14);
+select plan(17);
 
 select has_column('public', 'tasks', 'position', 'tasks has a position column');
 select col_type_is('public', 'tasks', 'position', 'integer', 'position is an integer');
@@ -59,6 +59,22 @@ select is(
   3,
   'authenticated can still read tasks');
 reset role;
+
+-- AlphaDrops collector (Task 9): 'alphadrops' is a document source kind; the existing kinds stay valid and
+-- unknown kinds are still refused.
+select lives_ok(
+  $$ insert into documents (source_kind, source_key, url, text, content_hash, fetched_at) values
+       ('alphadrops', 'alphadrops', 'https://alphadrops.net/airdrops/extraction-v3-test', 't', 'h', now()) $$,
+  'an alphadrops document is accepted');
+select lives_ok(
+  $$ insert into documents (source_kind, source_key, url, text, content_hash, fetched_at) values
+       ('telegram', 'airdrops_io', 'https://t.me/extraction_v3_test/1', 't', 'h', now()),
+       ('defillama', 'defillama', 'https://defillama.com/protocol/extraction-v3-test', 't', 'h', now()) $$,
+  'telegram and defillama documents are still accepted');
+select throws_ok(
+  $$ insert into documents (source_kind, source_key, url, text, content_hash, fetched_at) values
+       ('alphadrop', 'alphadrops', 'https://extraction-v3.test/unknown-kind', 't', 'h', now()) $$,
+  '23514', null, 'an unknown source kind violates the check constraint');
 
 select * from finish();
 rollback;

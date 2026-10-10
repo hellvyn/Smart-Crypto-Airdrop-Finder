@@ -135,7 +135,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   /** Merges one document; a throw marks it `merge_failed` (retried only when its content changes). */
   const mergeOne = async (document: StoredDocument, inputs: ProjectInput[], markDone: boolean): Promise<void> => {
     try {
-      await mergeDocument(repo, document, inputs, now, stats);
+      await mergeDocument(repo, document, inputs, now, stats, config.alphadrops.intermediaryHosts);
       if (markDone) await repo.setExtractionStatus(document.id, "done");
     } catch {
       stats.merge_failed += 1;

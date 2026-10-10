@@ -8,6 +8,7 @@ import {
   registrableDomain,
 } from "@saf/core";
 import type { ExtractedDeadline, Status } from "@saf/core";
+import { isNonProjectHost } from "../collectors/html-text.js";
 import type { DailyStats } from "../stats.js";
 import { FACT_FIELDS } from "../store/repo.js";
 import type { Fact, PipelineRepo, ProjectRow, Step, StoredDocument } from "../store/repo.js";
@@ -133,9 +134,10 @@ function inputLinks(input: ProjectInput): { url: string; kind: LinkKind }[] {
  * Finds or creates the project for one input and applies chains, token and status evidence.
  *
  * Official domains (registrable domains of website, app and docs links, never claim, social or platform
- * hosts) are only set while the project has none: on creation, or on an existing project with an empty
- * list. A project that already has official domains never gains new ones automatically, so a phishing
- * domain listed next to the real one cannot whitelist itself.
+ * hosts, nor links on a non-project host such as `s.kaito.ai` or `alphadrops.net`; see `isNonProjectHost`) are
+ * only set while the project has none: on creation, or on an existing project with an empty list. A project
+ * that already has official domains never gains new ones automatically, so a phishing domain listed next to the
+ * real one cannot whitelist itself.
  *
  * Before the first status evidence of this (project, document) pair is written in this merge, the
  * document's earlier evidence for that field is deleted, so a page that changed replaces its own claim.
@@ -147,6 +149,7 @@ async function mergeProject(
   now: Date,
   stats: DailyStats,
   cleared: Set<string>,
+  intermediaryHosts: readonly string[],
 ): Promise<{ id: string; links: { url: string; kind: LinkKind }[] } | null> {
   const nameKey = normalizeName(input.name);
   if (nameKey === "") return null;
@@ -155,7 +158,7 @@ async function mergeProject(
   const officialDomains = [
     ...new Set(
       links
-        .filter((l) => OFFICIAL_KINDS.has(l.kind))
+        .filter((l) => OFFICIAL_KINDS.has(l.kind) && !isNonProjectHost(new URL(l.url).hostname, intermediaryHosts))
         .flatMap((l) => registrableDomain(l.url) ?? [])
         .filter((d) => !isPlatformDomain(d)),
     ),
@@ -238,6 +241,7 @@ async function mergeProject(
  * document about several projects cannot tell whose ask it is, so nothing is attributed. Earlier
  * `dangerous_ask` evidence of this document is replaced either way. DefiLlama documents skip the ask scan and
  * the fact replacement: their text is our own summary and never goes through extraction.
+ * `intermediaryHosts` (the config's `alphadrops.intermediaryHosts`) never become official domains.
  */
 export async function mergeDocument(
   repo: PipelineRepo,
@@ -245,6 +249,7 @@ export async function mergeDocument(
   inputs: ProjectInput[],
   now: Date,
   stats: DailyStats,
+  intermediaryHosts: readonly string[],
 ): Promise<void> {
   const touched = new Map<
     string,
@@ -252,7 +257,7 @@ export async function mergeDocument(
   >();
   const cleared = new Set<string>();
   for (const input of inputs) {
-    const merged = await mergeProject(repo, input, document, now, stats, cleared);
+    const merged = await mergeProject(repo, input, document, now, stats, cleared, intermediaryHosts);
     if (merged === null) continue;
     const acc = touched.get(merged.id) ?? { deadlines: [], steps: [], facts: [], links: [] };
     acc.deadlines.push(...input.deadlines);
