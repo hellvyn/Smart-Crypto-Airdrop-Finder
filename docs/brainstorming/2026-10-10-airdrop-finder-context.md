@@ -24,13 +24,13 @@ Label:
 | 5 | Antarmuka | **Web dashboard** | Telegram bot ditolak buat v1 |
 | 6 | Jenis airdrop | **Semua**, dengan label status | `live` → anti-scam, `diumumin` → eligibility, `spekulatif` → worth it |
 | 7 | Sumber data | Gabungan (lihat bagian 2) | **X/Twitter gak dipakai di v1** (API berbayar, scraping rawan diblokir) |
-| 8 | LLM | Owner mau pakai **NVIDIA** (`integrate.api.nvidia.com`) | Sudah dites pakai key (Spike 3). Kandidat: kimi-k3 → glm-5.3-flash → gemma-4-31b-it. ToS buat produk publik [UNKNOWN] |
+| 8 | LLM | Owner mau pakai **NVIDIA** (`integrate.api.nvidia.com`) | Sudah dites pakai key (Spike 3). Kandidat: kimi-k3 → glm-5.3-flash → gemma-4-31b-it. ToS buat produk publik: dicek owner 2026-10-10, oke |
 | 9 | Akun user | **Pakai akun (login)** | Dipilih owner. Claude awalnya nyaranin anonim + simpan lokal |
 | 10 | Fungsi akun di v1 | **Sinkron watchlist & wallet + notifikasi email** (digest harian + reminder H-1 deadline). Cek wallet **on-demand** (di-cache) | Ditunda: monetisasi (tapi field `plan` disiapin), pelacakan wallet otomatis di background, web push. Limit free tier layanan email [UNKNOWN] |
 | 11 | Metode login | **Email + password** | Dipilih owner (Claude nyaranin magic link + Google). Tetap butuh email verifikasi & reset password. Pakai library auth yang matang, jangan bikin sendiri. Login via wallet ditolak (konflik pesan anti-scam, ribet di multi-chain) |
 | 12 | Frekuensi scan | **Harian** | Dipilih owner. Risiko yang diterima: deadline yang diumumin < 24 jam bisa kelewat (contoh: radar Oct 9 18:06 UTC → deadline Axis Oct 10 12:00 UTC). Frekuensi dibikin bisa diatur lewat config. Email urgent di-drop |
 | 13 | Isi v1 | **Finder + A (anti-scam) + akun/watchlist + notifikasi + cek wallet khusus EVM** (on-demand) | Rilis berikutnya: adapter chain lain (Solana, Aptos, Sui, TON, Cosmos), lalu B (worth it, butuh data funding yang berbayar) |
-| 14 | Arsitektur | **Opsi 1: scan harian di GitHub Actions (TypeScript) + Supabase (Postgres + auth) + web Next.js di-host terpisah** | Ditolak: Cloudflare all-in (batas subrequest/CPU, auth dirakit sendiri), 1 VM (beban ops & keamanan). Host web belum dipilih (Vercel Hobby rawan klausul non-komersial) |
+| 14 | Arsitektur | **Opsi 1: scan harian di GitHub Actions (TypeScript) + Supabase (Postgres + auth) + web Next.js di-host terpisah** | Ditolak: Cloudflare all-in (batas subrequest/CPU, auth dirakit sendiri), 1 VM (beban ops & keamanan). Host web: **Vercel Hobby dulu** (dipilih owner 2026-10-10). Hobby khusus non-komersial, jadi wajib pindah ke Pro/host lain sebelum ada monetisasi (field `plan`) |
 
 Asumsi yang dikonfirmasi owner: skala v1 puluhan sampai ratusan user; sukses = daftar update harian + skor risiko dengan alasan +
 gak ada deadline watchlist yang kelewat (kecuali yang diumumin < 24 jam); UI bahasa Inggris dulu; dikembangkan solo (dibantu Claude);
@@ -162,12 +162,12 @@ Implikasi buat arsitektur: LLM dipanggil lewat adapter dengan config per model (
 
 ## 4. Yang masih [UNKNOWN] (harus diverifikasi)
 
-1. **NVIDIA**: ToS resmi API trial (boleh atau gak buat produk publik) dan limit RPM resmi. Belum ada konsistensi kualitas antar-run (temperature 0 tetap pernah kosong). Umur model (end of life) gak bisa diprediksi
+1. **NVIDIA**: limit RPM resmi (ToS produk publik udah dicek owner, oke). Belum ada konsistensi kualitas antar-run (temperature 0 tetap pernah kosong). Umur model (end of life) gak bisa diprediksi
 2. Query aktivitas address di Sui GraphQL
 3. API key gratis toncenter (TON): limit
 4. Indexer Cosmos buat chain yang node REST-nya gak mengindeks transaksi
 5. Etherscan V2 (butuh key): chain apa saja yang masuk free tier
-6. ToS airdrops.io soal scraping
+6. ~~ToS airdrops.io soal scraping~~ dicek owner 2026-10-10, oke
 7. Syarat free tier hosting (Vercel, GitHub Actions, database) buat pemakaian komersial
 
 ## 5. Lanjutan di session baru

@@ -289,14 +289,14 @@ mengandung kata `claim`, `airdrop`, `reward`, atau `drop`.
 
 | # | Item | Dampak kalau hasilnya buruk |
 |---|---|---|
-| 1 | ToS NVIDIA API trial buat produk publik + limit RPM resmi | Ganti provider LLM. Adapter sudah dirancang buat itu |
-| 2 | Host web: syarat free tier Cloudflare Pages / Netlify buat situs publik. Vercel Hobby cuma buat dev, karena klausul non-komersial | Pilih host lain atau tier berbayar |
+| 1 | ~~ToS NVIDIA API trial buat produk publik~~ (dicek owner 2026-10-10, oke) + limit RPM resmi | Ganti provider LLM. Adapter sudah dirancang buat itu |
+| 2 | Host web: owner pilih Vercel Hobby dulu (2026-10-10). Hobby khusus non-komersial: sebelum monetisasi, pindah ke Vercel Pro atau host lain | Upgrade tier atau pindah host |
 | 3 | Apakah workflow terjadwal di repo public dimatiin setelah ~60 hari tanpa aktivitas | Perlu mekanisme keep-alive |
 | 4 | Apakah job harian cukup buat nyegah Supabase Free di-pause (7 hari idle) | Perlu ping terpisah |
 | 5 | Log GitHub Actions di repo public bisa dibaca publik | Udah diantisipasi di §9 |
 | 6 | Limit dan syarat Brevo/Resend dari halaman resmi | Ubah prioritas kuota atau tier |
 | 7 | Limit GoPlus tanpa key | Perketat cache |
 | 8 | Instance Blockscout atau cakupan Etherscan V2 buat chain EVM selain Ethereum | Daftar chain v1 menyesuaikan |
-| 9 | ToS airdrops.io soal scraping | Kurangi atau ganti sumber |
+| 9 | ~~ToS airdrops.io soal scraping~~ (dicek owner 2026-10-10, oke) | Kurangi atau ganti sumber |
 | 10 | Seberapa telat cron GitHub dari jadwal | Geser jam job |
 | 11 | Sumber data scam terverifikasi buat ngukur false negative | Akurasi skor gak bisa diklaim sampai ada |
