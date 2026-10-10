@@ -18,6 +18,14 @@ export interface PipelineConfig {
    * (counted as `extract_deferred`), so merge, score and purge finish within the job's 60-minute limit.
    */
   extractBudgetMinutes: number;
+  /**
+   * GoPlus time budget, counted from the start of `score`: after it no new GoPlus request starts. With
+   * `goplusMaxConsecutiveFailures` domains in a row without an answer, the rest are not asked either. Domains not
+   * asked count as not run (`phishing_list_failed`, and `phishing_list_skipped`), so a slow or rate-limiting GoPlus
+   * cannot keep the job from saving its risk assessments within the 60-minute limit.
+   */
+  goplusBudgetMinutes: number;
+  goplusMaxConsecutiveFailures: number;
   scoreActiveSinceDays: number;
   textRetentionDays: number;
 }
@@ -74,6 +82,8 @@ export const defaultConfig: PipelineConfig = {
   llmConcurrency: 3,
   maxDocumentsPerRun: 150,
   extractBudgetMinutes: 35,
+  goplusBudgetMinutes: 12,
+  goplusMaxConsecutiveFailures: 5,
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
 };

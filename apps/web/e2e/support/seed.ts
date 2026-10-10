@@ -155,6 +155,15 @@ export async function seedProjects(): Promise<Seed> {
           quote: `Claims are open now ${tag}`,
           at: new Date().toISOString(),
         },
+        // v3 extraction facts: not shown on the public page until they get their own wording (Plan 6).
+        ...[
+          { field: "claimed_backer", value: "Paradigm", quote: `Backed by Paradigm ${tag}` },
+          { field: "key_parameter:allocation", value: "10% of supply", quote: `10% of supply ${tag}` },
+          { field: "source_rating:difficulty", value: "Easy", quote: `Difficulty: Easy ${tag}` },
+          { field: "latest_update", value: "2026-10-01", quote: `Season 2 announced ${tag}` },
+          { field: "capital_required", value: "high", quote: "" },
+          { field: "capital_min_usd", value: "500", quote: "" },
+        ].map((f) => ({ project_id: mainId, document_id: mainDoc, ...f, at: new Date().toISOString() })),
       ])
       .select("id"),
     "evidence",

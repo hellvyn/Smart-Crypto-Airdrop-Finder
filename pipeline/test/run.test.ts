@@ -1520,6 +1520,53 @@ describe("runDaily GoPlus pacing", () => {
     const { deps, config } = setup();
     const stats = await runDaily({ ...deps, http, sleep }, config);
     expect(stats.phishing_list_rate_limited).toBe(0);
+    expect(stats.phishing_list_skipped).toBe(0);
+  });
+
+  it("starts no GoPlus request once the GoPlus budget is spent, and still scores every project", async () => {
+    // Every GoPlus request moves the clock 11 minutes: the second starts at +11 min, the third would start at +22.
+    let current = NOW;
+    const { http, sleep, log } = logged(() => {
+      current = new Date(current.getTime() + 11 * 60_000);
+      return undefined;
+    });
+    const { repo, deps, config } = setup();
+    const stats = await runDaily({ ...deps, http, sleep, now: () => current }, config);
+
+    expect(log.filter((e) => e === "goplus")).toHaveLength(2);
+    expect(stats.phishing_list_skipped).toBe(1);
+    expect(stats.phishing_list_failed).toBe(1);
+    expect(stats.phishing_list_ran).toBe(2);
+    expect(stats.assessed).toBe(3);
+    expect(stats.run_error).toBeUndefined();
+    const notRun = await Promise.all(["deepbook", "ink", "hyperdrivelend"].map((k) => latestRisk(repo, k)));
+    expect(notRun.filter((r) => r?.checks.find((c) => c.id === "phishing_list")?.ran === false)).toHaveLength(1);
+  });
+
+  it("stops asking GoPlus after consecutive domains without an answer", async () => {
+    const { http, sleep, log } = logged(() => ({ status: 0, body: "" }));
+    const { deps } = setup();
+    const config = { ...defaultConfig, goplusMaxConsecutiveFailures: 2 };
+    const stats = await runDaily({ ...deps, http, sleep }, config);
+
+    expect(log.filter((e) => e === "goplus")).toHaveLength(2);
+    expect(stats.phishing_list_skipped).toBe(1);
+    expect(stats.phishing_list_failed).toBe(3);
+    expect(stats.phishing_list_ran).toBe(0);
+    expect(stats.assessed).toBe(3);
+  });
+
+  it("counts only consecutive GoPlus failures towards the stop: an answer resets the count", async () => {
+    let n = 0;
+    // First and third domain time out, the second is answered.
+    const { http, sleep, log } = logged(() => (++n === 2 ? undefined : { status: 0, body: "" }));
+    const { deps } = setup();
+    const config = { ...defaultConfig, goplusMaxConsecutiveFailures: 2 };
+    const stats = await runDaily({ ...deps, http, sleep }, config);
+
+    expect(log.filter((e) => e === "goplus")).toHaveLength(3);
+    expect(stats.phishing_list_skipped).toBe(0);
+    expect(stats.phishing_list_failed).toBe(2);
   });
 });
 

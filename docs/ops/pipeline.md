@@ -74,9 +74,21 @@ one second apart all got `code: 1`. So `score` sends GoPlus requests one at a ti
 Budget: a request takes about 0.3 s, so each domain costs about 1.8 s. With about 150 domains the GoPlus part of
 `score` takes about 4.5 minutes (the RDAP, crt.sh and DefiLlama lookups run alongside it and are shorter). The job
 limit is 60 minutes and extraction stops starting LLM calls after 35 minutes (the last call can run up to 3 more),
-so collect plus extraction plus `score` ends at about 45 minutes. If GoPlus rate-limited every single domain even
-after the retry, `score` would take about 18 minutes (150 x (1.8 s + 5.3 s)) and the whole job about 58 minutes: barely
-inside the limit, so a day like that is the point to lower `maxDocumentsPerRun` or the extraction budget.
+so collect plus extraction plus `score` ends at about 45 minutes.
+
+Two stops keep a slow or rate-limiting GoPlus inside the job limit (config in `pipeline/src/config.ts`):
+
+- **Time budget** `goplusBudgetMinutes` (12): counted from the start of `score`; after it no new GoPlus request
+  starts. At about 1.8 s per domain that is room for about 400 domains on a normal day.
+- **Consecutive-failure stop** `goplusMaxConsecutiveFailures` (5): after 5 domains in a row without an answer
+  (rate limited after the retry, timed out, 5xx or an unexpected answer), the remaining domains are not asked. One
+  answered domain resets the count.
+
+Domains not asked stay unchecked (the phishing check counts as not run, never as clean) and are counted in
+`phishing_list_failed` and `phishing_list_skipped`; they are asked again in the next run. Without these stops, a GoPlus
+that rate-limited every domain would cost about 7.1 s per domain (1.8 s + 5.3 s) and one that hangs about 21.5 s per
+domain (20 s timeout, no retry), which for 250 domains is 30 or 90 minutes. With them, the worst case for the GoPlus
+part is the 12-minute budget plus the last request (under a minute), so the whole job ends at about 54 minutes at most.
 
 ### AlphaDrops pacing
 
@@ -112,6 +124,7 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `phishing_list_ran` | of the projects with an official domain, those where the GoPlus phishing check answered for at least one |
 | `phishing_list_failed` | domains the GoPlus check gave no answer for, after one retry (429, HTTP 200 with code 4029, or 5xx; 5 s pause) |
 | `phishing_list_rate_limited` | of those, domains GoPlus still rate-limited (429 or code 4029) after the retry |
+| `phishing_list_skipped` | of those, domains never asked because the GoPlus time budget ran out or 5 domains in a row had no answer |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
@@ -134,6 +147,8 @@ What to do:
   `phishing_list_failed` high: GoPlus is rate-limiting; the domains stay unchecked until the next run. Check
   `phishing_list_rate_limited`: if it is close to `phishing_list_failed`, raise `GOPLUS_MIN_INTERVAL_MS` in
   `pipeline/src/enrich/goplus.ts`; if it is 0, the failures are timeouts or errors, not the rate limit.
+  `phishing_list_skipped` > 0: the GoPlus queue was stopped early (budget or 5 failures in a row). If it happens on
+  normal days with `phishing_list_rate_limited` near 0, the domain count has outgrown `goplusBudgetMinutes`.
 - `llm_models_tripped` > 0: a model endpoint failed repeatedly (see `extractions.error`, e.g. `http_0` = 180 s
   timeout). The run continues on the remaining models; if it repeats for days, reorder or replace the model in
   `pipeline/src/config.ts`.

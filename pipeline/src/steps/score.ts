@@ -16,6 +16,7 @@ import type { LinkKind } from "./merge.js";
 const ENRICH_CONCURRENCY = 4;
 /** GoPlus rate-limits hard, so it has its own limiter and runs one request at a time. */
 const GOPLUS_CONCURRENCY = 1;
+const MINUTE_MS = 60_000;
 
 function linkDomains(project: ProjectForScoring): RiskInput["linkDomains"] {
   const seen = new Set<string>();
@@ -36,10 +37,12 @@ function linkDomains(project: ProjectForScoring): RiskInput["linkDomains"] {
  * Scores every project seen within `scoreActiveSinceDays`. Enrichment is fetched once per registrable
  * domain per run (the job is daily, so this replaces a longer-lived cache), and hacks once per run.
  * Domain age comes from RDAP, and from the first crt.sh certificate when RDAP has no answer.
+ * GoPlus stops starting requests after `goplusBudgetMinutes` (by `deps.now()`, from the start of this step) or after
+ * `goplusMaxConsecutiveFailures` domains in a row without an answer; the domains not asked count as not run.
  * One project failing to save counts as `score_failed` and does not stop the others.
  */
 export async function scoreProjects(
-  deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void> },
+  deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void>; now: () => Date },
   config: PipelineConfig,
   now: Date,
   stats: DailyStats,
@@ -59,19 +62,28 @@ export async function scoreProjects(
   const goplusLimit = pLimit(GOPLUS_CONCURRENCY);
   const phishing = new Map<string, boolean | null>();
   let goplusStarted = false;
+  const goplusDeadline = deps.now().getTime() + config.goplusBudgetMinutes * MINUTE_MS;
+  let goplusFailuresInARow = 0;
+  const goplusStopped = (): boolean =>
+    deps.now().getTime() >= goplusDeadline || goplusFailuresInARow >= config.goplusMaxConsecutiveFailures;
   const ages = new Map<string, number | null>();
   const agesFromCrtsh = new Set<string>();
   const [hacks] = await Promise.all([
     limit(() => fetchHacks(http)),
     ...domains.flatMap((domain) => [
       goplusLimit(async () => {
+        if (goplusStopped()) {
+          phishing.set(domain, null);
+          stats.phishing_list_skipped += 1;
+          return;
+        }
         // The limiter runs these one at a time; leave a pause between consecutive requests (GoPlus rate-limits bursts).
         if (goplusStarted) await sleep(GOPLUS_MIN_INTERVAL_MS);
         goplusStarted = true;
-        phishing.set(
-          domain,
-          await checkPhishingSite(http, `https://${domain}`, sleep, () => void (stats.phishing_list_rate_limited += 1)),
-        );
+        const onRateLimited = (): void => void (stats.phishing_list_rate_limited += 1);
+        const flag = await checkPhishingSite(http, `https://${domain}`, sleep, onRateLimited);
+        goplusFailuresInARow = flag === null ? goplusFailuresInARow + 1 : 0;
+        phishing.set(domain, flag);
       }),
       limit(async () => {
         let age = await domainAgeDays(http, domain, now);

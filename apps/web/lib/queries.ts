@@ -144,6 +144,14 @@ export async function listChains(db: SupabaseClient): Promise<string[]> {
     .filter((chain) => parseChain(chain) === chain);
 }
 
+/**
+ * The pipeline's v3 extraction facts (`FACT_FIELDS` in `pipeline/src/store/repo.ts`: these four plus every
+ * `key_parameter:*` and `source_rating:*`) are unverified, and a claimed backer must carry the spec's fixed wording
+ * ("Diklaim project, belum terverifikasi"). Until the project page gives them their own section (Plan 6), they are
+ * left out of the evidence query, so they neither show up as generic evidence nor take rows from its window.
+ */
+const HIDDEN_FACT_FIELDS = ["claimed_backer", "capital_required", "capital_min_usd", "latest_update"];
+
 export async function getProjectDetail(db: SupabaseClient, slug: string, now: Date = new Date()): Promise<ProjectDetail | null> {
   const { data: p, error } = await db
     .from("projects")
@@ -161,6 +169,9 @@ export async function getProjectDetail(db: SupabaseClient, slug: string, now: Da
     db.from("tasks").select("description").eq("project_id", id),
     db.from("links").select("url, kind").eq("project_id", id),
     db.from("evidence").select("field, value, quote, source_url, at, seq").eq("project_id", id)
+      .not("field", "in", `(${HIDDEN_FACT_FIELDS.join(",")})`)
+      .not("field", "like", "key_parameter:*")
+      .not("field", "like", "source_rating:*")
       .order("at", { ascending: false }).order("seq", { ascending: false }).limit(100),
   ]);
   throwIf(risks.error, "risk");

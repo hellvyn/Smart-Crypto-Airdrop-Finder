@@ -218,6 +218,19 @@ describe("getProjectDetail evidence query", () => {
     expect(ev.calls).toContainEqual(["limit", 100]);
   });
 
+  it("leaves the unverified v3 fact fields out in the query, so they never take rows from the 100-row window", async () => {
+    const { db, recs } = fakeDb((rec) => {
+      if (rec.table === "projects")
+        return { data: { id: "p1", slug: "demo", name: "Demo", status: "live", chains: [], last_seen: "2026-10-09T00:00:00Z", token_symbol: null, conflict: false }, error: null };
+      return { data: [], error: null };
+    });
+    await getProjectDetail(db, "demo");
+    const ev = recs.find((r) => r.table === "evidence")!;
+    expect(ev.calls).toContainEqual(["not", "field", "in", "(claimed_backer,capital_required,capital_min_usd,latest_update)"]);
+    expect(ev.calls).toContainEqual(["not", "field", "like", "key_parameter:*"]);
+    expect(ev.calls).toContainEqual(["not", "field", "like", "source_rating:*"]);
+  });
+
   it("returns null for an unknown slug", async () => {
     const { db } = fakeDb(() => ({ data: null, error: null }));
     expect(await getProjectDetail(db, "nope")).toBeNull();

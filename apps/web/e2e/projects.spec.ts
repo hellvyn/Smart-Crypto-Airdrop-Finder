@@ -92,6 +92,13 @@ test("the detail page shows reasons, coverage, evidence with its source, and the
   const source = evidence.getByRole("link");
   await expect(source).toHaveAttribute("href", `${seed.main.sourceUrl}`);
   await expect(source).toHaveAttribute("rel", "noopener noreferrer nofollow");
+  // Unverified v3 facts (claimed backers, key parameters, ratings, capital, latest update) are not public evidence.
+  const hidden = [
+    "claimed backer", "Paradigm", "key parameter", "10% of supply", "source rating", "Difficulty",
+    "latest update", "Season 2 announced", "capital",
+  ];
+  for (const text of hidden) await expect(evidence).not.toContainText(text);
+  await expect(page.getByText("Paradigm")).toHaveCount(0);
 
   const checker = page.getByRole("link", { name: "Official checker (unverified)" });
   await expect(checker).toHaveAttribute("href", seed.main.claimUrl);
