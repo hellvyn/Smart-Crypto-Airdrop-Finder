@@ -59,6 +59,7 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   | navigasi & akun | "Airdrop", "Kenapa AirdropIQ", "Track record", "Garapan saya", "Watchlist", "Login", "← Balik ke list" |
   | footer | "Not financial advice. Tetap DYOR sebelum connect wallet." |
   | sub-filter modal (#52) | label "Modal:"; pilihan "Semua" / "Gratis" / "Butuh $" (+ " · {n}"); tag baris "Gratis" / "Butuh ${x}+" / "Butuh $" / "Modal belum jelas" |
+  | security check (#53) | badge "Re-check tiap pagi · terakhir {jam} WIB"; strip "Lapis cek" / "Source dibaca" / "Link dicek" / "Red flag"; badge "Wajib lolos" + "Satu aja gagal jalan, project ini gak bakal tampil. Bukan dianggap lolos."; kartu "Cek 01"…"Cek 04": "Minta seed phrase / bayar dulu", "Domain tiruan", "Umur domain", "Database phishing"; judul "Cek tambahan": "Riwayat hack", "Cross-check antar source", "AI baca halaman claim"; sumber "Scanner AirdropIQ", "Database AirdropIQ", "RDAP registry", "GoPlus Security", "DefiLlama Hacks", "Analisis AI" |
   | hasil garapan (#51) | "Dapet berapa dari airdrop ini?", "Gak dapet", "Hasil kamu", "Total hasil garapan", "Boleh dipakai anonim buat rata-rata hasil member", "Rata-rata member yang garap {project}: ≈ ${x} (dari {n} member yang mau berbagi)" |
   Sumber kebenaran teks: mockup `docs/design/airdropiq-c/*.dc.html` (spec §16). Kalau glosarium dan mockup beda,
   glosarium yang dipakai.
@@ -239,7 +240,8 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
 
 **Files:**
 - Modify: `apps/web/app/(public)/projects/[slug]/page.tsx`, `apps/web/components/ProjectDetailView.tsx`,
-  `apps/web/lib/queries.ts` (`getProjectDetail` diperluas)
+  `apps/web/lib/queries.ts` (`getProjectDetail` diperluas), `packages/core/src/risk/assess.ts` (detail cek, #53),
+  `pipeline/src/run.ts` (mengisi `officialDomainCount` dan jumlah dokumen ke input assess)
 - Create: `apps/web/components/detail/AiDecision.tsx`, `Contradictions.tsx`, `StepsList.tsx`, `EffortBox.tsx`,
   `WhyListed.tsx`, `SafetyBox.tsx`, `LatestUpdate.tsx`
 - Test: `apps/web/test/components/detail/*.test.tsx`, `apps/web/e2e/projects.spec.ts`
@@ -261,13 +263,25 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   `tasks.text_id`, jatuh ke `tasks.text`), Keamanan, Update terbaru, Kenapa masuk list. Bagian Keputusan AI dan Effort
   untuk pengunjung = kotak berjudul sama berisi "Member only" saja (tanpa tombol, #46); data `analyst` gak pernah
   di-query untuk pengunjung.
+- **Security check (#53), persis mockup `CProject.dc.html` bagian 04:**
+  - Core: `RiskCheck` jadi `{ id; ran: boolean; detail?: Record<string, string | number | null> }`. `assess` mengisi:
+    `dangerous_asks` `{ sources }`, `lookalike` `{ compared }` (jumlah domain official di DB), `domain_age`
+    `{ domain, ageDays }` (domain official utama), `phishing_list` `{ checked, hits }` (jumlah domain + link yang
+    dicek GoPlus), `hack_history` `{ count }`, `corroboration` `{ sources }`. Gak ada perubahan skema DB (`checks`
+    sudah jsonb).
+  - `SafetyBox`: strip angka (Lapis cek = jumlah cek `ran` + AI scam kalau ada + cek link kalau ada link; Source
+    dibaca; Link dicek dari `link_checks`; Red flag = alasan risiko severity ≥ medium + flag scam AI), 4 kartu wajib
+    lolos, lalu "Cek tambahan" yang cuma berisi cek dengan `ran = true`. Tanggal daftar domain = `computed_at` −
+    `ageDays`. Baris lama tanpa `detail` → kartu tetap tampil tanpa kalimat detail (gak ngarang angka).
 - **Link (#42):** tiap link di Langkah dan Keamanan menampilkan status dari `link_checks` (glosarium); `phishing` →
   teks peringatan, bukan `<a>`; `different_domain` → link + peringatan. Kepala menampilkan "Claim open · link dicek"
   kalau `claim_open_checked`.
 
 - [ ] **Step 1: Test yang gagal** — komponen: `AiDecision` dengan `analyst = null` → "Analisis AI belum tersedia";
   poin berisi `<b>x</b>` dirender sebagai teks; `WhyListed` menulis "Klaim project, belum verified" untuk
-  `claimed_backer`; `StepsList` mengelompokkan cadence; `LinkStatus` dengan `phishing` gak merender `<a>`. e2e: halaman
+  `claimed_backer`; `StepsList` mengelompokkan cadence; `SafetyBox` gak merender `token_security` dengan `ran = false`,
+  merender kartu tanpa `detail` tanpa kalimat detail, dan "Red flag" = 0 kalau gak ada alasan ≥ medium; core:
+  `assess` mengisi `domain_age.detail.ageDays` sama dengan input RDAP; `LinkStatus` dengan `phishing` gak merender `<a>`. e2e: halaman
   project lolos sebagai member menampilkan bagian dalam urutan di atas dan label "Analisis AI"; sebagai pengunjung
   bagian Keputusan AI dan Effort berisi "Member only", gak ada teks verdict ("Garap"/"Pantau"/"Skip"), dan gak ada
   teks "Daftar".

@@ -124,13 +124,47 @@ a{color:#111111}a:hover{color:#C2410C}
 </section>
 
 <section style="background:#FFFFFF;border:2px solid #111111">
-<h2 style="margin:0;padding:12px 18px;border-bottom:2px solid #111111;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:24px;text-transform:uppercase">04 · Security check</h2>
-<div style="padding:18px;display:flex;flex-direction:column;gap:16px">
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));border:2px solid #111111">
-<sc-for list="{{checks}}" as="c" hint-placeholder-count="4">
-<div style="display:flex;gap:10px;align-items:flex-start;padding:12px;border-right:2px solid #111111">
-<span style="width:22px;height:22px;flex:none;border:3px solid #111111;display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#1F7A45" stroke-width="4" stroke-linecap="square"><path d="M4 12l5 5L20 6"></path></svg></span>
-<span style="display:flex;flex-direction:column"><b style="font-size:14px;text-transform:uppercase">{{c.title}}</b><span style="font-size:14px">{{c.result}}</span></span>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 18px;border-bottom:2px solid #111111">
+<h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:24px;text-transform:uppercase">04 · Security check</h2>
+<span style="font-size:12px;font-weight:700;text-transform:uppercase;border:2px solid #111111;padding:3px 8px">Re-check tiap pagi · terakhir 06.00 WIB</span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));background:#111111;color:#F7F7F2">
+<sc-for list="{{inspectStats}}" as="st" hint-placeholder-count="4">
+<div style="padding:14px 18px;border-right:2px solid #2B2B28;display:flex;flex-direction:column;gap:2px">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:40px;line-height:1;color:#FF5A1F">{{st.value}}</span>
+<span style="font-size:12px;font-weight:700;text-transform:uppercase">{{st.label}}</span>
+</div>
+</sc-for>
+</div>
+<div style="padding:18px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+<span style="font-size:13px;font-weight:800;text-transform:uppercase;background:#FF5A1F;border:2px solid #111111;padding:3px 8px">Wajib lolos</span>
+<span style="font-size:14px">Satu aja gagal jalan, project ini gak bakal tampil. Bukan dianggap lolos.</span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px">
+<sc-for list="{{keyChecks}}" as="c" hint-placeholder-count="4">
+<div style="border:2px solid #111111;display:flex;flex-direction:column">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-bottom:2px dashed #111111">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;text-transform:uppercase">{{c.code}}</span>
+<span style="font-size:11px;font-weight:700;text-transform:uppercase;border:2px solid #111111;padding:1px 6px">{{c.source}}</span>
+</div>
+<div style="padding:12px;display:flex;gap:10px;align-items:flex-start">
+<span style="width:22px;height:22px;flex:none;border:3px solid #1F7A45;display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#1F7A45" stroke-width="4" stroke-linecap="square"><path d="M4 12l5 5L20 6"></path></svg></span>
+<span style="display:flex;flex-direction:column;gap:4px;min-width:0">
+<b style="font-size:14px;text-transform:uppercase">{{c.title}}</b>
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:22px;line-height:1.1;color:#1F7A45;text-transform:uppercase">{{c.result}}</span>
+<span style="font-size:13px;color:#2B2B28">{{c.detail}}</span>
+</span>
+</div>
+</div>
+</sc-for>
+</div>
+<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px">Cek tambahan</div>
+<div style="border:2px solid #111111">
+<sc-for list="{{extraChecks}}" as="x" hint-placeholder-count="3">
+<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:10px 12px;border-bottom:2px solid #111111">
+<span style="display:flex;flex-direction:column;gap:2px;min-width:0"><b style="font-size:14px;text-transform:uppercase">{{x.title}}</b><span style="font-size:13px;color:#2B2B28">{{x.detail}}</span></span>
+<span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:18px;color:#1F7A45;text-transform:uppercase;white-space:nowrap">{{x.result}}</span><span style="font-size:11px;font-weight:700;text-transform:uppercase;border:2px solid #111111;padding:1px 6px;white-space:nowrap">{{x.source}}</span></span>
 </div>
 </sc-for>
 </div>
@@ -149,7 +183,6 @@ a{color:#111111}a:hover{color:#C2410C}
 <span style="font-size:14px">Kalau link ini nongol di grup atau DM, jangan dibuka.</span>
 </div>
 </div>
-<div style="font-size:14px;color:#2B2B28">AI kami udah baca halaman claim official-nya dan gak nemu pola scam. <span style="font-size:11px;font-weight:700;text-transform:uppercase;border:2px solid #111111;padding:1px 5px">Analisis AI</span></div>
 </div>
 </section>
 
@@ -227,11 +260,22 @@ class Component extends DCLogic {
         { cadence: 'Sekali', text: 'Bridge aset ke Arbitrum lewat bridge official.', hasLink: true, link: 'bridge.arbitrum.example' },
         { cadence: 'Sekali', text: 'Connect akun X di halaman points.', hasLink: false, link: '' }
       ],
-      checks: [
-        { title: 'Permintaan berbahaya', result: 'Gak ditemukan' },
-        { title: 'Nama tiruan', result: 'Gak ditemukan' },
-        { title: 'Umur domain', result: '2 tahun 3 bulan' },
-        { title: 'Phishing list', result: 'Gak ada di list' }
+      inspectStats: [
+        { value: '8', label: 'Lapis cek' },
+        { value: '4', label: 'Source dibaca' },
+        { value: '7', label: 'Link dicek' },
+        { value: '0', label: 'Red flag' }
+      ],
+      keyChecks: [
+        { code: 'Cek 01', source: 'Scanner AirdropIQ', title: 'Minta seed phrase / bayar dulu', result: 'Gak ada', detail: 'Semua teks dari 4 source di-scan, termasuk tiap step garap. Kalimat peringatan kayak "jangan share seed phrase" gak dihitung.' },
+        { code: 'Cek 02', source: 'Database AirdropIQ', title: 'Domain tiruan', result: 'Gak ada yang mirip', detail: 'nebula-perps.example dibandingin sama domain official 1.240 project di database kami.' },
+        { code: 'Cek 03', source: 'RDAP registry', title: 'Umur domain', result: '2 tahun 3 bulan', detail: 'Terdaftar 12 Jul 2024. Domain official di bawah 90 hari, atau link claim di bawah 30 hari, langsung bikin risiko naik.' },
+        { code: 'Cek 04', source: 'GoPlus Security', title: 'Database phishing', result: 'Bersih', detail: 'Domain official plus 7 link claim dan app dicocokin satu-satu ke database phishing.' }
+      ],
+      extraChecks: [
+        { title: 'Riwayat hack', result: '0 kasus', source: 'DefiLlama Hacks', detail: 'Nama project dicocokin ke database exploit DeFi.' },
+        { title: 'Cross-check antar source', result: '4 source', source: 'AirdropIQ', detail: 'Status, deadline, dan link dibandingin antar source. Yang beda cerita kami tulis di bagian 02.' },
+        { title: 'AI baca halaman claim', result: 'Gak ada pola scam', source: 'Analisis AI', detail: 'Dicari: desakan waktu, "connect wallet buat cek eligibility", admin palsu, minta seed phrase secara halus.' }
       ]
     };
   }
