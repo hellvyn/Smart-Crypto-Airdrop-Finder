@@ -208,3 +208,11 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 
 ## Progress (Plan 8)
 - G3-3a started: P8.T1 ∥ P8.T2 from a583164
+- P8 Task 1: fix round 1/5 (1 addressed, 0 open — the column grants broke the plan's `startFarming` upsert; the fix amended the plan's Task 3 interface to insert-or-unarchive; commits 587cb7e..601351d)
+- P8 Task 1: complete (commits a583164..601351d). The T3 brief was regenerated after the merge so it carries the amended contract.
+- Ruling: drop the `farming_checks` delete grant and policy — spec §14 and the Plan 8 constraints say only today can change, while the brief text granted delete — costs nothing, because toggle is SECURITY DEFINER and cascades need no grant. Done in FX3.
+- Ruling: FX3 also blocks tasks on an archived farming project and lets a re-insert of an existing project skip the 50-project limit — both were P8.T1 review minors that P8.T3 would otherwise trip over — costs one small migration edit in the same wave.
+- P8 Task 1: note for P8.T3: `toggle_farming_check` for a weekly task returns `p_done`. After an uncheck that is false, even when another day of the same ISO week is still checked. The UI must compute "done this week" from the checks (`weeklyDone`), not from the return value.
+- P8 Task 2: complete (commits a583164..bedbce6, review clean). The no-deadline range is 365 cells (ruled).
+- P8 Task 2: minor (deferred): the unused `_today` param. `toMs`/`fromMs` do not validate input. `localDay` produces garbage when a part is missing.
+- G3-3a merged. Tests: core 194, pipeline 369, web 285 unit · typecheck ok · pgTAP 209 · e2e 67/67.
