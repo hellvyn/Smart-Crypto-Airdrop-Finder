@@ -18,12 +18,12 @@ Spec: section 4 (pipeline), 5 (data model), 9 (privacy) and 11 (errors and testi
    ```
 
    `db push` applies everything in `supabase/migrations/` (`0001_pipeline.sql`: tables, RLS, public read
-   policies; later files add users, web views and more, through `0006_project_changes_seq.sql`). Run it again after pulling a new migration.
+   policies; later files add users, web views and more, through `0007_manual_membership.sql`, which drops the email-digest tables and columns). Run it again after pulling a new migration.
 
    **Production project (`smart-airdrop-finder`, created 2026-10-10):** 0001–0006 were applied through the
    Supabase MCP connector, not `db push`, so the remote migration history holds timestamped entries (0002 split
    in parts; `delete_my_account()` was run in the SQL Editor and has no entry). Before the first `db push` of a
-   new migration there, align the history once, then push:
+   new migration there (`0007` is the first), align the history once, then push:
 
    ```
    npx -y supabase@2.120.0 migration repair --status reverted 20261010140453 20261010141009 20261010141033 \
@@ -46,8 +46,10 @@ In **Settings > Secrets and variables > Actions**, add repository secrets:
 
 The workflow installs dependencies without these secrets and only passes them to the pipeline step. Only a
 missing `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` stops the run with `{"config_error":1}` before anything is
-collected. The pipeline reads no other secret: a leftover `BREVO_API_KEY`, `EMAIL_FROM` or `SITE_URL` in the
-environment or in the repository secrets is ignored and can be deleted.
+collected. The pipeline reads no other secret (`pipeline/src/daily-job.ts` reads exactly these three, and
+`.github/workflows/daily.yml` passes exactly these three). The email digest was removed: a leftover
+`BREVO_API_KEY`, `EMAIL_FROM` or `SITE_URL` in the environment or in the repository secrets is ignored and can
+be deleted.
 
 ## 3. Run it
 

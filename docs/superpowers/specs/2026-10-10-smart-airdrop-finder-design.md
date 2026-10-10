@@ -234,6 +234,10 @@ mengandung kata `claim`, `airdrop`, `reward`, atau `drop`.
 
 ## 8. Notifikasi email
 
+> **Diganti keputusan #31–#34, lihat spec kurasi** (`2026-10-10-curation-foundation-design.md`): gak ada email sama
+> sekali. Digest dihapus (#32), perubahan ditampilkan di web (#34), pendaftaran ditutup dan user ditambah owner (#31).
+> Isi di bawah dibiarkan sebagai catatan sejarah v1.
+
 - Maksimal **1 email per user per hari**: digest yang dikirim setelah pipeline selesai. Dikirim cuma kalau ada isinya.
 - Isi digest, berurutan:
   1. Deadline dalam 48 jam di watchlist. Cuma deadline dengan presisi `exact` atau `approximate`, dan jenis `claim`, `snapshot`,
@@ -250,6 +254,11 @@ mengandung kata `claim`, `airdrop`, `reward`, atau `drop`.
 - Tiap email punya link berhenti langganan.
 
 ## 9. Akun, privasi, dan keamanan
+
+> **Diganti keputusan #31–#34, lihat spec kurasi** (`2026-10-10-curation-foundation-design.md`): gak ada signup,
+> verifikasi email, atau reset password lewat email. Owner menambah user (Auto Confirm) dan mereset password lewat
+> Supabase Dashboard, runbook di `docs/ops/web.md` §4. Key email gak ada lagi di GitHub Secrets. Bagian privasi log,
+> hapus data, dan anon key di bawah tetap berlaku.
 
 - **Auth:** Supabase Auth email + password, dengan verifikasi email dan reset password. Gak bikin auth sendiri.
 - **Privasi log:** [INFERENCE, keyakinan tinggi, cek di §12] log GitHub Actions di repo public bisa dibaca publik. Jadi:
