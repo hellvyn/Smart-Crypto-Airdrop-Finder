@@ -141,3 +141,13 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 
 ## Progress (Plan 4)
 - G2-2a started: P4.T1 ∥ P4.T2 ∥ P4.T3 ∥ P4.T8 from a79b089 (workflow run wf_b34d235b-3a6)
+- P4 Task 1: complete (commits a79b089..eee00ce, review clean). `embedLinks` `onVisit` is now `(url, outboundHost)`. Telegram is unchanged.
+- P4 Task 1: minor (deferred): `airdrops-io.ts:52` matches every Overview wrapper on the page (scope it to the first one so related cards cannot inject links). A bare-URL `li` gets the label "https". The aggregator-redirect fallback is undocumented.
+- P4 Task 2: fix round 1/5 (1 addressed, 0 open — the crt.sh 5 MB cap was untested; commits 037f049..8d34837)
+- P4 Task 2: complete (commits a79b089..8d34837). The run fixture has 3 projects with an official domain, not the brief's 2 (the DefiLlama project counts too). The concurrency bound is 5 because GoPlus has its own limiter.
+- P4 Task 2: minor (deferred, watch in production): GoPlus is serial and status-0 timeouts are not retried. If GoPlus hangs, score can exceed the 60 min job budget, so consider a deadline or breaker in Plan 5. crt.sh `q=<domain>` matches the apex only. The `phishing_list_failed` and `_ran` denominators differ. `sequenceHttp` uses a shared-array index. The run fixture does not assert its body is over 5 MB.
+- P4 Task 3: complete (commits a79b089..5e35911, review clean). `streamChat` `baseUrl` is now required. `ChatResult.servedModel` is required, so later fakes need `servedModel: null`. Controller verified that `MemoryRepo.saveExtraction` spreads the attempt, so `servedModel` is kept.
+- P4 Task 3: minor (deferred): duplicate config import in `run.test.ts`. `pipeline.md:4` line width. A mid-stream failure loses the model that started answering. The `supabase-repo.test.ts` prompt literal looks like a stale version.
+- P4 Task 8: complete (commits a79b089..1a42242, review clean). Every DefiLlama document hash changes once. Controller verified documents upsert on `url` and evidence on `(project,document,field,value)` with `ignoreDuplicates`, so nothing is duplicated.
+- P4 Task 8: minor (deferred): garbled `listingDate` comment. `deadFrom: false/0` is treated as dead. No tests for `deadFrom: ""` and for the "n/a" listing date.
+- G2-2a merged: f063f9e, 5dfc046, c625a11, 05e6278 (auto-merged `run.test.ts`, `config.ts`, `pipeline.md`). Tests: core 134, pipeline 245, web 284 unit · typecheck ok · pgTAP 119 · e2e 67/67.
