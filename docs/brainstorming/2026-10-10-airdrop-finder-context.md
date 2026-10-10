@@ -1,7 +1,7 @@
 # Smart Crypto Airdrop Finder & Validator — Konteks Brainstorming
 
-Status: **brainstorming belum selesai, spec belum ditulis.** Dokumen ini ringkasan keputusan dan hasil spike
-supaya bisa dilanjut di session baru. Ini bukan spec dan bukan izin buat mulai implementasi.
+Status: **spec draft sudah ditulis** di `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md`, menunggu review owner.
+Dokumen ini ringkasan keputusan dan hasil spike. Ini bukan spec dan bukan izin buat mulai implementasi.
 
 Tanggal: 2026-10-10
 Proses: `superpowers:brainstorming`, jalur **Architectural** (project baru, repo masih kosong).
@@ -182,5 +182,5 @@ Prasyarat (sudah atau sedang dikerjakan owner):
 Langkah berikutnya, urut:
 1. ~~**Spike LLM NVIDIA**~~: selesai 2026-10-10, lihat Spike 3 di bagian 3.
 2. (Opsional) Tes riwayat address di Sui GraphQL.
-3. Lanjut brainstorming: pertanyaan klarifikasi yang tersisa (misalnya akun user atau anonim, privasi wallet, frekuensi scan),
-   lalu 2–3 opsi pendekatan arsitektur, desain per bagian, dan spec di `docs/superpowers/specs/`.
+3. ~~Lanjut brainstorming~~: selesai 2026-10-10. Keputusan #9–#14, desain bagian 1–5 disetujui owner, spec draft sudah ditulis.
+4. **Owner review spec.** Setelah disetujui: tulis implementation plan (`superpowers:writing-plans`).
