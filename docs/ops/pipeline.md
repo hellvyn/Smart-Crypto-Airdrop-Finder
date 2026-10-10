@@ -1,8 +1,9 @@
 # Daily pipeline runbook
 
 How to set up, run and check the daily pipeline (`pipeline/`). It collects airdrops.io, Telegram and DefiLlama,
-extracts with NVIDIA-hosted models, merges into Supabase, scores risk and purges old text. Spec: section 4
-(pipeline), 5 (data model), 9 (privacy) and 11 (errors and testing) of
+extracts with NVIDIA-hosted models, merges into Supabase, scores risk, sends the daily email digest (Brevo) and
+purges old text. Spec: section 4
+(pipeline), 5 (data model), 8 (email), 9 (privacy) and 11 (errors and testing) of
 `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md`.
 
 ## 1. Create the Supabase project
@@ -31,8 +32,13 @@ In **Settings > Secrets and variables > Actions**, add repository secrets:
 | `NVIDIA_API_KEY` | NVIDIA API key (`integrate.api.nvidia.com`) |
 | `SUPABASE_URL` | `https://<ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | the `service_role` key from step 1.3 |
+| `BREVO_API_KEY` | Brevo API key (SMTP & API > API keys). Leave unset to turn the email digest off |
+| `EMAIL_FROM` | sender verified in Brevo: `Name <addr@domain>` or `addr@domain` (name defaults to "Smart Airdrop Finder") |
+| `SITE_URL` | public base URL of the web app, e.g. `https://airdrops.example.com` (project and unsubscribe links) |
 
 The workflow installs dependencies without these secrets and only passes them to the pipeline step.
+`EMAIL_FROM` and `SITE_URL` are required once `BREVO_API_KEY` is set; a missing or invalid one stops the run with
+`{"config_error":1}` before anything is collected.
 
 ## 3. Run it
 
@@ -42,7 +48,8 @@ The workflow installs dependencies without these secrets and only passes them to
 - Two runs never overlap (`concurrency: daily-pipeline`). The job has a 60-minute limit; extraction stops starting
   LLM calls after 35 minutes (`extractBudgetMinutes`, each call cut off after 180 s) and leaves the rest pending for
   the next run.
-- Running it twice on the same day is safe: unchanged documents are not extracted again.
+- Running it twice on the same day is safe: unchanged documents are not extracted again, and nobody gets a second
+  digest (`notification_log` has one row per user per UTC day).
 
 ## 4. Read the result
 
@@ -60,10 +67,18 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
-| `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 5 score, 6 purge); the other stages still ran |
+| `digests_sent` | digest emails accepted by Brevo (HTTP 201) and logged |
+| `digests_empty` | recipients with nothing to report today (no email) |
+| `digests_skipped_quota` | digests left out because the day's budget (300 × 0.8 minus digests already sent that day) ran out; deadlines go first, then risk changes |
+| `digests_failed` | digests that could not be built, sent or logged; not logged, so a later run can send them |
+| `digests_already_sent` | recipients who already got today's digest (an earlier run that day) |
+| `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 5 score, 7 notify, 6 purge, in run order); the other stages still ran |
+
+The `digests_*` counters appear only when email is enabled. Recipients are users with digest on and a confirmed
+email; addresses, user ids and Brevo responses are never logged.
 
 Exit code (shown as the workflow status): **failed** when `run_error`, `source_failed`, `ingest_failed`,
-`merge_failed` or `score_failed` is above 0, or when configuration is missing (`{"config_error":1}`). Everything is
+`merge_failed`, `score_failed` or `digests_failed` is above 0, or when configuration is missing (`{"config_error":1}`). Everything is
 persisted before the job exits. `extract_failed` and `extract_deferred` alone do not fail the job.
 
 What to do:
@@ -73,6 +88,10 @@ What to do:
 - `merge_failed` > 0: the document is stored as `merge_failed` and is retried only when its content changes. Look at
   `documents` where `extraction_status = 'merge_failed'` in the Supabase SQL editor.
 - `extract_deferred` > 0 every day: lower `maxDocumentsPerRun` or check model latency in `extractions.latency_ms`.
+- `digests_failed` > 0: check the Brevo dashboard (Transactional > Logs) for rejected sends and that the API key and
+  `EMAIL_FROM` sender are still valid. Failed digests go out on the next run.
+- `digests_skipped_quota` > 0: more users than the free Brevo quota; raise the plan and `email.dailyLimit` in
+  `pipeline/src/config.ts`.
 
 ## 5. LLM eval (after changing the prompt or a model)
 
@@ -101,7 +120,7 @@ export SUPABASE_SERVICE_ROLE_KEY=<service_role key from status>
 export SUPABASE_ANON_KEY=<anon key from status>   # optional: enables the RLS checks
 
 pnpm --filter pipeline exec tsx scripts/repo-smoke.ts    # SupabaseRepo against the real schema
-pnpm --filter pipeline exec tsx scripts/daily-smoke.ts   # two runDaily runs with fake HTTP and LLM
+pnpm --filter pipeline exec tsx scripts/daily-smoke.ts   # two runDaily runs with fake HTTP, LLM and email sender
 
 npx -y supabase@2.120.0 stop
 ```

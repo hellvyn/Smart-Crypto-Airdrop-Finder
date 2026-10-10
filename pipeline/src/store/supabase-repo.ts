@@ -1,8 +1,20 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ExtractedDeadline, RiskAssessment, RiskLevel, Status, StatusEvidence } from "@saf/core";
+import type {
+  DatePrecision,
+  DeadlineKind,
+  DigestProject,
+  ExtractedDeadline,
+  RiskAssessment,
+  RiskLevel,
+  Status,
+  StatusEvidence,
+} from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
+import { DuplicateDigestError } from "./repo.js";
 import type {
+  DigestContext,
+  DigestRecipient,
   ExtractionStatus,
   NewEvidence,
   NewProject,
@@ -14,7 +26,12 @@ import type {
 } from "./repo.js";
 
 const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
 const PAGE_SIZE = 1000;
+/** Ids per `in (...)` filter, so request URLs stay short. */
+const ID_CHUNK = 100;
+/** Users per `auth.admin.listUsers` page. */
+const USERS_PAGE = 1000;
 
 interface DocumentDb {
   id: string;
@@ -80,6 +97,27 @@ function toProject(r: ProjectDb): ProjectRow {
     firstSeen: new Date(r.first_seen),
     lastSeen: new Date(r.last_seen),
   };
+}
+
+interface DigestProjectDb {
+  id: string;
+  slug: string;
+  name: string;
+  status: Status;
+  first_seen: string;
+}
+
+const DIGEST_PROJECT_COLUMNS = "id, slug, name, status, first_seen";
+
+function chunks<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/** Code-unit comparison (same as MemoryRepo); for uuids it matches Postgres uuid ordering. */
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /** Throws a plain Error naming the operation; never includes row values beyond what Supabase reports. */
@@ -494,5 +532,211 @@ export class SupabaseRepo implements PipelineRepo {
         .returns<{ id: string }[]>(),
     );
     return rows.length;
+  }
+
+  async listDigestRecipients(): Promise<DigestRecipient[]> {
+    const profiles = await this.fetchAll<{ user_id: string; new_airdrops_opt_in: boolean; unsubscribe_token: string }>(
+      "listDigestRecipients.profiles",
+      (from, to) =>
+        this.db
+          .from("profiles")
+          .select("user_id, new_airdrops_opt_in, unsubscribe_token")
+          .eq("digest_enabled", true)
+          .order("user_id")
+          .range(from, to),
+    );
+    if (profiles.length === 0) return [];
+
+    // Confirmed emails from auth.users (only the admin API can read them).
+    const emails = new Map<string, string>();
+    for (let page = 1; ; page += 1) {
+      const { data, error } = await this.db.auth.admin.listUsers({ page, perPage: USERS_PAGE });
+      if (error) throw new Error(`supabase listDigestRecipients.users failed: ${error.message}`);
+      for (const u of data.users) {
+        if (u.email && u.email_confirmed_at) emails.set(u.id, u.email);
+      }
+      if (data.users.length < USERS_PAGE) break;
+    }
+
+    const recipients: DigestRecipient[] = [];
+    for (const p of profiles) {
+      const email = emails.get(p.user_id);
+      if (email === undefined) continue;
+      const last = check(
+        "listDigestRecipients.lastDigest",
+        await this.db
+          .from("notification_log")
+          .select("sent_at")
+          .eq("user_id", p.user_id)
+          .eq("kind", "digest")
+          .order("sent_at", { ascending: false })
+          .limit(1)
+          .maybeSingle<{ sent_at: string }>(),
+      );
+      recipients.push({
+        userId: p.user_id,
+        email,
+        newAirdropsOptIn: p.new_airdrops_opt_in,
+        unsubscribeToken: p.unsubscribe_token,
+        lastDigestAt: last ? new Date(last.sent_at) : null,
+      });
+    }
+    return recipients;
+  }
+
+  /** Latest risk level per project id (same rule as `latestRiskLevel`, via the `project_list` view). */
+  private async latestRiskLevels(ids: string[]): Promise<Map<string, RiskLevel | null>> {
+    const levels = new Map<string, RiskLevel | null>();
+    for (const chunk of chunks(ids, ID_CHUNK)) {
+      const rows = checkOne(
+        "latestRiskLevels",
+        await this.db
+          .from("project_list")
+          .select("id, latest_risk_level")
+          .in("id", chunk)
+          .returns<{ id: string; latest_risk_level: RiskLevel | null }[]>(),
+      );
+      for (const r of rows) levels.set(r.id, r.latest_risk_level);
+    }
+    return levels;
+  }
+
+  private async toDigestProjects(rows: DigestProjectDb[]): Promise<DigestProject[]> {
+    const levels = await this.latestRiskLevels(rows.map((r) => r.id));
+    return rows.map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      name: r.name,
+      status: r.status,
+      riskLevel: levels.get(r.id) ?? null,
+      firstSeen: new Date(r.first_seen),
+    }));
+  }
+
+  async getDigestContext(userId: string, since: Date | null, now: Date): Promise<DigestContext> {
+    const watchRows = await this.fetchAll<{ project_id: string }>("getDigestContext.watchlist", (from, to) =>
+      this.db.from("watchlist").select("project_id").eq("user_id", userId).order("project_id").range(from, to),
+    );
+    const ids = watchRows.map((r) => r.project_id);
+    if (ids.length === 0) return { lastDigestAt: since, watched: [], deadlines: [], changes: [] };
+
+    const cutoff = (since ?? new Date(now.getTime() - 24 * HOUR_MS)).toISOString();
+    const projectRows: DigestProjectDb[] = [];
+    const deadlines: DigestContext["deadlines"] = [];
+    const changes: (DigestContext["changes"][number] & { seq: number })[] = [];
+    for (const chunk of chunks(ids, ID_CHUNK)) {
+      projectRows.push(
+        ...checkOne(
+          "getDigestContext.projects",
+          await this.db.from("projects").select(DIGEST_PROJECT_COLUMNS).in("id", chunk).returns<DigestProjectDb[]>(),
+        ),
+      );
+      const deadlineRows = await this.fetchAll<{
+        project_id: string;
+        kind: DeadlineKind;
+        date: string;
+        precision: DatePrecision;
+        text: string;
+      }>("getDigestContext.deadlines", (from, to) =>
+        this.db
+          .from("deadlines")
+          .select("project_id, kind, date, precision, text")
+          .in("project_id", chunk)
+          .not("date", "is", null)
+          .order("id")
+          .range(from, to),
+      );
+      for (const d of deadlineRows) {
+        deadlines.push({ projectId: d.project_id, kind: d.kind, date: d.date, precision: d.precision, text: d.text });
+      }
+      const changeRows = await this.fetchAll<{
+        project_id: string;
+        field: "status" | "risk_level";
+        old_value: string | null;
+        new_value: string;
+        changed_at: string;
+        seq: number;
+      }>("getDigestContext.changes", (from, to) =>
+        this.db
+          .from("project_changes")
+          .select("project_id, field, old_value, new_value, changed_at, seq")
+          .in("project_id", chunk)
+          .gt("changed_at", cutoff)
+          .order("seq")
+          .range(from, to),
+      );
+      for (const c of changeRows) {
+        changes.push({
+          projectId: c.project_id,
+          field: c.field,
+          oldValue: c.old_value,
+          newValue: c.new_value,
+          changedAt: new Date(c.changed_at),
+          seq: c.seq,
+        });
+      }
+    }
+    // Sorted here (not in SQL) so the order is the same as MemoryRepo's whatever the collation.
+    projectRows.sort((a, b) => compareText(a.id, b.id));
+    deadlines.sort(
+      (a, b) => compareText(a.date, b.date) || compareText(a.projectId, b.projectId) || compareText(a.kind, b.kind),
+    );
+    // changed_at, then insertion order (seq): several changes of one run share its timestamp.
+    changes.sort((a, b) => a.changedAt.getTime() - b.changedAt.getTime() || a.seq - b.seq);
+    return {
+      lastDigestAt: since,
+      watched: await this.toDigestProjects(projectRows),
+      deadlines,
+      changes: changes.map(({ seq: _seq, ...c }) => c),
+    };
+  }
+
+  async listNewProjects(sinceHours: number, now: Date): Promise<DigestProject[]> {
+    const cutoff = new Date(now.getTime() - sinceHours * HOUR_MS).toISOString();
+    const rows = await this.fetchAll<DigestProjectDb>("listNewProjects", (from, to) =>
+      this.db
+        .from("projects")
+        .select(DIGEST_PROJECT_COLUMNS)
+        .gte("first_seen", cutoff)
+        .order("first_seen")
+        .order("id")
+        .range(from, to),
+    );
+    return this.toDigestProjects(rows);
+  }
+
+  async countDigestsSent(refDate: string): Promise<number> {
+    const { count, error } = await this.db
+      .from("notification_log")
+      .select("id", { count: "exact", head: true })
+      .eq("kind", "digest")
+      .eq("ref_date", refDate);
+    if (error) throw new Error(`supabase countDigestsSent failed: ${error.message}`);
+    return count ?? 0;
+  }
+
+  async hasDigest(userId: string, refDate: string): Promise<boolean> {
+    const row = check(
+      "hasDigest",
+      await this.db
+        .from("notification_log")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("kind", "digest")
+        .eq("ref_date", refDate)
+        .limit(1)
+        .maybeSingle<{ id: string }>(),
+    );
+    return row !== null;
+  }
+
+  async logDigest(userId: string, refDate: string, at: Date): Promise<void> {
+    const { error } = await this.db
+      .from("notification_log")
+      .insert({ user_id: userId, kind: "digest", ref_date: refDate, sent_at: at.toISOString() });
+    if (!error) return;
+    // 23505 = unique_violation on (user_id, kind, ref_date).
+    if (error.code === "23505") throw new DuplicateDigestError();
+    throw new Error(`supabase logDigest failed: ${error.message}`);
   }
 }

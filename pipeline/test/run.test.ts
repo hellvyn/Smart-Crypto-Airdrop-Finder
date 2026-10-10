@@ -4,7 +4,9 @@ import type { Http } from "../src/collectors/types.js";
 import type { ChatFn } from "../src/llm/extract.js";
 import { defaultConfig } from "../src/config.js";
 import type { PipelineConfig } from "../src/config.js";
+import type { EmailSender } from "../src/notify/email-sender.js";
 import { runDaily } from "../src/run.js";
+import { runExitCode } from "../src/stats.js";
 import { classifyLink, pickSlug } from "../src/steps/merge.js";
 import type { StoredDocument } from "../src/store/repo.js";
 import { MemoryRepo } from "../src/store/memory-repo.js";
@@ -1031,5 +1033,118 @@ describe("runDaily slugs, platforms and DefiLlama", () => {
     expect(rows[0]?.status).toBe("live");
     const changes = repo.projectChanges.filter((c) => c.field === "status" && c.projectId === rows[0]?.id);
     expect(changes.map((c) => [c.oldValue, c.newValue])).toEqual([["speculative", "live"]]);
+  });
+});
+
+describe("runDaily notify stage", () => {
+  const EMAIL_ON: PipelineConfig = {
+    ...defaultConfig,
+    email: { enabled: true, dailyLimit: 300, reserveRatio: 0.2, siteUrl: "https://saf.test" },
+  };
+
+  /** Records the order of the score, notify and purge stages. */
+  function traced(repo: MemoryRepo): string[] {
+    const order: string[] = [];
+    const score = repo.listProjectsForScoring.bind(repo);
+    repo.listProjectsForScoring = async (days, now) => {
+      order.push("score");
+      return score(days, now);
+    };
+    const recipients = repo.listDigestRecipients.bind(repo);
+    repo.listDigestRecipients = async () => {
+      order.push("notify");
+      return recipients();
+    };
+    const purge = repo.purgeDocumentText.bind(repo);
+    repo.purgeDocumentText = async (days, now) => {
+      order.push("purge");
+      return purge(days, now);
+    };
+    return order;
+  }
+
+  function sender(fail = false): EmailSender & { sent: string[] } {
+    const s = {
+      sent: [] as string[],
+      async send(m: { to: string }) {
+        if (fail) throw new Error(`refused ${m.to}`);
+        s.sent.push(m.to);
+        return { ok: true, status: 201 };
+      },
+    };
+    return s;
+  }
+
+  it("sends digests between score and purge when email is enabled", async () => {
+    const repo = new MemoryRepo();
+    repo.seedTestUser({ email: "fan@example.test", newAirdropsOptIn: true });
+    repo.seedTestUser({ email: "quiet@example.test" });
+    const order = traced(repo);
+    const mail = sender();
+    const { deps } = setup({ repo });
+    const stats = await runDaily({ ...deps, sender: mail }, EMAIL_ON);
+
+    expect(order).toEqual(["score", "notify", "purge"]);
+    expect(mail.sent).toEqual(["fan@example.test"]);
+    expect(stats.digests_sent).toBe(1);
+    expect(stats.digests_empty).toBe(1);
+    expect(repo.runs[0]?.stats).toEqual(stats);
+    expect(JSON.stringify(stats)).not.toContain("@");
+    expect(runExitCode(stats)).toBe(0);
+  });
+
+  it("skips the notify stage and its counters when email is disabled", async () => {
+    const repo = new MemoryRepo();
+    repo.seedTestUser({ email: "fan@example.test", newAirdropsOptIn: true });
+    const order = traced(repo);
+    const mail = sender();
+    const { deps, config } = setup({ repo });
+    const stats = await runDaily({ ...deps, sender: mail }, config);
+
+    expect(config.email.enabled).toBe(false);
+    expect(order).toEqual(["score", "purge"]);
+    expect(mail.sent).toEqual([]);
+    expect(stats.digests_sent).toBeUndefined();
+  });
+
+  it("still purges when the sender throws for everyone, and the run exits 1", async () => {
+    const repo = new MemoryRepo();
+    repo.seedTestUser({ email: "a@example.test", newAirdropsOptIn: true });
+    repo.seedTestUser({ email: "b@example.test", newAirdropsOptIn: true });
+    const order = traced(repo);
+    const { deps } = setup({ repo });
+    const stats = await runDaily({ ...deps, sender: sender(true) }, EMAIL_ON);
+
+    expect(order).toEqual(["score", "notify", "purge"]);
+    expect(stats.digests_failed).toBe(2);
+    expect(stats.run_error).toBeUndefined();
+    expect(repo.notificationLog).toHaveLength(0);
+    expect(JSON.stringify(stats)).not.toContain("@");
+    expect(runExitCode(stats)).toBe(1);
+  });
+
+  it("records a stage-level notify failure as failed_step 7, still purges and rethrows", async () => {
+    const repo = new MemoryRepo();
+    const order = traced(repo);
+    repo.listDigestRecipients = async () => {
+      order.push("notify");
+      throw new Error("auth admin down");
+    };
+    const { deps } = setup({ repo });
+    await expect(runDaily({ ...deps, sender: sender() }, EMAIL_ON)).rejects.toThrow("auth admin down");
+    expect(order).toEqual(["score", "notify", "purge"]);
+    expect(repo.runs[0]?.stats.run_error).toBe(1);
+    expect(repo.runs[0]?.stats.failed_step).toBe(7);
+    expect(repo.runs[0]?.finishedAt).not.toBeNull();
+  });
+
+  it("fails the notify stage (not the run's other stages) when email is enabled without a sender", async () => {
+    const repo = new MemoryRepo();
+    const order = traced(repo);
+    const { deps } = setup({ repo });
+    await expect(runDaily(deps, EMAIL_ON)).rejects.toThrow(/sender/);
+    expect(order).toEqual(["score", "purge"]);
+    expect(repo.runs[0]?.stats.failed_step).toBe(7);
+    expect(repo.runs[0]?.stats.assessed).toBe(3);
   });
 });
