@@ -18,7 +18,7 @@ gak + level Worth it) yang tersimpan dan bisa diukur terhadap gerbang kualitas.
 
 **Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` (rev. 3: §4.1–4.5, §5.1–5.3, §6, §9, §12, §13)
 
-**Bergantung ke:** Plan 7 (tanpa digest, RLS member-only), Plan 4 (ekstraksi v3, `ProjectForScoring.steps/facts`, `ModelConfig.provider`, `loadProviders`,
+**Bergantung ke:** Plan 7 (tanpa digest, RLS member-only), Plan 8 (migrasi `0010`, dikerjakan sebelum plan ini), Plan 4 (ekstraksi v3, `ProjectForScoring.steps/facts`, `ModelConfig.provider`, `loadProviders`,
 stats cakupan, set uji scam). Plan 6 bergantung ke plan ini (tabel `project_signals`, `curations`, `ai_analyses`).
 
 ## Global Constraints
@@ -35,7 +35,7 @@ stats cakupan, set uji scam). Plan 6 bergantung ke plan ini (tabel `project_sign
   diperdagangkan = +2, > 1 sumber independen = +1, modal high/low/none = −2/−1/0.
 - Level worth: total ≥ 4 `high`, 2–3 `medium`, ≤ 1 `low`; `insufficient_data` kalau satu-satunya sinyal potensi
   `curated_source` dan `capital_required = unknown`.
-- Migrasi baru: `0010_curation.sql`. Stats baru tetap angka.
+- Migrasi baru: `0011_curation.sql`. Stats baru tetap angka.
 - Batas analisis AI per run: `analyzeBudgetMinutes = 10`, `maxAnalysesPerRun = 60`; analisis di-skip (pakai cache) kalau
   hash masukan sama.
 
@@ -96,10 +96,10 @@ it("only applies to live, announced and speculative", () => {
 
 ---
 
-### Task 2: Model data kurasi (migrasi 0010) + repo
+### Task 2: Model data kurasi (migrasi 0011) + repo
 
 **Files:**
-- Create: `supabase/migrations/0010_curation.sql`, `supabase/tests/curation.test.sql`
+- Create: `supabase/migrations/0011_curation.sql`, `supabase/tests/curation.test.sql`
 - Modify: `pipeline/src/store/repo.ts`, `memory-repo.ts`, `supabase-repo.ts`
 - Test: `pipeline/test/memory-repo.test.ts`, `pipeline/test/supabase-repo.test.ts`
 

@@ -46,7 +46,7 @@ Permintaan owner dipecah jadi sub-proyek, masing-masing punya spec → plan → 
 | 1 | **Fondasi kurasi**: sinyal legit, `curate()`, `worth()`, status kedaluwarsa, tampilan list kurasi | **spec ini** |
 | 2 | **Akses member manual** (Plan 7, dikerjakan lebih dulu): hapus signup/email, data khusus user login, landing page. Sisa: top picks, pindah dari Vercel Hobby, ToS/privasi/disclaimer | Plan 7 + berikutnya |
 | 3 | Track record: hasil nyata airdrop dibanding level Worth it (riset sumber data dulu) | nanti |
-| 4 | Checklist task + estimasi effort per wallet | nanti |
+| 4 | **Tracker "Garapan saya"**: checklist harian + heatmap per project (§14, Plan 8, dikerjakan setelah Plan 4) | Plan 8 |
 | 5 | Link klaim terverifikasi | nanti |
 | 6 | Cek eligibility lebih dalam | paling belakang |
 
@@ -77,6 +77,10 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 32 | Email | Gak ada email sama sekali: email digest dihapus, lupa password = owner reset manual |
 | 33 | Akses data | Semua data airdrop cuma untuk user login, dikunci di RLS **dan** routing; non-login cuma landing (`/`) + `/login`. Menggantikan rencana paywall berbayar di web |
 | 34 | Info perubahan | Ditampilkan di web ("Perubahan sejak kunjungan terakhir"), gak lewat email |
+| 35 | Tracker garapan | Checklist + heatmap **per project** (bukan per wallet), warna = % task harian dicentang (4 tingkat), streak hari 100% |
+| 36 | Privasi tracker | Cuma member itu sendiri yang bisa melihat |
+| 37 | Asal task tracker | Langkah Harian/Mingguan dari sumber + task buatan member; centang cuma untuk hari ini (zona waktu member) |
+| 38 | Coach → tracker | Rekomendasi AI Farming Coach menampilkan tombol "Mulai garap" yang memakai aksi yang sama dengan halaman project |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -415,7 +419,7 @@ dari "Data terverifikasi"; semua output Bahasa Indonesia (keputusan #29); hasil 
 | A2 | **AI Scam Analyst** | Membaca halaman klaim/pengumuman, menandai pola rekayasa sosial (desakan waktu, "connect wallet to check eligibility", admin palsu, minta seed phrase terselubung). Cuma bisa menaikkan risiko | #1 |
 | A3 | **Deteksi kontradiksi** | Membandingkan fakta antar sumber dan di dalam satu sumber (label vs teks) | #1 |
 | A4 | **Daily Briefing + Change Detector** | Membandingkan versi dokumen (hash konten sudah disimpan) dan merangkum perubahan yang penting; briefing pagi per member | #3 |
-| A5 | **Farming Coach (chat)** | Rencana farming personal dari modal, jumlah wallet, dan waktu member, berdasar data kurasi | #4 |
+| A5 | **Farming Coach (chat)** | Rencana farming personal dari modal, jumlah wallet, dan waktu member, berdasar data kurasi. Tiap project yang direkomendasikan punya tombol **"Mulai garap"** (aksi `startFarming` dari §14) | #4 |
 | A6 | **Estimasi effort + terjemahan langkah** | Menit per hari, modal, gas; langkah diringkas ke Bahasa Indonesia | #1 |
 
 **Provider (keputusan #30):** AI pribadi owner `https://freellm.hellvyn.id/v1`, model **`auto`** (keputusan owner:
@@ -447,3 +451,32 @@ Konsekuensi desain:
 | G12 | AI Scam Analyst di set uji scam §10 | menandai ≥ 80% kasus scam; gak pernah menurunkan level risiko |
 | G13 | Kualitas Bahasa Indonesia output AI | owner review ≥ 20 sampel |
 | G14 | Kapasitas provider untuk Coach | diukur sebelum Coach dibuka; batas pemakaian per member ditentukan dari angka itu |
+
+## 14. Tracker "Garapan saya" (keputusan #35–#38)
+
+**Tujuan:** kebiasaan harian. Member menandai project yang sedang digarap, mencentang task harian, dan melihat
+konsistensinya sebagai heatmap setahun (seperti grafik kontribusi GitHub). Tracker manual, tanpa cek onchain.
+
+**Alur:**
+- Halaman project: tombol "Mulai garap" / "Berhenti garap" (beda dari Watch: Watch = memantau).
+- Halaman `/garapan` ("Garapan saya"): satu kartu per project aktif berisi checklist hari ini (task Harian), task
+  Mingguan (indikator "minggu ini sudah"), heatmap 52 minggu, streak, dan deadline terdekat. "Berhenti garap"
+  mengarsipkan; riwayat tetap.
+- AI Farming Coach (A5) memakai aksi `startFarming` yang sama.
+
+**Aturan:**
+- Hari = tanggal lokal di `profiles.timezone`. Centang cuma untuk **hari ini**; hari lalu gak bisa diubah.
+- Warna kotak = persentase task Harian yang aktif hari itu dan dicentang: 0% / 1–49% / 50–99% / 100%. Hari tanpa task
+  Harian aktif = kosong (abu).
+- Streak = jumlah hari berturut-turut 100%, berakhir hari ini (atau kemarin kalau hari ini belum 100%).
+- Task Mingguan gak masuk persentase harian; "sudah" kalau dicentang di minggu ISO yang sama (zona waktu member).
+- Task awal = langkah `daily`/`weekly` dari sumber (terjemahan AI kalau ada) saat "Mulai garap". Member bisa menambah dan
+  mengarsipkan task sendiri. "Ambil ulang langkah dari sumber" menambah langkah baru (berdasar teks) dan mengarsipkan yang
+  sudah hilang; centang lama tetap tersimpan dengan teks task-nya.
+- Batas: 50 project aktif per member, 30 task aktif per project.
+
+**Data dan keamanan:** tabel `farming_projects`, `farming_tasks`, `farming_checks`; RLS: tiap baris cuma bisa dibaca
+dan diubah pemiliknya (`user_id = auth.uid()`); centang lewat fungsi `SECURITY DEFINER` yang menghitung tanggal lokal di
+server, jadi klien gak bisa menulis tanggal lain. Hapus akun ikut menghapus semuanya (cascade dari `auth.users`).
+
+**Gak termasuk:** cek onchain otomatis, versi per wallet, leaderboard/profil publik, pengingat email.

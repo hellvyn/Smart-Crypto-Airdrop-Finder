@@ -18,7 +18,7 @@ password, konfirmasi), dan semua data cuma bisa dibaca user yang login — di UI
 `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md` (§8 digest dan §9 akun dinyatakan diganti).
 
 **Urutan eksekusi:** plan ini dikerjakan **sebelum** Plan 4–6 (lebih kecil, dan menghapus kode yang kalau gak dihapus
-akan ikut diterjemahkan/diubah di plan berikutnya). Nomor migrasi plan ini `0007`; Plan 4–6 memakai `0008`–`0011`.
+akan ikut diterjemahkan/diubah di plan berikutnya). Nomor migrasi plan ini `0007`. Urutan eksekusi semua plan: 7 → 4 → 8 → 5 → 6 (migrasi `0008`–`0012`).
 
 ## Prasyarat (owner, di Supabase Dashboard project `smart-airdrop-finder`)
 

@@ -42,7 +42,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 - Badge "terverifikasi" cuma untuk sinyal `verified = true`. `claimed_backer` selalu tampil sebagai klaim.
 - Semua link keluar lewat `ExternalLink` (rel noopener noreferrer nofollow) dan URL yang sudah dibersihkan referral.
 - Anon key saja di web; service role gak pernah masuk `apps/web`.
-- Migrasi baru: `0011_curated_list.sql`.
+- Migrasi baru: `0012_curated_list.sql`.
 
 ## Review Focus
 
@@ -105,7 +105,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 ### Task 3: View `curated_list` + query
 
 **Files:**
-- Create: `supabase/migrations/0011_curated_list.sql`, `supabase/tests/curated_list.test.sql`
+- Create: `supabase/migrations/0012_curated_list.sql`, `supabase/tests/curated_list.test.sql`
 - Modify: `apps/web/lib/queries.ts`, `apps/web/lib/view.ts`
 - Test: `apps/web/test/queries.test.ts` (atau file test query yang ada)
 
@@ -207,7 +207,7 @@ halaman project menampilkan keputusan AI, keamanan, effort, langkah, dan alasan 
 ### Task 7: "Perubahan sejak kunjungan terakhir" (pengganti email)
 
 **Files:**
-- Modify: `supabase/migrations/0011_curated_list.sql` (tambah `profiles.changes_seen_at timestamptz` + `grant update (changes_seen_at) on profiles to authenticated`)
+- Modify: `supabase/migrations/0012_curated_list.sql` (tambah `profiles.changes_seen_at timestamptz` + `grant update (changes_seen_at) on profiles to authenticated`)
 - Create: `apps/web/components/ChangesSinceLastVisit.tsx`, `apps/web/app/(app)/airdrops/actions.ts` (`markChangesSeen`)
 - Modify: `apps/web/lib/queries.ts`, `apps/web/app/(app)/airdrops/page.tsx`, `apps/web/app/(app)/watchlist/page.tsx`
 - Test: komponen, `supabase/tests/curated_list.test.sql`, e2e `watchlist.spec.ts`
