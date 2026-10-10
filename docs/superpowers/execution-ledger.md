@@ -205,3 +205,6 @@ Ruling: one non-project-host check extended from `isAggregatorHost` — the plan
 - G2: minor (deferred to the final review): `pipeline.md:151` still mentions a status baseline. The scam-set README, `run.ts:21` and spec :464 still say GoPlus retries only 429/5xx. `key_parameters`/`source_ratings` accept trivial quotes. Schema enum or int edge cases (cadence "monthly", `capital_min_usd` 0, month-only date) fail the whole extraction. An AlphaDrops listing with no recognised status returns 0 docs without `failed`.
 - G2: recommendations for the owner: run the eval once with NVIDIA first on the same cases, to separate model from prompt effects. Clean up existing `official_domains` that hold now-refused hosts (merge never rewrites a non-empty list).
 - G2 complete. Tests at the merge: core 163, pipeline 369, web 285 unit · typecheck ok · pgTAP 136 · e2e 67/67.
+
+## Progress (Plan 8)
+- G3-3a started: P8.T1 ∥ P8.T2 from a583164
