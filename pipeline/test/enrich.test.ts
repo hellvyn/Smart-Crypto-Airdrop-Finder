@@ -157,7 +157,7 @@ describe("firstCertificateAgeDays", () => {
     expect(await firstCertificateAgeDays(routedHttp({ [CRT]: { status: 200, body } }), "a.io", NOW)).toBe(9);
   });
 
-  it("returns null for errors, empty lists, bad JSON, wrong shape and oversized bodies", async () => {
+  it("returns null for errors, empty lists, bad JSON and wrong shape", async () => {
     const bad: Reply[] = [
       { status: 502, body: "" },
       { status: 0, body: "" },
@@ -165,11 +165,17 @@ describe("firstCertificateAgeDays", () => {
       { status: 200, body: "<html>" },
       { status: 200, body: json({ not_before: "2024-01-01T00:00:00" }) },
       { status: 200, body: json([{ not_before: "garbage" }]) },
-      { status: 200, body: `[${"x".repeat(5_000_001)}]` },
     ];
     for (const res of bad) {
       expect(await firstCertificateAgeDays(routedHttp({ [CRT]: res }), "a.io", NOW)).toBeNull();
     }
+  });
+
+  it("returns null for a well-formed certificate list over the size cap", async () => {
+    // Every entry is valid, so only the size cap can make this null.
+    const body = json(Array.from({ length: 140_000 }, () => ({ not_before: "2024-01-01T00:00:00" })));
+    expect(body.length).toBeGreaterThan(5_000_000);
+    expect(await firstCertificateAgeDays(routedHttp({ [CRT]: { status: 200, body } }), "a.io", NOW)).toBeNull();
   });
 
   it("answers from a large but allowed certificate list", async () => {

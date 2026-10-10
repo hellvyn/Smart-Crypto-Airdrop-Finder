@@ -1104,7 +1104,7 @@ describe("runDaily domain check coverage", () => {
   it.each([
     ["an error", { status: 502, body: "" }],
     ["a timeout", { status: 0, body: "" }],
-    ["thousands of certificates", { status: 200, body: `[${"1,".repeat(3_000_000)}1]` }],
+    ["thousands of certificates", { status: 200, body: JSON.stringify(Array.from({ length: 140_000 }, () => ({ not_before: "2024-01-01T00:00:00" }))) }],
   ])("finishes the run with the age check not run when RDAP has nothing and crt.sh returns %s", async (_n, crt) => {
     const { http } = withOverride((url) =>
       url === `${RDAP}inkonchain.com` ? { status: 404, body: "" } : url === CRT_INK ? crt : undefined,
