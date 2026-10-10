@@ -76,3 +76,4 @@ Ruling: a signed-in `/login` goes to `next` or `/airdrops`; post-login default s
 Ruling: `/?deleted=1` stays on the landing with a notice — keeps the delete-account flow and its e2e working — costs a small copy change if unwanted.
 
 ## Progress
+- G1-1a started: P7.T1 ∥ P7.T3 from a38c192 (workflow run wf_3a0df074-9f4)
