@@ -132,6 +132,33 @@ describe("extractionSchema v3 fields", () => {
     expect(p).toMatchObject(v3);
   });
 
+  it.each([
+    ["tasks", []],
+    ["steps", []],
+    ["key_parameters", []],
+    ["source_ratings", []],
+    ["latest_update", null],
+    ["claimed_backers", []],
+    ["capital_required", "unknown"],
+    ["capital_min_usd", null],
+  ])("treats an explicit null %s as the default", (field, expected) => {
+    const p = extractionSchema.parse(withProject({ [field]: null })).projects[0]!;
+    expect(p[field as keyof typeof p]).toEqual(expected);
+  });
+
+  it.each([
+    ["tasks", "bridge"],
+    ["steps", "bridge"],
+    ["key_parameters", {}],
+    ["source_ratings", 0],
+    ["latest_update", "Season 2 is live"],
+    ["claimed_backers", false],
+    ["capital_required", 0],
+    ["capital_min_usd", "1000"],
+  ])("still rejects a non-null %s of the wrong type", (field, value) => {
+    expect(extractionSchema.safeParse(withProject({ [field]: value })).success).toBe(false);
+  });
+
   it("parses a project without tasks to an empty task list", () => {
     const { tasks: _tasks, ...noTasks } = minimalV2Project;
     const p = extractionSchema.parse({ is_airdrop_content: true, projects: [noTasks] }).projects[0]!;
