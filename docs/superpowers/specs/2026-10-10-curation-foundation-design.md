@@ -326,7 +326,7 @@ Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall d
 | 1 | Struktur dan ToS halaman portfolio tiap VC kandidat | VC dicoret dari daftar; cakupan `vc_backer` mengecil |
 | 2 | Data `/protocols` DefiLlama memuat `url` dan `gecko_id` yang cukup untuk pencocokan domain [INFERENCE dari kode collector] | Sinyal TVL/CoinGecko cuma untuk project DefiLlama |
 | 3 | Kalibrasi bobot `worth()` terhadap data produksi | Level worth gak mencerminkan potensi; ubah bobot |
-| 4 | Seberapa banyak project lolos per hari. Data run pertama [FACT]: 85 dari 96 project berisiko low/medium (0 high/critical), jadi aturan §6.2 akan meloloskan hampir semua | Kurasi gak terasa menyaring. Diputuskan setelah kalibrasi `worth()`: opsi utamanya list default cuma worth `medium` ke atas, sisanya di tab "All checked" |
+| 4 | Seberapa banyak project lolos per hari. Data run pertama [FACT]: 85 dari 96 project berisiko low/medium (0 high/critical), jadi aturan §6.2 akan meloloskan hampir semua | Rev. 2 menjawab ini dengan syarat cek kunci (§6.2 nomor 5): jumlah yang lolos akan turun tajam sampai §5.0 selesai. Batas bawahnya dijaga gerbang G9 (§12) |
 | 5 | RootData: owner melaporkan gak ada API gratis (2026-10-10) [FACT dari owner]; CryptoRank Sandbox gak memuat funding [INFERENCE dari review pihak ketiga]; DefiLlama `/raises` berbayar (HTTP 402) [FACT] | Sumber funding lengkap butuh budget; Apify (~$0,002/round) jadi upgrade pertama |
 | 6 | Lokasi link website/sosmed di HTML halaman airdrops.io (§5.0 nomor 1) | Cakupan domain gak naik; perlu sumber domain lain (mis. DefiLlama `url` dengan pencocokan yang aman) |
 
