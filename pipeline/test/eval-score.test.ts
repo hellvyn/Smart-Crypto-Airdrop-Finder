@@ -136,7 +136,7 @@ describe("scoreCase", () => {
       expect(radar.slugs).toHaveLength(28);
       expect(radar.minRecall).toBe(22);
     }
-    expect(truth.baselineStatusAccuracy).toBe(5);
+    expect(truth.baselineStatusAccuracy).toBe(6);
   });
 });
 
@@ -153,7 +153,7 @@ describe("evaluatePass", () => {
       ok("aio_variational", { statusOk: true }),
       ok("aio_raycash", { statusOk: true }),
       ok("tg_flop", { statusOk: true }),
-      ok("tg_ink", { statusOk: false }),
+      ok("tg_ink", { statusOk: true }),
       ok("tg_ledger_negative", { negativeOk: true }),
       ok("tg_weekly_radar", { radarRecall: 22 }),
     ];

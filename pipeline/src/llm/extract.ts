@@ -44,6 +44,28 @@ export function parseJson(content: string): { ok: true; value: unknown } | { ok:
   }
 }
 
+// A URL inside free text: stops at whitespace, quotes, angle brackets and brackets/parentheses.
+const URL_IN_TEXT_RE = /https?:\/\/[^\s<>"'`()[\]{}]+/g;
+const TRAILING_PUNCTUATION_RE = /[.,;:!?]+$/;
+
+/**
+ * Removes referral parts from URLs embedded in free text (tasks, quotes, deadline wording). A URL is
+ * replaced only when `cleanUrl` actually stripped something; other and unparsable URLs stay as written.
+ * Sentence punctuation right after a URL is kept outside it.
+ */
+export function cleanUrlsInText(text: string): string {
+  return text.replace(URL_IN_TEXT_RE, (match) => {
+    const trailing = TRAILING_PUNCTUATION_RE.exec(match)?.[0] ?? "";
+    const url = match.slice(0, match.length - trailing.length);
+    try {
+      const cleaned = cleanUrl(url);
+      return cleaned.referralStripped ? `${cleaned.url}${trailing}` : match;
+    } catch {
+      return match;
+    }
+  });
+}
+
 function postProcess(result: ExtractionResult, doc: CollectedDocument): ExtractionResult {
   return {
     ...result,
@@ -58,8 +80,13 @@ function postProcess(result: ExtractionResult, doc: CollectedDocument): Extracti
       }
       return {
         ...project,
+        status_evidence: cleanUrlsInText(project.status_evidence),
+        tasks: project.tasks.map(cleanUrlsInText),
         official_urls: [...urls],
-        deadlines: project.deadlines.map((d) => normalizeDeadline(d, doc.publishedAt)),
+        deadlines: project.deadlines.map((d) => {
+          const normalized = normalizeDeadline(d, doc.publishedAt);
+          return { ...normalized, text: cleanUrlsInText(normalized.text) };
+        }),
       };
     }),
   };

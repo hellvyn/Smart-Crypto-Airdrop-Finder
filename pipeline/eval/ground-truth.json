@@ -1,5 +1,5 @@
 {
-  "baselineStatusAccuracy": 5,
+  "baselineStatusAccuracy": 6,
   "cases": {
     "aio_deepbook": { "kind": "project", "project": "deepbook", "status": "live", "token": "DEEP", "chain": "sui" },
     "aio_variational": { "kind": "project", "project": "variational", "status": "live", "token": "VAR", "chain": "arbitrum" },

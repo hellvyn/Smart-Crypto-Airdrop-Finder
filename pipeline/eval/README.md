@@ -35,7 +35,7 @@ Exit codes: `0` pass, `1` a pass condition failed, `2` `cases/` is missing or em
   pipeline drops unknown URLs) that does not appear verbatim in the case text.
 - `tg_ledger_negative` is rejected (`is_airdrop_content: false`).
 - `aio_abstract` has status `ended`.
-- Status accuracy over the 6 status-scored cases is at least `baselineStatusAccuracy` (5).
+- Status accuracy over the 6 status-scored cases is at least `baselineStatusAccuracy` (6).
 - `tg_weekly_radar` recall is at least `minRecall` (22 of 28 project slugs).
 
 Matching: an extracted project belongs to an expected project when their normalized names (`normalizeName`) contain
