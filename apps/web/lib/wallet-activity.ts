@@ -1,6 +1,7 @@
 // On-demand wallet activity for one of the signed-in user's wallets. The user is verified with requireUser(), the
 // wallet is looked up by id AND user id (RLS is the second barrier), and the cache is reached only through the
-// get_wallet_check / save_wallet_check RPCs. Wallet addresses are never logged.
+// get_wallet_check / save_wallet_check RPCs; the hourly limit only through claim_wallet_check (migration 0004).
+// Wallet addresses are never logged.
 import type { ActivitySummary, ChainAdapter } from "@saf/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireUser } from "./auth";
@@ -11,8 +12,6 @@ import { isUuid } from "./watchlist";
 export const CACHE_TTL_MS = 6 * 3_600_000;
 /** A cached result stamped slightly in the future (clock skew between servers) still counts as fresh. */
 export const CLOCK_SKEW_MS = 60_000;
-export const RATE_LIMIT_WINDOW_MS = 60 * 60_000;
-export const RATE_LIMIT_MAX = 10;
 
 export type WalletActivityResult =
   | { kind: "ok"; summary: ActivitySummary; cached: boolean }
@@ -55,19 +54,12 @@ export async function getWalletActivity(
     if (cachedSummary && age >= -CLOCK_SKEW_MS && age < CACHE_TTL_MS) return { kind: "ok", summary: cachedSummary, cached: true };
   }
 
-  // 4. Rate limit: 10 requests per user in the last 60 minutes.
-  const since = new Date(now.getTime() - RATE_LIMIT_WINDOW_MS).toISOString();
-  const recent = await db
-    .from("wallet_check_requests")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .gte("created_at", since);
-  throwIf(recent.error, "count recent wallet checks");
-  if ((recent.count ?? 0) >= RATE_LIMIT_MAX) return { kind: "rate_limited" };
-
-  // 5. Log the request first (a failing provider still costs a request), then ask the provider.
-  const logged = await db.from("wallet_check_requests").insert({ user_id: user.id });
-  throwIf(logged.error, "record the wallet check");
+  // 4. Rate limit: 10 requests per user in the last 60 minutes. claim_wallet_check() counts and records the request
+  // atomically (per-user advisory lock), so parallel requests cannot all pass a stale count. The request is
+  // recorded before the provider is asked: a failing provider still costs a request.
+  const claim = await db.rpc("claim_wallet_check");
+  throwIf(claim.error, "claim a wallet check");
+  if (claim.data !== true) return { kind: "rate_limited" };
 
   let summary: ActivitySummary;
   try {
@@ -76,7 +68,7 @@ export async function getWalletActivity(
     return { kind: "unavailable" };
   }
 
-  // 6. Cache it. A failed save only costs a later refetch, so the fresh result is still returned.
+  // 5. Cache it. A failed save only costs a later refetch, so the fresh result is still returned.
   await db.rpc("save_wallet_check", { p_wallet_id: walletId, p_chain: chain, p_result: serializeSummary(summary) });
   return { kind: "ok", summary, cached: false };
 }

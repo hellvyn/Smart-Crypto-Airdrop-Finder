@@ -33,33 +33,23 @@ interface World {
   /** wallets visible to the user (id -> address); anything else is "not yours". */
   wallets: Record<string, string>;
   cache: { result: unknown; checked_at: string } | null;
+  /** Requests in the current hour; claim_wallet_check() succeeds while it is below 10 (atomically). */
   requestCount: number;
   rpcError: boolean;
+  claimError: boolean;
 }
 
 function fakeDb(world: World) {
   const log: { kind: string; name: string; args: unknown }[] = [];
   const db = {
     from(table: string) {
+      // The request log is only reached through claim_wallet_check(): a direct count/insert is a race.
+      if (table !== "wallets") throw new Error(`unexpected direct access to ${table}`);
       const filters: Record<string, unknown> = {};
-      let head = false;
-      let inserted: unknown;
       const b: Record<string, unknown> = {};
-      b.select = (_cols?: string, opts?: { head?: boolean }) => {
-        head = Boolean(opts?.head);
-        return b;
-      };
+      b.select = () => b;
       b.eq = (col: string, v: unknown) => {
         filters[col] = v;
-        return b;
-      };
-      b.gte = (col: string, v: unknown) => {
-        filters[`>=${col}`] = v;
-        return b;
-      };
-      b.insert = (row: unknown) => {
-        inserted = row;
-        log.push({ kind: "insert", name: table, args: row });
         return b;
       };
       b.maybeSingle = async () => {
@@ -69,20 +59,17 @@ function fakeDb(world: World) {
         const mine = filters.user_id === USER.id && id in world.wallets;
         return { data: mine ? { id, address: world.wallets[id] } : null, error: null };
       };
-      b.then = (res: (r: unknown) => unknown, rej: (e: unknown) => unknown) => {
-        let out: unknown = { data: null, error: null };
-        if (table === "wallet_check_requests" && head) {
-          log.push({ kind: "count", name: table, args: filters });
-          out = { data: null, count: world.requestCount, error: null };
-        } else if (inserted !== undefined) {
-          world.requestCount += 1;
-        }
-        return Promise.resolve(out).then(res, rej);
-      };
       return b;
     },
-    rpc(name: string, args: unknown) {
+    rpc(name: string, args?: unknown) {
       log.push({ kind: "rpc", name, args });
+      if (name === "claim_wallet_check") {
+        if (world.claimError) return Promise.resolve({ data: null, error: { message: "boom", code: "XX000" } });
+        // Atomic like the SQL function (advisory lock + count + insert in one transaction).
+        const ok = world.requestCount < 10;
+        if (ok) world.requestCount += 1;
+        return Promise.resolve({ data: ok, error: null });
+      }
       const out =
         name === "get_wallet_check"
           ? { data: world.cache ? [world.cache] : [], error: null }
@@ -102,7 +89,7 @@ function fakeAdapter(impl: () => Promise<ActivitySummary> = async () => SUMMARY)
 let world: World;
 beforeEach(() => {
   requireUser.mockReset().mockResolvedValue(USER);
-  world = { wallets: { [WID]: ADDR }, cache: null, requestCount: 0, rpcError: false };
+  world = { wallets: { [WID]: ADDR }, cache: null, requestCount: 0, rpcError: false, claimError: false };
 });
 
 describe("getWalletActivity", () => {
@@ -118,11 +105,12 @@ describe("getWalletActivity", () => {
 
     const save = log.find((l) => l.kind === "rpc" && l.name === "save_wallet_check");
     expect(save?.args).toEqual({ p_wallet_id: WID, p_chain: "ethereum", p_result: stored(SUMMARY) });
-    expect(log.find((l) => l.kind === "insert")?.args).toEqual({ user_id: USER.id });
-    // The request row is inserted BEFORE the provider is called, and the result is saved after it.
+    expect(world.requestCount).toBe(1);
+    // The request is claimed (and recorded) BEFORE the provider is called, and the result is saved after it.
     const order = log.map((l) => `${l.kind}:${l.name}`);
     expect(order.indexOf("adapter:getActivity")).toBeGreaterThan(-1);
-    expect(order.indexOf("insert:wallet_check_requests")).toBeLessThan(order.indexOf("adapter:getActivity"));
+    expect(order.indexOf("rpc:claim_wallet_check")).toBeGreaterThan(-1);
+    expect(order.indexOf("rpc:claim_wallet_check")).toBeLessThan(order.indexOf("adapter:getActivity"));
     expect(order.indexOf("adapter:getActivity")).toBeLessThan(order.indexOf("rpc:save_wallet_check"));
   });
 
@@ -137,7 +125,7 @@ describe("getWalletActivity", () => {
       expect(r.summary.fetchedAt).toBeInstanceOf(Date);
     }
     expect(getActivity).not.toHaveBeenCalled();
-    expect(log.some((l) => l.kind === "insert")).toBe(false);
+    expect(log.some((l) => l.name === "claim_wallet_check")).toBe(false);
     expect(log.some((l) => l.name === "save_wallet_check")).toBe(false);
   });
 
@@ -185,10 +173,28 @@ describe("getWalletActivity", () => {
     const { adapter, getActivity } = fakeAdapter();
     expect(await getWalletActivity(db, adapter, WID, "ethereum", NOW)).toEqual({ kind: "rate_limited" });
     expect(getActivity).not.toHaveBeenCalled();
-    expect(log.some((l) => l.kind === "insert")).toBe(false);
-    // The window is the last 60 minutes, for this user only.
-    const count = log.find((l) => l.kind === "count");
-    expect(count?.args).toEqual({ user_id: USER.id, ">=created_at": hoursAgo(1).toISOString() });
+    expect(world.requestCount).toBe(10);
+    // The claim takes no arguments: the database decides the user (auth.uid()) and the window.
+    expect(log.find((l) => l.name === "claim_wallet_check")?.args).toBeUndefined();
+  });
+
+  it("parallel requests cannot overshoot the limit: 15 at once reach the provider only 10 times", async () => {
+    world.requestCount = 0;
+    const { db } = fakeDb(world);
+    const { adapter, getActivity } = fakeAdapter();
+    const results = await Promise.all(
+      Array.from({ length: 15 }, () => getWalletActivity(db, adapter, WID, "ethereum", NOW)),
+    );
+    expect(getActivity).toHaveBeenCalledTimes(10);
+    expect(results.filter((r) => r.kind === "rate_limited")).toHaveLength(5);
+  });
+
+  it("a failing claim RPC is an error, and the provider is not called", async () => {
+    world.claimError = true;
+    const { db } = fakeDb(world);
+    const { adapter, getActivity } = fakeAdapter();
+    await expect(getWalletActivity(db, adapter, WID, "ethereum", NOW)).rejects.toThrow(/wallet check/);
+    expect(getActivity).not.toHaveBeenCalled();
   });
 
   it("the 10th request is still allowed", async () => {
@@ -220,7 +226,7 @@ describe("getWalletActivity", () => {
     const { adapter, getActivity } = fakeAdapter();
     expect(await getWalletActivity(db, adapter, other, "ethereum", NOW)).toEqual({ kind: "not_owner" });
     expect(getActivity).not.toHaveBeenCalled();
-    expect(log.some((l) => l.kind === "rpc" || l.kind === "insert")).toBe(false);
+    expect(log.some((l) => l.kind === "rpc")).toBe(false);
     // The lookup is scoped to the signed-in user.
     expect(log[0]?.args).toMatchObject({ id: other, user_id: USER.id });
   });

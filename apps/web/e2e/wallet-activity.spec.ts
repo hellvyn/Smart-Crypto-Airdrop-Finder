@@ -115,3 +115,23 @@ test("the API refuses a wallet id of another user with 404", async ({ page }) =>
   expect(bad.status()).toBe(400);
   await other.close();
 });
+
+test("the hourly limit holds under parallel requests: 5 at once with 9 used lets exactly one through", async ({ page }) => {
+  const { userId, walletId } = await userWithWallet(page, "wa-limit");
+  const db = adminClient();
+  const { error } = await db.from("wallet_check_requests").insert(Array.from({ length: 9 }, () => ({ user_id: userId })));
+  if (error) throw error;
+
+  const responses = await Promise.all(
+    Array.from({ length: 5 }, () => page.request.post("/api/wallet-activity", { data: { walletId, chain: "ethereum" } })),
+  );
+  const statuses = responses.map((r) => r.status());
+  // One request claims the 10th slot (and asks the provider: 200, or 503 if it is unreachable); the rest are refused.
+  expect(statuses.filter((s) => s === 429)).toHaveLength(4);
+  expect(statuses.filter((s) => s !== 429).every((s) => s === 200 || s === 503)).toBe(true);
+  for (const r of responses.filter((x) => x.status() === 429)) expect(await r.json()).toEqual({ kind: "rate_limited" });
+
+  const { count, error: ce } = await db.from("wallet_check_requests").select("*", { count: "exact", head: true }).eq("user_id", userId);
+  if (ce) throw ce;
+  expect(count).toBe(10);
+});
