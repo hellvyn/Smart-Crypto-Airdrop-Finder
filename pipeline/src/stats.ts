@@ -16,6 +16,16 @@ export interface DailyStats extends RunStats {
   /** Documents (or DefiLlama candidates) whose merge threw; such documents are stored as `merge_failed`. */
   merge_failed: number;
   assessed: number;
+  /** Scored projects that have at least one official domain; the denominator of the two domain checks below. */
+  projects_with_official_domain: number;
+  /** Of those, projects where the domain-age lookup (RDAP, else crt.sh) answered for at least one official domain. */
+  domain_age_ran: number;
+  /** Domains whose age came from crt.sh because RDAP had no answer. */
+  domain_age_from_crtsh: number;
+  /** Of the projects with an official domain, those where the GoPlus phishing check answered for at least one. */
+  phishing_list_ran: number;
+  /** Domains the GoPlus phishing check gave no answer for, after its one retry. */
+  phishing_list_failed: number;
   /** Projects whose risk assessment threw. */
   score_failed: number;
   source_failed: number;
@@ -37,6 +47,11 @@ export function emptyStats(): DailyStats {
     projects_updated: 0,
     merge_failed: 0,
     assessed: 0,
+    projects_with_official_domain: 0,
+    domain_age_ran: 0,
+    domain_age_from_crtsh: 0,
+    phishing_list_ran: 0,
+    phishing_list_failed: 0,
     score_failed: 0,
     source_failed: 0,
     ingest_failed: 0,
