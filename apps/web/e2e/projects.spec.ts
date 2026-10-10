@@ -12,7 +12,7 @@ test.afterAll(async () => {
 });
 
 test("the list shows a seeded project with its Risk and Status badges, and no stale banner", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/airdrops");
   await expect(page.getByRole("heading", { name: "Airdrops" })).toBeVisible();
   const row = page.locator(`[data-testid="project-row"][data-slug="${seed.main.slug}"]`);
   await expect(row.getByRole("link", { name: seed.main.name })).toHaveAttribute("href", `/projects/${seed.main.slug}`);
@@ -32,14 +32,51 @@ test("the list shows a seeded project with its Risk and Status badges, and no st
 
 test("filters from the query string narrow the list", async ({ page }) => {
   const mainRow = page.locator(`[data-testid="project-row"][data-slug="${seed.main.slug}"]`);
+  await page.goto("/airdrops?status=live&risk=high&chain=base");
+  await expect(mainRow).toBeVisible();
+  await page.goto("/airdrops?risk=low");
+  await expect(mainRow).toHaveCount(0);
+  await page.goto("/airdrops?status=ended");
+  await expect(mainRow).toHaveCount(0);
+  await page.goto("/airdrops?chain=solana");
+  await expect(mainRow).toHaveCount(0);
+});
+
+test("an old list link (/?query) lands on /airdrops with the same filters", async ({ page }) => {
+  const mainRow = page.locator(`[data-testid="project-row"][data-slug="${seed.main.slug}"]`);
   await page.goto("/?status=live&risk=high&chain=base");
+  await expect(page).toHaveURL(/\/airdrops\?status=live&risk=high&chain=base$/);
   await expect(mainRow).toBeVisible();
   await page.goto("/?risk=low");
+  await expect(page).toHaveURL(/\/airdrops\?risk=low$/);
   await expect(mainRow).toHaveCount(0);
-  await page.goto("/?status=ended");
-  await expect(mainRow).toHaveCount(0);
-  await page.goto("/?chain=solana");
-  await expect(mainRow).toHaveCount(0);
+});
+
+test("a visitor at / gets the landing with the way to the list and Login, the comparison table, and no signup", async ({ page }) => {
+  await page.goto("/");
+  await expect(page).toHaveURL(/127\.0\.0\.1:3000\/$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Airdrop yang worth it digarap, udah kami cek duluan.");
+  await expect(page.getByRole("banner").getByRole("link", { name: "Login" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Apa bedanya gratis sama member?" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Apa bedanya gratis sama member?" }).getByRole("row")).toHaveCount(13);
+  await expect(page.getByText(/daftar/i)).toHaveCount(0);
+  await expect(page.locator("a[href*='signup']")).toHaveCount(0);
+  await expect(page.getByText("Not financial advice. Tetap DYOR sebelum connect wallet.")).toBeVisible();
+
+  await page.getByRole("main").getByRole("link", { name: "Lihat airdrop" }).click();
+  await expect(page).toHaveURL(/\/airdrops$/);
+  await expect(page.locator(`[data-testid="project-row"][data-slug="${seed.main.slug}"]`)).toBeVisible();
+});
+
+test("the filter form and the project page lead back to /airdrops", async ({ page }) => {
+  await page.goto("/airdrops?risk=high");
+  await expect(page.getByRole("link", { name: "Clear filters" })).toHaveAttribute("href", "/airdrops");
+  await page.getByRole("button", { name: "Apply filters" }).click();
+  await expect(page).toHaveURL(/\/airdrops\?risk=high(&|$)/);
+
+  await page.goto(`/projects/${seed.main.slug}`);
+  await page.getByRole("link", { name: /All airdrops/ }).click();
+  await expect(page).toHaveURL(/\/airdrops$/);
 });
 
 test("the detail page shows reasons, coverage, evidence with its source, and the official checker link", async ({ page }) => {

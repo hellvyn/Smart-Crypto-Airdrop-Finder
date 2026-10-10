@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { expect, test, type Page } from "@playwright/test";
-import { createConfirmedUser, deleteCreatedUsers, uniqueEmail } from "./support/admin";
+import { adminClient, createConfirmedUser, deleteCreatedUsers, uniqueEmail } from "./support/admin";
 
 const PASSWORD = "correct-horse-1";
 
@@ -36,6 +36,62 @@ test("opening /watchlist signed out redirects to /login, and back after logging 
   await expect(page).toHaveURL(/\/watchlist$/);
   await expect(page.getByRole("heading", { name: "Your watchlist" })).toBeVisible();
   await expectSignedInAs(page, email);
+});
+
+test("a signed-in user who opens /login goes to the list, or to a safe next page", async ({ page }) => {
+  const email = uniqueEmail("login-again");
+  await createConfirmedUser(email, PASSWORD);
+  await page.goto("/login");
+  await logIn(page, email, PASSWORD);
+  await expect(page).toHaveURL(/\/watchlist$/);
+
+  await page.goto("/login");
+  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/airdrops$/);
+  await page.goto("/login?next=%2Fsettings");
+  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/settings$/);
+  await page.goto("/login?next=//evil.example/steal");
+  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/airdrops$/);
+});
+
+test("a session that ends mid-way sends the next account page or form post to /login?next=..., not a blank page", async ({ page, context }) => {
+  const email = uniqueEmail("expired");
+  await createConfirmedUser(email, PASSWORD);
+  await page.goto("/login?next=%2Fsettings");
+  await logIn(page, email, PASSWORD);
+  await expect(page).toHaveURL(/\/settings$/);
+
+  // The session cookies disappear while the page is open (expired refresh token, signed out elsewhere).
+  await context.clearCookies();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page).toHaveURL(/\/login\?next=%2Fsettings$/);
+  await expect(page.getByRole("button", { name: "Log in" })).toBeVisible();
+
+  await logIn(page, email, PASSWORD);
+  await expect(page).toHaveURL(/\/settings$/);
+  await context.clearCookies();
+  await page.getByRole("banner").getByRole("link", { name: "Wallets" }).click();
+  await expect(page).toHaveURL(/\/login\?next=%2Fwallets$/);
+  await expect(page.getByRole("button", { name: "Log in" })).toBeVisible();
+});
+
+test("the anon key reads no rows of the user tables over REST", async () => {
+  // The rows exist: one user with a profile (created by the signup trigger) and a wallet.
+  const created = await adminClient().auth.admin.createUser({ email: uniqueEmail("rest-anon"), password: PASSWORD, email_confirm: true });
+  if (created.error) throw created.error;
+  const wallet = await adminClient()
+    .from("wallets")
+    .insert({ user_id: created.data.user.id, address: "0x00000000000000000000000000000000000000e5", chain_family: "evm" });
+  if (wallet.error) throw wallet.error;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  for (const table of ["watchlist", "wallets", "profiles"]) {
+    const res = await fetch(`${url}/rest/v1/${table}?select=*`, { headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` } });
+    const body = (await res.json()) as unknown;
+    // Either PostgREST refuses outright (no privilege, 42501) or RLS leaves an empty list; never a row.
+    if (Array.isArray(body)) expect(body, table).toEqual([]);
+    else expect((body as { code?: string }).code, table).toBe("42501");
+  }
 });
 
 test("an off-site next parameter is ignored after login", async ({ page }) => {
