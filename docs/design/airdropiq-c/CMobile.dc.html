@@ -29,9 +29,15 @@ a{color:#111111}a:hover{color:#C2410C}
 <span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:30px;text-transform:uppercase;line-height:1">Update hari ini</span>
 <span style="font-size:12px;font-weight:700"><span style="color:#1F7A45">[M]</span> / [N]</span>
 </div>
-<div style="display:flex;gap:6px;padding:4px 16px 12px;overflow-x:auto;flex:none">
+<div style="display:flex;gap:6px;padding:4px 16px 8px;overflow-x:auto;flex:none">
 <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
 <button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
+</sc-for>
+</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 16px 12px;flex:none">
+<span style="font-size:12px;font-weight:700;text-transform:uppercase;margin-right:2px">Modal:</span>
+<sc-for list="{{caps}}" as="c" hint-placeholder-count="3">
+<button type="button" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}} · {{c.count}}</button>
 </sc-for>
 </div>
 <div style="flex:1;overflow-y:auto;padding:0 16px 16px;display:flex;flex-direction:column;gap:12px">
@@ -44,12 +50,16 @@ a{color:#111111}a:hover{color:#C2410C}
 </div>
 <div style="{{r.stampStyle}}"><span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:14px;line-height:1">{{r.stampTop}}</span><span style="font-size:9px;font-weight:700">{{r.stampBottom}}</span></div>
 </div>
+<div style="display:flex;gap:6px;flex-wrap:wrap">
 <span style="{{r.signalStyle}}">{{r.signal}}</span>
+<span style="{{r.capStyle}}">{{r.capLabel}}</span>
+</div>
 <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;border-top:2px dashed #111111;padding-top:10px">
 <b>{{r.deadline}}</b><span style="color:#3D3D3A">{{r.checked}}</span>
 </div>
 </a>
 </sc-for>
+<span style="{{emptyStyle}}">Gak ada airdrop yang cocok di tab ini. Coba pilih "Semua".</span>
 <span style="align-self:center;font-size:11px;font-weight:700;text-transform:uppercase;border:2px dashed #111111;padding:3px 8px">Data contoh</span>
 </div>
 <nav style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:3px solid #111111;background:#FFFFFF;flex:none">
@@ -61,9 +71,9 @@ a{color:#111111}a:hover{color:#C2410C}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { tab: 'live_now' }; }
+  constructor(props) { super(props); this.state = { tab: 'live_now', cap: 'all' }; }
   renderVals() {
-    const tab = this.state.tab;
+    const tab = this.state.tab, capSel = this.state.cap;
     const stamp = (deg, color) => 'width:58px;height:58px;flex:none;border-radius:50%;border:3px solid ' + color + ';color:' + color + ';display:flex;flex-direction:column;align-items:center;justify-content:center;transform:rotate(' + deg + 'deg)';
     const pass = (deg) => ({ stampTop: 'LOLOS', stampBottom: '4/4 CEK', stampStyle: stamp(deg, '#1F7A45') });
     const end = (deg) => ({ stampTop: 'ENDED', stampBottom: 'ARSIP', stampStyle: stamp(deg, '#55554F') });
@@ -73,16 +83,16 @@ class Component extends DCLogic {
     const plain = 'align-self:flex-start;font-size:12px;font-weight:600;border:2px solid #111111;padding:3px 7px';
     const data = {
       live_now: [
-        { ...pass(6), name: 'Orbit Chain', meta: 'L2 · Ethereum', risk: 'Rendah', signal: 'Claim open · link dicek', signalStyle: claim, deadline: 'Claim s.d. 25 Okt', checked: 'Dicek hari ini' },
-        { ...pass(-7), name: 'Nebula Perps', meta: 'Perp DEX · Arbitrum', risk: 'Rendah', signal: 'VC: Paradigm ✓', signalStyle: verified, deadline: 'Snapshot 30 Nov', checked: 'Dicek hari ini' },
-        { ...pass(3), name: 'Kestrel Lend', meta: 'Lending · Base', risk: 'Sedang', signal: 'Menurut AlphaDrops: a16z (lead)', signalStyle: reported, deadline: 'Belum ada tanggal', checked: 'Dicek kemarin' }
+        { ...pass(6), cap: 'free', capLabel: 'Gratis', name: 'Orbit Chain', meta: 'L2 · Ethereum', risk: 'Rendah', signal: 'Claim open · link dicek', signalStyle: claim, deadline: 'Claim s.d. 25 Okt', checked: 'Dicek hari ini' },
+        { ...pass(-7), cap: 'deposit', capLabel: 'Butuh $100+', name: 'Nebula Perps', meta: 'Perp DEX · Arbitrum', risk: 'Rendah', signal: 'VC: Paradigm ✓', signalStyle: verified, deadline: 'Snapshot 30 Nov', checked: 'Dicek hari ini' },
+        { ...pass(3), cap: 'deposit', capLabel: 'Butuh $50+', name: 'Kestrel Lend', meta: 'Lending · Base', risk: 'Sedang', signal: 'Menurut AlphaDrops: a16z (lead)', signalStyle: reported, deadline: 'Belum ada tanggal', checked: 'Dicek kemarin' }
       ],
       early_bets: [
-        { ...pass(-5), name: 'Vega Restake', meta: 'Restaking · Ethereum', risk: 'Rendah', signal: 'TVL $210 jt', signalStyle: plain, deadline: 'Belum diumumkan', checked: 'Dicek hari ini' },
-        { ...pass(4), name: 'Lumen AI', meta: 'AI Agents · Multichain', risk: 'Rendah', signal: 'Menurut AlphaDrops: Sequoia (lead)', signalStyle: reported, deadline: 'Waitlist', checked: 'Dicek hari ini' }
+        { ...pass(-5), cap: 'deposit', capLabel: 'Butuh $', name: 'Vega Restake', meta: 'Restaking · Ethereum', risk: 'Rendah', signal: 'TVL $210 jt', signalStyle: plain, deadline: 'Belum diumumkan', checked: 'Dicek hari ini' },
+        { ...pass(4), cap: 'free', capLabel: 'Gratis', name: 'Lumen AI', meta: 'AI Agents · Multichain', risk: 'Rendah', signal: 'Menurut AlphaDrops: Sequoia (lead)', signalStyle: reported, deadline: 'Waitlist', checked: 'Dicek hari ini' }
       ],
       ended: [
-        { ...end(-4), name: 'Astra Swap', meta: 'DEX · Base', risk: 'Rendah', signal: 'Listed di CoinGecko', signalStyle: plain, deadline: 'Ended 5 Okt 2026', checked: 'Last check 5 Okt' }
+        { ...end(-4), cap: 'free', capLabel: 'Gratis', name: 'Astra Swap', meta: 'DEX · Base', risk: 'Rendah', signal: 'Listed di CoinGecko', signalStyle: plain, deadline: 'Ended 5 Okt 2026', checked: 'Last check 5 Okt' }
       ]
     };
     const on = 'flex:none;background:#111111;color:#F7F7F2;border:2px solid #111111;font:inherit;font-size:13px;font-weight:700;text-transform:uppercase;padding:9px 12px;cursor:pointer';
@@ -90,7 +100,21 @@ class Component extends DCLogic {
     const tabs = [['live_now', 'Live'], ['early_bets', 'Early'], ['ended', 'Ended']].map(([id, label]) => ({
       label, style: id === tab ? on : off, pick: () => this.setState({ tab: id })
     }));
-    return { tabs, rows: data[tab] };
+    const capStyles = {
+      free: 'font-size:12px;font-weight:700;text-transform:uppercase;border:2px solid #1F7A45;color:#1F7A45;padding:3px 7px',
+      deposit: 'font-size:12px;font-weight:700;text-transform:uppercase;border:2px solid #111111;background:#FFF1EA;padding:3px 7px',
+      unknown: 'font-size:12px;font-weight:600;text-transform:uppercase;border:2px dashed #9A9A93;color:#55554F;padding:3px 7px'
+    };
+    const pool = data[tab];
+    const rows = pool.filter((r) => capSel === 'all' || r.cap === capSel).map((r) => ({ ...r, capStyle: capStyles[r.cap] }));
+    const chipOn = 'min-height:36px;background:#111111;color:#F7F7F2;border:2px solid #111111;font:inherit;font-size:13px;font-weight:700;padding:5px 10px;cursor:pointer';
+    const chipOff = 'min-height:36px;background:#FFFFFF;color:#111111;border:2px solid #111111;font:inherit;font-size:13px;font-weight:600;padding:5px 10px;cursor:pointer';
+    const caps = [['all', 'Semua'], ['free', 'Gratis'], ['deposit', 'Butuh $']].map(([id, label]) => ({
+      label, count: id === 'all' ? pool.length : pool.filter((r) => r.cap === id).length,
+      style: capSel === id ? chipOn : chipOff, pick: () => this.setState({ cap: id })
+    }));
+    const emptyStyle = rows.length ? 'display:none' : 'font-size:14px;border:2px dashed #111111;background:#FFFFFF;padding:16px;text-align:center';
+    return { tabs, caps, rows, emptyStyle };
   }
 }
 </script>
