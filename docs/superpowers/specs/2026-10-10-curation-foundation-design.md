@@ -1,7 +1,7 @@
 # Fondasi Kurasi (sub-proyek #1) — Desain
 
 Tanggal: 2026-10-10
-Status: **draft rev. 3 (sebagian), menunggu review owner**. Rev. 2: perbaikan skor setelah simulasi terhadap data run
+Status: **rev. 3, disetujui owner untuk dibuat plan (2026-10-10)**. Rev. 2: perbaikan skor setelah simulasi terhadap data run
 pertama. Rev. 3: akar masalah domain, halaman project vs airdrops.io, fitur AI (§13, detail provider belum lengkap),
 Bahasa Indonesia.
 Dibangun di atas: `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md` (spec v1, sudah live)
@@ -73,7 +73,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 27 | Dua jenis peluang | List dipisah jadi tab **"Live now"** (live/announced) dan **"Early bets"** (speculative); `worth()` meranking di dalam tab |
 | 28 | Standar tampil | Project cuma tampil kalau cek keamanan kuncinya jalan; paywall baru dinyalakan setelah gerbang kualitas §12 terpenuhi |
 | 29 | Bahasa | **Bahasa Indonesia saja** untuk UI web, email, dan semua output AI (menggantikan asumsi v1 "UI bahasa Inggris dulu"). Konten sumber berbahasa Inggris diterjemahkan/diringkas AI |
-| 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan (rekomendasi, menunggu konfirmasi) |
+| 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
 penuh oleh owner (gak skalabel). API funding berbayar ditunda (lihat §11).
@@ -428,7 +428,7 @@ pakai `auto`, tanpa eval sekarang). Fakta dari pengecekan 2026-10-10:
 
 Konsekuensi desain:
 - **Cadangan NVIDIA** (`glm-5.3-flash` → `kimi-k3` → `gemma-4-31b-it`) lewat circuit breaker, supaya pipeline harian gak
-  gagal total saat router kena rate limit (rekomendasi; menunggu konfirmasi owner).
+  gagal total saat router kena rate limit (dikonfirmasi owner).
 - Tiap hasil AI menyimpan **model yang benar-benar menjawab** (dari field `model` di respons), supaya penurunan kualitas
   bisa ditelusuri ke model tertentu.
 - Kunci disimpan sebagai secret (`LLM_API_KEY`, `LLM_BASE_URL` di GitHub Actions dan Vercel server-side), gak pernah di kode
