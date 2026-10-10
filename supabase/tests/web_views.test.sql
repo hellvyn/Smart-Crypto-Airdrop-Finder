@@ -13,10 +13,10 @@ insert into documents (id, source_kind, source_key, url, content_hash, fetched_a
   ('dddddddd-0000-0000-0000-000000000001', 'airdrops_io', 'k', 'https://v.example/1', 'h', now());
 
 insert into deadlines (project_id, document_id, kind, date, precision, text) values
-  ('bbbbbbbb-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001', 'claim', current_date - 3, 'exact', 'past'),
-  ('bbbbbbbb-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001', 'tge', current_date + 1, 'quarter', 'quarter'),
-  ('bbbbbbbb-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001', 'snapshot', current_date + 20, 'approximate', 'later'),
-  ('bbbbbbbb-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001', 'claim', current_date + 5, 'exact', 'soon');
+  ('bbbbbbbb-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001', 'claim', (now() at time zone 'utc')::date - 3, 'exact', 'past'),
+  ('bbbbbbbb-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001', 'tge', (now() at time zone 'utc')::date + 1, 'quarter', 'quarter'),
+  ('bbbbbbbb-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001', 'snapshot', (now() at time zone 'utc')::date + 20, 'approximate', 'later'),
+  ('bbbbbbbb-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001', 'claim', (now() at time zone 'utc')::date + 5, 'exact', 'soon');
 
 insert into risk_assessments (project_id, level, points, computed_at) values
   ('bbbbbbbb-0000-0000-0000-000000000001', 'low', 0, '2026-10-01T00:00:00Z'),
@@ -33,7 +33,7 @@ select is(
   false, 'web roles hold no write privilege on project_list');
 
 select results_eq(
-  $$ select next_deadline_date - current_date, next_deadline_kind, next_deadline_precision
+  $$ select next_deadline_date - (now() at time zone 'utc')::date, next_deadline_kind, next_deadline_precision
      from project_list where slug = 'v-one' $$,
   $$ values (5, 'claim'::text, 'exact'::text) $$,
   'next deadline is the earliest future exact/approximate one (not past, not quarter)');

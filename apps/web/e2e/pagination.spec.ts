@@ -54,3 +54,13 @@ test("an unknown chain stays selected in the filter", async ({ page }) => {
   await expect(page.getByRole("option", { name: "nosuchchain (no matches)" })).toHaveCount(1);
   await expect(rows(page)).toHaveCount(0);
 });
+
+test("a malformed chain value renders the list instead of an error page", async ({ page }) => {
+  for (const raw of ["a%7D", "%22", "%5C", "a%2Cb"]) {
+    const res = await page.goto(`/?chain=${raw}`);
+    expect(res?.status(), raw).toBe(200);
+    await expect(page.getByRole("heading", { name: "Airdrops" })).toBeVisible();
+    await expect(page.getByLabel("Chain").locator("option:checked")).toContainText("(no matches)");
+    await expect(rows(page)).toHaveCount(50);
+  }
+});

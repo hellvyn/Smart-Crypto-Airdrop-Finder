@@ -241,3 +241,37 @@ export function listQueryString(f: ListFilters, page: number): string {
   if (page > 1) sp.set("page", String(page));
   return sp.toString();
 }
+
+// ---- Query-string parsing ----
+
+const CHAIN_PATTERN = /^[a-z0-9][a-z0-9 ._-]{0,48}$/;
+
+/**
+ * A chain filter value, trimmed and lowercased, or null when it is not a plain chain name. Anything with commas, braces,
+ * quotes or backslashes would corrupt the array literal sent to PostgREST, so it is dropped instead of being escaped.
+ */
+export function parseChain(raw: string | undefined | null): string | null {
+  const chain = raw?.trim().toLowerCase();
+  if (!chain || chain === "null" || !CHAIN_PATTERN.test(chain)) return null;
+  return chain;
+}
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function many(v: string | string[] | undefined): string[] {
+  return v === undefined ? [] : Array.isArray(v) ? v : [v];
+}
+
+/** Filters from the query string: ?status=live&status=announced&risk=high&chain=ethereum. Unknown values are dropped. */
+export function parseFilters(sp: SearchParams): ListFilters {
+  const status = many(sp.status).filter((s): s is Status => (STATUSES as readonly string[]).includes(s));
+  const risk = many(sp.risk).filter((r): r is RiskLevel => (RISK_LEVELS as readonly string[]).includes(r));
+  const chain = parseChain(many(sp.chain)[0]);
+  return { status, risk, chain: chain ?? undefined };
+}
+
+/** The `chain` value as typed (trimmed, lowercased), valid or not, so the filter form can keep showing it. */
+export function rawChainParam(sp: SearchParams): string | undefined {
+  const raw = many(sp.chain)[0]?.trim().toLowerCase();
+  return raw || undefined;
+}

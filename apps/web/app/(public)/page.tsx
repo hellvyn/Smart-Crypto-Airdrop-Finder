@@ -6,25 +6,18 @@ import { createServerClient } from "@/lib/supabase/server";
 import {
   RISK_LEVELS,
   STATUSES,
+  parseFilters,
   parsePage,
+  rawChainParam,
   formatDateTime,
   riskLabel,
   statusLabel,
-  type ListFilters,
 } from "@/lib/view";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
 function many(v: string | string[] | undefined): string[] {
   return v === undefined ? [] : Array.isArray(v) ? v : [v];
-}
-
-/** Filters come from the query string: ?status=live&status=announced&risk=high&chain=ethereum. Unknown values are dropped. */
-function parseFilters(sp: SearchParams): ListFilters {
-  const status = many(sp.status).filter((s): s is (typeof STATUSES)[number] => (STATUSES as readonly string[]).includes(s));
-  const risk = many(sp.risk).filter((r): r is (typeof RISK_LEVELS)[number] => (RISK_LEVELS as readonly string[]).includes(r));
-  const chain = many(sp.chain)[0]?.trim();
-  return { status, risk, chain: chain || undefined };
 }
 
 export default async function AirdropsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -38,8 +31,9 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
     getLastSuccessfulRunAt(db),
     listChains(db),
   ]);
-  const selectedChain = filters.chain?.toLowerCase();
-  const hasFilters = !!(filters.status?.length || filters.risk?.length || filters.chain);
+  // An invalid chain value applies no filter but is still shown, as text only, in the form.
+  const selectedChain = rawChainParam(sp);
+  const hasFilters = !!(filters.status?.length || filters.risk?.length || selectedChain);
 
   return (
     <>

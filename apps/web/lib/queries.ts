@@ -8,6 +8,7 @@ import {
   pickLastSuccessfulRun,
   pickLatestRisk,
   PAGE_SIZE,
+  parseChain,
   pickNextDeadline,
   utcToday,
   type ListFilters,
@@ -77,15 +78,16 @@ const LIST_COLUMNS =
 // depends on PostgREST's row cap. Order: nearest firm deadline (nulls last), newest last_seen, then id.
 interface Filterable {
   in(column: string, values: string[]): Filterable;
-  contains(column: string, value: string[]): Filterable;
+  contains(column: string, value: string): Filterable;
 }
 
 function applyFilters<T>(query: T, f: ListFilters): T {
   let q = query as unknown as Filterable;
   if (f.status && f.status.length > 0) q = q.in("status", f.status);
   if (f.risk && f.risk.length > 0) q = q.in("latest_risk_level", f.risk);
-  const chain = f.chain?.trim().toLowerCase();
-  if (chain) q = q.contains("chains_lower", [chain]);
+  // Re-validated here, and sent as a quoted array literal: postgrest-js would otherwise build `cs.{value}` unquoted.
+  const chain = parseChain(f.chain);
+  if (chain) q = q.contains("chains_lower", `{"${chain.replace(/[\\"]/g, "\\$&")}"}`);
   return q as unknown as T;
 }
 
@@ -208,7 +210,8 @@ export async function getProjectDetail(db: SupabaseClient, slug: string, now: Da
   };
 }
 
-/** Finish time of the latest successful pipeline run (finished, with no `run_error` in its stats), or null. */
+/** Finish time of the latest successful pipeline run (finished, with no `run_error` key in its stats), or null.
+ * SQL drops rows without the key; the JS check also drops a key present with a null value. */
 export async function getLastSuccessfulRunAt(db: SupabaseClient): Promise<Date | null> {
   const { data, error } = await db
     .from("pipeline_runs")
@@ -216,7 +219,7 @@ export async function getLastSuccessfulRunAt(db: SupabaseClient): Promise<Date |
     .not("finished_at", "is", null)
     .is("stats->>run_error", null)
     .order("finished_at", { ascending: false })
-    .limit(1);
+    .limit(10);
   throwIf(error, "pipeline runs");
   return pickLastSuccessfulRun(
     (data ?? []).map((r) => ({ finishedAt: (r.finished_at as string | null) ?? null, stats: r.stats as unknown })),

@@ -86,7 +86,21 @@ describe("listProjects", () => {
     const calls = recs[0]!.calls;
     expect(calls).toContainEqual(["in", "status", ["live", "unknown"]]);
     expect(calls).toContainEqual(["in", "latest_risk_level", ["high"]]);
-    expect(calls).toContainEqual(["contains", "chains_lower", ["base"]]);
+    expect(calls).toContainEqual(["contains", "chains_lower", '{"base"}']);
+  });
+
+  it("sends a quoted array literal, including for names with spaces", async () => {
+    const { db, recs } = fakeDb([{ data: [], error: null, count: 0 }]);
+    await listProjects(db, { chain: "bnb chain" }, 1);
+    expect(recs[0]!.calls).toContainEqual(["contains", "chains_lower", '{"bnb chain"}']);
+  });
+
+  it("never sends a chain value that is not a plain chain name", async () => {
+    for (const chain of ["a,b", "a}", 'x"y', "back\\slash", "NULL", "{a}", "", "-x", "a".repeat(60)]) {
+      const { db, recs } = fakeDb([{ data: [], error: null, count: 0 }]);
+      await listProjects(db, { chain }, 1);
+      expect(recs[0]!.calls.map((c) => c[0]), `chain ${JSON.stringify(chain)}`).not.toContain("contains");
+    }
   });
 
   it("adds no filter calls when no filters are set", async () => {
@@ -148,7 +162,20 @@ describe("getLastSuccessfulRunAt", () => {
     expect(calls).toContainEqual(["not", "finished_at", "is", null]);
     expect(calls).toContainEqual(["is", "stats->>run_error", null]);
     expect(calls).toContainEqual(["order", "finished_at", { ascending: false }]);
-    expect(calls).toContainEqual(["limit", 1]);
+    expect(calls).toContainEqual(["limit", 10]);
+  });
+
+  it("skips a row whose stats carry run_error, even with a null value, and takes the next one", async () => {
+    const { db } = fakeDb([
+      {
+        data: [
+          { finished_at: "2026-10-10T05:00:00Z", stats: { run_error: null } },
+          { finished_at: "2026-10-09T05:00:00Z", stats: { docs: 1 } },
+        ],
+        error: null,
+      },
+    ]);
+    expect((await getLastSuccessfulRunAt(db))?.toISOString()).toBe("2026-10-09T05:00:00.000Z");
   });
 
   it("returns null when there is no successful run", async () => {

@@ -4,6 +4,9 @@ import {
   PAGE_SIZE,
   isStale,
   listQueryString,
+  parseChain,
+  parseFilters,
+  rawChainParam,
   parsePage,
   pickLastSuccessfulRun,
   pickLatestRisk,
@@ -180,5 +183,35 @@ describe("paging helpers", () => {
       "status=live&status=ended&risk=high&chain=base&page=2",
     );
     expect(listQueryString({ chain: "a b&c" }, 1)).toBe("chain=a+b%26c");
+  });
+});
+
+describe("chain filter parsing", () => {
+  it("accepts plain chain names, trimmed and lowercased", () => {
+    expect(parseChain("base")).toBe("base");
+    expect(parseChain("  BNB Chain ")).toBe("bnb chain");
+    expect(parseChain("zk-sync.era_1")).toBe("zk-sync.era_1");
+  });
+
+  it("rejects anything that could break the array literal", () => {
+    for (const bad of ["a,b", "a}", "{a", 'x"y', "back\\slash", "NULL", "null", "", "   ", "-x", "a".repeat(60), "a\nb", "é"]) {
+      expect(parseChain(bad), JSON.stringify(bad)).toBeNull();
+    }
+    expect(parseChain(undefined)).toBeNull();
+  });
+
+  it("parseFilters applies no chain filter for an invalid value, but rawChainParam still reports it", () => {
+    expect(parseFilters({ chain: "a,b" }).chain).toBeUndefined();
+    expect(rawChainParam({ chain: " A,B " })).toBe("a,b");
+    expect(parseFilters({ chain: "Base" }).chain).toBe("base");
+    expect(parseFilters({ chain: ["base", "x"] }).chain).toBe("base");
+  });
+
+  it("parseFilters drops unknown status and risk values", () => {
+    expect(parseFilters({ status: ["live", "nope"], risk: ["high", "safe"] })).toEqual({
+      status: ["live"],
+      risk: ["high"],
+      chain: undefined,
+    });
   });
 });
