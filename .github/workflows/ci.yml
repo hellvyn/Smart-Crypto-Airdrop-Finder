@@ -20,3 +20,40 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start local Supabase
+        run: >-
+          npx -y supabase@2.120.0 start
+          -x studio,imgproxy,mailpit,vector,logflare,edge-runtime,realtime,storage-api,postgres-meta,supavisor
+      - name: Export the web app's Supabase env
+        # Only the URL and anon key go to the job env (the web build and server). The e2e harness reads the local
+        # service role key itself from `supabase status` (apps/web/e2e/support/supabase-env.ts).
+        run: |
+          eval "$(npx -y supabase@2.120.0 status -o env 2>/dev/null)"
+          echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+      - run: pnpm --filter web build
+      - name: Install Chromium for Playwright
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - run: pnpm --filter web e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
