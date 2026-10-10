@@ -70,7 +70,7 @@ export interface ProjectPage {
   pageSize: number;
 }
 
-const LIST_COLUMNS =
+export const LIST_COLUMNS =
   "id, slug, name, status, chains, last_seen, " +
   "next_deadline_date, next_deadline_kind, next_deadline_precision, latest_risk_level";
 
@@ -91,7 +91,7 @@ function applyFilters<T>(query: T, f: ListFilters): T {
   return q as unknown as T;
 }
 
-function toListItem(row: Record<string, unknown>): ProjectListItem {
+export function toListItem(row: Record<string, unknown>): ProjectListItem {
   return {
     slug: String(row.slug),
     name: String(row.name),
@@ -184,6 +184,7 @@ export async function getProjectDetail(db: SupabaseClient, slug: string, now: Da
   deadlineRows.sort((a, b) => (a.date ?? "9999-12-31").localeCompare(b.date ?? "9999-12-31"));
 
   return {
+    id,
     slug: String(p.slug),
     name: String(p.name),
     status: asStatus(p.status),

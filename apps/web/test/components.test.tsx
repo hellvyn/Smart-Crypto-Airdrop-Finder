@@ -27,6 +27,7 @@ const CHECK_IDS = [
 
 function detail(over: Partial<ProjectDetail> = {}): ProjectDetail {
   return {
+    id: "p1",
     slug: "demo",
     name: "Demo Protocol",
     status: "live",

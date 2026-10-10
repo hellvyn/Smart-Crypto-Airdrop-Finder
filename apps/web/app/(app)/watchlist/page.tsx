@@ -1,11 +1,26 @@
+import { ProjectRow } from "@/components/ProjectRow";
+import { requireUser } from "@/lib/auth";
+import { createServerClient } from "@/lib/supabase/server";
+import { getWatchlist } from "@/lib/watchlist";
+
 export const metadata = { title: "Watchlist · Smart Airdrop Finder" };
 
-// Placeholder: the watchlist itself comes in Plan 2 Task 4.
-export default function WatchlistPage() {
+export default async function WatchlistPage() {
+  await requireUser();
+  const db = await createServerClient();
+  const items = await getWatchlist(db);
   return (
     <>
       <h1>Your watchlist</h1>
-      <p className="muted">Projects you follow will show up here.</p>
+      {items.length === 0 ? (
+        <p>You are not watching any airdrops yet.</p>
+      ) : (
+        <div className="project-list">
+          {items.map((item) => (
+            <ProjectRow key={item.slug} item={item} />
+          ))}
+        </div>
+      )}
     </>
   );
 }

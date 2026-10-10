@@ -19,6 +19,8 @@ export interface ProjectListItem {
 }
 
 export interface ProjectDetail extends ProjectListItem {
+  /** projects.id, for the watch button. */
+  id: string;
   tokenSymbol: string | null;
   conflict: boolean;
   risk: { level: RiskLevel; reasons: RiskReason[]; checks: RiskCheck[]; computedAt: string } | null;
