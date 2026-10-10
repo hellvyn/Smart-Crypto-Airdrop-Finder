@@ -210,19 +210,24 @@ describe("MemoryRepo projects", () => {
     const repo = new MemoryRepo();
     const p = await repo.createProject(project(), T0);
     const d = await repo.upsertDocument(doc(), "h");
-    const e = { projectId: p.id, documentId: d.id, field: "status", value: "live", quote: "is live", at: T0, sourceUrl: d.url };
+    const e = { projectId: p.id, documentId: d.id, field: "status", value: "live", quote: "is live", at: T0 };
     await repo.addEvidence(e);
     await repo.addEvidence(e);
     await repo.addEvidence({ ...e, field: "token_symbol", value: "INK" });
     expect(await repo.listStatusEvidence(p.id)).toEqual([{ status: "live", at: T0 }]);
   });
 
-  it("stores the document url as the evidence source url", async () => {
+  it("copies the document url into the evidence source url", async () => {
     const repo = new MemoryRepo();
     const p = await repo.createProject(project(), T0);
-    const d = await repo.upsertDocument(doc(), "h");
-    await repo.addEvidence({ projectId: p.id, documentId: d.id, field: "status", value: "live", quote: "q", at: T0, sourceUrl: d.url });
-    expect(repo["evidence"].map((e) => e.sourceUrl)).toEqual([doc().url]);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    const d2 = await repo.upsertDocument(doc({ url: "https://x.test/2" }), "2");
+    await repo.addEvidence({ projectId: p.id, documentId: d1.id, field: "status", value: "live", quote: "q", at: T0 });
+    await repo.addEvidence({ projectId: p.id, documentId: d2.id, field: "status", value: "live", quote: "q", at: T0 });
+    expect(repo["evidence"].map((e) => e.sourceUrl)).toEqual(["https://x.test/1", "https://x.test/2"]);
+    await expect(
+      repo.addEvidence({ projectId: p.id, documentId: "missing", field: "status", value: "live", quote: "q", at: T0 }),
+    ).rejects.toThrow();
   });
 
   it("deletes the evidence of one field for one project and document", async () => {
@@ -232,7 +237,7 @@ describe("MemoryRepo projects", () => {
     const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
     const d2 = await repo.upsertDocument(doc({ url: "https://x.test/2" }), "2");
     const ev = (projectId: string, documentId: string, field: string, value: string) =>
-      repo.addEvidence({ projectId, documentId, field, value, quote: "q", at: T0, sourceUrl: "https://x.test/" });
+      repo.addEvidence({ projectId, documentId, field, value, quote: "q", at: T0 });
     await ev(p.id, d1.id, "status", "live");
     await ev(p.id, d1.id, "status", "announced");
     await ev(p.id, d1.id, "dangerous_ask", "asks_secret");
@@ -256,7 +261,7 @@ describe("MemoryRepo projects", () => {
     const repo = new MemoryRepo();
     const p = await repo.createProject(project(), T0);
     const d = await repo.upsertDocument(doc(), "h");
-    const ev = (value: string, at: Date) => ({ projectId: p.id, documentId: d.id, field: "status", value, quote: "q", at, sourceUrl: d.url });
+    const ev = (value: string, at: Date) => ({ projectId: p.id, documentId: d.id, field: "status", value, quote: "q", at });
     const later = new Date(T0.getTime() + 5000);
     await repo.addEvidence(ev("ended", later));
     await repo.addEvidence(ev("announced", T0));
@@ -299,7 +304,7 @@ describe("MemoryRepo projects", () => {
       "t1",
     );
     for (const d of [a1, a2, t1]) {
-      await repo.addEvidence({ projectId: fresh.id, documentId: d.id, field: "status", value: "live", quote: "q", at: T0, sourceUrl: d.url });
+      await repo.addEvidence({ projectId: fresh.id, documentId: d.id, field: "status", value: "live", quote: "q", at: T0 });
     }
     const scored = await repo.listProjectsForScoring(30, T0);
     expect(scored.map((p) => p.slug)).toEqual(["ink"]);
@@ -327,10 +332,10 @@ describe("MemoryRepo scoring extras", () => {
     const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
     const d2 = await repo.upsertDocument(doc({ url: "https://x.test/2" }), "2");
     const ask = (documentId: string, value: string, quote: string) =>
-      repo.addEvidence({ projectId: p.id, documentId, field: "dangerous_ask", value, quote, at: T0, sourceUrl: "https://x.test/" });
+      repo.addEvidence({ projectId: p.id, documentId, field: "dangerous_ask", value, quote, at: T0 });
     await ask(d2.id, "asks_payment", "Send 0.1 ETH to claim your tokens.");
     await ask(d1.id, "asks_secret", "Enter your seed phrase.");
-    await repo.addEvidence({ projectId: p.id, documentId: d1.id, field: "status", value: "live", quote: "q", at: T0, sourceUrl: "https://x.test/" });
+    await repo.addEvidence({ projectId: p.id, documentId: d1.id, field: "status", value: "live", quote: "q", at: T0 });
     const [scored] = await repo.listProjectsForScoring(30, T0);
     expect(scored?.sourceAsks).toEqual([
       { code: "asks_payment", quote: "Send 0.1 ETH to claim your tokens." },

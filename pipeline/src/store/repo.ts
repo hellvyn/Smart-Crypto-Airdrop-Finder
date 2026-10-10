@@ -53,8 +53,6 @@ export interface NewEvidence {
   value: string;
   quote: string;
   at: Date;
-  /** `documents.url` of `documentId`, copied so readers can link the source without reading documents. */
-  sourceUrl: string;
 }
 
 export interface PipelineRepo {
@@ -73,7 +71,11 @@ export interface PipelineRepo {
   createProject(p: NewProject, at: Date): Promise<ProjectRow>;
   /** Always bumps `lastSeen` to `at`. A status change also writes a `project_changes` row. */
   updateProject(id: string, patch: Partial<ProjectRow>, at: Date): Promise<void>;
-  /** Ignored when the same (project, document, field, value) already exists. */
+  /**
+   * Ignored when the same (project, document, field, value) already exists. The stored row also gets
+   * `source_url` = the document's url, copied at insert so readers can link the source without reading
+   * documents.
+   */
   addEvidence(e: NewEvidence): Promise<void>;
   /** Deletes the evidence of one field that one document contributed to one project. */
   deleteEvidence(projectId: string, documentId: string, field: string): Promise<void>;

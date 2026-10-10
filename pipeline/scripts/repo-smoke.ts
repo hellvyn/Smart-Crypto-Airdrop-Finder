@@ -105,7 +105,7 @@ async function main(): Promise<void> {
   const t1 = new Date(T0.getTime() + 1000);
   await repo.updateProject(p.id, { status: "live", conflict: true }, t1);
   await repo.updateProject(p.id, { status: "live" }, new Date(T0.getTime() + 2000));
-  const ev = { projectId: p.id, documentId: a.id, field: "status", value: "live", quote: "is live", at: T0, sourceUrl: a.url };
+  const ev = { projectId: p.id, documentId: a.id, field: "status", value: "live", quote: "is live", at: T0 };
   await repo.addEvidence(ev);
   await repo.addEvidence(ev);
   assert.deepEqual(await repo.listStatusEvidence(p.id), [{ status: "live", at: T0 }]);
@@ -117,7 +117,7 @@ async function main(): Promise<void> {
     (await repo.listStatusEvidence(p.id)).map((x) => x.status),
     ["live", "ended", "announced"],
   );
-  // evidence.source_url is the document url given at insert.
+  // evidence.source_url is copied from documents.url at insert (trigger).
   const sourceUrls = await admin.from("evidence").select("document_id, source_url").eq("project_id", p.id).order("seq");
   assert.equal(sourceUrls.error, null);
   assert.deepEqual(

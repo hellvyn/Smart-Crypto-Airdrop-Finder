@@ -301,7 +301,7 @@ export class SupabaseRepo implements PipelineRepo {
           value: e.value,
           quote: e.quote,
           at: e.at.toISOString(),
-          source_url: e.sourceUrl,
+          // source_url is filled from documents.url by the evidence_source_url trigger.
         },
         { onConflict: "project_id,document_id,field,value", ignoreDuplicates: true },
       ),

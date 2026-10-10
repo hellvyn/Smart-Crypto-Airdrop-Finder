@@ -23,7 +23,10 @@ export interface ProjectChange {
   changedAt: Date;
 }
 
-type EvidenceRow = NewEvidence;
+interface EvidenceRow extends NewEvidence {
+  /** `documents.url` of `documentId`, copied at insert (a trigger does this in Postgres). */
+  sourceUrl: string;
+}
 
 interface DeadlineRow extends ExtractedDeadline {
   projectId: string;
@@ -181,12 +184,14 @@ export class MemoryRepo implements PipelineRepo {
     }
   }
 
-  async addEvidence(e: EvidenceRow): Promise<void> {
+  async addEvidence(e: NewEvidence): Promise<void> {
+    const document = this.documents.get(e.documentId);
+    if (!document) throw new Error("unknown document");
     const duplicate = this.evidence.some(
       (x) =>
         x.projectId === e.projectId && x.documentId === e.documentId && x.field === e.field && x.value === e.value,
     );
-    if (!duplicate) this.evidence.push({ ...e });
+    if (!duplicate) this.evidence.push({ ...e, sourceUrl: document.url });
   }
 
   async deleteEvidence(projectId: string, documentId: string, field: string): Promise<void> {

@@ -106,8 +106,18 @@ async function main(): Promise<void> {
   assert.equal(deepbook.length, 1);
   assert.equal(deepbook[0]?.status, "ended");
   assert.equal((await repo.findProjectsByNameKey("ink")).length, 1);
-  const changes = await db.from("project_changes").select("field, old_value, new_value").eq("field", "status");
+  // Merges follow extraction completion order, so other projects' in-run changes vary; DeepBook's are fixed.
+  const changes = await db
+    .from("project_changes")
+    .select("field, old_value, new_value")
+    .eq("field", "status")
+    .eq("project_id", deepbook[0]?.id ?? "");
   assert.deepEqual(changes.data, [{ field: "status", old_value: "live", new_value: "ended" }]);
+  // Every evidence row carries its document's url.
+  const evidence = await db.from("evidence").select("source_url, documents(url)").returns<{ source_url: string; documents: { url: string } }[]>();
+  assert.equal(evidence.error, null);
+  assert.ok((evidence.data ?? []).length > 0);
+  for (const row of evidence.data ?? []) assert.equal(row.source_url, row.documents.url);
   console.log(
     JSON.stringify({
       projects: await count("projects"),

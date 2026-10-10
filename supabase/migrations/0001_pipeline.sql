@@ -58,13 +58,28 @@ create table evidence (
   value text not null,
   quote text not null,
   at timestamptz not null,
-  -- documents.url of document_id, copied at insert so the web app can link the source without reading documents.
+  -- documents.url of document_id, copied at insert by the evidence_source_url trigger, so the web app can
+  -- link the source without reading documents (which it cannot).
   source_url text not null,
   -- Insertion order, used as a deterministic tie-break when evidence shares the same `at`.
   seq bigint generated always as identity,
   unique (project_id, document_id, field, value)
 );
 create index evidence_document_id_idx on evidence (document_id);
+
+create function evidence_source_url() returns trigger
+  language plpgsql
+  set search_path = ''
+as $$
+begin
+  select d.url into new.source_url from public.documents d where d.id = new.document_id;
+  return new;
+end;
+$$;
+
+create trigger evidence_source_url
+  before insert on evidence
+  for each row execute function evidence_source_url();
 
 create table deadlines (
   id uuid primary key default gen_random_uuid(),

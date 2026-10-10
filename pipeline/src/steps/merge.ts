@@ -205,7 +205,6 @@ async function mergeProject(
     value: input.status,
     quote: input.quote,
     at,
-    sourceUrl: document.url,
   });
   const derived = deriveStatus(await repo.listStatusEvidence(project.id), project.status);
   await repo.updateProject(
@@ -267,7 +266,6 @@ export async function mergeDocument(
           value: ask.code,
           quote: ask.sentence,
           at: pickEvidenceDate(document),
-          sourceUrl: document.url,
         });
       }
     }
