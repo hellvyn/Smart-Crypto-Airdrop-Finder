@@ -24,6 +24,11 @@ export interface PipelineConfig {
  */
 export interface EmailConfig {
   enabled: boolean;
+  /**
+   * True when `BREVO_API_KEY` is set but `EMAIL_FROM` or `SITE_URL` is missing or invalid. Email is then enabled
+   * but the notify stage fails (failed_step 7, exit 1) while every other stage still runs.
+   */
+  misconfigured?: boolean;
   dailyLimit: number;
   reserveRatio: number;
   /** Absolute http(s) base URL of the web app, without trailing slash. Email links are built only from it. */
@@ -77,19 +82,24 @@ function parseSiteUrl(value: string): string | null {
   return url.href.replace(/\/+$/, "");
 }
 
-export type EmailEnv =
-  | { ok: true; email: EmailConfig; brevo: { apiKey: string; from: { name: string; email: string } } | null }
-  | { ok: false };
+export interface EmailEnv {
+  email: EmailConfig;
+  /** Sender settings; null when email is disabled or misconfigured. */
+  brevo: { apiKey: string; from: { name: string; email: string } } | null;
+}
 
 /**
  * Reads the email settings from the environment. Without `BREVO_API_KEY` email is disabled. With it,
- * `EMAIL_FROM` and `SITE_URL` are required and must be valid; otherwise `{ ok: false }` (a config error).
+ * `EMAIL_FROM` and `SITE_URL` are required and must be valid; otherwise email is enabled but `misconfigured`, so
+ * only the notify stage fails and the rest of the run is unaffected.
  */
 export function loadEmailEnv(env: Record<string, string | undefined>): EmailEnv {
   const apiKey = (env.BREVO_API_KEY ?? "").trim();
-  if (apiKey === "") return { ok: true, email: { ...defaultConfig.email }, brevo: null };
+  if (apiKey === "") return { email: { ...defaultConfig.email }, brevo: null };
   const from = parseEmailFrom(env.EMAIL_FROM ?? "");
   const siteUrl = parseSiteUrl(env.SITE_URL ?? "");
-  if (from === null || siteUrl === null) return { ok: false };
-  return { ok: true, email: { ...defaultConfig.email, enabled: true, siteUrl }, brevo: { apiKey, from } };
+  if (from === null || siteUrl === null) {
+    return { email: { ...defaultConfig.email, enabled: true, misconfigured: true }, brevo: null };
+  }
+  return { email: { ...defaultConfig.email, enabled: true, siteUrl }, brevo: { apiKey, from } };
 }

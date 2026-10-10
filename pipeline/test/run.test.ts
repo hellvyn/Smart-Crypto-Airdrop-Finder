@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Http } from "../src/collectors/types.js";
 import type { ChatFn } from "../src/llm/extract.js";
-import { defaultConfig } from "../src/config.js";
+import { defaultConfig, loadEmailEnv } from "../src/config.js";
 import type { PipelineConfig } from "../src/config.js";
 import type { EmailSender } from "../src/notify/email-sender.js";
 import { runDaily } from "../src/run.js";
@@ -1165,6 +1165,24 @@ describe("runDaily notify stage", () => {
     expect(repo.notificationLog.map((l) => l.refDate)).toEqual(["2026-10-10"]);
     expect(seen.newProjects).toEqual([start]);
     expect(seen.context).toEqual([start]);
+  });
+
+  it("fails only the notify stage when email is enabled but EMAIL_FROM or SITE_URL is bad", async () => {
+    const repo = new MemoryRepo();
+    repo.seedTestUser({ email: "fan@example.test", newAirdropsOptIn: true });
+    const order = traced(repo);
+    const { deps } = setup({ repo });
+    const mail = sender();
+    const env = loadEmailEnv({ BREVO_API_KEY: "xkeysib-1", EMAIL_FROM: "not an address", SITE_URL: "https://saf.test" });
+    await expect(runDaily({ ...deps, sender: mail }, { ...defaultConfig, email: env.email })).rejects.toThrow(/EMAIL_FROM or SITE_URL/);
+    expect(order).toEqual(["score", "purge"]);
+    expect(mail.sent).toEqual([]);
+    const stats = repo.runs[0]?.stats;
+    expect(stats?.failed_step).toBe(7);
+    expect(stats?.run_error).toBe(1);
+    expect(stats?.docs_collected).toBe(5);
+    expect(stats?.assessed).toBe(3);
+    expect(repo.runs[0]?.finishedAt).not.toBeNull();
   });
 
   it("fails the notify stage (not the run's other stages) when email is enabled without a sender", async () => {

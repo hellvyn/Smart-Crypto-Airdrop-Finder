@@ -7,9 +7,8 @@ describe("email config", () => {
   });
 
   it("is disabled without BREVO_API_KEY, whatever else is set", () => {
-    expect(loadEmailEnv({})).toEqual({ ok: true, email: defaultConfig.email, brevo: null });
+    expect(loadEmailEnv({})).toEqual({ email: defaultConfig.email, brevo: null });
     expect(loadEmailEnv({ BREVO_API_KEY: "  ", SITE_URL: "https://saf.test" })).toEqual({
-      ok: true,
       email: defaultConfig.email,
       brevo: null,
     });
@@ -19,7 +18,6 @@ describe("email config", () => {
     expect(
       loadEmailEnv({ BREVO_API_KEY: "xkeysib-1", EMAIL_FROM: "Airdrop Bot <bot@saf.test>", SITE_URL: "https://saf.test/" }),
     ).toEqual({
-      ok: true,
       email: { enabled: true, dailyLimit: 300, reserveRatio: 0.2, siteUrl: "https://saf.test" },
       brevo: { apiKey: "xkeysib-1", from: { name: "Airdrop Bot", email: "bot@saf.test" } },
     });
@@ -33,8 +31,11 @@ describe("email config", () => {
     [{ BREVO_API_KEY: "k", EMAIL_FROM: "bot@saf.test", SITE_URL: "https://saf.test/?x=1" }],
     [{ BREVO_API_KEY: "k", SITE_URL: "https://saf.test" }],
     [{ BREVO_API_KEY: "k", EMAIL_FROM: "not an address", SITE_URL: "https://saf.test" }],
-  ])("is a config error when email is enabled but %j is incomplete or invalid", (env) => {
-    expect(loadEmailEnv(env)).toEqual({ ok: false });
+  ])("is enabled but misconfigured (only the notify stage fails) when %j is incomplete or invalid", (env) => {
+    expect(loadEmailEnv(env)).toEqual({
+      email: { enabled: true, misconfigured: true, dailyLimit: 300, reserveRatio: 0.2, siteUrl: "" },
+      brevo: null,
+    });
   });
 });
 

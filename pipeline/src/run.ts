@@ -152,6 +152,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   await stage(STEP.score, undefined, () => scoreProjects(deps, config, now, stats));
   if (config.email.enabled) {
     await stage(STEP.notify, undefined, async () => {
+      if (config.email.misconfigured) throw new Error("email is enabled but EMAIL_FROM or SITE_URL is missing or invalid");
       const { sender } = deps;
       if (!sender) throw new Error("email is enabled but no sender is configured");
       // The run's start time, not the clock now: a run crossing 00:00 UTC keeps its start date (spec section 8).

@@ -1,7 +1,8 @@
 // Daily pipeline entry point (GitHub Actions). Prints only the numeric run stats as one JSON line:
 // never errors, URLs, document text, project names, emails or wallet addresses (spec section 9).
 // Exits 1 after everything is persisted when a stage, source, ingest, merge, assessment or digest failed.
-// Email digests are sent only when BREVO_API_KEY is set; EMAIL_FROM and SITE_URL are then required.
+// Email digests are sent only when BREVO_API_KEY is set; EMAIL_FROM and SITE_URL are then required, and a missing
+// or invalid one fails only the notify stage (failed_step 7, exit 1): collect, score and purge still run.
 import { createClient } from "@supabase/supabase-js";
 import { defaultConfig, loadEmailEnv } from "./config.js";
 import { createHttp } from "./http.js";
@@ -15,7 +16,7 @@ async function main(): Promise<number> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const emailEnv = loadEmailEnv(process.env);
-  if (!supabaseUrl || !serviceKey || !emailEnv.ok) {
+  if (!supabaseUrl || !serviceKey) {
     console.log(JSON.stringify({ config_error: 1 }));
     return 1;
   }
