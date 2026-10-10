@@ -28,6 +28,10 @@ stats cakupan, set uji scam). Plan 6 bergantung ke plan ini (tabel `project_sign
   meloloskan project yang gagal syarat `curate()`, atau menaikkan level Worth it di atas hasil aturan tanpa AI.
 - Output AI dalam **Bahasa Indonesia**; tiap poin faktual punya `quote` yang lolos `quoteInSource` terhadap teks sumber
   project, kalau gak lolos poin itu dibuang.
+- **Gaya tulisan output AI** (sama dengan Global Constraints Plan 6): prompt sistem semua analisis memuat daftar kata
+  terlarang, larangan em dash, nada santai dengan "kamu", dan variasi panjang kalimat. `postProcess` mengganti `—`
+  di teks Bahasa Indonesia (bukan di `quote`) dengan `, `. Kata terlarang gak membuang poin (isi faktual lebih penting
+  dari gaya), tapi dihitung di stats `ai_style_violations` dan ikut direview owner di gerbang G13. Test di Task 6.
 - Sinyal terverifikasi (`tvl`, `coingecko_listed`, `vc_backer`) cuma menempel kalau **registrable domain sama**. Cocok
   nama saja gak pernah diterima.
 - Ambang angka dari spec: TVL ≥ $10.000.000 (sinyal legit), TVL ≥ $100.000.000 (+2 worth), task > 8 (−1), cache

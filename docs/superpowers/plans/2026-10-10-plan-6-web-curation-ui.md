@@ -55,6 +55,19 @@ pengunjung; Kelayakan, urutan "paling cuan", Keputusan AI, dan effort khusus mem
   | rekam jejak (#43) | "Dari {total} airdrop yang lolos kurasi sebelum tokennya diperdagangkan dan sudah berakhir: {listed} punya token diperdagangkan, {noToken} berakhir tanpa token, {riskRaised} belakangan berisiko tinggi." |
   | urutan publik | "Terbaru dicek" |
 - Gak pernah ada teks "aman", "safe", "dijamin", atau "pasti untung".
+- **Gaya tulisan (owner, 2026-10-10, ditulis ulang dengan skill humanizer):**
+  - Kata terlarang di teks yang dilihat pengguna: delve, testament, realm, crucial, multifaceted, in conclusion,
+    furthermore, krusial, esensial, komprehensif, holistik, inovatif, revolusioner, seamless, "selain itu", "lebih
+    lanjut", "kesimpulannya", "di era", "mari kita", "tak hanya … tetapi juga". **Gak ada em dash (—)**, termasuk di
+    `<title>`; pakai koma, titik, atau "·".
+  - Variasi panjang kalimat: campur kalimat sangat pendek dan tegas dengan kalimat yang lebih panjang. Paragraf gak
+    boleh berisi kalimat yang panjang dan bobotnya sama rata.
+  - Nada santai, bahasa sehari-hari yang wajar ("udah", "gak", "kamu"), boleh opini "kami" dan detail spesifik
+    (mis. "06.00 WIB", "grup Telegram atau DM"). Gak ada angka atau klaim yang dikarang.
+  - Hindari pola tiga serangkai, kalimat "bukan X, tapi Y", slogan bertiga, dan kartu/kalimat yang strukturnya kembar.
+  - Tanda kutip lurus ("…"), bukan kutip miring.
+  - Test: `apps/web/test/copy-style.test.ts` memindai `lib/copy.ts` dan glosarium: gagal kalau ada kata terlarang atau
+    karakter `—`. Ditambahkan di Task 2.
 - Badge "terverifikasi" cuma untuk sinyal `verified = true`. `claimed_backer` selalu tampil sebagai klaim.
 - Semua link keluar lewat `ExternalLink` (rel noopener noreferrer nofollow) dan URL yang sudah dibersihkan referral.
 - Anon key saja di web; service role gak pernah masuk `apps/web`.
