@@ -95,3 +95,32 @@ Ruling: `/?deleted=1` stays on the landing with a notice — keeps the delete-ac
 - G1-1b merged: 615393e, 2bb58a8. Stack restarted with the new config.toml. Tests: core 134, pipeline 203, web 244 unit · typecheck ok · pgTAP 110 · e2e 60/60.
 - G1-1c ruling: landing anchors follow the locked mockup (`#cara`, `#jejak`; the header from T3 links them), not the plan's `#kenapa`. Ruling: mockup ids win — the brief says "persis mockup" and the header already uses them — costs one id rename if the owner prefers `#kenapa`.
 - G1-1c ruling: the header "Track record" link points at a block Plan 6 Task 4 renders later, so until then it scrolls to the top. Ruling: keep the link — removing and re-adding it is churn — costs a dead anchor until Plan 6.
+- G1-1c started: P7.T4 from 4287501 (workflow run wf_354ba2f1-eed)
+
+---
+
+# SDD ledger — plan: docs/superpowers/plans/2026-10-10-plan-4-data-and-ai-foundation.md
+
+## Pre-flight scan (from the dependency map, rows checked against the plan text)
+
+| Pair or task | Shared surface | Finding | Ruling |
+|---|---|---|---|
+| T3 × T4 | `pipeline/src/llm/extract.ts`, `pipeline/test/llm.test.ts` | T3 rekeys the breaker and adds `servedModel` in `extractWithFallback`. T4 rewrites `postProcess` | T3 in 2a, T4 in 2b |
+| T3 × T5 | `supabase-repo.ts` trio, `0008` → `0009` | T5's pgTAP asserts `extractions.served_model` (0008) | T5 in 2c |
+| T4 × T5/T6 | v3 schema | Real dependency | T5 and T6 in 2c |
+| T2 × T7 | crt.sh fallback | `scam-set/run.ts` uses T2's enrichment | T7 in 2b |
+| T5 × T9 | `0009_extraction_v3.sql`, `extraction_v3.test.sql`, `merge.ts` | T9 edits a migration T5 created | T9 in 2d. 0009 is not applied anywhere persistent between them, so editing it in the same wave is allowed |
+| T8 × T9 | `pipeline/src/steps/collect.ts`, `config.ts` | Both edit `collectSources` | T8 in 2a, T9 in 2d |
+| T1 × T9 | `pipeline/src/collectors/html-text.ts` | T1 changes the `embedLinks` `onVisit` signature. T9 adds the host filter | Sequential |
+| T2 × T3 | `docs/ops/pipeline.md`, `run.test.ts` | Parallel in 2a. Different sections | Controller merges: union of the doc sections and the tests |
+| T1 self | Files | `html-text.ts` `onVisit` receives only a URL, but the task needs `data-outbound-host` from the element | Changing `html-text.ts` (shared with `telegram.ts`) is in scope |
+| T2 self | test helpers | `sequenceHttp` and the `CRT` constant in the snippet do not exist | Write them in the test |
+| T3 self | Files | Step 3 edits `pipeline/eval/run-eval.ts`, which is not listed. Step 4's "114 pgTAP lama" count is stale (110 after P7) | Edit `run-eval.ts`. "All existing pgTAP pass" replaces the number |
+| T6 self | Steps 4-5 | Need production Supabase credentials (export cases) and a live eval run. freellm and NVIDIA are reachable. Production DB credentials are not in this container | Steps 1-3 in full. Steps 4-5 are reported as blocked, with the exact command for the owner. No fake numbers |
+| T7 self | arity, ignore, network | The interface says `toRiskInput(c, enrich)`, but the test calls it with 3 args. `.gitignore` does not cover `scam-set/cases/`. Step 4 needs crt.sh, which is blocked by the network policy | Follow the test (3 args). Add the ignore pattern. Run Step 4 with what is reachable (GitHub raw, GoPlus, RDAP) and report crt.sh as blocked |
+| T8 self | Files | `collect.ts` must change (new `opts.now`, listing date in the document text) | In scope. Every DefiLlama doc hash changes once (expected) |
+| T9 self | host checker | The plan says to extend the existing check that refuses airdrops.io, but no such function exists in `merge.ts` or core. The only one is `isAggregatorHost` in `html-text.ts` | One single non-project-host check, extended from `isAggregatorHost` (airdrops.io, alphadrops.net and the config intermediary hosts, exact host match), applied wherever an official URL or domain is derived. Its location is the implementer's call, but it must be one source |
+| T9 self | network | `www.alphadrops.net` is blocked by the network policy (apex `alphadrops.net` answers 200) | Tests use fixtures. No live run is required by the plan |
+
+Ruling: T6 Steps 4-5 and T7's crt.sh part are reported blocked, not faked — the container has no production DB credentials and crt.sh is denied — costs an owner-run of two documented commands.
+Ruling: one non-project-host check extended from `isAggregatorHost` — the plan's named check does not exist and two checks would drift — costs a move if the owner wants it in core.
