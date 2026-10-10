@@ -73,6 +73,7 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 27 | Dua jenis peluang | List dipisah jadi tab **"Live now"** (live/announced) dan **"Early bets"** (speculative); `worth()` meranking di dalam tab |
 | 28 | Standar tampil | Project cuma tampil kalau cek keamanan kuncinya jalan; paywall baru dinyalakan setelah gerbang kualitas §12 terpenuhi |
 | 29 | Bahasa | **Bahasa Indonesia saja** untuk UI web, email, dan semua output AI (menggantikan asumsi v1 "UI bahasa Inggris dulu"). Konten sumber berbahasa Inggris diterjemahkan/diringkas AI |
+| 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan (rekomendasi, menunggu konfirmasi) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
 penuh oleh owner (gak skalabel). API funding berbayar ditunda (lihat §11).
@@ -414,11 +415,26 @@ dari "Data terverifikasi"; semua output Bahasa Indonesia (keputusan #29); hasil 
 | A5 | **Farming Coach (chat)** | Rencana farming personal dari modal, jumlah wallet, dan waktu member, berdasar data kurasi | #4 |
 | A6 | **Estimasi effort + terjemahan langkah** | Menit per hari, modal, gas; langkah diringkas ke Bahasa Indonesia | #1 |
 
-**Provider:** AI pribadi owner di `https://freellm.hellvyn.id/` sebagai model utama. [UNKNOWN] format API, daftar model,
-limit, biaya, streaming/JSON, dan kualitas Bahasa Indonesia. Adapter sekarang sudah OpenAI-compatible
-(`{base}/chat/completions`, streaming, `baseUrl` bisa diganti) [FACT, `pipeline/src/llm/nvidia.ts`]. Rencana: tiap model
-punya `baseUrl` + key sendiri, NVIDIA jadi cadangan lewat circuit breaker (menunggu keputusan owner). Kunci disimpan
-sebagai secret (`LLM_API_KEY` di GitHub Actions dan Vercel server-side), gak pernah di kode atau chat.
+**Provider (keputusan #30):** AI pribadi owner `https://freellm.hellvyn.id/v1`, model **`auto`** (keputusan owner:
+pakai `auto`, tanpa eval sekarang). Fakta dari pengecekan 2026-10-10:
+- OpenAI-compatible (`/v1/models`, `/v1/chat/completions`) [FACT]; adapter yang ada cocok, cukup `baseUrl` + key per model.
+- Router ke model gratis: 4.150 model terdaftar, 170 tersedia; nama seperti `claude-opus-4-5` adalah "slot" yang
+  di-route ke model gratis [FACT]. `auto` memilih model per request (contoh: `gpt-oss:120b`), jadi model yang menjawab
+  bisa berbeda antar request [FACT/INFERENCE].
+- Rate limit upstream nyata: eval parsial `deepseek-v4-flash` 7 dari 8 kasus gagal `http_429`, 1 kasus terjawab dengan
+  status salah [FACT]. `gemini-3.8-flash` 502 di 30 detik tanpa streaming → streaming wajib (sudah) [FACT].
+- **Endpoint menjawab tanpa API key** [FACT]. Owner perlu mengaktifkan autentikasi sebelum produk dibuka; adapter tetap
+  mengirim `LLM_API_KEY`.
+
+Konsekuensi desain:
+- **Cadangan NVIDIA** (`glm-5.3-flash` → `kimi-k3` → `gemma-4-31b-it`) lewat circuit breaker, supaya pipeline harian gak
+  gagal total saat router kena rate limit (rekomendasi; menunggu konfirmasi owner).
+- Tiap hasil AI menyimpan **model yang benar-benar menjawab** (dari field `model` di respons), supaya penurunan kualitas
+  bisa ditelusuri ke model tertentu.
+- Kunci disimpan sebagai secret (`LLM_API_KEY`, `LLM_BASE_URL` di GitHub Actions dan Vercel server-side), gak pernah di kode
+  atau chat.
+- Eval tetap jadi **syarat sebelum paywall** (G4–G6, G11–G13), bukan sekarang. Karena `auto` bisa berganti model, eval
+  diulang berkala (mis. mingguan) dan hasilnya dicatat.
 
 **Gerbang kualitas tambahan (melengkapi §12):**
 
