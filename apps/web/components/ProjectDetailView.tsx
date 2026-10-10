@@ -1,5 +1,5 @@
 import { ExternalLink } from "./ExternalLink";
-import { RiskBadge } from "./RiskBadge";
+import { RiskLine } from "./RiskLine";
 import { StatusBadge } from "./StatusBadge";
 import {
   coverageLine,
@@ -40,8 +40,8 @@ function EvidenceItem({ e }: { e: Evidence }) {
 }
 
 export function ProjectDetailView({ project }: { project: ProjectDetail }) {
-  // A claim URL that is not http(s) is not linkable, so the "Official checker" label is hidden with it.
-  const claimLinks = project.links.filter((l) => l.kind === "claim" && safeHttpUrl(l.url) !== null);
+  // A claim URL that is not http(s) is not linkable: RiskLine hides the "Official checker" label, and the URL is
+  // listed as plain text under Links instead.
   const otherLinks = project.links.filter((l) => l.kind !== "claim");
   const unsafeClaimLinks = project.links.filter((l) => l.kind === "claim" && safeHttpUrl(l.url) === null);
   const conflictEvidence = project.conflict ? project.evidence.filter((e) => e.field === "status") : [];
@@ -54,16 +54,7 @@ export function ProjectDetailView({ project }: { project: ProjectDetail }) {
         {project.tokenSymbol ? <span className="muted"> ({project.tokenSymbol})</span> : null}
       </h1>
 
-      <div className="badges" data-testid="risk-line">
-        <RiskBadge level={project.risk?.level ?? project.riskLevel} />
-        {claimLinks.map((l) => (
-          <span key={l.url} className="claim-link">
-            <ExternalLink href={l.url} title={hostOf(l.url)}>
-              Official checker (unverified)
-            </ExternalLink>
-          </span>
-        ))}
-      </div>
+      <RiskLine level={project.risk?.level ?? project.riskLevel} links={project.links} testId="risk-line" />
       <p className="badges">
         <StatusBadge status={project.status} />
       </p>

@@ -76,6 +76,10 @@ test("a signed-in user with a fresh cached result sees it without any provider c
 
   await page.goto(`/projects/${seed.main.slug}`);
   await expect(page.getByTestId("wallet-check")).toHaveCount(1);
+  // Spec §7: the risk badge and the official checker link sit next to the wallet activity check.
+  const riskLine = page.getByRole("region", { name: "Wallet activity" }).getByTestId("wallet-risk-line");
+  await expect(riskLine.getByTestId("risk-badge")).toHaveText("Risk High");
+  await expect(riskLine.getByRole("link", { name: "Official checker (unverified)" })).toHaveAttribute("href", seed.main.claimUrl);
   await page.getByRole("button", { name: /Check wallet activity on Ethereum/ }).click();
   await expect(page.getByText("Wallet activity on Ethereum: 42 transactions, first 2021-03-05, last 2026-09-30, active 7+ months")).toBeVisible();
 
@@ -134,4 +138,28 @@ test("the hourly limit holds under parallel requests: 5 at once with 9 used lets
   const { count, error: ce } = await db.from("wallet_check_requests").select("*", { count: "exact", head: true }).eq("user_id", userId);
   if (ce) throw ce;
   expect(count).toBe(10);
+});
+
+test("a signed-in user without wallets is pointed to /wallets from the header and the project page", async ({ page }) => {
+  const email = uniqueEmail("wa-nowallet");
+  await createConfirmedUser(email, PASSWORD);
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Log in" }).click();
+  await expect(page).toHaveURL(/\/watchlist$/);
+
+  await page.getByRole("banner").getByRole("link", { name: "Wallets" }).click();
+  await expect(page).toHaveURL(/\/wallets$/);
+
+  await page.goto(`/projects/${seed.main.slug}`);
+  await expect(page.getByRole("button", { name: /Check wallet activity/ })).toHaveCount(0);
+  await page.getByRole("link", { name: "Add a wallet to check wallet activity" }).click();
+  await expect(page).toHaveURL(/\/wallets$/);
+});
+
+test("signed out, the header has no Wallets link", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("banner").getByRole("link", { name: "Log in" })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("link", { name: "Wallets" })).toHaveCount(0);
 });
