@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Daftar airdrop · AirdropIQ</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&amp;family=Barlow:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F7F7F2}
+a{color:#111111}a:hover{color:#C2410C}
+.hazard{background:repeating-linear-gradient(-45deg,#111111 0 14px,#FF5A1F 14px 28px)}
+.wrap{max-width:1240px;margin:0 auto;padding:0 32px}
+.ticket{display:grid;grid-template-columns:112px minmax(0,2.1fr) minmax(0,2fr) minmax(0,1.3fr) minmax(0,1.1fr);gap:24px;align-items:center}
+@media (max-width:960px){.ticket{grid-template-columns:minmax(0,1fr)}.nav{display:none}.wrap{padding:0 16px}}
+</style>
+</helmet>
+<div style="font-family:'Barlow',system-ui,sans-serif;color:#111111;background:#F7F7F2;min-height:100vh">
+<div class="hazard" style="height:10px"></div>
+
+<header style="border-bottom:3px solid #111111">
+<div class="wrap" style="display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px">
+<a href="CLanding.dc.html" style="display:flex;align-items:center;gap:12px;text-decoration:none">
+<span style="width:34px;height:34px;border:3px solid #111111;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:16px">IQ</span>
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:26px;letter-spacing:1px;text-transform:uppercase">AirdropIQ</span>
+</a>
+<nav class="nav" style="display:flex;gap:28px;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">
+<a href="CList.dc.html" style="text-decoration:none;border-bottom:3px solid #FF5A1F">Airdrop</a>
+<a href="#" style="text-decoration:none">Garapan saya</a>
+<a href="#" style="text-decoration:none">Watchlist</a>
+</nav>
+<div style="display:flex;align-items:center;gap:4px;border:2px solid #111111;padding:3px;background:#FFFFFF">
+<span style="font-size:11px;font-weight:600;padding:0 6px">Mockup: lihat sebagai</span>
+<button type="button" onClick="{{asVisitor}}" style="{{visitorBtn}}">Pengunjung</button>
+<button type="button" onClick="{{asMember}}" style="{{memberBtn}}">Member</button>
+</div>
+</div>
+</header>
+
+<main class="wrap" style="padding-top:36px;padding-bottom:64px;display:flex;flex-direction:column;gap:22px">
+<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap">
+<h1 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:64px;line-height:0.92;text-transform:uppercase">Update hari ini</h1>
+<div style="display:flex;gap:0;border:3px solid #111111;background:#FFFFFF">
+<div style="padding:10px 16px;border-right:2px solid #111111"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;line-height:1">[N]</div><div style="font-size:12px;font-weight:700;text-transform:uppercase">dicek</div></div>
+<div style="padding:10px 16px"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;line-height:1;color:#1F7A45">[M]</div><div style="font-size:12px;font-weight:700;text-transform:uppercase">lolos</div></div>
+</div>
+</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:3px solid #111111">
+<div style="display:flex;gap:0;flex-wrap:wrap">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}} · {{t.count}}</button>
+</sc-for>
+</div>
+<span style="font-size:13px;font-weight:600;padding-bottom:8px">Urutan: <b style="text-transform:uppercase">{{sortLabel}}</b></span>
+</div>
+
+<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+<label style="display:flex;align-items:center;gap:8px;background:#FFFFFF;border:2px solid #111111;padding:0 12px;height:44px;flex:1 1 260px;min-width:0">
+<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#111111" stroke-width="2.5" stroke-linecap="square"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+<input type="search" placeholder="Cari nama atau chain" style="background:transparent;border:0;outline:0;color:#111111;font:inherit;font-size:15px;width:100%">
+</label>
+<button type="button" style="height:44px;background:#FFFFFF;border:2px solid #111111;font:inherit;font-size:14px;font-weight:700;padding:0 14px;text-transform:uppercase">Risiko: semua</button>
+<button type="button" style="height:44px;background:#FFFFFF;border:2px solid #111111;font:inherit;font-size:14px;font-weight:700;padding:0 14px;text-transform:uppercase">Chain: semua</button>
+<sc-if value="{{isMember}}" hint-placeholder-val="{{ false }}">
+<button type="button" style="height:44px;background:#FFFFFF;border:2px solid #111111;font:inherit;font-size:14px;font-weight:700;padding:0 14px;text-transform:uppercase">Worth it: semua</button>
+</sc-if>
+<span style="font-size:11px;font-weight:700;text-transform:uppercase;border:2px dashed #111111;padding:4px 8px">Data contoh</span>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:14px">
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="4">
+<a href="CProject.dc.html" class="ticket" style="text-decoration:none;background:#FFFFFF;border:2px solid #111111;padding:18px 22px">
+<div style="{{r.stampStyle}}"><span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:21px;line-height:1">{{r.stampTop}}</span><span style="font-size:11px;font-weight:700">{{r.stampBottom}}</span></div>
+<div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:32px;text-transform:uppercase;line-height:1">{{r.name}}</span>
+<span style="font-size:14px;color:#2B2B28">{{r.meta}} · Risiko <b>{{r.risk}}</b></span>
+<sc-if value="{{r.claimOpen}}" hint-placeholder-val="{{ false }}">
+<span style="align-self:flex-start;font-size:12px;font-weight:700;text-transform:uppercase;background:#111111;color:#F7F7F2;padding:4px 8px">Claim open · link dicek</span>
+</sc-if>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<sc-for list="{{r.signals}}" as="s" hint-placeholder-count="2">
+<span style="{{s.style}}">{{s.text}}</span>
+</sc-for>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<span style="font-size:15px;font-weight:700">{{r.deadline}}</span>
+<span style="{{r.checkedStyle}}">{{r.checked}}</span>
+</div>
+<div>
+<sc-if value="{{r.showWorth}}" hint-placeholder-val="{{ false }}">
+<span style="{{r.worthStyle}}">{{r.worth}}</span>
+</sc-if>
+<sc-if value="{{r.showLock}}" hint-placeholder-val="{{ true }}">
+<span style="display:inline-flex;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border:2px dashed #111111;padding:8px 10px">Member only</span>
+</sc-if>
+</div>
+</a>
+</sc-for>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1700}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { tab: 'live_now', member: false }; }
+  renderVals() {
+    const member = this.state.member, tab = this.state.tab;
+    const stamp = (deg, color) => 'width:92px;height:92px;border-radius:50%;border:4px solid ' + color + ';color:' + color + ';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transform:rotate(' + deg + 'deg)';
+    const pass = (deg) => ({ stampTop: 'LOLOS', stampBottom: '4/4 CEK', stampStyle: stamp(deg, '#1F7A45') });
+    const ended = (deg) => ({ stampTop: 'ENDED', stampBottom: 'ARSIP', stampStyle: stamp(deg, '#55554F') });
+    const verified = 'font-size:13px;font-weight:700;border:2px solid #1F7A45;color:#1F7A45;padding:4px 8px';
+    const reported = 'font-size:13px;font-weight:600;border:2px dashed #111111;padding:4px 8px';
+    const plain = 'font-size:13px;font-weight:600;border:2px solid #111111;padding:4px 8px';
+    const fresh = 'font-size:13px;color:#3D3D3A';
+    const stale = 'font-size:13px;font-weight:700;color:#111111;background:#FFD7C2;padding:2px 6px;align-self:flex-start';
+    const worthStyles = {
+      'Sangat worth it': 'display:inline-flex;font-family:Barlow Condensed,sans-serif;font-weight:800;font-size:18px;text-transform:uppercase;background:#FF5A1F;border:2px solid #111111;padding:6px 10px',
+      'Worth it': 'display:inline-flex;font-family:Barlow Condensed,sans-serif;font-weight:800;font-size:18px;text-transform:uppercase;background:#FFFFFF;border:2px solid #111111;padding:6px 10px',
+      'Kurang worth it': 'display:inline-flex;font-family:Barlow Condensed,sans-serif;font-weight:800;font-size:18px;text-transform:uppercase;color:#55554F;border:2px solid #B5B5AE;padding:6px 10px'
+    };
+    const data = {
+      live_now: [
+        { ...pass(-8), name: 'Nebula Perps', meta: 'Perp DEX · Arbitrum', risk: 'Rendah', worth: 'Sangat worth it', rank: 1, fresh: 0, claimOpen: false, deadline: 'Snapshot 30 Nov', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'VC: Paradigm ✓', style: verified }, { text: 'TVL $45 jt', style: plain }] },
+        { ...pass(5), name: 'Orbit Chain', meta: 'L2 · Ethereum', risk: 'Rendah', worth: 'Sangat worth it', rank: 2, fresh: 0, claimOpen: true, deadline: 'Claim s.d. 25 Okt', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'Listed di CoinGecko', style: plain }, { text: 'Source terkurasi', style: plain }] },
+        { ...pass(-3), name: 'Kestrel Lend', meta: 'Lending · Base', risk: 'Sedang', worth: 'Worth it', rank: 3, fresh: 1, claimOpen: false, deadline: 'Belum ada tanggal', checked: 'Dicek kemarin', checkedStyle: fresh, signals: [{ text: 'Menurut AlphaDrops: a16z (lead)', style: reported }] },
+        { ...pass(7), name: 'Pulse Bridge', meta: 'Bridge · Solana', risk: 'Sedang', worth: 'Kurang worth it', rank: 4, fresh: 3, claimOpen: false, deadline: 'Akhir kampanye 12 Des', checked: 'Belum dicek lagi sejak 7 Okt', checkedStyle: stale, signals: [{ text: 'Source terkurasi', style: plain }] }
+      ],
+      early_bets: [
+        { ...pass(-6), name: 'Vega Restake', meta: 'Restaking · Ethereum', risk: 'Rendah', worth: 'Sangat worth it', rank: 1, fresh: 0, claimOpen: false, deadline: 'Belum diumumkan', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'TVL $210 jt', style: plain }, { text: 'Belum ada token', style: plain }] },
+        { ...pass(4), name: 'Lumen AI', meta: 'AI Agents · Multichain', risk: 'Rendah', worth: 'Worth it', rank: 2, fresh: 0, claimOpen: false, deadline: 'Waitlist', checked: 'Dicek hari ini', checkedStyle: fresh, signals: [{ text: 'Menurut AlphaDrops: Sequoia (lead)', style: reported }] },
+        { ...pass(-2), name: 'Drift Options', meta: 'Options · Arbitrum', risk: 'Sedang', worth: 'Kurang worth it', rank: 3, fresh: 2, claimOpen: false, deadline: 'Belum diumumkan', checked: 'Dicek 2 hari lalu', checkedStyle: fresh, signals: [{ text: 'TVL $3 jt', style: plain }] }
+      ],
+      ended: [
+        { ...ended(-5), name: 'Astra Swap', meta: 'DEX · Base', risk: 'Rendah', worth: 'Worth it', rank: 1, fresh: 0, claimOpen: false, deadline: 'Ended 5 Okt 2026', checked: 'Last check 5 Okt', checkedStyle: fresh, signals: [{ text: 'Listed di CoinGecko', style: plain }] },
+        { ...ended(6), name: 'Myriad Points', meta: 'Social · Ethereum', risk: 'Rendah', worth: 'Kurang worth it', rank: 2, fresh: 0, claimOpen: false, deadline: 'Ended 28 Sep 2026', checked: 'Last check 28 Sep', checkedStyle: fresh, signals: [{ text: 'Source terkurasi', style: plain }] }
+      ]
+    };
+    let list = data[tab].slice();
+    if (tab !== 'ended') list.sort(member ? (a, b) => a.rank - b.rank : (a, b) => a.fresh - b.fresh || a.name.localeCompare(b.name));
+    const rows = list.map((r) => ({ ...r, showWorth: member, showLock: !member, worthStyle: worthStyles[r.worth] }));
+    const off = 'background:transparent;border:0;border-bottom:4px solid transparent;font:inherit;font-size:15px;font-weight:700;text-transform:uppercase;padding:12px 16px 10px;cursor:pointer;color:#3D3D3A';
+    const on = 'background:#111111;border:0;border-bottom:4px solid #FF5A1F;font:inherit;font-size:15px;font-weight:700;text-transform:uppercase;padding:12px 16px 10px;cursor:pointer;color:#F7F7F2';
+    const tabs = [['live_now', 'Live sekarang'], ['early_bets', 'Early'], ['ended', 'Ended']].map(([id, label]) => ({
+      label, count: data[id].length, style: id === tab ? on : off, pick: () => this.setState({ tab: id })
+    }));
+    const bOn = 'background:#111111;color:#F7F7F2;border:0;font:inherit;font-size:12px;font-weight:700;padding:6px 10px;cursor:pointer';
+    const bOff = 'background:transparent;color:#111111;border:0;font:inherit;font-size:12px;font-weight:600;padding:6px 10px;cursor:pointer';
+    return {
+      rows, tabs, isMember: member,
+      sortLabel: tab === 'ended' ? 'Baru ended' : (member ? 'Paling worth it' : 'Baru dicek'),
+      visitorBtn: member ? bOff : bOn, memberBtn: member ? bOn : bOff,
+      asVisitor: () => this.setState({ member: false }), asMember: () => this.setState({ member: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

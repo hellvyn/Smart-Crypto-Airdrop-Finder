@@ -4,7 +4,7 @@ Tanggal: 2026-10-10
 Status: **rev. 3, disetujui owner untuk dibuat plan (2026-10-10)**. Rev. 2: perbaikan skor setelah simulasi terhadap data run
 pertama. Rev. 3: akar masalah domain, halaman project vs airdrops.io, fitur AI (§13, detail provider belum lengkap),
 Bahasa Indonesia. Tambahan 2026-10-10: keputusan #40 (airdrop yang berakhir setelah lolos kurasi tetap tampil);
-keputusan #41–#46 (head-to-head AlphaDrops, §15): sumber baru, cek link klaim, rekam jejak, "Dicek", web publik + fitur AI
+keputusan #47–#49 (nama AirdropIQ, desain C, gaya tulisan, §16); keputusan #41–#46 (head-to-head AlphaDrops, §15): sumber baru, cek link klaim, rekam jejak, "Dicek", web publik + fitur AI
 khusus member.
 Dibangun di atas: `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md` (spec v1, sudah live)
 
@@ -94,6 +94,9 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 44 | "Dicek" | Waktu cek terakhir di tiap baris dan halaman; peringatan kalau > 48 jam (§15.4) |
 | 45 | Web publik + fitur member | Menggantikan #24/#33: list, keamanan, kontradiksi, langkah, rekam jejak publik; Kelayakan, urutan "paling cuan", Keputusan AI, effort, Briefing, Coach, tracker, watchlist, wallet khusus member. Dikunci di RLS, bukan cuma UI (§15.5) |
 | 46 | Jalan jadi member | Belum ada tombol/CTA; bagian member menampilkan "Khusus member" saja. Pendaftaran + pembayaran di update berikutnya |
+| 47 | Nama produk | **AirdropIQ** (domain kandidat airdropiq.ai, belum dibeli; airdropiq.com dipakai pihak lain) (§16) |
+| 48 | Desain | Arah C **"Sertifikat inspeksi"**: terang, garis hitam tebal, oranye keselamatan, strip hazard, cap bundar "LOLOS 4/4 CEK". Mockup acuan `docs/design/airdropiq-c/` (§16) |
+| 49 | Gaya tulisan | Ditulis dengan skill humanizer: tanpa klise AI dan em dash, panjang kalimat bervariasi, nada santai dengan opini "kami", boleh campur istilah Inggris yang umum di crypto Indonesia. Teks final = glosarium Plan 6 (§16) |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -614,4 +617,35 @@ beberapa project cukup dicek sekali per run.
   `/airdrops` = list publik; `/login` tetap; signup tetap mati (#31).
 - Bagian khusus member menampilkan "Khusus member" tanpa tombol atau link pendaftaran (#46).
 - Gerbang §12 tetap syarat sebelum owner menarik bayaran dari member.
+
+## 16. Identitas, desain, dan gaya tulisan (keputusan #47–#49)
+
+**Nama:** AirdropIQ. Cek 2026-10-10 [FACT, registry Vercel]: airdropiq.ai tersedia ($160/2 tahun), airdropiq.com dipakai
+pihak lain. Merek dagang dan handle sosial [UNKNOWN], dicek owner sebelum launch.
+
+**Proses memilih desain:** mockup pertama (gelap, ungu, kartu bulat) ditolak owner sebagai "AI slop". Tiga arah dibuat
+dengan isi sama (A laporan riset, B terminal, C sertifikat inspeksi); owner memilih **C**.
+
+**Sistem desain C** (dibangun di Plan 7 Task 3; nilai di bawah adalah sumber kebenaran):
+
+| Token | Nilai |
+|---|---|
+| Latar / permukaan | `#F7F7F2` / `#FFFFFF` |
+| Tinta / teks sekunder / redup | `#111111` / `#2B2B28` / `#3D3D3A` |
+| Garis lembut | `#CFCFC8` |
+| Aksen (isian saja) / teks aksen kecil | `#FF5A1F` / `#C2410C` |
+| Lolos / ended / hati-hati | `#1F7A45` / `#55554F` / `#B45309` |
+| Isian peringatan / isian member | `#FFD7C2` / `#FFF1EA` |
+| Strip hazard | `repeating-linear-gradient(-45deg, #111111 0 14px, #FF5A1F 14px 28px)` |
+| Huruf | Barlow Condensed 800 huruf kapital untuk judul; Barlow 400–700 untuk isi |
+| Bentuk | Sudut 0; garis 2 px (kartu), 3 px (header, kontainer utama, tombol), putus-putus untuk "Member only" |
+| Cap | Lingkaran bergaris 3–5 px, diputar −10° sampai 10°; "LOLOS 4/4 CEK" hijau, "ENDED" abu, rekam jejak hijau/abu/oranye tua |
+| Tema | Terang saja di versi ini |
+
+Elemen yang wajib konsisten: strip hazard di atas tiap halaman, link phishing dibungkus strip hazard dan gak bisa
+diklik, tiket bergaris untuk tiap airdrop, bagian halaman project bernomor "01 · …".
+
+**Gaya tulisan:** aturan lengkap ada di Global Constraints Plan 6 (kata terlarang, tanpa em dash, variasi kalimat,
+nada santai, campur Inggris yang wajar). Output AI ikut aturan yang sama (Plan 5). Teks yang dikutip di bagian lain spec
+ini (mis. "Khusus member", "Sudah berakhir") adalah rancangan awal; teks final mengikuti glosarium Plan 6.
 

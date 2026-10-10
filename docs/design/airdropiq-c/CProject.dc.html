@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Nebula Perps · AirdropIQ</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&amp;family=Barlow:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F7F7F2}
+a{color:#111111}a:hover{color:#C2410C}
+.hazard{background:repeating-linear-gradient(-45deg,#111111 0 14px,#FF5A1F 14px 28px)}
+.wrap{max-width:1240px;margin:0 auto;padding:0 32px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:28px;align-items:start}
+@media (max-width:980px){.layout{grid-template-columns:minmax(0,1fr)}.nav{display:none}.wrap{padding:0 16px}}
+</style>
+</helmet>
+<div style="font-family:'Barlow',system-ui,sans-serif;color:#111111;background:#F7F7F2;min-height:100vh">
+<div class="hazard" style="height:10px"></div>
+
+<header style="border-bottom:3px solid #111111">
+<div class="wrap" style="display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px">
+<a href="CLanding.dc.html" style="display:flex;align-items:center;gap:12px;text-decoration:none">
+<span style="width:34px;height:34px;border:3px solid #111111;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:16px">IQ</span>
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:26px;letter-spacing:1px;text-transform:uppercase">AirdropIQ</span>
+</a>
+<nav class="nav" style="display:flex;gap:28px;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">
+<a href="CList.dc.html" style="text-decoration:none;border-bottom:3px solid #FF5A1F">Airdrop</a>
+<a href="#" style="text-decoration:none">Garapan saya</a>
+</nav>
+<div style="display:flex;align-items:center;gap:4px;border:2px solid #111111;padding:3px;background:#FFFFFF">
+<span style="font-size:11px;font-weight:600;padding:0 6px">Mockup: lihat sebagai</span>
+<button type="button" onClick="{{asVisitor}}" style="{{visitorBtn}}">Pengunjung</button>
+<button type="button" onClick="{{asMember}}" style="{{memberBtn}}">Member</button>
+</div>
+</div>
+</header>
+
+<main class="wrap" style="padding-top:24px;padding-bottom:72px;display:flex;flex-direction:column;gap:24px">
+<a href="CList.dc.html" style="font-size:13px;font-weight:700;text-transform:uppercase;text-decoration:none">← Balik ke list</a>
+
+<section style="display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;border-bottom:3px solid #111111;padding-bottom:24px">
+<div style="display:flex;flex-direction:column;gap:10px;min-width:0;flex:1 1 520px">
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;font-weight:700;text-transform:uppercase">
+<span>Hasil cek</span><span>·</span><span>Perp DEX · Arbitrum</span><span style="border:2px dashed #111111;padding:2px 6px;font-size:11px">Data contoh</span>
+</div>
+<h1 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:84px;line-height:0.9;text-transform:uppercase">Nebula Perps</h1>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<span style="font-size:14px;font-weight:700;text-transform:uppercase;border:2px solid #111111;padding:5px 10px">Live</span>
+<span style="font-size:14px;font-weight:700;text-transform:uppercase;border:2px solid #1F7A45;color:#1F7A45;padding:5px 10px">Risiko rendah</span>
+<span style="font-size:14px;font-weight:700;text-transform:uppercase;background:#111111;color:#F7F7F2;padding:5px 10px">Claim open · link dicek</span>
+<span style="font-size:14px;font-weight:600;padding:5px 4px">Dicek hari ini</span>
+<sc-if value="{{member}}" hint-placeholder-val="{{ false }}">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:18px;text-transform:uppercase;background:#FF5A1F;border:2px solid #111111;padding:3px 10px">Sangat worth it</span>
+</sc-if>
+</div>
+</div>
+<div style="width:150px;height:150px;border-radius:50%;border:5px solid #1F7A45;color:#1F7A45;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transform:rotate(-9deg);flex:none">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:36px;line-height:1">LOLOS</span>
+<span style="font-size:14px;font-weight:700">4/4 CEK</span>
+<span style="font-size:11px;font-weight:600">10.10.2026</span>
+</div>
+</section>
+
+<div class="layout">
+<div style="display:flex;flex-direction:column;gap:20px;min-width:0">
+
+<section style="background:#FFFFFF;border:2px solid #111111">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 18px;border-bottom:2px solid #111111">
+<h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:24px;text-transform:uppercase">01 · AI verdict</h2>
+<span style="font-size:11px;font-weight:700;text-transform:uppercase;border:2px solid #111111;padding:2px 6px">Analisis AI</span>
+</div>
+<sc-if value="{{member}}" hint-placeholder-val="{{ false }}">
+<div style="padding:18px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:40px;line-height:1;text-transform:uppercase;background:#1F7A45;color:#FFFFFF;padding:6px 16px">Garap</span>
+<span style="font-size:15px">Confidence: <b>sedang</b></span>
+</div>
+<sc-for list="{{points}}" as="p" hint-placeholder-count="3">
+<div style="display:grid;grid-template-columns:32px minmax(0,1fr);gap:10px;border-top:2px dashed #111111;padding-top:12px">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:20px">{{p.n}}</span>
+<div style="display:flex;flex-direction:column;gap:6px">
+<span style="font-size:16px;line-height:1.5">{{p.text}}</span>
+<span style="font-size:13px;color:#3D3D3A">"{{p.quote}}" · <a href="#">source</a></span>
+</div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{visitor}}" hint-placeholder-val="{{ true }}">
+<div style="margin:18px;border:2px dashed #111111;padding:22px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Member only</div>
+</sc-if>
+</section>
+
+<section style="background:#FFFFFF;border:2px solid #111111">
+<h2 style="margin:0;padding:12px 18px;border-bottom:2px solid #111111;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:24px;text-transform:uppercase">02 · Sumber yang beda cerita</h2>
+<div style="padding:18px;display:flex;flex-direction:column;gap:8px">
+<div style="font-size:16px;line-height:1.5">Satu source bilang belum ada token, source lain udah nyebut tanggal TGE.</div>
+<div style="font-size:13px;color:#3D3D3A">"No token has been announced yet" · <a href="#">source 1</a></div>
+<div style="font-size:13px;color:#3D3D3A">"TGE expected in Q1" · <a href="#">source 2</a></div>
+</div>
+</section>
+
+<section style="background:#FFFFFF;border:2px solid #111111">
+<h2 style="margin:0;padding:12px 18px;border-bottom:2px solid #111111;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:24px;text-transform:uppercase">03 · Step garap</h2>
+<div style="padding:6px 18px 18px;display:flex;flex-direction:column">
+<sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+<div style="display:grid;grid-template-columns:44px 96px minmax(0,1fr);gap:12px;align-items:start;border-bottom:2px dashed #CFCFC8;padding:12px 0">
+<span style="width:28px;height:28px;border:3px solid #111111"></span>
+<span style="font-size:12px;font-weight:700;text-transform:uppercase;padding-top:5px">{{s.cadence}}</span>
+<div style="display:flex;flex-direction:column;gap:6px">
+<span style="font-size:16px;line-height:1.45">{{s.text}}</span>
+<sc-if value="{{s.hasLink}}" hint-placeholder-val="{{ true }}">
+<span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px"><a href="#">{{s.link}}</a><span style="font-weight:700;border:2px solid #1F7A45;color:#1F7A45;padding:1px 6px;text-transform:uppercase;font-size:11px">✓ Official domain</span></span>
+</sc-if>
+</div>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section style="background:#FFFFFF;border:2px solid #111111">
+<h2 style="margin:0;padding:12px 18px;border-bottom:2px solid #111111;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:24px;text-transform:uppercase">04 · Security check</h2>
+<div style="padding:18px;display:flex;flex-direction:column;gap:16px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));border:2px solid #111111">
+<sc-for list="{{checks}}" as="c" hint-placeholder-count="4">
+<div style="display:flex;gap:10px;align-items:flex-start;padding:12px;border-right:2px solid #111111">
+<span style="width:22px;height:22px;flex:none;border:3px solid #111111;display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#1F7A45" stroke-width="4" stroke-linecap="square"><path d="M4 12l5 5L20 6"></path></svg></span>
+<span style="display:flex;flex-direction:column"><b style="font-size:14px;text-transform:uppercase">{{c.title}}</b><span style="font-size:14px">{{c.result}}</span></span>
+</div>
+</sc-for>
+</div>
+<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Link claim &amp; app</div>
+<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;border:2px solid #111111;padding:12px 14px">
+<a href="#" style="font-size:15px;font-weight:600">claim.nebula-perps.example</a>
+<span style="font-size:12px;font-weight:700;text-transform:uppercase;border:2px solid #1F7A45;color:#1F7A45;padding:3px 8px">✓ Official domain</span>
+</div>
+<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;border:2px solid #111111;padding:12px 14px">
+<a href="#" style="font-size:15px;font-weight:600">nebula-bonus.example</a>
+<span style="font-size:12px;font-weight:700;text-transform:uppercase;background:#FFD7C2;border:2px solid #111111;padding:3px 8px">⚠ Beda domain dari web official</span>
+</div>
+<div class="hazard" style="padding:8px">
+<div style="background:#FFFFFF;padding:12px 14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+<b style="font-size:15px;text-transform:uppercase">Link di-hide: kedeteksi phishing</b>
+<span style="font-size:14px">Kalau link ini nongol di grup atau DM, jangan dibuka.</span>
+</div>
+</div>
+<div style="font-size:14px;color:#2B2B28">AI kami udah baca halaman claim official-nya dan gak nemu pola scam. <span style="font-size:11px;font-weight:700;text-transform:uppercase;border:2px solid #111111;padding:1px 5px">Analisis AI</span></div>
+</div>
+</section>
+
+<section style="background:#FFFFFF;border:2px solid #111111">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 18px;border-bottom:2px solid #111111">
+<h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:24px;text-transform:uppercase">05 · Estimasi effort</h2>
+<span style="font-size:11px;font-weight:700;text-transform:uppercase;border:2px solid #111111;padding:2px 6px">Analisis AI</span>
+</div>
+<sc-if value="{{member}}" hint-placeholder-val="{{ false }}">
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr))">
+<div style="padding:16px 18px;border-right:2px solid #111111"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:40px;line-height:1">±10</div><div style="font-size:13px;font-weight:700;text-transform:uppercase">menit / hari</div></div>
+<div style="padding:16px 18px;border-right:2px solid #111111"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:40px;line-height:1">$100+</div><div style="font-size:13px;font-weight:700;text-transform:uppercase">modal awal</div></div>
+<div style="padding:16px 18px"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:40px;line-height:1">Rendah</div><div style="font-size:13px;font-weight:700;text-transform:uppercase">gas (L2)</div></div>
+</div>
+<div style="border-top:2px solid #111111;padding:10px 18px;font-size:14px">Source-nya bilang "Easy". Kami kurang setuju. Kamu perlu volume trading tiap hari, dan itu makan modal lebih banyak dari kelihatannya.</div>
+</sc-if>
+<sc-if value="{{visitor}}" hint-placeholder-val="{{ true }}">
+<div style="margin:18px;border:2px dashed #111111;padding:22px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Member only</div>
+</sc-if>
+</section>
+
+<section style="background:#FFFFFF;border:2px solid #111111">
+<h2 style="margin:0;padding:12px 18px;border-bottom:2px solid #111111;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:24px;text-transform:uppercase">06 · Kenapa lolos</h2>
+<div style="display:flex;flex-direction:column">
+<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 18px;border-bottom:2px dashed #CFCFC8"><b>VC: Paradigm ✓</b><span style="font-size:14px;color:#1F7A45;font-weight:700">Verified · portfolio VC, domain cocok</span></div>
+<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 18px;border-bottom:2px dashed #CFCFC8"><b>TVL $45 jt</b><span style="font-size:14px;color:#1F7A45;font-weight:700">Verified · DefiLlama, domain cocok</span></div>
+<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 18px"><b>"Backed by Jump"</b><span style="font-size:14px;font-weight:700">Klaim project, belum verified</span></div>
+</div>
+</section>
+</div>
+
+<aside style="display:flex;flex-direction:column;gap:20px">
+<div style="background:#FFFFFF;border:3px solid #111111">
+<div style="padding:12px 16px;border-bottom:2px solid #111111;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:20px;text-transform:uppercase">Ringkasan</div>
+<div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:2px dashed #CFCFC8;font-size:15px"><span>Snapshot</span><b>30 Nov 2026</b></div>
+<div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:2px dashed #CFCFC8;font-size:15px"><span>Claim</span><b>s.d. 25 Okt</b></div>
+<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:10px 16px;font-size:15px"><a href="#">nebula-perps.example</a><span style="font-size:11px;font-weight:700;text-transform:uppercase;border:2px solid #1F7A45;color:#1F7A45;padding:1px 6px">✓ Official domain</span></div>
+<sc-if value="{{member}}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:8px;padding:16px;border-top:2px solid #111111">
+<button type="button" style="background:#FF5A1F;border:3px solid #111111;font:inherit;font-size:15px;font-weight:800;text-transform:uppercase;padding:13px">Mulai garap</button>
+<button type="button" style="background:#FFFFFF;border:2px solid #111111;font:inherit;font-size:15px;font-weight:700;text-transform:uppercase;padding:12px">Tambah ke watchlist</button>
+<button type="button" style="background:#FFFFFF;border:2px solid #111111;font:inherit;font-size:15px;font-weight:700;text-transform:uppercase;padding:12px">Tanya AI</button>
+</div>
+</sc-if>
+</div>
+<div style="background:#FFFFFF;border:2px solid #111111;padding:14px 16px;display:flex;flex-direction:column;gap:6px">
+<span style="font-size:13px;font-weight:700;text-transform:uppercase">Update terbaru</span>
+<span style="font-size:16px;line-height:1.45">Season 2 points program udah mulai.</span>
+<span style="font-size:13px;color:#3D3D3A">1 Okt 2026 · <a href="#">source</a></span>
+</div>
+</aside>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2600}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { member: false }; }
+  renderVals() {
+    const member = this.state.member;
+    const bOn = 'background:#111111;color:#F7F7F2;border:0;font:inherit;font-size:12px;font-weight:700;padding:6px 10px;cursor:pointer';
+    const bOff = 'background:transparent;color:#111111;border:0;font:inherit;font-size:12px;font-weight:600;padding:6px 10px;cursor:pointer';
+    return {
+      member, visitor: !member,
+      visitorBtn: member ? bOff : bOn, memberBtn: member ? bOn : bOff,
+      asVisitor: () => this.setState({ member: false }), asMember: () => this.setState({ member: true }),
+      points: [
+        { n: 'A', text: 'Alokasi buat community udah ditulis di docs resmi, jadi airdrop-nya bukan sekadar rumor.', quote: '10% of supply is reserved for the community' },
+        { n: 'B', text: 'Backer-nya kami cross-check ke portfolio VC, bukan cuma percaya klaim di web project.', quote: 'Led by Paradigm' },
+        { n: 'C', text: 'Kompetisinya ketat. Points dihitung dari volume, jadi modal kecil dapat bagian kecil.', quote: 'Points are distributed pro rata to trading volume' }
+      ],
+      steps: [
+        { cadence: 'Daily', text: 'Trade minimal sekali di app official-nya.', hasLink: true, link: 'app.nebula-perps.example' },
+        { cadence: 'Weekly', text: 'Cek points di dashboard tiap Senin.', hasLink: false, link: '' },
+        { cadence: 'Sekali', text: 'Bridge aset ke Arbitrum lewat bridge official.', hasLink: true, link: 'bridge.arbitrum.example' },
+        { cadence: 'Sekali', text: 'Connect akun X di halaman points.', hasLink: false, link: '' }
+      ],
+      checks: [
+        { title: 'Permintaan berbahaya', result: 'Gak ditemukan' },
+        { title: 'Nama tiruan', result: 'Gak ditemukan' },
+        { title: 'Umur domain', result: '2 tahun 3 bulan' },
+        { title: 'Phishing list', result: 'Gak ada di list' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

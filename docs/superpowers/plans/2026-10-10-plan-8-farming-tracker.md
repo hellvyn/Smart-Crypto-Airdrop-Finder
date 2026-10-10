@@ -33,16 +33,21 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
   curation) ≥ `start` dan lebih awal dari `end`, `end = endedOn` dan `endKind = "ended"`.
 - Mingguan = minggu ISO (Senin–Minggu) di zona waktu member.
 - Batas: 50 project aktif per member, 30 task aktif per project (pelanggaran → error `23514`, pesan Bahasa Indonesia di UI).
-- Teks UI Bahasa Indonesia (gaya "kamu"): "Mulai garap", "Berhenti garap", "Garapan saya", "Hari ini", "Mingguan",
-  "Minggu ini sudah", "Tambah task", "Ambil ulang langkah dari sumber", "Streak: {n} hari", "Sisa {n} hari sampai snapshot", "Sisa {n} hari sampai akhir kampanye", "Berakhir {tanggal}", heatmap tooltip
-  "{tanggal}: {selesai}/{total} task harian".
+- Teks UI (gaya "kamu", campur istilah Inggris yang umum, aturan gaya tulisan Plan 6): "Mulai garap", "Berhenti garap",
+  "Garapan saya", "Hari ini", "Weekly", "Minggu ini udah", "Tambah task", "Ambil ulang step dari source", "Streak: {n}
+  hari", "Sisa {n} hari sampai snapshot", "Sisa {n} hari sampai akhir campaign", "Ended {tanggal}", heatmap tooltip
+  "{tanggal}: {selesai}/{total} daily task". Label cadence "Daily" / "Weekly".
+- **Desain C (spec §16, komponen Plan 7 Task 3):** kartu project = `Ticket`/`SectionCard` bergaris 2 px tanpa sudut
+  bulat; tombol "Mulai garap" = `Button` primary. Warna sel heatmap: `null` `#E8E8E2`, level `0` `#FFFFFF` bergaris
+  `#CFCFC8`, `1` `#BFE3CC`, `2` `#5FAE80`, `3` `#1F7A45`; sel `upcoming` bergaris putus-putus `#CFCFC8` tanpa isi. Level
+  dibedakan juga dari terang-gelapnya (bukan cuma warna) dan tooltip.
 - Task awal cuma dari langkah `cadence` `daily`/`weekly`. Langkah `once` gak masuk tracker.
 
 ## Review Focus
 
 1. **Member ganti zona waktu di Settings** → hari yang sudah lewat gak berubah warnanya (centang menyimpan tanggal
    lokal saat dicentang). Test di Task 1 dan 2.
-2. **Project tanpa langkah Harian dari sumber** → tetap bisa digarap; kartu menampilkan "Belum ada task harian. Tambah
+2. **Project tanpa langkah Harian dari sumber** → tetap bisa digarap; kartu menampilkan "Belum ada daily task. Tambah
    task sendiri." Test di Task 4.
 3. **Task diarsipkan di tengah tahun** → hari sebelum diarsipkan tetap memperhitungkan task itu, hari sesudahnya gak.
    Test di Task 2.
@@ -206,14 +211,14 @@ it("computes the local day in a time zone", () => {
   sel `upcoming` bergaris tanpa warna, label bulan di atas,
   `aria-label`/`title` per sel sesuai teks Global Constraints; elemen grafis bukan satu-satunya informasi (ada
   ringkasan "Streak: {n} hari", "{x} dari {y} task hari ini", dan "Sisa {n} hari sampai snapshot" / "Sisa {n} hari sampai
-  akhir kampanye" kalau ada deadline).
+  akhir campaign" kalau ada deadline).
 - `FarmingCard`: nama project (link ke detail), deadline terdekat, checklist Harian (checkbox form → `submitCheck`),
-  Mingguan dengan "Minggu ini sudah", form "Tambah task", tombol "Ambil ulang langkah dari sumber", "Berhenti garap",
+  Mingguan dengan "Minggu ini udah", form "Tambah task", tombol "Ambil ulang step dari source", "Berhenti garap",
   heatmap.
 - Kosong: "Kamu belum menggarap project apa pun. Buka sebuah airdrop dan klik Mulai garap."
 
 - [ ] **Step 1: Test yang gagal** — komponen: `Heatmap` merender satu sel per hari rentang dengan kelas level yang benar, sel `upcoming` bergaris, dan tooltip;
-  `FarmingCard` tanpa task harian menampilkan "Belum ada task harian. Tambah task sendiri."; e2e: login → buka project →
+  `FarmingCard` tanpa task harian menampilkan "Belum ada daily task. Tambah task sendiri."; e2e: login → buka project →
   "Mulai garap" → `/garapan` menampilkan kartu; centang satu task → sel hari ini naik level dan teks "1 dari N task
   hari ini"; uncentang → turun; "Berhenti garap" → kartu hilang; user lain gak melihat apa pun di `/garapan`.
 - [ ] **Step 2–4:** gagal → implementasi → `pnpm --filter web test && pnpm --filter web e2e` lulus.
