@@ -77,3 +77,12 @@ Ruling: `/?deleted=1` stays on the landing with a notice — keeps the delete-ac
 
 ## Progress
 - G1-1a started: P7.T1 ∥ P7.T3 from a38c192 (workflow run wf_3a0df074-9f4)
+- P7 Task 1: complete (commits a38c192..a48e6b0, review clean). Moved `main()` body into `pipeline/src/daily-job.ts` so the Brevo-in-env test is real. Deleted `pipeline/test/config.test.ts` and `supabase-repo.test.ts`: verified they only covered removed email code (`loadEmailEnv`, `listConfirmedEmails`).
+- P7 Task 1: minor (deferred): `docs/ops/web.md:81,120` link the deleted `docs/ops/email.md`, and `:109-110` still describe `notification_log`. Carried to P7.T5.
+- P7 Task 1: minor (deferred): `daily-job.ts:32-38` builds real clients before overrides (no I/O). `run.test.ts:1088` fetch spy only catches Brevo calls made directly in `runDailyJob`.
+- P7 Task 1: note: `pipeline/scripts/repo-smoke.ts` still names `notification_log` in its anon RLS check. Carried to P7.T2 (0007 drops the table). The smoke scripts are typechecked only (manual scripts, not in CI).
+- P7 Task 3: fix round 1/5 (1 addressed, 0 open — dark button hover hid the Login label; commits 79ed0c3..03562b0)
+- P7 Task 3: complete (commits a38c192..03562b0, review clean after fix round 1). Added an optional `href` to `Button` for the header Login link.
+- P7 Task 3: minor (deferred): `Button` drops a caller's `className` (and the `href` branch drops other props). `Ticket` renders `<a>`, so nesting links inside it is invalid (document in the README). `WorthBadge` has no `insufficient_data` level. Header test overlaps `wallet-section.test.tsx`. Header "Wallets/Settings/Sign out" are still English (Plan 6). No RED run recorded for `layout.spec.ts`.
+- P7 Task 3: carried to P7.T4: the header links `/airdrops`, `/#cara` and `/#jejak` need T4's routes and ids. `<main>` is still max-width 48rem (T4 widens it to 1240 px with the 3 px container).
+- G1-1a merged: e6429b5, 9d2a066. Tests: core 134, pipeline 203, web 273 unit · typecheck ok · pgTAP 114 · e2e 63/63.
