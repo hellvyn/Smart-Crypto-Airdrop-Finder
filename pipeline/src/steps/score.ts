@@ -130,11 +130,25 @@ function officialDomainChecks(
 }
 
 /**
- * The project's curation (curation spec §5.3, §6.2-6.3): `curate()` on the assessment just made, and `worth()`, which
- * is computed for a failing project too (for its detail page). The AI can only lower either. An `ended` project's end
- * date is the deadline that expired it, else the one its latest curation carries, else `today`.
- * `curate()` gets the assessment's checks with `domain_age` and `phishing_list` counted as run only when an official
- * domain got an answer (rule 5): the assessment counts an answer for any link domain, a claim portal's included.
+ * The assessment with `domain_age` and `phishing_list` counted as run only when an official domain got an answer
+ * (curation rule 5): `assessRisk` counts an answer for any link domain, a claim portal's included. Their `detail` is
+ * kept. This is the assessment that is stored and that `curate()` reads, so the pipeline, the SQL
+ * (`key_checks_ran()`, `public_risk_checks`) and the web share one meaning of "ran" (G5 I1).
+ */
+function withOfficialDomainChecks(assessment: RiskAssessment, official: OfficialDomainChecks): RiskAssessment {
+  return {
+    ...assessment,
+    checks: assessment.checks.map((c) =>
+      c.id === "domain_age" || c.id === "phishing_list" ? { ...c, ran: official[c.id] } : c,
+    ),
+  };
+}
+
+/**
+ * The project's curation (curation spec §5.3, §6.2-6.3): `curate()` on the assessment just made (official-domain
+ * checks already applied by `withOfficialDomainChecks`), and `worth()`, which is computed for a failing project too
+ * (for its detail page). The AI can only lower either. An `ended` project's end date is the deadline that expired it,
+ * else the one its latest curation carries, else `today`.
  */
 async function curation(
   repo: PipelineRepo,
@@ -143,7 +157,6 @@ async function curation(
   assessment: RiskAssessment,
   aiFlags: RiskInput["aiFlags"],
   runCoverage: SignalCoverage,
-  official: OfficialDomainChecks,
 ): Promise<CurationRecord> {
   const { status, today } = state;
   const ended = status === "ended";
@@ -152,9 +165,7 @@ async function curation(
   const curated = curate({
     status,
     riskLevel: assessment.level,
-    checks: assessment.checks.map((c) =>
-      c.id === "domain_age" || c.id === "phishing_list" ? { ...c, ran: official[c.id] } : c,
-    ),
+    checks: assessment.checks,
     lookalikeOf: project.lookalikeOf,
     hasOfficialDomain: project.officialDomains.length > 0,
     signals,
@@ -334,13 +345,13 @@ export async function scoreProjects(
         claimLinks: claimLinks.byProject.get(project.id) ?? [],
         officialDomainCount,
       };
-      const assessment = assessRisk(input);
+      const official = officialDomainChecks(project, ages, phishing);
+      const assessment = withOfficialDomainChecks(assessRisk(input), official);
       await repo.saveRiskAssessment(project.id, assessment, now);
       stats.assessed += 1;
       const state = { status, expiredOn: basis?.date ?? null, today, now };
       const runCoverage = coverage.get(project.id) ?? NOT_CHECKED;
-      const official = officialDomainChecks(project, ages, phishing);
-      const record = await curation(repo, project, state, assessment, input.aiFlags, runCoverage, official);
+      const record = await curation(repo, project, state, assessment, input.aiFlags, runCoverage);
       await repo.saveCuration(project.id, record, now);
       countCuration(stats, record);
     } catch {

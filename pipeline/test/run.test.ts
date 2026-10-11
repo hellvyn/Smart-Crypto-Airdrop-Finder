@@ -2651,8 +2651,13 @@ describe("runDaily curation", () => {
 
       const stats = await runDaily({ ...deps, http: noAnswerForOfficial }, config);
 
-      // The risk engine counts the claim domain's answer as the phishing check having run.
-      expect((await latestRisk(repo, "deepbook"))?.checks.find((c) => c.id === "phishing_list")?.ran).toBe(true);
+      // G5 I1: the stored check says what curate() used. Only the claim domain was answered, so it did not run; the
+      // detail (what was checked) stays.
+      expect((await latestRisk(repo, "deepbook"))?.checks.find((c) => c.id === "phishing_list")).toEqual({
+        id: "phishing_list",
+        ran: false,
+        detail: { checked: 2, hits: 0 },
+      });
       const curation = await latestCurationOf(repo, "deepbook");
       expect(curation).toMatchObject({ passed: false, tab: null });
       expect(codes(curation)).toContain("insufficient_checks");
@@ -2669,7 +2674,12 @@ describe("runDaily curation", () => {
 
       await runDaily({ ...deps, http: noAgeForOfficial }, config);
 
-      expect((await latestRisk(repo, "deepbook"))?.checks.find((c) => c.id === "domain_age")?.ran).toBe(true);
+      // G5 I1: the stored check says what curate() used: the official domain's age is unknown, so it did not run.
+      expect((await latestRisk(repo, "deepbook"))?.checks.find((c) => c.id === "domain_age")).toEqual({
+        id: "domain_age",
+        ran: false,
+        detail: { domain: "deepbook.tech", ageDays: null },
+      });
       const curation = await latestCurationOf(repo, "deepbook");
       expect(curation).toMatchObject({ passed: false, tab: null });
       expect(codes(curation)).toContain("insufficient_checks");
