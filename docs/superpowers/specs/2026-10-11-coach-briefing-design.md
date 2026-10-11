@@ -123,7 +123,7 @@ Pembersihan: langkah `purge` di pipeline menghapus `coach_threads` (dan pesannya
 |---|---|---|---|
 | Level | Pemula / Menengah / Pro | ya | Gaya penjelasan. Pemula gak pernah dapet project berisiko Tinggi atau Kritis. |
 | Modal yang siap dipakai | Gratis aja ($0) / Buat gas aja (< $10) / $10 sampai 100 / $100 sampai 1.000 / > $1.000 | ya | Filter tag modal (§5.2). |
-| Udah punya wallet? | Udah / Belum | ya | Kalau belum, rencana diawali "Langkah 0: bikin wallet dengan aman" dari glosarium, dan isian jumlah wallet disembunyikan. |
+| Udah punya wallet? | Udah / Belum | ya | Kalau belum, rencana diawali "Langkah 0: bikin wallet dulu, lalu simpan seed phrase-nya di kertas, jangan di HP" dari glosarium, dan isian jumlah wallet disembunyikan. |
 | Jumlah wallet | 1 sampai 10 | ya kalau punya wallet | Kalau lebih dari 3, Coach mengingatkan risiko dianggap sybil. |
 | Waktu per hari | 15 / 30 / 60 / 120+ menit | ya | Jumlah estimasi effort harian di rencana gak boleh lewat angka ini. |
 | Tujuan | Cuan cepat / Jangka panjang / Belajar dulu | ya | Cuan cepat mengutamakan claim atau TGE yang dekat. Jangka panjang mengutamakan points dan early. Belajar dulu mengutamakan langkah sedikit dan modal gratis. |
@@ -134,7 +134,7 @@ mau keluar uang sama sekali." Email, alamat wallet, dan saldo gak pernah diminta
 
 ### 5.2 Rencana
 
-Kandidat dihitung di server sebelum AI dipanggil, jadi AI cuma memilih dan menjelaskan dari daftar yang sudah aman:
+Kandidat dihitung di server sebelum AI dipanggil, jadi AI cuma memilih dan menjelaskan dari daftar yang sudah lolos kurasi:
 - Cuma project dengan curation terbaru `passed` dan tab `live_now` atau `early_bets`.
 - Filter modal:
 
@@ -252,7 +252,7 @@ Pemeriksaan otomatis memakai daftar yang sama dengan `copy-style.test.ts`:
 | Sybil | Satu orang pakai banyak wallet untuk pura-pura jadi banyak orang. Project sering mencoret wallet seperti ini dari airdrop. |
 | Testnet faucet | Situs resmi yang membagi koin testnet gratis untuk latihan. |
 | Phishing | Situs atau pesan palsu yang meniru project asli untuk mencuri isi wallet. Cek domain sebelum connect wallet. |
-| Connect wallet | Menghubungkan wallet ke aplikasi. Aman kalau situsnya resmi, tapi jangan pernah menyetujui transaksi yang gak kamu mengerti. |
+| Connect wallet | Menghubungkan wallet ke aplikasi. Lakukan cuma di situs resmi, dan jangan pernah menyetujui transaksi yang gak kamu mengerti. |
 
 ## 9. Biaya dan batasan
 
