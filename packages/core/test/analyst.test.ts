@@ -138,6 +138,8 @@ describe("forbiddenPhrases", () => {
 
 describe("stepTranslationGrounded", () => {
   const ADDRESS = "0xAbCdEf0123456789aBcDeF0123456789AbCdEf01";
+  const SOL = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+  const SOL_OTHER_CASE = SOL.toLowerCase();
 
   it.each([
     ["a plain translation", "Bridge ETH to Ink", "Bridge ETH ke Ink"],
@@ -148,6 +150,9 @@ describe("stepTranslationGrounded", () => {
     ["an address from the step", `Send 1 ETH to ${ADDRESS}`, `Kirim 1 ETH ke ${ADDRESS}`],
     ["a secret warning the step has", "Never share your seed phrase", "Jangan pernah kasih kunci privat atau seed phrase kamu"],
     ["a deposit the step asks for", "Deposit USDC into the vault", "Deposit USDC ke vault"],
+    ["a 0x address from the step, in another case", `Send 1 ETH to ${ADDRESS}`, `Kirim 1 ETH ke ${ADDRESS.toLowerCase()}`],
+    ["a base58 address from the step, copied exactly", `Send 1 SOL to ${SOL}`, `Kirim 1 SOL ke ${SOL}`],
+    ["a handle from the step, in another case", "Follow @InkOnChain on X", "Follow @inkonchain di X"],
     ["a sentence end right before a word", "Swap on InkySwap. Then hold", "Swap di InkySwap. Lalu hold"],
   ])("accepts %s", (_case, step, translation) => {
     expect(stepTranslationGrounded(step, translation)).toBe(true);
@@ -158,6 +163,10 @@ describe("stepTranslationGrounded", () => {
     ["a URL the step does not have", "Swap on InkySwap", "Swap di https://inkyswap.com/app"],
     ["a 0x address the step does not have", "Join the waitlist", `Gabung waitlist, lalu isi gas ke ${ADDRESS}`],
     ["a base58 address the step does not have", "Join the waitlist", "Gabung waitlist lalu isi SOL ke 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"],
+    ["a host that is only the tail of the step's host", "Visit app.inkswap.io", "Buka swap.io"],
+    ["a host that is only the head of the step's host", "Visit app.inkswap.io", "Buka app.inkswap"],
+    ["a handle that is only a prefix of the step's handle", "Follow @inkonchain on X", "Follow @ink di X"],
+    ["a base58 address with only its case changed", `Send 1 SOL to ${SOL}`, `Kirim 1 SOL ke ${SOL_OTHER_CASE}`],
     ["a number the step does not have", "Swap on InkySwap daily", "Swap minimal 50 USDC di InkySwap tiap hari"],
     ["a handle the step does not have", "Join the Discord", "Join Discord lalu DM @ink_support_desk"],
     ["a secret request the step does not have", "Join the waitlist", "Gabung waitlist, lalu masukkan seed phrase kamu buat verifikasi"],
