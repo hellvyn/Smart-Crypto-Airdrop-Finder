@@ -37,6 +37,10 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
             read.orders.push(column);
             return query;
           },
+          in: (column: string, values: unknown[]) => {
+            read.filters.push([column, values]);
+            return query;
+          },
         };
         for (const method of ["neq", "gte", "limit", "range", "returns", "maybeSingle", "single"]) {
           query[method] = () => query;
@@ -359,6 +363,74 @@ describe("SupabaseRepo AlphaDrops raises", () => {
       { table: "alphadrops_raises", columns: "official_domain, rounds, fetched_at", filters: [["slug", "catalyst"]], orders: [] },
     ]);
     expect(await new SupabaseRepo(recordingClient().client).listAlphaRaise("catalyst")).toBeNull();
+  });
+});
+
+describe("SupabaseRepo link checks and claim pages", () => {
+  const at = new Date("2026-10-10T03:00:00Z");
+
+  it("upserts a link check by url", async () => {
+    const { client, upserts } = recordingClient();
+
+    await new SupabaseRepo(client).saveLinkCheck("https://claim.ink.xyz/", "official", at);
+
+    expect(upserts).toEqual([
+      {
+        table: "link_checks",
+        row: { url: "https://claim.ink.xyz/", status: "official", checked_at: "2026-10-10T03:00:00.000Z" },
+        options: { onConflict: "url" },
+      },
+    ]);
+  });
+
+  it("reads the link checks of the asked urls, ordered by url", async () => {
+    const stored = [{ url: "https://claim.ink.xyz/", status: "phishing", checked_at: "2026-10-10T03:00:00+00:00" }];
+    const { client, reads } = recordingClient({ link_checks: stored });
+
+    expect(await new SupabaseRepo(client).listLinkChecks(["https://claim.ink.xyz/", "https://x.io/"])).toEqual([
+      { url: "https://claim.ink.xyz/", status: "phishing", checkedAt: at },
+    ]);
+    expect(reads).toEqual([
+      { table: "link_checks", columns: "url, status, checked_at", filters: [["url", ["https://claim.ink.xyz/", "https://x.io/"]]], orders: ["url"] },
+    ]);
+  });
+
+  it("reads many urls in chunks of 100 and reads nothing for no url", async () => {
+    const { client, reads } = recordingClient();
+    const urls = Array.from({ length: 150 }, (_, i) => `https://c${i}.io/`);
+
+    await new SupabaseRepo(client).listLinkChecks(urls);
+    await new SupabaseRepo(client).listClaimPages(urls);
+    await new SupabaseRepo(client).listLinkChecks([]);
+
+    expect(reads.map((r) => [r.table, (r.filters[0]?.[1] as string[]).length])).toEqual([
+      ["link_checks", 100],
+      ["link_checks", 50],
+      ["claim_pages", 100],
+      ["claim_pages", 50],
+    ]);
+  });
+
+  it("upserts a claim page by url and reads it back", async () => {
+    const stored = [{ url: "https://claim.ink.xyz/", text: "Claim your INK", fetched_at: "2026-10-10T03:00:00+00:00" }];
+    const { client, upserts, reads } = recordingClient({ claim_pages: stored });
+    const repo = new SupabaseRepo(client);
+
+    await repo.saveClaimPage("https://claim.ink.xyz/", "Claim your INK", at);
+
+    expect(upserts).toEqual([
+      {
+        table: "claim_pages",
+        row: { url: "https://claim.ink.xyz/", text: "Claim your INK", fetched_at: "2026-10-10T03:00:00.000Z" },
+        options: { onConflict: "url" },
+      },
+    ]);
+    expect(await repo.listClaimPages(["https://claim.ink.xyz/"])).toEqual([
+      { url: "https://claim.ink.xyz/", text: "Claim your INK", fetchedAt: at },
+    ]);
+    expect(reads).toEqual([
+      { table: "claim_pages", columns: "url, text, fetched_at", filters: [["url", ["https://claim.ink.xyz/"]]], orders: ["url"] },
+    ]);
   });
 });
 

@@ -4,7 +4,7 @@
 --   anon + authenticated: project_signals, link_checks, tasks.text_id, ai_analyses of kind 'contradictions';
 --   anon:                 only the non-worth columns of curations (worth_level, reasons, coverage are member-only);
 --   authenticated:        every curations column and every ai_analyses kind ('analyst' and 'scam' are member-only, #54);
---   nobody:               vc_portfolios, alphadrops_raises (service role only).
+--   nobody:               vc_portfolios, alphadrops_raises, claim_pages (service role only).
 
 -- One row per signal per project, rewritten every run (signals not found again are deleted).
 create table project_signals (
@@ -38,6 +38,14 @@ create table link_checks (
   url text primary key,
   status text not null check (status in ('official', 'different_domain', 'phishing', 'unchecked')),
   checked_at timestamptz not null
+);
+
+-- Text of a claim portal page as last fetched (#42, #56): the AI Scam Analyst reads it, and a page fetched within 7
+-- days is not fetched again. Untrusted third-party content, read by the pipeline only (service role, like vc_portfolios).
+create table claim_pages (
+  url text primary key,
+  text text not null,
+  fetched_at timestamptz not null
 );
 
 -- Indonesian step text (#45), stored apart from the member-only Analyst result so it can be public.
@@ -96,14 +104,15 @@ alter table project_changes add constraint project_changes_field_check
 alter table project_signals enable row level security;
 alter table alphadrops_raises enable row level security;
 alter table link_checks enable row level security;
+alter table claim_pages enable row level security;
 alter table vc_portfolios enable row level security;
 alter table ai_analyses enable row level security;
 alter table curations enable row level security;
 
 -- Privileges: start from nothing for the web roles (Supabase's default privileges grant everything on new public
--- tables, writes included), then grant exactly the reads below. vc_portfolios and alphadrops_raises get no grant and
--- no policy.
-revoke all on project_signals, alphadrops_raises, link_checks, vc_portfolios, ai_analyses, curations
+-- tables, writes included), then grant exactly the reads below. vc_portfolios, alphadrops_raises and claim_pages get
+-- no grant and no policy.
+revoke all on project_signals, alphadrops_raises, link_checks, claim_pages, vc_portfolios, ai_analyses, curations
   from anon, authenticated;
 
 grant select on project_signals, link_checks to anon, authenticated;

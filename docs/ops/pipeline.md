@@ -212,6 +212,9 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `raises_fetched` | AlphaDrops raise pages fetched this run with at least one round (stored in `alphadrops_raises`) |
 | `raises_matched` | projects that got at least one `reported_backer` this run (raise page's official website matched by domain) |
 | `raises_failed` | AlphaDrops raise requests that failed: `llms-full.txt` (not 200 or no fundraising entry) and raise pages (not 200, broken connection, or no round on the page) |
+| `link_checks_total` | distinct claim/app links checked in `score` and written to `link_checks` (status from the GoPlus answers of the run, no extra request) |
+| `link_checks_phishing` | of those, links on the phishing list: never rendered as a link, and the project's risk is high (`phishing_claim_link`) |
+| `claim_pages_read` | claim portal pages fetched in `analyze` for the AI Scam Analyst (at most 20 per run; pages fetched in the last 7 days come from `claim_pages`) |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
@@ -241,6 +244,13 @@ What to do:
 - `raises_failed` > 0 on several runs with `raises_fetched` = 0: AlphaDrops changed `llms-full.txt` or its raise page
   layout ("Funding Rounds History", "Official Website"); update `alphadrops-raises.ts` and the fixture
   `pipeline/test/fixtures/alphadrops-raise.html`. Until then the earlier `reported_backer` rows stay.
+- `link_checks_phishing` > 0: a listed project linked a claim page on the GoPlus phishing list; it drops out of the
+  curated list through `risk_too_high`. `link_checks` keeps the status per URL (public read); the web must never render
+  a `phishing` URL as a link.
+- `claim_pages_read` = 20 every day: more claim/app links are due than one run reads; the rest are read on the next
+  runs (the cached text, up to 14 days old, is still given to the scam analyst meanwhile). Claim pages are fetched with
+  a plain GET (no scripts, 1 MB, 10 s in all, at most 3 redirects to public http(s) hosts), 4 at a time, so they add
+  at most about 50 s to `analyze`.
 - `llm_models_tripped` > 0: a model endpoint failed repeatedly (see `extractions.error`, e.g. `http_0` = 180 s
   timeout). The run continues on the remaining models; if it repeats for days, reorder or replace the model in
   `pipeline/src/config.ts`.

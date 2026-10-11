@@ -1,13 +1,14 @@
 -- pgTAP tests for 0011_curation.sql (curation spec §4.1-4.4, §15.5): signals, the VC portfolio cache, AlphaDrops
--- raises, claim link checks, AI analyses, curation history, tasks.text_id and the `curated` project change.
+-- raises, claim link checks, the claim page cache, AI analyses, curation history, tasks.text_id and the `curated`
+-- project change.
 -- Public vs member is locked in the database (#45, #54, #55): anon reads signals, link checks, the non-worth curation
 -- columns and `contradictions` analyses only; authenticated reads every curation column and every analysis kind;
--- vc_portfolios and alphadrops_raises are service role only; the web roles write nothing.
+-- vc_portfolios, alphadrops_raises and claim_pages are service role only; the web roles write nothing.
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(61);
+select plan(68);
 
 -- Rows visible to the current role. A refused read (no privilege, 42501) is what PostgREST answers with an error and
 -- no data, so it counts as zero rows, the same as rows filtered out by RLS.
@@ -35,6 +36,7 @@ insert into project_signals (project_id, kind, value, source, verified, observed
   ('c0000000-0000-4000-8000-0000000000b1', 'vc_backer', '{"investor": "Paradigm", "tier": 1}', 'vc_portfolio', true, now());
 insert into link_checks (url, status, checked_at) values ('https://claim.curation.test/', 'official', now());
 insert into vc_portfolios (vc_id, domain, fetched_at) values ('paradigm', 'curation.test', now());
+insert into claim_pages (url, text, fetched_at) values ('https://claim.curation.test/', 'Claim your tokens', now());
 insert into alphadrops_raises (slug, official_domain, rounds, fetched_at) values
   ('curation-test', 'curation.test', '[{"round": "seed", "amount_usd": 5000000}]', now());
 insert into ai_analyses (project_id, kind, input_hash, result, model, prompt_version) values
@@ -53,11 +55,13 @@ insert into curations (project_id, passed, worth_level, tab, status_at, ended_on
 select results_eq(
   $$ select relname::text collate "default", relrowsecurity from pg_class
      where relnamespace = 'public'::regnamespace
-       and relname in ('project_signals', 'alphadrops_raises', 'link_checks', 'vc_portfolios', 'ai_analyses', 'curations')
+       and relname in ('project_signals', 'alphadrops_raises', 'link_checks', 'vc_portfolios', 'ai_analyses', 'curations',
+                       'claim_pages')
      order by 1 $$,
-  $$ values ('ai_analyses'::text, true), ('alphadrops_raises'::text, true), ('curations'::text, true),
-            ('link_checks'::text, true), ('project_signals'::text, true), ('vc_portfolios'::text, true) $$,
-  'row level security is enabled on all six new tables');
+  $$ values ('ai_analyses'::text, true), ('alphadrops_raises'::text, true), ('claim_pages'::text, true),
+            ('curations'::text, true), ('link_checks'::text, true), ('project_signals'::text, true),
+            ('vc_portfolios'::text, true) $$,
+  'row level security is enabled on all seven new tables');
 
 -- 2-3. tasks.text_id: the Indonesian step text, nullable.
 select col_type_is('public', 'tasks', 'text_id', 'text', 'tasks.text_id is text');
@@ -68,6 +72,9 @@ select columns_are('public', 'curations',
   array['id', 'project_id', 'passed', 'worth_level', 'tab', 'status_at', 'ended_on', 'reasons', 'coverage',
         'public_fail_reason', 'computed_at', 'seq'],
   'curations has the spec §4.2 columns plus public_fail_reason (#55)');
+
+-- 4a. claim_pages: the text of a claim portal page as last fetched (#56), one row per url.
+select columns_are('public', 'claim_pages', array['url', 'text', 'fetched_at'], 'claim_pages caches url, text, fetched_at');
 
 -- 5. Defaults of curations.reasons and coverage.
 insert into curations (project_id, passed, status_at, computed_at) values
@@ -158,7 +165,8 @@ select results_eq(
      cross join lateral aclexplode(c.relacl) a
      join pg_roles r on r.oid = a.grantee
      where c.relnamespace = 'public'::regnamespace
-       and c.relname in ('project_signals', 'alphadrops_raises', 'link_checks', 'vc_portfolios', 'ai_analyses', 'curations')
+       and c.relname in ('project_signals', 'alphadrops_raises', 'link_checks', 'vc_portfolios', 'ai_analyses', 'curations',
+                         'claim_pages')
        and r.rolname in ('anon', 'authenticated')
      group by 1, 2 order by 1, 2 $$,
   $$ values ('ai_analyses'::text, 'anon'::text, 'SELECT'::text), ('ai_analyses', 'authenticated', 'SELECT'),
@@ -236,6 +244,12 @@ select throws_ok(
 -- 42-43.
 select throws_ok($$ update curations set passed = true $$, '42501', null, 'anon cannot update curations');
 select throws_ok($$ delete from project_signals $$, '42501', null, 'anon cannot delete project_signals');
+-- 43a-43c. claim_pages is service role only: the page text is untrusted third-party content, read by the pipeline only.
+select throws_ok($$ select * from claim_pages $$, '42501', null, 'anon cannot select claim_pages');
+select is(pg_temp.visible_rows('public.claim_pages'), 0::bigint, 'anon reads no claim_pages rows');
+select throws_ok(
+  $$ insert into claim_pages (url, text, fetched_at) values ('https://anon.curation.test/', 'x', now()) $$,
+  '42501', null, 'anon cannot insert into claim_pages');
 reset role;
 
 -- ---------- authenticated ----------
@@ -283,6 +297,12 @@ select throws_ok(
   '42501', null, 'authenticated cannot insert into alphadrops_raises');
 select throws_ok($$ update ai_analyses set model = 'x' $$, '42501', null, 'authenticated cannot update ai_analyses');
 select throws_ok($$ delete from curations $$, '42501', null, 'authenticated cannot delete curations');
+-- 58a-58c. claim_pages is service role only.
+select throws_ok($$ select * from claim_pages $$, '42501', null, 'authenticated cannot select claim_pages');
+select is(pg_temp.visible_rows('public.claim_pages'), 0::bigint, 'authenticated reads no claim_pages rows');
+select throws_ok(
+  $$ insert into claim_pages (url, text, fetched_at) values ('https://member.curation.test/', 'x', now()) $$,
+  '42501', null, 'authenticated cannot insert into claim_pages');
 reset role;
 
 -- ---------- cascade ----------

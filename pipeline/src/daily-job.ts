@@ -2,7 +2,7 @@
 // returns the process exit code. Split out of the entry point so tests can run it with fakes.
 import { createClient } from "@supabase/supabase-js";
 import { defaultConfig, loadProviders } from "./config.js";
-import { createHttp } from "./http.js";
+import { createFetchUntrusted, createHttp } from "./http.js";
 import { streamChat } from "./llm/nvidia.js";
 import { runDaily } from "./run.js";
 import type { PipelineDeps } from "./run.js";
@@ -32,6 +32,7 @@ export async function runDailyJob(
       {
         repo: new SupabaseRepo(createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })),
         http: createHttp(),
+        fetchUntrusted: createFetchUntrusted(),
         chat: (model, messages) => streamChat(model, messages, { fetch, ...providers[model.provider] }),
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
         now: () => new Date(),

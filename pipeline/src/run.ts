@@ -5,12 +5,14 @@ import type { PipelineConfig } from "./config.js";
 import { countAlphaDropsRequests, loadRaises } from "./enrich/alphadrops-raises.js";
 import { refreshPortfolios } from "./enrich/vc-portfolios.js";
 import type { ChatFn } from "./llm/extract.js";
-import { ANALYZERS, runAnalyses } from "./steps/analyze.js";
-import type { Analyzer } from "./steps/analyze.js";
+import type { FetchUntrusted } from "./http.js";
+import { ANALYZERS, claimPageSources, runAnalyses } from "./steps/analyze.js";
+import type { Analyzer, SourceText } from "./steps/analyze.js";
 import { collectSources } from "./steps/collect.js";
 import type { SpeculativeItem } from "./steps/collect.js";
 import type { ExtractionResult } from "@saf/core";
 import { extractPending } from "./steps/extract.js";
+import { readClaimPages } from "./steps/link-checks.js";
 import { mergeDocument } from "./steps/merge.js";
 import type { ProjectInput } from "./steps/merge.js";
 import { purgeOldText } from "./steps/purge.js";
@@ -26,6 +28,8 @@ export type { PipelineConfig } from "./config.js";
 export interface PipelineDeps {
   repo: PipelineRepo;
   http: Http;
+  /** Fetch for pages an unknown party wrote: the claim portals the AI Scam Analyst reads (`createFetchUntrusted`). */
+  fetchUntrusted: FetchUntrusted;
   /** `streamChat` with its transport deps bound. */
   chat: ChatFn;
   sleep: (ms: number) => Promise<void>;
@@ -211,7 +215,11 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   await stage(STEP.analyze, undefined, async () => {
     if (analyzers.length === 0) return;
     const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
-    await runAnalyses({ ...deps, analyzers }, config, projects, stats);
+    // Claim portal pages are read here, before the scam analyst, so it sees them in this run (#56).
+    const claimPages = analyzers.some((a) => a.kind === "scam")
+      ? await readClaimPages({ repo, fetchUntrusted: deps.fetchUntrusted }, projects, now, stats)
+      : new Map<string, SourceText[]>();
+    await runAnalyses({ ...deps, analyzers, extraSources: claimPageSources(claimPages) }, config, projects, stats);
   });
 
   await stage(STEP.score, undefined, () => scoreProjects(deps, config, now, stats, coverage));

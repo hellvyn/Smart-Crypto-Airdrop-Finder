@@ -74,6 +74,16 @@ export interface AnalyzeDeps {
 }
 
 /**
+ * The run's `extraSources` (#56): each project's claim portal pages (`readClaimPages`, by project id) go to the AI
+ * Scam Analyst only; no other analysis gets them.
+ */
+export function claimPageSources(
+  pages: ReadonlyMap<string, SourceText[]>,
+): NonNullable<AnalyzeDeps["extraSources"]> {
+  return async (project, kind) => (kind === "scam" ? (pages.get(project.id) ?? []) : []);
+}
+
+/**
  * sha256 (hex) of what an analysis reads: the source texts, the project's name, steps (in order), facts and status.
  * Sources and facts are sorted first, so the order the database returns them in does not matter.
  */
