@@ -221,6 +221,21 @@ describe("the Analyst in the analyze stage", () => {
     expect(repo.stepTextIds(projectId)).toEqual([null, null]);
   });
 
+  it("leaves the tasks' Indonesian text empty when a step's cadence differs from the project's step", async () => {
+    // Same count, but the model merged and split steps: the second translation is not the daily swap.
+    const shifted = answer({
+      steps_id: [
+        { text: "Bridge ETH ke Ink lalu swap", cadence: "once" },
+        { text: "Bridge lagi tiap minggu", cadence: "weekly" },
+      ],
+    });
+
+    await analyze(chatAnswering({ "*": shifted }));
+
+    expect(repo.aiAnalyses).toHaveLength(1);
+    expect(repo.stepTextIds(projectId)).toEqual([null, null]);
+  });
+
   it.each([
     ["a point", answer({ points: [{ ...answer().points[0]!, text: "Ini krusial: alokasinya 5%." }] })],
     ["the effort note", answer({ effort: { ...answer().effort, note: "Selain itu, modalnya kecil." } })],
@@ -230,6 +245,15 @@ describe("the Analyst in the analyze stage", () => {
 
     expect(stats.ai_style_violations).toBe(1);
     expect(repo.aiAnalyses).toHaveLength(1);
+  });
+
+  it("does not count a forbidden phrase in a point that post-processing drops, since it is never stored", async () => {
+    const dropped = { text: "Ini krusial: backer-nya Paradigm.", quote: "Backed by Paradigm", source_url: SRC };
+
+    const stats = await analyze(chatAnswering({ "*": answer({ points: [...answer().points, dropped] }) }));
+
+    expect(repo.aiAnalyses[0]?.result).toEqual(answer());
+    expect(stats.ai_style_violations).toBe(0);
   });
 
   it("does not count a forbidden word inside a quote, which copies the source", async () => {

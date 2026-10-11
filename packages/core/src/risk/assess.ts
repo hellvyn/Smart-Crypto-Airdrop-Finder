@@ -13,7 +13,8 @@ export type CheckId =
   | "token_security"
   | "contract_verified"
   | "hack_history"
-  | "corroboration";
+  | "corroboration"
+  | "ai_review";
 
 export interface RiskCheck {
   id: CheckId;
@@ -50,6 +51,12 @@ export interface RiskInput {
   token: { honeypot: boolean; ownerCanMintOrChangeBalance: boolean; maliciousCreator: boolean } | null;
   contractVerified: boolean | null;
   hackCount: number | null;
+  /**
+   * What the AI Scam Analyst and contradiction detection found (curation spec §13 A2/A3), from the stored analyses.
+   * `scam`: flags of the latest scam analysis whose quote passed `quoteInSource`, or null when there is no scam
+   * analysis; `contradictions`: number of contradictions found. These can only add reasons and raise the level.
+   */
+  aiFlags?: { scam: { pattern: string; quote: string }[] | null; contradictions: number };
 }
 
 export interface RiskAssessment {
@@ -64,12 +71,29 @@ const SOURCE_ASK_MESSAGE: Record<DangerousAskCode, string> = {
   asks_payment: "The source text asks you to send crypto in order to claim",
 };
 
+/** Public wording per AI scam pattern. It never carries the quote: scam analyses are member-only (#54). */
+const AI_SCAM_MESSAGE: Record<string, string> = {
+  urgency: "pressures readers to act fast",
+  connect_wallet_to_check: "asks readers to connect a wallet just to check eligibility",
+  fake_support: "points readers to unofficial support or admins",
+  secret_request: "asks for a seed phrase or private key",
+  payment_request: "asks readers to send crypto or pay in order to claim",
+  impersonation: "impersonates another project or its team",
+  other: "uses another social-engineering pattern",
+};
+const AI_HIGH_PATTERNS: readonly string[] = ["secret_request", "payment_request"];
+
 const NEW_CLAIM_DOMAIN_DAYS = 30;
 const YOUNG_DOMAIN_DAYS = 90;
 const MIN_CHECKS_RAN = 4;
 
 const POINTS: Record<Severity, number> = { critical: 100, high: 30, medium: 10, info: 0 };
 const RANK: Record<Severity, number> = { critical: 3, high: 2, medium: 1, info: 0 };
+/**
+ * How strongly a level warns, for raising a level by AI reasons only. `insufficient_data` fails curation like
+ * `high`, so an AI `medium` reason leaves it as it is, and only `high` or more replaces it.
+ */
+const STRICTNESS: Record<RiskLevel, number> = { low: 0, medium: 1, insufficient_data: 2, high: 3, critical: 4 };
 
 /** Registrable domain when available, otherwise the lowercased input. */
 function keyOf(domain: string): string {
@@ -92,6 +116,45 @@ function anyNonNull(values: Record<string, unknown>): boolean {
 
 function plural(n: number, unit: string): string {
   return `${n} ${unit}${n === 1 ? "" : "s"}`;
+}
+
+/** The highest severity among `reasons`, or null when there is none. */
+function topSeverity(reasons: RiskReason[]): Severity | null {
+  return reasons.reduce<Severity | null>(
+    (acc, r) => (acc === null || RANK[r.severity] > RANK[acc] ? r.severity : acc),
+    null,
+  );
+}
+
+/**
+ * Reasons from the AI flags: one `ai_scam_pattern` per distinct pattern of the flags that have a quote (unknown
+ * patterns count as `other`), and one `ai_contradiction` when contradictions were found. Only ever adds.
+ */
+function aiReasons(aiFlags: RiskInput["aiFlags"]): RiskReason[] {
+  if (aiFlags === undefined) return [];
+  const reasons: RiskReason[] = [];
+  const seen = new Set<string>();
+  for (const f of aiFlags.scam ?? []) {
+    if (f.quote.trim() === "") continue;
+    const pattern = f.pattern in AI_SCAM_MESSAGE ? f.pattern : "other";
+    if (seen.has(pattern)) continue;
+    seen.add(pattern);
+    reasons.push({
+      code: "ai_scam_pattern",
+      severity: AI_HIGH_PATTERNS.includes(pattern) ? "high" : "medium",
+      message: `AI review: the source text ${AI_SCAM_MESSAGE[pattern]}.`,
+      source: "ai",
+    });
+  }
+  if (aiFlags.contradictions > 0) {
+    reasons.push({
+      code: "ai_contradiction",
+      severity: "medium",
+      message: `AI review found ${plural(aiFlags.contradictions, "contradiction")} between or within the sources.`,
+      source: "ai",
+    });
+  }
+  return reasons;
 }
 
 export function assessRisk(input: RiskInput): RiskAssessment {
@@ -279,18 +342,22 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     { id: "corroboration", ran: true },
   ];
 
-  const top = reasons.reduce<Severity | null>(
-    (acc, r) => (acc === null || RANK[r.severity] > RANK[acc] ? r.severity : acc),
-    null,
-  );
+  // The level without AI first; AI reasons can then only raise it (spec §13: AI never lowers a risk).
   const ranCount = checks.filter((c) => c.ran).length;
-
+  const top = topSeverity(reasons);
   let level: RiskLevel;
   if (top === null || top === "info") {
     level = ranCount < MIN_CHECKS_RAN ? "insufficient_data" : "low";
   } else {
     level = top;
   }
+
+  const fromAi = aiReasons(input.aiFlags);
+  const aiTop = topSeverity(fromAi);
+  if (aiTop !== null && aiTop !== "info" && STRICTNESS[aiTop] > STRICTNESS[level]) level = aiTop;
+  reasons.push(...fromAi);
+  // Not counted in `ranCount`: an AI review never turns insufficient data into a lower level.
+  checks.push({ id: "ai_review", ran: input.aiFlags?.scam != null });
 
   const points = reasons.reduce((sum, r) => sum + POINTS[r.severity], 0);
   return { level, points, reasons, checks };

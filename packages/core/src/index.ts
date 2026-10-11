@@ -44,3 +44,12 @@ export { worth } from "./curate/worth.js";
 export { analystSchema, postProcessAnalyst } from "./curate/analyst.js";
 export type { AnalystAnswer, AnalystVerdict } from "./curate/analyst.js";
 export { FORBIDDEN_PHRASES, forbiddenPhrases, replaceEmDash } from "./curate/ai-style.js";
+export {
+  SCAM_PATTERNS,
+  aiFlagsFromAnalyses,
+  contradictionsSchema,
+  postProcessContradictions,
+  postProcessScam,
+  scamSchema,
+} from "./curate/ai-flags.js";
+export type { ContradictionsAnswer, ScamAnswer } from "./curate/ai-flags.js";
