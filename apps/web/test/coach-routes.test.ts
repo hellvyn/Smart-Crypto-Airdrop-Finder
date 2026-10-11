@@ -431,6 +431,24 @@ describe("POST /api/coach/chat: input", () => {
 });
 
 describe("POST /api/coach/chat: streaming", () => {
+  it("closes the stream normally when saving the finished reply throws", async () => {
+    setup({
+      rpc: {
+        coach_finish: () => {
+          throw new Error("network");
+        },
+      },
+    });
+    async function* gen(): AsyncGenerator<StreamTextEvent, void, undefined> {
+      yield { delta: "Mulai dari Alpha.\n" };
+      yield DONE();
+    }
+    streamText.mockReturnValue(gen());
+    const res = await post(chatPOST, chatBody());
+    expect(await res.text()).toBe("Mulai dari Alpha.\n");
+    expect(rpcNames()).toEqual(["coach_begin", "coach_mark_used", "coach_finish"]);
+  });
+
   it("streams the text, marks the message used before any byte, and stores the reply with its token counts", async () => {
     const order: string[] = [];
     setup({

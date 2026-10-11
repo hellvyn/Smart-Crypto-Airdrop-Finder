@@ -140,15 +140,22 @@ export async function POST(request: Request): Promise<Response> {
               const reply = finalReply(sent, context);
               if (reply.trim() !== "") {
                 const d = event.done;
-                await db.rpc("coach_finish", {
-                  p_user_message_id: messageId,
-                  p_content: reply,
-                  p_model: d.model,
-                  p_in: d.inputTokens,
-                  p_out: d.outputTokens,
-                  p_cache_read: d.cacheReadTokens,
-                  p_cache_write: d.cacheCreationTokens,
-                });
+                // The member already has the whole answer and the message already counts (coach_mark_used), so a
+                // failed save (an error result or a throw) only means the reply is missing from the history; the
+                // stream still closes normally.
+                try {
+                  await db.rpc("coach_finish", {
+                    p_user_message_id: messageId,
+                    p_content: reply,
+                    p_model: d.model,
+                    p_in: d.inputTokens,
+                    p_out: d.outputTokens,
+                    p_cache_read: d.cacheReadTokens,
+                    p_cache_write: d.cacheCreationTokens,
+                  });
+                } catch {
+                  // See above.
+                }
               }
               end(() => controller.close());
               return;
