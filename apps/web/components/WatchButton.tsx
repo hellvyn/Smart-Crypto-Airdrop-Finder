@@ -16,7 +16,9 @@ export function WatchButton({ projectId, slug, watching }: { projectId: string; 
     <form action={submitWatch}>
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="watch" value={watching ? "0" : "1"} />
-      <button type="submit">{watching ? detail.unwatch : detail.watch}</button>
+      <button type="submit" data-tone={watching ? "danger" : "primary"}>
+        {watching ? detail.unwatch : detail.watch}
+      </button>
     </form>
   );
 }

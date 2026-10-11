@@ -6,7 +6,7 @@ import { garapan as copy } from "@/lib/copy";
  * "Mulai garap" / "Berhenti garap" on the project page, next to Watch (Watch = keep an eye on it, garap = work on it
  * daily). Farming is for signed-in members only, so a visitor (`farming === null`) gets nothing. Each form sends the
  * action it wants, so a double submit cannot undo itself. While farming, the way to Garapan saya is the main button and
- * "Berhenti garap" a quiet text button after it.
+ * "Berhenti garap" a red button after it.
  */
 export function FarmButton({ projectId, farming }: { projectId: string; farming: boolean | null }) {
   if (farming === null) return null;
@@ -27,9 +27,9 @@ export function FarmButton({ projectId, farming }: { projectId: string; farming:
       </Button>
       <form action={submitStopFarming}>
         <input type="hidden" name="projectId" value={projectId} />
-        <button type="submit" className="text-button">
+        <Button variant="danger" type="submit">
           {copy.stop}
-        </button>
+        </Button>
       </form>
     </div>
   );

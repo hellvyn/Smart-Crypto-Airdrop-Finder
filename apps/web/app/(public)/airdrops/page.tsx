@@ -180,7 +180,7 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
             </label>
           ) : null}
           <div className="filter-actions">
-            <button type="submit" className="ui-button" data-variant="dark">
+            <button type="submit" className="ui-button" data-variant="primary">
               {list.apply}
             </button>
             {hasFilters ? (

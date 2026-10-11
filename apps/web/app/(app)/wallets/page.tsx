@@ -52,11 +52,13 @@ export default async function WalletsPage({
                 <form action={submitDeleteWallet} className="inline-form">
                   <input type="hidden" name="id" value={w.id} />
                   <span>{copy.confirmQuestion}</span>
-                  <button type="submit">{copy.confirmDelete}</button>
+                  <button type="submit" data-tone="danger">
+                    {copy.confirmDelete}
+                  </button>
                   <Link href="/wallets">{copy.cancel}</Link>
                 </form>
               ) : (
-                <Link href={`/wallets?confirm=${w.id}`} aria-label={copy.deleteLabel(shortAddress(w.address))}>
+                <Link className="danger-link" href={`/wallets?confirm=${w.id}`} aria-label={copy.deleteLabel(shortAddress(w.address))}>
                   {copy.delete}
                 </Link>
               )}

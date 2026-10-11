@@ -1164,14 +1164,21 @@ blockquote {
   font-weight: 800;
   letter-spacing: 0.5px;
   line-height: 1.2;
+  text-align: center;
   text-decoration: none;
   text-transform: uppercase;
   cursor: pointer;
 }
 
 .ui-button[data-variant="primary"] {
-  background: var(--accent);
-  color: var(--ink);
+  border-color: var(--pass);
+  background: var(--pass);
+  color: #ffffff;
+}
+
+.ui-button[data-variant="primary"]:hover {
+  border-color: #17603a;
+  background: #17603a;
 }
 
 .ui-button[data-variant="secondary"] {
@@ -1183,6 +1190,7 @@ blockquote {
   background: var(--ink);
   color: var(--ground);
 }
+
 
 /* Plain headings, buttons and form fields (login, wallets, account, watchlist, the watch button) follow the same design
    as the rest of the site instead of the browser's defaults. */
@@ -1211,9 +1219,10 @@ button:not([class]) {
   text-transform: uppercase;
 }
 
-.auth-form button:not([class]) {
-  background: var(--ink);
-  color: var(--ground);
+.auth-form button:not([class]):not([data-tone]) {
+  border-color: var(--pass);
+  background: var(--pass);
+  color: #ffffff;
 }
 
 .auth-form {
@@ -1235,6 +1244,38 @@ button:not([class]) {
   background: var(--surface);
   font-weight: 400;
   font-size: 16px;
+}
+
+/* Site-wide colour rule (owner 2026-10-11): the main action is green, a negative one (stop, remove, delete) red.
+   After the plain-button rule above so a data-tone wins over it. */
+button[data-tone="primary"] {
+  border-color: var(--pass);
+  background: var(--pass);
+  color: #ffffff;
+}
+
+button[data-tone="primary"]:hover {
+  border-color: #17603a;
+  background: #17603a;
+}
+
+/* A link that removes or clears something ("Hapus", "Hapus filter"). */
+.danger-link,
+.filter-clear {
+  color: var(--alert);
+}
+
+.ui-button[data-variant="danger"],
+button[data-tone="danger"] {
+  border-color: var(--alert);
+  background: transparent;
+  color: var(--alert);
+}
+
+.ui-button[data-variant="danger"]:hover,
+button[data-tone="danger"]:hover {
+  background: var(--alert);
+  color: #ffffff;
 }
 
 /* Landing page (mockup CLanding). */
@@ -1703,30 +1744,28 @@ button:not([class]) {
 
   .project-actions > .farm-button {
     grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
   }
 
-  .project-actions > .farm-button > .ui-button,
-  .project-actions > .farm-button > form:only-child,
-  .project-actions > .farm-button > form:only-child > .ui-button {
-    flex: 1;
+  .project-actions > form.farm-button {
+    grid-template-columns: 1fr;
+  }
+
+  .project-actions > .farm-button .ui-button {
     width: 100%;
+    padding-left: 8px;
+    padding-right: 8px;
+    font-size: 13px;
+  }
+
+  .project-actions > .farm-button > form {
+    display: flex;
   }
 }
 
-/* A secondary action that should not look like one of the main buttons ("Berhenti garap"). */
-.text-button {
-  padding: 8px 4px;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font-size: 14px;
-  text-decoration: underline;
-  cursor: pointer;
-}
 
-.text-button:hover {
-  color: var(--ink);
-}
 
 /* Garapan saya (mockup CGarapan). */
 
@@ -2055,7 +2094,7 @@ button:not([class]) {
   padding: 0 4px;
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: var(--alert);
   font-size: 12px;
   font-weight: 600;
   text-decoration: underline;
@@ -2122,16 +2161,6 @@ button:not([class]) {
   text-transform: uppercase;
 }
 
-.farm-stop {
-  min-height: 44px;
-  padding: 9px 4px;
-  border: 0;
-  background: transparent;
-  font-size: 13px;
-  font-weight: 700;
-  text-decoration: underline;
-  text-transform: uppercase;
-}
 
 /* Airdrop result (#51): the form until a result is entered, then "Hasil kamu" on the soft orange fill. */
 
@@ -3060,8 +3089,9 @@ button:not([class]) {
 
 .explain-step-button {
   padding: 2px 8px;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--pass);
   background: var(--surface);
+  color: var(--pass);
   font-size: 0.85rem;
   font-weight: 700;
 }

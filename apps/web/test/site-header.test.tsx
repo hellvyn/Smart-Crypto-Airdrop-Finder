@@ -17,6 +17,8 @@ describe("SiteHeader (design C)", () => {
     render(await SiteHeader());
     expect(screen.getByRole("link", { name: "AirdropIQ" }).getAttribute("href")).toBe("/");
     expect(screen.getByRole("link", { name: "Login" }).getAttribute("href")).toBe("/login");
+    // Site-wide colour rule: the main action is green (primary), a negative one red (danger).
+    expect(screen.getByRole("link", { name: "Login" }).getAttribute("data-variant")).toBe("primary");
     for (const name of ["Garapan saya", "Coach", "Watchlist", "Wallet", "Akun"]) {
       expect(screen.queryByRole("link", { name })).toBeNull();
     }
@@ -40,7 +42,7 @@ describe("SiteHeader (design C)", () => {
     expect(screen.getByRole("link", { name: "Wallet" }).getAttribute("href")).toBe("/wallets");
     expect(screen.getByRole("link", { name: "Akun" }).getAttribute("href")).toBe("/settings");
     expect(screen.getByTestId("user-email").textContent).toBe("someone@example.test");
-    expect(screen.getByRole("button", { name: "Logout" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Logout" }).getAttribute("data-variant")).toBe("danger");
     expect(screen.queryByRole("link", { name: "Login" })).toBeNull();
   });
 

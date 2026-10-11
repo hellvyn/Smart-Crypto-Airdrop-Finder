@@ -56,7 +56,7 @@ export function WalletActivityCheck({
 
   return (
     <div className="wallet-check" data-testid="wallet-check">
-      <button type="button" onClick={onClick} disabled={pending} aria-label={copy.checkFor(chainLabel, walletName)}>
+      <button type="button" data-tone="primary" onClick={onClick} disabled={pending} aria-label={copy.checkFor(chainLabel, walletName)}>
         {pending ? copy.checking : copy.check(chainLabel)}
       </button>{" "}
       <code>{walletName}</code>

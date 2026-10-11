@@ -65,7 +65,9 @@ export default async function SettingsPage({
               {CONFIRMATION_ERROR_MESSAGE}
             </p>
           ) : null}
-          <button type="submit">{copy.deleteButton}</button>
+          <button type="submit" data-tone="danger">
+            {copy.deleteButton}
+          </button>
         </form>
       </section>
     </>

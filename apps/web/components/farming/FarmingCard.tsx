@@ -161,7 +161,7 @@ function Checklist({ card }: { card: FarmingCardData }) {
               <option value="once">{copy.cadence.once}</option>
             </select>
           </label>
-          <Button variant="secondary" type="submit">
+          <Button variant="primary" type="submit">
             {copy.addButton}
           </Button>
         </form>
@@ -243,9 +243,9 @@ export function FarmingCard({
           <form action={submitStopFarming}>
             <FromGarapan />
             <input type="hidden" name="projectId" value={card.projectId} />
-            <button type="submit" className="farm-stop">
+            <Button variant="danger" type="submit">
               {copy.stop}
-            </button>
+            </Button>
           </form>
         </div>
         <div className="farm-progress">
