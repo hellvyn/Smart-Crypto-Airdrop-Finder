@@ -1768,6 +1768,132 @@ describe("runDaily RDAP and crt.sh pacing", () => {
 
   const gaps = (starts: { at: number }[]): number[] => starts.slice(1).map((s, i) => s.at - (starts[i] as { at: number }).at);
 
+  /** The standard pages with `extra` more DefiLlama protocols, each a speculative project with its own official domain. */
+  function manyProtocolPages(extra: number): Pages {
+    const protocols = Array.from({ length: extra }, (_, i) => ({
+      name: `Proto Lend ${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + Math.floor(i / 26))}`,
+      slug: `proto-${i}`,
+      url: `https://protolend${i}.xyz`,
+      chains: ["Ethereum"],
+      tvl: 5_000_000,
+      change_7d: 1,
+      category: "Lending",
+      gecko_id: null,
+      symbol: "-",
+      listedAt: 1_760_000_000,
+    }));
+    return { ...basePages(), [PROTOCOLS]: { status: 200, body: JSON.stringify([...PROTOCOL_LIST, ...protocols]) } };
+  }
+
+  /** The standard pages plus a project (Nova) whose claim domain (not official) comes before its official one. */
+  function novaSetup() {
+    const pages = basePages();
+    pages[TG] = telegramWith(
+      tgMessage(
+        106,
+        "2026-10-08T08:00:00+00:00",
+        'Nova drop: <a href="https://claim.nova-drop.xyz/">claim</a> <a href="https://docs.novaproto.io/start">docs</a>',
+      ),
+    );
+    const replies = {
+      ...REPLIES,
+      "https://t.me/airdrops_io/106": {
+        is_airdrop_content: true,
+        projects: [project({ name: "Nova", status: "live", official_urls: ["https://claim.nova-drop.xyz/", "https://docs.novaproto.io/start"] })],
+      },
+    };
+    return { pages, chat: fakeChat(replies) };
+  }
+  const OFFICIAL = ["deepbook.tech", "hyperdrive.fi", "inkonchain.com", "novaproto.io"];
+
+  it("asks RDAP for official domains first, so a budget cut skips a non-official one", async () => {
+    const { pages, chat } = novaSetup();
+    // Every RDAP request moves the clock 100 s: 4 requests start within the 6-minute budget, the fifth would not.
+    const net = timed({
+      pages,
+      rdap: () => {
+        net.advance(100_000);
+        return undefined;
+      },
+    });
+    const { deps } = setup({ config, pages, chat });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, config);
+
+    expect(net.rdapStarts.map((s) => s.domain).sort()).toEqual(OFFICIAL);
+    expect(stats.domain_age_rdap_skipped).toBe(1);
+    expect(stats.projects_with_official_domain).toBe(4);
+    expect(stats.domain_age_ran).toBe(4);
+  });
+
+  it("asks crt.sh for official domains first, so a crt.sh budget cut skips a non-official one", async () => {
+    const { pages, chat } = novaSetup();
+    // No RDAP anywhere; every crt.sh request takes 50 s: 4 fit in the 3-minute crt.sh budget, the fifth does not.
+    const net = timed({
+      pages,
+      rdap: () => ({ status: 404, body: "" }),
+      crtsh: () => {
+        net.advance(50_000);
+        return CRT_OK;
+      },
+    });
+    const { deps } = setup({ config, pages, chat });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, config);
+
+    expect(net.crtshStarts.map((s) => s.domain).sort()).toEqual(OFFICIAL);
+    expect(stats.domain_age_crtsh_skipped).toBe(1);
+    expect(stats.domain_age_ran).toBe(4);
+  });
+
+  it("counts only crt.sh's busy time against its budget: no-RDAP domains found late in the RDAP run still reach crt.sh", async () => {
+    // 30 official domains; every RDAP request takes 10 s (about 5.5 minutes in all), every second one has no RDAP.
+    // crt.sh answers at once, so its busy time stays far below 3 minutes, but the last no-RDAP domains turn up more
+    // than 3 minutes after the first.
+    const pages = manyProtocolPages(27);
+    let n = 0;
+    const net = timed({
+      pages,
+      rdap: () => {
+        net.advance(10_000);
+        return ++n % 2 === 0 ? { status: 404, body: "" } : undefined;
+      },
+      crtsh: () => CRT_OK,
+    });
+    // GoPlus left out (no budget), so only RDAP and crt.sh move the clock.
+    const noGoplus = { ...config, goplusBudgetMinutes: 0 };
+    const { deps } = setup({ config: noGoplus, pages });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, noGoplus);
+
+    expect(stats.projects_with_official_domain).toBe(30);
+    expect(stats.domain_age_no_rdap).toBe(15);
+    expect(net.crtshStarts).toHaveLength(15);
+    // The no-RDAP domains were spread over more than the 3-minute budget.
+    const lastNoRdap = net.crtshStarts.at(-1)?.at ?? 0;
+    expect(lastNoRdap - (net.crtshStarts[0]?.at ?? 0)).toBeGreaterThan(3 * 60_000);
+    expect(stats.domain_age_crtsh_skipped).toBe(0);
+    expect(stats.domain_age_from_crtsh).toBe(15);
+    expect(stats.domain_age_ran).toBe(30);
+  });
+
+  it("leaves no RDAP or crt.sh request running after the score stage fails", async () => {
+    const net = timed({ rdap: () => ({ status: 404, body: "" }) });
+    const http: Http = {
+      ...net.http,
+      get: async (url) => {
+        if (url.startsWith("https://api.gopluslabs.io/")) throw new Error("GoPlus client broke");
+        return net.http.get(url);
+      },
+    };
+    const { deps } = setup({ config });
+    await expect(runDaily({ ...deps, http, sleep: net.sleep, now: net.now }, config)).rejects.toThrow("GoPlus client broke");
+
+    // Every domain went through RDAP and crt.sh before the stage ended; nothing starts afterwards.
+    expect(net.rdapStarts).toHaveLength(3);
+    expect(net.crtshStarts).toHaveLength(3);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(net.rdapStarts).toHaveLength(3);
+    expect(net.crtshStarts).toHaveLength(3);
+  });
+
   it("leaves at least 1000 ms between RDAP request starts on the run's clock", async () => {
     const net = timed();
     const { deps } = setup({ config });
@@ -1934,20 +2060,8 @@ describe("runDaily RDAP and crt.sh pacing", () => {
   });
 
   it("gets the age of all 40 official domains behind an RDAP server that refuses bursts", async () => {
-    // 37 more DefiLlama protocols, each a speculative project with its own official domain: 40 with DeepBook and Ink.
-    const extra = Array.from({ length: 37 }, (_, i) => ({
-      name: `Proto Lend ${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + Math.floor(i / 26))}`,
-      slug: `proto-${i}`,
-      url: `https://protolend${i}.xyz`,
-      chains: ["Ethereum"],
-      tvl: 5_000_000,
-      change_7d: 1,
-      category: "Lending",
-      gecko_id: null,
-      symbol: "-",
-      listedAt: 1_760_000_000,
-    }));
-    const pages = { ...basePages(), [PROTOCOLS]: { status: 200, body: JSON.stringify([...PROTOCOL_LIST, ...extra]) } };
+    // 37 more DefiLlama protocols: 40 official domains with DeepBook, Ink and Hyperdrive Lend.
+    const pages = manyProtocolPages(37);
     // 429 to any request that makes more than 25 in a 10 s window (refused requests count too).
     const seen: number[] = [];
     const net = timed({

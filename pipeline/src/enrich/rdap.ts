@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Http } from "../collectors/types.js";
-import { defaultSleep } from "./goplus.js";
+import { defaultSleep } from "./time.js";
 
 const MS_PER_DAY = 86_400_000;
 
@@ -21,7 +21,7 @@ const responseSchema = z.object({
 
 /**
  * What an RDAP lookup gave: `age` (with `days`); `no_rdap`, a 404 (rdap.org has no RDAP service for the TLD, e.g.
- * .io, .gg, .co); `no_date`, a 200 without a usable registration date; `rate_limited`, still 429 after the retry;
+ * .io, .gg, .co, or the registry does not know the domain); `no_date`, a 200 without a usable registration date; `rate_limited`, still 429 after the retry;
  * `failed`, anything else (5xx after the retry, timeout, other status). Only `no_rdap` and `no_date` are worth asking
  * crt.sh; the others are asked RDAP again in the next run.
  */

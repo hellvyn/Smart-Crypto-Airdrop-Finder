@@ -26,11 +26,14 @@ export interface DailyStats extends RunStats {
   domain_age_rdap_failed: number;
   /** Of those, domains RDAP still rate-limited (429) after the one retry. Not sent to crt.sh: retried next run. */
   domain_age_rdap_rate_limited: number;
-  /** Of those, domains whose TLD has no RDAP service (rdap.org answered 404). Sent to crt.sh. */
+  /**
+   * Of those, domains rdap.org answered 404 for: a TLD without RDAP service, or a registry that does not know the
+   * domain. Sent to crt.sh.
+   */
   domain_age_no_rdap: number;
   /** Of those, domains never asked because the RDAP time budget ran out. */
   domain_age_rdap_skipped: number;
-  /** Domains sent to crt.sh (no RDAP service, or a 200 without a registration date) that crt.sh gave no age for. */
+  /** Domains sent to crt.sh (an RDAP 404, or a 200 without a registration date) that crt.sh gave no age for. */
   domain_age_crtsh_failed: number;
   /** Of those, domains never asked because the crt.sh time budget ran out. */
   domain_age_crtsh_skipped: number;

@@ -58,8 +58,9 @@ export interface PipelineConfig {
    */
   rdapBudgetMinutes: number;
   /**
-   * crt.sh time budget, counted from its first request of the run (crt.sh only gets the domains RDAP has no date for,
-   * as RDAP finds them): after it no new crt.sh request starts (`domain_age_crtsh_skipped`).
+   * crt.sh time budget, counting only the time crt.sh is busy (pacing waits and requests), not the time it waits for
+   * RDAP to find a domain without a date: once it is used up no new crt.sh request starts (`domain_age_crtsh_skipped`).
+   * Worst case crt.sh ends about 3.4 minutes after RDAP (about 10.2 minutes into `score`), inside the GoPlus 12.
    */
   crtshBudgetMinutes: number;
   /**

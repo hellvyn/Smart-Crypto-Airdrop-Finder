@@ -6,7 +6,7 @@ import type { DefillamaProtocol, SpeculativeCandidate } from "../collectors/defi
 import { collectTelegram } from "../collectors/telegram.js";
 import type { CollectedDocument, CollectorResult, Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
-import { defaultSleep } from "../enrich/goplus.js";
+import { defaultSleep } from "../enrich/time.js";
 import type { DailyStats } from "../stats.js";
 import type { PipelineRepo, StoredDocument } from "../store/repo.js";
 
