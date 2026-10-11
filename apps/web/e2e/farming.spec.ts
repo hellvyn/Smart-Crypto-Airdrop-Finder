@@ -199,6 +199,111 @@ test("ticking a task archived in another tab explains it on /garapan", async ({ 
   await expect(card.getByRole("checkbox", { name: "Check in on the points page" })).toHaveCount(0);
 });
 
+/**
+ * An ended project (status ended, latest curation in the Ended tab) the member farms, created through the service
+ * role. `geckoId` adds a coingecko_listed signal; the local price stub prices every coin except "e2e-noprice-*".
+ * Deleting the project removes the farming row and the result with it.
+ */
+async function endedProjectFarmedBy(email: string, tag: string, geckoId: string | null): Promise<{ id: string; name: string }> {
+  const db = adminClient();
+  const unique = `${tag}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const name = `E2E Ended ${unique}`;
+  const now = new Date().toISOString();
+  const project = await db
+    .from("projects")
+    .insert({ slug: `e2e-ended-${unique}`, name, name_key: name.toLowerCase(), token_symbol: "ENDR", status: "ended", first_seen: now, last_seen: now })
+    .select("id")
+    .single();
+  if (project.error) throw project.error;
+  const id = project.data.id as string;
+  const endedOn = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+  const curation = await db.from("curations").insert({ project_id: id, passed: true, tab: "ended", status_at: "ended", ended_on: endedOn, computed_at: now });
+  if (curation.error) throw curation.error;
+  if (geckoId) {
+    const signal = await db
+      .from("project_signals")
+      .insert({ project_id: id, kind: "coingecko_listed", value: { gecko_id: geckoId }, source: "defillama", verified: true, observed_at: now });
+    if (signal.error) throw signal.error;
+  }
+  const farming = await db.from("farming_projects").insert({ user_id: await userIdOf(email), project_id: id });
+  if (farming.error) throw farming.error;
+  return { id, name };
+}
+
+async function deleteProject(id: string): Promise<void> {
+  const { error } = await adminClient().from("projects").delete().eq("id", id);
+  if (error) throw error;
+}
+
+test("an ended project asks for the result; 1250 tokens show in Hasil kamu and raise Total hasil garapan", async ({ page }) => {
+  const email = await signIn(page, "farm-result");
+  await startFarming(page, seed.main.slug);
+  const ended = await endedProjectFarmedBy(email, "priced", "e2e-priced-token");
+  try {
+    await page.goto("/garapan");
+    const summary = page.getByTestId("garapan-summary");
+    await expect(summary).toContainText("≈ $0");
+    await expect(summary).toContainText("Total hasil garapan");
+    // A project still running has no result form.
+    await expect(cardFor(page, seed.main.name).getByRole("region", { name: "Dapet berapa dari airdrop ini?" })).toHaveCount(0);
+
+    const card = cardFor(page, ended.name);
+    const ask = card.getByRole("region", { name: "Dapet berapa dari airdrop ini?" });
+    const claimed = new Date(Date.now() - 2 * 86_400_000);
+    await ask.getByLabel("Jumlah token").fill("1250");
+    await ask.getByLabel("Tanggal claim").fill(claimed.toISOString().slice(0, 10));
+    await ask.getByRole("button", { name: "Simpan" }).click();
+
+    await expect(page).toHaveURL(/\/garapan$/);
+    const result = card.getByRole("region", { name: "Hasil kamu" });
+    await expect(result.getByText("1.250 ENDR")).toBeVisible();
+    // The stub prices the token at $0.32 on the claim day and $0.304 now.
+    const day = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "UTC" }).format(claimed);
+    await expect(result.getByText(`≈ $400 waktu claim (${day}) · sekarang ≈ $380`)).toBeVisible();
+    await expect(summary).toContainText("≈ $400");
+
+    // Sharing for the member average is opt-in, and the box remembers it.
+    const share = result.getByRole("checkbox", { name: "Boleh dipakai anonim buat rata-rata hasil member" });
+    await expect(share).toHaveAttribute("aria-checked", "false");
+    await share.click();
+    await expect(result.getByRole("checkbox", { name: "Boleh dipakai anonim buat rata-rata hasil member" })).toHaveAttribute("aria-checked", "true");
+    // One member is far below the 5 needed for an average.
+    await expect(card.getByText(/Rata-rata member/)).toHaveCount(0);
+  } finally {
+    await deleteProject(ended.id);
+  }
+});
+
+test("without a price the token amount is still saved, and a refused form clears after the next success", async ({ page }) => {
+  const email = await signIn(page, "farm-noprice");
+  const ended = await endedProjectFarmedBy(email, "noprice", "e2e-noprice-token");
+  try {
+    await page.goto("/garapan");
+    const card = cardFor(page, ended.name);
+    const ask = card.getByRole("region", { name: "Dapet berapa dari airdrop ini?" });
+
+    // A claim date in the future is refused with a message.
+    await ask.getByLabel("Jumlah token").fill("10");
+    await ask.getByLabel("Tanggal claim").fill(new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10));
+    await ask.getByLabel("Tanggal claim").evaluate((el) => el.removeAttribute("max"));
+    await ask.getByRole("button", { name: "Simpan" }).click();
+    await expect(page).toHaveURL(/\/garapan\?error=invalid_claim_date$/);
+    await expect(page.getByRole("main").getByRole("alert")).toBeVisible();
+
+    await ask.getByLabel("Jumlah token").fill("1250");
+    await ask.getByLabel("Tanggal claim").fill(new Date().toISOString().slice(0, 10));
+    await ask.getByRole("button", { name: "Simpan" }).click();
+    await expect(page).toHaveURL(/\/garapan$/);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    const result = card.getByRole("region", { name: "Hasil kamu" });
+    await expect(result.getByText("1.250 ENDR")).toBeVisible();
+    await expect(result.getByText("Harga belum ketemu, jumlah token tetap tersimpan.")).toBeVisible();
+    await expect(page.getByTestId("garapan-summary")).toContainText("≈ $0");
+  } finally {
+    await deleteProject(ended.id);
+  }
+});
+
 test.describe("360px phone", () => {
   test.use({ viewport: { width: 360, height: 740 } });
 

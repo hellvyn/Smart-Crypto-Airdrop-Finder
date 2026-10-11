@@ -463,6 +463,40 @@ export const garapan = {
     invalid_task: "Teks task wajib diisi, maksimal 200 karakter.",
     not_farming: "Kamu lagi gak garap project ini.",
     task_inactive: "Task itu udah diarsipkan, atau project-nya udah berhenti kamu garap. Checklist di bawah udah yang terbaru.",
+    invalid_timezone:
+      "Zona waktu di akun kamu gak dikenal, jadi hari ini gak bisa dihitung. Ganti zona waktunya di halaman Akun, terus centang lagi.",
+    result_not_ended: "Hasil baru bisa diisi setelah project-nya ended.",
+    invalid_amount: "Jumlah token harus angka di atas 0. Desimal pakai titik atau koma, tanpa pemisah ribuan.",
+    invalid_claim_date: "Tanggal claim wajib diisi, dan gak boleh lewat dari hari ini.",
+  },
+  nextDeadline: (kind: string, date: string, precision: string) => `Deadline terdekat: ${kind} ${date} (${precision})`,
+  totalResults: "Total hasil garapan",
+  usd: (value: string) => `≈ $${value}`,
+  result: {
+    askTitle: "Dapet berapa dari airdrop ini?",
+    askNote: "Isi sendiri ya. Nilai dolarnya kami hitung dari harga di tanggal claim.",
+    amountLabel: "Jumlah token",
+    amountPlaceholder: "contoh: 1250",
+    dateLabel: "Tanggal claim",
+    save: "Simpan",
+    noReward: "Gak dapet",
+    title: "Hasil kamu",
+    edit: "Ubah",
+    amount: (amount: string, symbol: string | null) => `${amount} ${symbol ?? "token"}`,
+    valueAtClaim: (usd: string, day: string) => `≈ $${usd} waktu claim (${day})`,
+    valueNow: (usd: string) => `sekarang ≈ $${usd}`,
+    priceMissing: "Harga belum ketemu, jumlah token tetap tersimpan.",
+    share: "Boleh dipakai anonim buat rata-rata hasil member",
+    average: (project: string, usd: string, members: number) =>
+      `Rata-rata member yang garap ${project}: ≈ $${usd} (dari ${members} member yang mau berbagi)`,
+  },
+  /** Attribution the CoinGecko Demo plan requires, shown wherever a USD value from prices is shown. */
+  priceSource: {
+    label: "Data harga:",
+    coingecko: "CoinGecko",
+    coingeckoUrl: "https://www.coingecko.com",
+    defillama: "DefiLlama",
+    defillamaUrl: "https://defillama.com",
   },
 };
 

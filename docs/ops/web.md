@@ -17,6 +17,7 @@ time, so set them before `build`. The third, `NEXT_PUBLIC_SITE_URL`, is only for
 | `NEXT_PUBLIC_SUPABASE_URL` | project URL (`https://<ref>.supabase.co`; locally `http://127.0.0.1:54321`) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the project's anon (public) key |
 | `NEXT_PUBLIC_SITE_URL` | base URL of the web app (locally `http://127.0.0.1:3000`). The app no longer reads it: only the Playwright config and CI set it, to the e2e server's address |
+| `COINGECKO_API_KEY` | optional, **secret, server-side only**: the CoinGecko Demo API key for token prices (section 6). Read at runtime, never inlined, never a `NEXT_PUBLIC_` name |
 
 The service role key never goes into the web app, its env or the browser. Row Level Security protects user data;
 the anon key is meant to be public.
@@ -133,7 +134,8 @@ so the database goes before the web build.
    `docs/ops/pipeline.md` section 1 for aligning the production migration history before the first `db push`.
 3. **Build-time env.** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are inlined by `next build`:
    set them in the host's build environment, and rebuild after changing either of them. `NEXT_PUBLIC_SITE_URL` is
-   not needed for a deploy. No other secret belongs in the web app (never the service role key).
+   not needed for a deploy. The only secret the web app may hold is `COINGECKO_API_KEY` (section 6), a runtime
+   server env var; never the service role key.
 4. **Build and start.** `pnpm --filter web build`, then `pnpm --filter web start` (plain `next start`; the host's
    `PORT` or `-- --port <n>` picks the port). Hosts that build Next.js themselves need the `--webpack` build script
    (see section 2).
@@ -143,3 +145,57 @@ so the database goes before the web build.
    `Referrer-Policy: strict-origin-when-cross-origin` and `X-Content-Type-Options: nosniff` (`apps/web/next.config.ts`);
    a host or proxy in front must not strip them. Then, signed out: `/` and `/airdrops` open and `/watchlist`
    redirects to `/login`. Log in as the member you added, add a wallet and run one wallet check.
+
+## 6. Token prices for "Hasil garapan"
+
+On "Garapan saya" a member enters what an ended airdrop gave them (`farming_results`, migration
+`0015_farming_results.sql`). The web stores the USD value at the claim date and shows today's value next to it. The
+token is found by the CoinGecko id the pipeline stores in `project_signals` (`coingecko_listed`, `value.gecko_id`);
+a project without that signal simply has no price. Code: `apps/web/lib/prices.ts` (server-side only).
+
+**Providers, in order:**
+
+1. **CoinGecko Demo**, only when `COINGECKO_API_KEY` is set. `https://api.coingecko.com/api/v3`, key in the
+   `x-cg-demo-api-key` header (never in a URL). Price on a day: `/coins/{id}/history?date=dd-mm-yyyy&localization=false`,
+   field `market_data.current_price.usd`. Price now: `/simple/price?ids={id}&vs_currencies=usd`.
+2. **DefiLlama coins** (keyless), the fallback when there is no key or CoinGecko answers with an error, a 429, any
+   other non-200 or an unexpected shape. Coin key `coingecko:{id}`. Price on a day (00:00 UTC):
+   `https://coins.llama.fi/prices/historical/{unixSeconds}/coingecko:{id}`; price now:
+   `https://coins.llama.fi/prices/current/coingecko:{id}`; field `coins["coingecko:{id}"].price`.
+
+When both fail the price is `null`, nothing throws, and the member sees "Harga belum ketemu, jumlah token tetap
+tersimpan." The token amount is saved anyway; "Ubah" + "Simpan" later computes the value again. Answers are cached by
+Next's data cache: 24 hours for a past day, 1 hour for the current price (only HTTP 200 answers are cached). Every
+request has a 5 second timeout. Nothing in this path logs a user id, an amount or a key.
+
+**`COINGECKO_API_KEY`:** a server-side Vercel environment variable for Production and Preview. The owner adds it in
+the Vercel project settings; it is never committed, never put in `.env.example`, and never pasted into chat. Without
+it the site runs on DefiLlama alone.
+
+**Attribution and licence.** The CoinGecko Demo plan requires attribution, so wherever a USD value from these prices
+is shown (the result box and the "Total hasil garapan" summary) the page shows "Data harga: CoinGecko, DefiLlama"
+with links to both. Which provider priced a stored value is not recorded, so both are named. Per third-party sources
+the Demo plan carries no commercial licence, and AirdropIQ is a paid membership: the owner accepts that risk
+(decision 2026-10-11).
+
+**What is known and what is not:**
+
+- Verified from the build container on 2026-10-11, without a key: `GET /coins/bitcoin/history?date=01-10-2026&localization=false`
+  answered 200 with `market_data.current_price.usd` (response header `cache-control: max-age=30, public,
+  must-revalidate, s-maxage=1800`), and `GET /simple/price?ids=bitcoin&vs_currencies=usd` answered 200 with
+  `{"bitcoin":{"usd":...}}`. An unkeyed request earlier the same day answered 429.
+- [UNKNOWN] CoinGecko Demo rate limits, monthly call allowance and how far back `/history` reaches on the Demo plan.
+  Not verified; no keyed request was made.
+- [UNKNOWN] DefiLlama's live response shape and rate limits: `coins.llama.fi` is blocked by the build container's
+  proxy, so the shape above is the documented one, parsed defensively (anything else counts as no price).
+- [UNKNOWN] DefiLlama's commercial terms for this use. Not verified.
+
+**Member average.** `farming_result_stats(project)` (security definer, members only) counts the results whose owner
+ticked "Boleh dipakai anonim buat rata-rata hasil member" and that have a USD value ("Gak dapet" counts as $0). It
+returns only that count and the average, and the average stays empty below 5 members. A member writes their own
+`usd_at_claim` (the web computes it, but the column is the member's), so one member can skew the average of a project
+with few contributors.
+
+**e2e.** The Playwright config starts `apps/web/e2e/support/prices-stub.mjs` on `127.0.0.1:3101` and points the web
+server at it with `PRICES_API_BASE`. `lib/prices.ts` honours that variable only for a plain `http://127.0.0.1` or
+`http://localhost` address, so it cannot redirect production requests elsewhere. Do not set it in a deploy.

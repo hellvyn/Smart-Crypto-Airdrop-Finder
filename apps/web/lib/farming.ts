@@ -1,7 +1,8 @@
 // The signed-in member's farming tracker ("Garapan saya", curation spec §14). Every function verifies the user itself
 // with requireUser(), filters by that user's id, and relies on RLS ("own farming ...") and the column grants of
 // 0010_farming.sql as the other barriers. Checks are written only through toggle_farming_check(), which takes the
-// member's local "today" on the server; this module never sends a date.
+// member's local "today" on the server; this module never sends a date. Airdrop results ("Hasil garapan", #51) live in
+// farming_results (0015_farming_results.sql); their USD values come from lib/prices.ts.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildHeatmap,
@@ -20,6 +21,7 @@ import {
 } from "@saf/core";
 import { requireUser } from "./auth";
 import { garapan as copy } from "./copy";
+import { geckoIdFor, priceNow, priceOn } from "./prices";
 import { isValidTimezone } from "./settings";
 import { isUuid } from "./uuid";
 
@@ -33,7 +35,16 @@ const MAX_ACTIVE_TASKS = 30;
 const PAGE_SIZE = 1000;
 
 /** Why a farming request was refused; anything else is thrown as a plain Error. */
-export type FarmingErrorCode = "project_limit" | "task_limit" | "invalid_task" | "not_farming" | "task_inactive";
+export type FarmingErrorCode =
+  | "project_limit"
+  | "task_limit"
+  | "invalid_task"
+  | "not_farming"
+  | "task_inactive"
+  | "invalid_timezone"
+  | "result_not_ended"
+  | "invalid_amount"
+  | "invalid_claim_date";
 
 export const FARMING_ERROR_MESSAGES: Record<FarmingErrorCode, string> = copy.errors;
 
@@ -61,6 +72,9 @@ export interface FarmingCard {
   slug: string;
   /** The member's local day the card was built for (YYYY-MM-DD). */
   today: string;
+  /** The project ended: its latest curation is in the Ended tab, or its status is ended. Results can be entered. */
+  ended: boolean;
+  tokenSymbol: string | null;
   /** Earliest exact/approximate deadline of any kind from the member's today on, or null. */
   nextDeadline: { kind: DeadlineKind; date: string; precision: DatePrecision } | null;
   /** Active tasks in checklist order. */
@@ -308,14 +322,17 @@ export async function refreshFromSource(db: SupabaseClient, projectId: string): 
 
 /**
  * Checks (`done`) or unchecks a task for the member's today through toggle_farming_check(), and returns the state it
- * set. For a weekly task that is today's box only: whether the week is done comes from the stored checks. A task
- * archived, or a project stopped, in another tab (22023) is refused as FarmingError "task_inactive".
+ * set. For a weekly task that is today's box only: whether the week is done comes from the stored checks. Refusals:
+ * - a task archived, or a project stopped, in another tab (22023), or a task gone with its deleted project (42501
+ *   "task not found"; requireUser() already ruled out a missing user): FarmingError "task_inactive";
+ * - a profile time zone Postgres does not know (its own 22023 "time zone ... not recognized"): "invalid_timezone".
  */
 export async function setCheck(db: SupabaseClient, taskId: string, done: boolean): Promise<boolean> {
   await requireUser();
   requireUuid(taskId, "task");
   const { data, error } = await db.rpc("toggle_farming_check", { p_task_id: taskId, p_done: done });
-  if (error?.code === "22023") throw new FarmingError("task_inactive");
+  if (error?.code === "22023" && /time zone/i.test(error.message)) throw new FarmingError("invalid_timezone");
+  if (error?.code === "22023" || error?.code === "42501") throw new FarmingError("task_inactive");
   throwIf(error, "update the check");
   return data === true;
 }
@@ -330,7 +347,7 @@ export async function isFarming(db: SupabaseClient, projectId: string): Promise<
 interface ProjectRow {
   project_id: string;
   started_at: string;
-  projects: { name: unknown; slug: unknown } | null;
+  projects: { name: unknown; slug: unknown; token_symbol: unknown; status: unknown } | null;
 }
 interface TaskRow {
   id: string;
@@ -370,7 +387,7 @@ export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<Fa
     db.from("profiles").select("timezone").eq("user_id", user.id).maybeSingle(),
     db
       .from("farming_projects")
-      .select("project_id, started_at, projects(name, slug)")
+      .select("project_id, started_at, projects(name, slug, token_symbol, status)")
       .eq("user_id", user.id)
       .is("archived_at", null)
       .order("started_at")
@@ -411,15 +428,12 @@ export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<Fa
       db.from("deadlines").select("project_id, kind, date, precision").in("project_id", ids).order("id").range(from, to),
     ),
     // At most one row per project, and a member farms at most 50 projects: no paging needed.
-    db.from("latest_curations").select("project_id, ended_on").in("project_id", ids),
+    db.from("latest_curations").select("project_id, ended_on, tab").in("project_id", ids),
   ]);
   throwIf(curations.error, "load the curations");
-  const endedOnOf = new Map(
-    ((curations.data ?? []) as { project_id: string; ended_on: unknown }[]).map((c) => [
-      c.project_id,
-      typeof c.ended_on === "string" ? c.ended_on : null,
-    ]),
-  );
+  const curationRows = (curations.data ?? []) as { project_id: string; ended_on: unknown; tab: unknown }[];
+  const endedOnOf = new Map(curationRows.map((c) => [c.project_id, typeof c.ended_on === "string" ? c.ended_on : null]));
+  const endedTab = new Set(curationRows.filter((c) => c.tab === "ended").map((c) => c.project_id));
 
   const tasksByProject = groupBy(tasks, (t) => t.project_id);
   const projectOfTask = new Map(tasks.map((t) => [t.id, t.project_id]));
@@ -455,6 +469,8 @@ export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<Fa
       projectId: p.project_id,
       name: String(p.projects!.name),
       slug: String(p.projects!.slug),
+      ended: endedTab.has(p.project_id) || p.projects!.status === "ended",
+      tokenSymbol: typeof p.projects!.token_symbol === "string" && p.projects!.token_symbol !== "" ? p.projects!.token_symbol : null,
       today,
       nextDeadline: upcoming ? { kind: upcoming.kind, date: upcoming.date!, precision: upcoming.precision } : null,
       tasks: active.map((t) => ({ id: t.id, text: t.text, cadence: t.cadence, origin: t.origin })),
@@ -467,4 +483,190 @@ export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<Fa
       mainProgress: mainProgress(trackerTasks, trackerChecks),
     };
   });
+}
+
+// ---------- Airdrop results ("Hasil garapan", #51) ----------
+
+/** Same limit as the farming_results.amount check of 0015_farming_results.sql. */
+const MAX_AMOUNT = 1e15;
+/** A plain decimal: digits, optionally one "." (a "," is read as "."). No sign, exponent or thousands separator. */
+const AMOUNT = /^\d+(\.\d+)?$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** What the member enters: an amount and a claim date, or "Gak dapet" (`noReward`, which ignores both). */
+export interface ResultInput {
+  amount: string;
+  claimedOn: string;
+  noReward: boolean;
+  /** Sent only when the member changes it; a re-entered result keeps its current choice otherwise. */
+  shareAnonymous?: boolean;
+}
+
+/** The member's result for one project, with today's value of the tokens when a price is found. */
+export interface FarmingResult {
+  amount: number | null;
+  noReward: boolean;
+  claimedOn: string | null;
+  usdAtClaim: number | null;
+  shareAnonymous: boolean;
+  usdNow: number | null;
+}
+
+/** The anonymous average of members who share (farming_result_stats), shown only when it exists (5+ members). */
+export interface MemberAverage {
+  contributors: number;
+  avgUsd: number;
+}
+
+const toNumber = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+const cents = (usd: number): number => Math.round(usd * 100) / 100;
+
+function isCalendarDay(day: string): boolean {
+  return DAY.test(day) && new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) === day;
+}
+
+/** A project has ended when its latest curation is in the Ended tab or its own status is ended. */
+async function projectEnded(db: SupabaseClient, projectId: string): Promise<boolean> {
+  const [project, curation] = await Promise.all([
+    db.from("projects").select("status").eq("id", projectId).maybeSingle(),
+    db.from("latest_curations").select("tab").eq("project_id", projectId).maybeSingle(),
+  ]);
+  throwIf(project.error, "read the project");
+  throwIf(curation.error, "read the curation");
+  return (curation.data as { tab?: unknown } | null)?.tab === "ended" || (project.data as { status?: unknown } | null)?.status === "ended";
+}
+
+/** The member's local today (profiles.timezone, UTC when unset or unknown). */
+async function memberToday(db: SupabaseClient, userId: string, now: Date): Promise<string> {
+  const { data, error } = await db.from("profiles").select("timezone").eq("user_id", userId).maybeSingle();
+  throwIf(error, "load the time zone");
+  const zone = (data as { timezone?: unknown } | null)?.timezone;
+  return localDay(now, isValidTimezone(zone) ? zone : "UTC");
+}
+
+/**
+ * Saves the member's result for a project that ended and that they farm or farmed. The amount must be a number above
+ * 0 (at most 1e15) and the claim date a real day no later than the member's today. usd_at_claim is amount x the
+ * token's price on the claim day, or null when no price is found (the tokens are saved anyway). Refusals the member can
+ * fix are FarmingErrors: "invalid_amount", "invalid_claim_date", "result_not_ended", "not_farming".
+ * Not an upsert: the key columns have no update grant, so the existing row is updated, else a new one inserted.
+ */
+export async function saveResult(db: SupabaseClient, projectId: string, input: ResultInput, now: Date): Promise<void> {
+  const user = await requireUser();
+  requireUuid(projectId, "project");
+  let amount: string | null = null;
+  let claimedOn: string | null = null;
+  if (!input.noReward) {
+    amount = typeof input.amount === "string" ? input.amount.trim().replace(",", ".") : "";
+    if (!AMOUNT.test(amount) || !(Number(amount) > 0) || Number(amount) > MAX_AMOUNT) throw new FarmingError("invalid_amount");
+    claimedOn = typeof input.claimedOn === "string" ? input.claimedOn.trim() : "";
+    if (!isCalendarDay(claimedOn)) throw new FarmingError("invalid_claim_date");
+  }
+
+  const [ended, state, today] = await Promise.all([
+    projectEnded(db, projectId),
+    farmingState(db, user.id, projectId),
+    memberToday(db, user.id, now),
+  ]);
+  if (!ended) throw new FarmingError("result_not_ended");
+  if (state === "none") throw new FarmingError("not_farming");
+  if (claimedOn !== null && claimedOn > today) throw new FarmingError("invalid_claim_date");
+
+  let usdAtClaim: number | null = null;
+  if (amount !== null && claimedOn !== null) {
+    const geckoId = await geckoIdFor(db, projectId);
+    const price = geckoId ? await priceOn(geckoId, claimedOn) : null;
+    usdAtClaim = price === null ? null : cents(Number(amount) * price);
+  }
+
+  const values: Record<string, unknown> = { amount, no_reward: input.noReward, claimed_on: claimedOn, usd_at_claim: usdAtClaim };
+  if (typeof input.shareAnonymous === "boolean") values.share_anonymous = input.shareAnonymous;
+  const update = () =>
+    db.from("farming_results").update(values).eq("user_id", user.id).eq("project_id", projectId).select("project_id");
+
+  const updated = await update();
+  throwIf(updated.error, "save the result");
+  if (Array.isArray(updated.data) && updated.data.length > 0) return;
+
+  const { error } = await db.from("farming_results").insert({ user_id: user.id, project_id: projectId, ...values });
+  if (error?.code === "23505") {
+    // Another tab inserted it a moment ago: this entry wins.
+    throwIf((await update()).error, "save the result");
+    return;
+  }
+  if (error?.code === "23503") throw new FarmingError("not_farming");
+  if (error?.code === "23514") throw new FarmingError("invalid_amount");
+  throwIf(error, "save the result");
+}
+
+/** "Boleh dipakai anonim buat rata-rata hasil member": the member's opt-in for one result. */
+export async function setShareAnonymous(db: SupabaseClient, projectId: string, share: boolean): Promise<void> {
+  const user = await requireUser();
+  requireUuid(projectId, "project");
+  const { error } = await db
+    .from("farming_results")
+    .update({ share_anonymous: share })
+    .eq("user_id", user.id)
+    .eq("project_id", projectId);
+  throwIf(error, "update the sharing choice");
+}
+
+/**
+ * The member's results: `totalUsd` sums usd_at_claim over every result they entered ("Total hasil garapan"; a project
+ * they stopped farming still counts, "Gak dapet" and unpriced ones add $0). For the ended projects on the board,
+ * `results` adds today's value of the tokens, and `averages` the anonymous member average where there is one.
+ */
+export async function getResults(
+  db: SupabaseClient,
+  endedProjectIds: string[],
+): Promise<{ totalUsd: number; results: Record<string, FarmingResult>; averages: Record<string, MemberAverage> }> {
+  const user = await requireUser();
+  const rows = await fetchAll<Record<string, unknown>>("load the results", (from, to) =>
+    db
+      .from("farming_results")
+      .select("project_id, amount, no_reward, claimed_on, usd_at_claim, share_anonymous")
+      .eq("user_id", user.id)
+      .order("project_id")
+      .range(from, to),
+  );
+  const totalUsd = cents(rows.reduce((sum, r) => sum + (toNumber(r.usd_at_claim) ?? 0), 0));
+  const wanted = new Set(endedProjectIds);
+  const results: Record<string, FarmingResult> = {};
+  const averages: Record<string, MemberAverage> = {};
+
+  await Promise.all([
+    ...rows
+      .filter((r) => wanted.has(String(r.project_id)))
+      .map(async (r) => {
+        const projectId = String(r.project_id);
+        const amount = toNumber(r.amount);
+        let usdNow: number | null = null;
+        if (amount !== null && r.no_reward !== true) {
+          const geckoId = await geckoIdFor(db, projectId);
+          const price = geckoId ? await priceNow(geckoId) : null;
+          usdNow = price === null ? null : cents(amount * price);
+        }
+        results[projectId] = {
+          amount,
+          noReward: r.no_reward === true,
+          claimedOn: typeof r.claimed_on === "string" ? r.claimed_on : null,
+          usdAtClaim: toNumber(r.usd_at_claim),
+          shareAnonymous: r.share_anonymous === true,
+          usdNow,
+        };
+      }),
+    ...endedProjectIds.map(async (projectId) => {
+      const { data, error } = await db.rpc("farming_result_stats", { p_project_id: projectId });
+      throwIf(error, "load the member average");
+      const row = (Array.isArray(data) ? data[0] : data) as { contributors?: unknown; avg_usd?: unknown } | undefined;
+      const avgUsd = toNumber(row?.avg_usd);
+      const contributors = toNumber(row?.contributors);
+      if (avgUsd !== null && contributors !== null) averages[projectId] = { contributors, avgUsd };
+    }),
+  ]);
+  return { totalUsd, results, averages };
 }

@@ -1,7 +1,9 @@
 import { FarmingCard, dailyProgress } from "@/components/farming/FarmingCard";
+import { formatUsd } from "@/components/farming/format";
+import { PriceSource } from "@/components/farming/ResultBox";
 import { requireUser } from "@/lib/auth";
 import { garapan as copy, pageTitle } from "@/lib/copy";
-import { FARMING_ERROR_MESSAGES, getFarmingBoard, isFarmingErrorCode } from "@/lib/farming";
+import { FARMING_ERROR_MESSAGES, getFarmingBoard, getResults, isFarmingErrorCode } from "@/lib/farming";
 import { createServerClient } from "@/lib/supabase/server";
 
 export const metadata = { title: pageTitle(copy.title) };
@@ -17,7 +19,8 @@ const LEGEND: { className: string; text: string }[] = [
 
 /**
  * "Garapan saya": the projects the member farms now, one card each. A refused form action (limits, bad task text, a
- * task archived in another tab) comes back here as `?error=<code>` and is shown above the cards.
+ * task archived in another tab) comes back here as `?error=<code>` and is shown above the cards. The summary adds up
+ * the USD value of every result the member entered ("Total hasil garapan", #51).
  */
 export default async function GarapanPage({ searchParams }: { searchParams: Promise<{ error?: string | string[] }> }) {
   await requireUser();
@@ -25,6 +28,7 @@ export default async function GarapanPage({ searchParams }: { searchParams: Prom
   const message = isFarmingErrorCode(error) ? FARMING_ERROR_MESSAGES[error] : null;
   const db = await createServerClient();
   const cards = await getFarmingBoard(db, new Date());
+  const overview = await getResults(db, cards.filter((c) => c.ended).map((c) => c.projectId));
   const today = cards.map(dailyProgress).reduce((sum, p) => ({ done: sum.done + p.done, total: sum.total + p.total }), {
     done: 0,
     total: 0,
@@ -33,7 +37,7 @@ export default async function GarapanPage({ searchParams }: { searchParams: Prom
     <div className="garapan">
       <div className="garapan-head">
         <h1 className="ui-display garapan-title">{copy.heading}</h1>
-        {cards.length > 0 ? (
+        {cards.length > 0 || overview.totalUsd > 0 ? (
           <div className="garapan-summary" data-testid="garapan-summary">
             <div className="garapan-stat">
               <span className="garapan-stat-number">{cards.length}</span>{" "}
@@ -45,6 +49,15 @@ export default async function GarapanPage({ searchParams }: { searchParams: Prom
               </span>{" "}
               <span className="garapan-stat-label">{copy.dailyToday}</span>
             </div>
+            <div className="garapan-stat garapan-stat-total">
+              <span className="garapan-stat-number">{copy.usd(formatUsd(overview.totalUsd))}</span>{" "}
+              <span className="garapan-stat-label">{copy.totalResults}</span>
+            </div>
+            {overview.totalUsd > 0 ? (
+              <div className="garapan-price-source">
+                <PriceSource testId="garapan-price-source" />
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -66,7 +79,12 @@ export default async function GarapanPage({ searchParams }: { searchParams: Prom
             ))}
           </ul>
           {cards.map((card) => (
-            <FarmingCard key={card.projectId} card={card} />
+            <FarmingCard
+              key={card.projectId}
+              card={card}
+              result={overview.results[card.projectId] ?? null}
+              average={overview.averages[card.projectId] ?? null}
+            />
           ))}
         </>
       )}

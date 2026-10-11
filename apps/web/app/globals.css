@@ -1239,6 +1239,10 @@ blockquote {
   border-left: 2px solid var(--ink);
 }
 
+.garapan-stat-total {
+  background: var(--member-fill);
+}
+
 .garapan-stat-number {
   font-family: var(--font-display);
   font-weight: 800;
@@ -1586,6 +1590,133 @@ blockquote {
   font-weight: 700;
   text-decoration: underline;
   text-transform: uppercase;
+}
+
+/* Airdrop result (#51): the form until a result is entered, then "Hasil kamu" on the soft orange fill. */
+
+.farm-meta {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.farm-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 3px solid var(--ink);
+}
+
+.farm-result[data-saved="true"] {
+  background: var(--member-fill);
+}
+
+.farm-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.farm-result-head .farm-group-title {
+  margin: 0;
+}
+
+.farm-result-edit {
+  flex: 1 1 100%;
+}
+
+.farm-result-edit summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  list-style: none;
+}
+
+.farm-result-edit summary::-webkit-details-marker {
+  display: none;
+}
+
+.farm-result-amount {
+  margin: 0;
+  font-size: 36px;
+  line-height: 1;
+}
+
+.farm-result-value {
+  margin: 0;
+  font-size: 15px;
+}
+
+.farm-result-note,
+.farm-price-source {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.farm-price-source a {
+  color: inherit;
+}
+
+.farm-result-forms,
+.farm-result-form,
+.farm-result-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.farm-result-form {
+  flex: 1 1 100%;
+}
+
+.farm-result-fields {
+  flex: 1 1 100%;
+}
+
+.farm-result-fields label {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 140px;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.farm-result-fields input {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  background: var(--surface);
+  font: inherit;
+  font-size: 15px;
+}
+
+.farm-share {
+  font-size: 14px;
+}
+
+.farm-share[aria-checked="true"] .farm-box {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.farm-share-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.garapan-price-source {
+  flex: 1 1 100%;
+  padding: 4px 16px 8px;
 }
 
 /* Heatmap: 14 px squares, 3 px apart, scrolling inside its own box on narrow screens. */

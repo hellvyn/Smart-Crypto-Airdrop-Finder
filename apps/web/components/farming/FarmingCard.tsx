@@ -9,9 +9,16 @@ import {
 } from "@/app/(app)/garapan/actions";
 import { Button, Stamp } from "@/components/ui";
 import { garapan as copy } from "@/lib/copy";
-import type { FarmingCard as FarmingCardData, FarmingTask } from "@/lib/farming";
+import type { FarmingCard as FarmingCardData, FarmingResult, FarmingTask, MemberAverage } from "@/lib/farming";
+import { deadlineKindLabel, precisionLabel } from "@/lib/view";
 import { formatDay } from "./dates";
 import { Heatmap } from "./Heatmap";
+import { ResultBox } from "./ResultBox";
+
+/** Sent by every form on the card: after a success the action goes back to a plain /garapan (no stale ?error=). */
+function FromGarapan() {
+  return <input type="hidden" name="from" value="garapan" />;
+}
 
 /** Daily tasks of the card ticked today, out of all its active daily tasks. */
 export function dailyProgress(card: FarmingCardData): { done: number; total: number } {
@@ -38,6 +45,7 @@ function rangeLabel(card: FarmingCardData): string {
 function CheckBox({ task, checked }: { task: FarmingTask; checked: boolean }) {
   return (
     <form action={submitCheck} className="farm-check-form">
+      <FromGarapan />
       <input type="hidden" name="taskId" value={task.id} />
       <input type="hidden" name="done" value={checked ? "0" : "1"} />
       <button type="submit" role="checkbox" aria-checked={checked} className="farm-check">
@@ -54,6 +62,7 @@ function CheckBox({ task, checked }: { task: FarmingTask; checked: boolean }) {
 function ArchiveButton({ task }: { task: FarmingTask }) {
   return (
     <form action={submitArchiveTask}>
+      <FromGarapan />
       <input type="hidden" name="taskId" value={task.id} />
       <button type="submit" className="farm-archive" aria-label={copy.archiveLabel(task.text)}>
         {copy.archive}
@@ -138,6 +147,7 @@ function Checklist({ card }: { card: FarmingCardData }) {
       <details className="farm-add">
         <summary>{copy.addSummary}</summary>
         <form action={submitAddTask} className="farm-add-form">
+          <FromGarapan />
           <input type="hidden" name="projectId" value={card.projectId} />
           <label>
             {copy.taskLabel}
@@ -157,6 +167,7 @@ function Checklist({ card }: { card: FarmingCardData }) {
         </form>
       </details>
       <form action={submitRefresh}>
+        <FromGarapan />
         <input type="hidden" name="projectId" value={card.projectId} />
         <button type="submit" className="farm-refresh">
           {copy.refresh}
@@ -166,23 +177,42 @@ function Checklist({ card }: { card: FarmingCardData }) {
   );
 }
 
+/** "Deadline terdekat: Claim 15 Okt 2026 (tanggal tepat)", with the labels the list and project page use. */
+function nextDeadlineLabel(card: FarmingCardData): string | null {
+  const d = card.nextDeadline;
+  return d ? copy.nextDeadline(deadlineKindLabel(d.kind), formatDay(d.date), precisionLabel(d.precision)) : null;
+}
+
 /**
  * One farmed project on "Garapan saya" (mockup CGarapan): the checklist on the left (main tasks, today's dailies,
  * weeklies, the member's own task form) and the progress heatmap on the right. When the campaign ended the checklist
- * is locked and only the history is shown.
+ * is locked and only the history is shown. Once the project ended (`card.ended`), the member can enter what the
+ * airdrop gave (`result`, with the member `average` when there is one).
  */
-export function FarmingCard({ card }: { card: FarmingCardData }) {
+export function FarmingCard({
+  card,
+  result = null,
+  average = null,
+}: {
+  card: FarmingCardData;
+  result?: FarmingResult | null;
+  average?: MemberAverage | null;
+}) {
   const ended = card.range.endKind === "ended";
   const due = countdown(card);
+  const deadline = nextDeadlineLabel(card);
   const titleId = `farm-${card.projectId}-name`;
   return (
     <article className="farm-card" aria-labelledby={titleId}>
       <div className="farm-head">
         <div className="farm-title">
           {ended ? <Stamp top={copy.endedStamp} bottom="" tone="ended" size="sm" rotate={-4} /> : null}
-          <h2 id={titleId} className="ui-display farm-name">
-            <Link href={`/projects/${card.slug}`}>{card.name}</Link>
-          </h2>
+          <div>
+            <h2 id={titleId} className="ui-display farm-name">
+              <Link href={`/projects/${card.slug}`}>{card.name}</Link>
+            </h2>
+            {deadline ? <span className="farm-meta">{deadline}</span> : null}
+          </div>
         </div>
         <div className="farm-badges">
           {due ? (
@@ -200,7 +230,18 @@ export function FarmingCard({ card }: { card: FarmingCardData }) {
           ) : (
             <Checklist card={card} />
           )}
+          {card.ended ? (
+            <ResultBox
+              projectId={card.projectId}
+              projectName={card.name}
+              tokenSymbol={card.tokenSymbol}
+              result={result}
+              average={average}
+              today={card.today}
+            />
+          ) : null}
           <form action={submitStopFarming}>
+            <FromGarapan />
             <input type="hidden" name="projectId" value={card.projectId} />
             <button type="submit" className="farm-stop">
               {copy.stop}

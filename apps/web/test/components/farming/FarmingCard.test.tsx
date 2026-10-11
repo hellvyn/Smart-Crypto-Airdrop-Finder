@@ -10,6 +10,8 @@ const actions = vi.hoisted(() => ({
   submitArchiveTask: vi.fn(),
   submitRefresh: vi.fn(),
   submitStopFarming: vi.fn(),
+  submitResultForm: vi.fn(),
+  submitShareAnonymous: vi.fn(),
 }));
 vi.mock("@/app/(app)/garapan/actions", () => actions);
 
@@ -46,6 +48,8 @@ function card(overrides: Partial<FarmingCardData> = {}): FarmingCardData {
     slug: "nebula-perps",
     today: "2026-10-10",
     nextDeadline: { kind: "snapshot", date: "2026-10-12", precision: "exact" },
+    ended: false,
+    tokenSymbol: "NBL",
     tasks: [
       { id: ID.bridge, text: "Bridge ETH lewat bridge official", cadence: "once", origin: "source" },
       { id: ID.connect, text: "Connect akun X", cadence: "once", origin: "source" },
@@ -103,9 +107,9 @@ describe("FarmingCard", () => {
 
   it("ticking a box sends the task and the wanted state, so a repeat cannot undo it", async () => {
     render(<FarmingCard card={card()} />);
-    expect(await submitted(checkbox("Connect akun X"), actions.submitCheck)).toEqual({ taskId: ID.connect, done: "1" });
+    expect(await submitted(checkbox("Connect akun X"), actions.submitCheck)).toEqual({ from: "garapan", taskId: ID.connect, done: "1" });
     actions.submitCheck.mockClear();
-    expect(await submitted(checkbox("Swap kecil di DEX"), actions.submitCheck)).toEqual({ taskId: ID.swap, done: "0" });
+    expect(await submitted(checkbox("Swap kecil di DEX"), actions.submitCheck)).toEqual({ from: "garapan", taskId: ID.swap, done: "0" });
   });
 
   it("shows today's daily tasks and how many are done", () => {
@@ -143,7 +147,7 @@ describe("FarmingCard", () => {
     expect(screen.queryByRole("region", { name: "Task utama" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Weekly" })).toBeNull();
     const refresh = screen.getByRole("button", { name: "Ambil ulang step dari source" });
-    expect(await submitted(refresh, actions.submitRefresh)).toEqual({ projectId: PID });
+    expect(await submitted(refresh, actions.submitRefresh)).toEqual({ from: "garapan", projectId: PID });
   });
 
   it("adds a task of the member's own from a small form behind a text link", async () => {
@@ -160,6 +164,7 @@ describe("FarmingCard", () => {
     fireEvent.change(text, { target: { value: "Vote di forum" } });
     fireEvent.change(cadence, { target: { value: "weekly" } });
     expect(await submitted(screen.getByRole("button", { name: "Tambah task" }), actions.submitAddTask)).toEqual({
+      from: "garapan",
       projectId: PID,
       text: "Vote di forum",
       cadence: "weekly",
@@ -169,12 +174,13 @@ describe("FarmingCard", () => {
   it("archives a single task instead of deleting it", async () => {
     render(<FarmingCard card={card()} />);
     const archive = screen.getByRole("button", { name: "Arsipkan task: Check-in di halaman points" });
-    expect(await submitted(archive, actions.submitArchiveTask)).toEqual({ taskId: ID.checkin });
+    expect(await submitted(archive, actions.submitArchiveTask)).toEqual({ from: "garapan", taskId: ID.checkin });
   });
 
   it("stops farming the project with Berhenti garap", async () => {
     render(<FarmingCard card={card()} />);
     expect(await submitted(screen.getByRole("button", { name: "Berhenti garap" }), actions.submitStopFarming)).toEqual({
+      from: "garapan",
       projectId: PID,
     });
   });
@@ -208,5 +214,32 @@ describe("FarmingCard", () => {
     expect(screen.getByRole("group", { name: "Progres Nebula Perps" })).toBeTruthy();
     // Stopping stays possible, so an ended project does not hold one of the 50 active places for good.
     expect(screen.getByRole("button", { name: "Berhenti garap" })).toBeTruthy();
+  });
+
+  it("names the next deadline under the project name", () => {
+    render(<FarmingCard card={card()} />);
+    expect(screen.getByText("Deadline terdekat: Snapshot 12 Okt 2026 (tanggal tepat)")).toBeTruthy();
+    cleanup();
+    const { container } = render(<FarmingCard card={card({ nextDeadline: null })} />);
+    expect(container.textContent).not.toContain("Deadline terdekat");
+  });
+
+  it("asks for the airdrop result only once the project ended", () => {
+    render(<FarmingCard card={card()} />);
+    expect(screen.queryByRole("region", { name: "Dapet berapa dari airdrop ini?" })).toBeNull();
+    cleanup();
+    render(<FarmingCard card={card({ ended: true })} />);
+    expect(screen.getByRole("region", { name: "Dapet berapa dari airdrop ini?" })).toBeTruthy();
+    cleanup();
+    render(
+      <FarmingCard
+        card={card({ ended: true })}
+        result={{ amount: 1250, noReward: false, claimedOn: "2026-10-07", usdAtClaim: 412, shareAnonymous: true, usdNow: null }}
+        average={{ contributors: 6, avgUsd: 300 }}
+      />,
+    );
+    const region = screen.getByRole("region", { name: "Hasil kamu" });
+    expect(within(region).getByText("1.250 NBL")).toBeTruthy();
+    expect(within(region).getByText("Rata-rata member yang garap Nebula Perps: ≈ $300 (dari 6 member yang mau berbagi)")).toBeTruthy();
   });
 });

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireUser = vi.fn();
 const revalidatePath = vi.fn();
@@ -26,6 +26,9 @@ import {
   submitArchiveTask,
   submitCheck,
   submitRefresh,
+  submitResult,
+  submitResultForm,
+  submitShareAnonymous,
   submitStartFarming,
   submitStopFarming,
 } from "../app/(app)/garapan/actions";
@@ -35,6 +38,7 @@ import {
   addCustomTask,
   archiveTask,
   getFarmingBoard,
+  getResults,
   isFarming,
   refreshFromSource,
   setCheck,
@@ -399,7 +403,18 @@ describe("stopFarming, archiveTask, isFarming, setCheck", () => {
   it("setCheck reports a task archived or a project stopped in another tab (22023) as task_inactive", async () => {
     const { db } = fakeDb(() => fail("22023", "task is archived"));
     await expect(setCheck(db, TID, true)).rejects.toMatchObject({ name: "FarmingError", code: "task_inactive" });
-    await expect(setCheck(fakeDb(() => fail("42501")).db, TID, true)).rejects.not.toBeInstanceOf(FarmingError);
+    await expect(setCheck(fakeDb(() => fail("XX000")).db, TID, true)).rejects.not.toBeInstanceOf(FarmingError);
+  });
+
+  it("setCheck reports a task gone with its deleted project (42501 task not found) as task_inactive", async () => {
+    const { db } = fakeDb(() => fail("42501", "task not found"));
+    await expect(setCheck(db, TID, true)).rejects.toMatchObject({ name: "FarmingError", code: "task_inactive" });
+  });
+
+  it("setCheck reports a profile time zone Postgres does not know (22023) as invalid_timezone, not task_inactive", async () => {
+    const { db } = fakeDb(() => fail("22023", 'time zone "Mars/Olympus_Mons" not recognized'));
+    await expect(setCheck(db, TID, true)).rejects.toMatchObject({ name: "FarmingError", code: "invalid_timezone" });
+    expect(FARMING_ERROR_MESSAGES.invalid_timezone).not.toBe(FARMING_ERROR_MESSAGES.task_inactive);
   });
 
   it("refuses ids that are not UUIDs without touching the database", async () => {
@@ -559,7 +574,7 @@ describe("getFarmingBoard", () => {
     const { db, recs } = board("Asia/Jakarta", CHECKS, latest);
     const [demo, other] = await getFarmingBoard(db, NOW);
     const curations = recs.find((r) => r.table === "latest_curations")!;
-    expect(curations.calls).toContainEqual(["select", "project_id, ended_on"]);
+    expect(curations.calls).toContainEqual(["select", "project_id, ended_on, tab"]);
     expect(curations.calls).toContainEqual(["in", "project_id", [PID, PID2]]);
     // Ended before the snapshot of 2026-10-20: the window stops at the end date.
     expect(demo!.range).toEqual({ start: "2026-10-06", end: "2026-10-09", endKind: "ended", endsOn: "2026-10-09" });
@@ -567,6 +582,33 @@ describe("getFarmingBoard", () => {
     expect(demo!.heatmap.at(-1)!.day).toBe("2026-10-09");
     // A project that has not ended keeps its usual window.
     expect(other!.range).toEqual({ start: "2026-10-11", end: "2027-10-10", endKind: null, endsOn: null });
+  });
+
+  it("marks a card ended when its latest curation is in the Ended tab or the project status is ended, with its token symbol", async () => {
+    const farmed = [
+      { project_id: PID, started_at: START, projects: { name: "Demo", slug: "demo", token_symbol: "DMO", status: "live" } },
+      { project_id: PID2, started_at: START, projects: { name: "Other", slug: "other", token_symbol: null, status: "ended" } },
+    ];
+    const third = "55555555-5555-4555-8555-555555555555";
+    farmed.push({ project_id: third, started_at: START, projects: { name: "Third", slug: "third", token_symbol: "TRD", status: "live" } });
+    const { db, recs } = fakeDb((rec) => {
+      if (rec.table === "profiles") return ok({ timezone: "UTC" });
+      if (rec.table === "farming_projects") return ok(farmed);
+      if (rec.table === "latest_curations")
+        return ok([
+          { project_id: PID, ended_on: "2026-10-09", tab: "ended" },
+          { project_id: third, ended_on: null, tab: "live_now" },
+        ]);
+      return ok([]);
+    });
+    const cards = await getFarmingBoard(db, NOW);
+    expect(cards.map((c) => [c.name, c.ended, c.tokenSymbol])).toEqual([
+      ["Demo", true, "DMO"],
+      ["Other", true, null],
+      ["Third", false, "TRD"],
+    ]);
+    const farming = recs.find((r) => r.table === "farming_projects")!;
+    expect(farming.calls).toContainEqual(["select", "project_id, started_at, projects(name, slug, token_symbol, status)"]);
   });
 
   it("fails rather than drop the end date when the curations cannot be read", async () => {
@@ -666,6 +708,26 @@ describe("garapan actions", () => {
     expect(FARMING_ERROR_MESSAGES.task_inactive).toMatch(/\S/);
   });
 
+  it("a successful form sent from /garapan goes back to a clean /garapan, so a stale ?error= clears", async () => {
+    const { db } = fakeDb((rec) => farmingRow(rec, { archived_at: null }) ?? (rec.table.startsWith("rpc:") ? ok(true) : ok([])));
+    serverDb = db;
+    const fromGarapan = [
+      () => submitCheck(form({ taskId: TID, done: "1", from: "garapan" })),
+      () => submitAddTask(form({ projectId: PID, text: "Swap", cadence: "daily", from: "garapan" })),
+      () => submitArchiveTask(form({ taskId: TID, from: "garapan" })),
+      () => submitRefresh(form({ projectId: PID, from: "garapan" })),
+      () => submitStopFarming(form({ projectId: PID, from: "garapan" })),
+    ];
+    for (const call of fromGarapan) await expect(call()).rejects.toMatchObject({ to: "/garapan" });
+  });
+
+  it("a successful form sent from the project page stays there (no redirect)", async () => {
+    const { db } = fakeDb((rec) => farmingRow(rec, { archived_at: null }) ?? ok([]));
+    serverDb = db;
+    await expect(submitStopFarming(form({ projectId: PID }))).resolves.toBeUndefined();
+    await expect(submitStartFarming(form({ projectId: PID }))).resolves.toBeUndefined();
+  });
+
   it("startFarmingAction reports the project limit as a result for the AI Coach", async () => {
     const { db } = fakeDb((rec) => farmingRow(rec, null) ?? (has(rec, "insert") ? fail("23514") : ok([])));
     serverDb = db;
@@ -706,5 +768,331 @@ describe("garapan actions", () => {
     expect(recs.some((r) => r.table === "tasks")).toBe(true);
     expect(revalidatePath).toHaveBeenCalledTimes(4);
     expect(revalidatePath).toHaveBeenCalledWith("/garapan");
+  });
+});
+
+describe("airdrop results (Hasil garapan, #51)", () => {
+  const fetchMock = vi.fn();
+  const GECKO = "astra-swap";
+  // 2026-10-10T20:00Z is 2026-10-11 in Jakarta (UTC+7) and still 2026-10-10 in UTC.
+  const NOW = new Date("2026-10-10T20:00:00Z");
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("PRICES_API_BASE", "");
+    vi.stubEnv("COINGECKO_API_KEY", "");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  const llama = (price: number) =>
+    new Response(JSON.stringify({ coins: { [`coingecko:${GECKO}`]: { symbol: "ASTRA", price, timestamp: 1, confidence: 0.99 } } }), {
+      status: 200,
+    });
+
+  interface World {
+    tab?: string | null;
+    status?: string;
+    timezone?: string;
+    farming?: { archived_at: string | null } | null;
+    gecko?: string | null;
+    /** Rows the update of farming_results matches (an existing result). */
+    existing?: boolean;
+    insertError?: string;
+  }
+
+  /** A fake db for saveResult: the project's curation/status, the member's time zone and farming row, the signal. */
+  function resultDb(w: World = {}) {
+    return fakeDb((rec) => {
+      switch (rec.table) {
+        case "profiles":
+          return ok({ timezone: w.timezone ?? "Asia/Jakarta" });
+        case "projects":
+          return ok({ status: w.status ?? "live" });
+        case "latest_curations":
+          return ok(w.tab === null ? null : { tab: w.tab ?? "ended" });
+        case "farming_projects":
+          return ok(w.farming === undefined ? { archived_at: null } : w.farming);
+        case "project_signals":
+          return ok(w.gecko === null ? null : { value: { gecko_id: w.gecko ?? GECKO } });
+        case "farming_results":
+          if (has(rec, "update")) return ok(w.existing ? [{ project_id: PID }] : []);
+          if (has(rec, "insert")) return w.insertError ? fail(w.insertError) : ok(null);
+          return ok([]);
+        default:
+          return ok(null);
+      }
+    });
+  }
+
+  const resultWrites = (recs: Recorded[]) => recs.filter((r) => r.table === "farming_results" && (has(r, "insert") || has(r, "update")));
+  const input = { amount: "1250", claimedOn: "2026-10-07", noReward: false };
+
+  describe("submitResult", () => {
+    it("refuses a project that has not ended, by curation tab and by status, without writing", async () => {
+      const { db, recs } = resultDb({ tab: "live_now", status: "live" });
+      serverDb = db;
+      expect(await submitResult(PID, input)).toEqual({ ok: false, error: "result_not_ended" });
+      expect(resultWrites(recs)).toHaveLength(0);
+      serverDb = resultDb({ tab: null, status: "announced" }).db;
+      expect(await submitResult(PID, input)).toEqual({ ok: false, error: "result_not_ended" });
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+
+    it("accepts a project in the Ended tab, or one whose status is ended without a curation", async () => {
+      fetchMock.mockImplementation(async () => llama(0.32));
+      serverDb = resultDb({ tab: "ended", status: "live" }).db;
+      expect(await submitResult(PID, input)).toEqual({ ok: true });
+      serverDb = resultDb({ tab: null, status: "ended" }).db;
+      expect(await submitResult(PID, input)).toEqual({ ok: true });
+      expect(revalidatePath).toHaveBeenCalledWith("/garapan");
+    });
+
+    it("refuses tomorrow's claim date in the member's time zone, and accepts today there", async () => {
+      fetchMock.mockImplementation(async () => llama(0.32));
+      const tomorrow = resultDb();
+      serverDb = tomorrow.db;
+      expect(await submitResult(PID, { ...input, claimedOn: "2026-10-12" })).toEqual({ ok: false, error: "invalid_claim_date" });
+      expect(resultWrites(tomorrow.recs)).toHaveLength(0);
+      // 2026-10-11 is already today in Jakarta, though still tomorrow in UTC.
+      serverDb = resultDb().db;
+      expect(await submitResult(PID, { ...input, claimedOn: "2026-10-11" })).toEqual({ ok: true });
+      serverDb = resultDb({ timezone: "UTC" }).db;
+      expect(await submitResult(PID, { ...input, claimedOn: "2026-10-11" })).toEqual({ ok: false, error: "invalid_claim_date" });
+    });
+
+    it("refuses an amount that is not a number above 0 (and at most 1e15), and an impossible date, before the database", async () => {
+      const { db, recs } = resultDb();
+      serverDb = db;
+      for (const amount of ["0", "-1", "", "abc", "1e5", "0x10", "1.2.3", "1000000000000001"]) {
+        expect(await submitResult(PID, { ...input, amount })).toEqual({ ok: false, error: "invalid_amount" });
+      }
+      for (const claimedOn of ["", "2026-02-30", "07-10-2026", "2026-10-7"]) {
+        expect(await submitResult(PID, { ...input, claimedOn })).toEqual({ ok: false, error: "invalid_claim_date" });
+      }
+      expect(recs).toHaveLength(0);
+    });
+
+    it("stores amount × the price on the claim day as usd_at_claim, inserting the first result", async () => {
+      fetchMock.mockImplementation(async () => llama(0.32));
+      const { db, recs } = resultDb();
+      serverDb = db;
+      expect(await submitResult(PID, { amount: "1250", claimedOn: "2026-10-07", noReward: false })).toEqual({ ok: true });
+      expect(String(fetchMock.mock.calls[0]![0])).toBe(`https://coins.llama.fi/prices/historical/1791331200/coingecko:${GECKO}`);
+      const signals = recs.find((r) => r.table === "project_signals")!;
+      expect(signals.calls).toContainEqual(["eq", "project_id", PID]);
+      const insert = recs.find((r) => r.table === "farming_results" && has(r, "insert"))!;
+      expect(arg(insert, "insert")).toEqual({
+        user_id: USER.id,
+        project_id: PID,
+        amount: "1250",
+        no_reward: false,
+        claimed_on: "2026-10-07",
+        usd_at_claim: 400,
+      });
+    });
+
+    it("accepts a decimal comma and rounds the USD value to cents", async () => {
+      fetchMock.mockImplementation(async () => llama(0.333));
+      const { db, recs } = resultDb();
+      serverDb = db;
+      expect(await submitResult(PID, { ...input, amount: "12,5" })).toEqual({ ok: true });
+      const insert = recs.find((r) => r.table === "farming_results" && has(r, "insert"))!;
+      expect(arg(insert, "insert")).toMatchObject({ amount: "12.5", usd_at_claim: 4.16 });
+    });
+
+    it("keeps the token amount with no USD value when the price is not found", async () => {
+      fetchMock.mockImplementation(async () => new Response("{}", { status: 429 }));
+      const limited = resultDb();
+      serverDb = limited.db;
+      expect(await submitResult(PID, input)).toEqual({ ok: true });
+      expect(arg(limited.recs.find((r) => r.table === "farming_results" && has(r, "insert"))!, "insert")).toMatchObject({
+        amount: "1250",
+        usd_at_claim: null,
+      });
+
+      fetchMock.mockReset();
+      const unlisted = resultDb({ gecko: null });
+      serverDb = unlisted.db;
+      expect(await submitResult(PID, input)).toEqual({ ok: true });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(arg(unlisted.recs.find((r) => r.table === "farming_results" && has(r, "insert"))!, "insert")).toMatchObject({
+        usd_at_claim: null,
+      });
+    });
+
+    it('"Gak dapet" stores no amount, no date and no price, and asks for no price', async () => {
+      const { db, recs } = resultDb();
+      serverDb = db;
+      expect(await submitResult(PID, { amount: "", claimedOn: "", noReward: true })).toEqual({ ok: true });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(arg(recs.find((r) => r.table === "farming_results" && has(r, "insert"))!, "insert")).toEqual({
+        user_id: USER.id,
+        project_id: PID,
+        amount: null,
+        no_reward: true,
+        claimed_on: null,
+        usd_at_claim: null,
+      });
+    });
+
+    it("updates an existing result of this member in place, keeping the sharing choice unless one is sent", async () => {
+      fetchMock.mockImplementation(async () => llama(0.32));
+      const { db, recs } = resultDb({ existing: true });
+      serverDb = db;
+      expect(await submitResult(PID, input)).toEqual({ ok: true });
+      const update = recs.find((r) => r.table === "farming_results" && has(r, "update"))!;
+      expect(arg(update, "update")).toEqual({ amount: "1250", no_reward: false, claimed_on: "2026-10-07", usd_at_claim: 400 });
+      expect(update.calls).toContainEqual(["eq", "user_id", USER.id]);
+      expect(update.calls).toContainEqual(["eq", "project_id", PID]);
+      expect(recs.some((r) => r.table === "farming_results" && has(r, "insert"))).toBe(false);
+
+      const shared = resultDb({ existing: true });
+      serverDb = shared.db;
+      await submitResult(PID, { ...input, shareAnonymous: true });
+      expect(arg(shared.recs.find((r) => r.table === "farming_results" && has(r, "update"))!, "update")).toMatchObject({
+        share_anonymous: true,
+      });
+    });
+
+    it("refuses a project the member never farmed", async () => {
+      const { db, recs } = resultDb({ farming: null });
+      serverDb = db;
+      expect(await submitResult(PID, input)).toEqual({ ok: false, error: "not_farming" });
+      expect(resultWrites(recs)).toHaveLength(0);
+    });
+
+    it("requires a user and a UUID before touching the database", async () => {
+      const { db, recs } = resultDb();
+      serverDb = db;
+      await expect(submitResult("nope", input)).rejects.toThrow(/invalid/i);
+      requireUser.mockRejectedValue(new Error("NEXT_REDIRECT"));
+      await expect(submitResult(PID, input)).rejects.toThrow("NEXT_REDIRECT");
+      expect(recs).toHaveLength(0);
+    });
+  });
+
+  describe("result forms", () => {
+    const form = (fields: Record<string, string>): FormData => {
+      const f = new FormData();
+      for (const [k, v] of Object.entries(fields)) f.set(k, v);
+      return f;
+    };
+
+    it("submitResultForm saves the fields and goes back to /garapan, clearing a stale ?error=", async () => {
+      fetchMock.mockImplementation(async () => llama(0.32));
+      const { db, recs } = resultDb();
+      serverDb = db;
+      await expect(
+        submitResultForm(form({ projectId: PID, amount: "1250", claimedOn: "2026-10-07", from: "garapan" })),
+      ).rejects.toMatchObject({ to: "/garapan" });
+      expect(arg(recs.find((r) => r.table === "farming_results" && has(r, "insert"))!, "insert")).toMatchObject({
+        amount: "1250",
+        no_reward: false,
+      });
+    });
+
+    it('submitResultForm with the "Gak dapet" button ignores the amount fields', async () => {
+      const { db, recs } = resultDb();
+      serverDb = db;
+      await expect(submitResultForm(form({ projectId: PID, amount: "", claimedOn: "", noReward: "1", from: "garapan" }))).rejects.toMatchObject({
+        to: "/garapan",
+      });
+      expect(arg(recs.find((r) => r.table === "farming_results" && has(r, "insert"))!, "insert")).toMatchObject({ no_reward: true });
+    });
+
+    it("submitResultForm sends a refusal to /garapan with its code", async () => {
+      serverDb = resultDb({ tab: "live_now" }).db;
+      await expect(submitResultForm(form({ projectId: PID, amount: "1250", claimedOn: "2026-10-07", from: "garapan" }))).rejects.toMatchObject({
+        to: "/garapan?error=result_not_ended",
+      });
+    });
+
+    it("submitShareAnonymous sets the member's opt-in for that project only", async () => {
+      const { db, recs } = fakeDb(() => ok([{ project_id: PID }]));
+      serverDb = db;
+      await expect(submitShareAnonymous(form({ projectId: PID, share: "1", from: "garapan" }))).rejects.toMatchObject({ to: "/garapan" });
+      const update = recs.find((r) => r.table === "farming_results")!;
+      expect(arg(update, "update")).toEqual({ share_anonymous: true });
+      expect(update.calls).toContainEqual(["eq", "user_id", USER.id]);
+      expect(update.calls).toContainEqual(["eq", "project_id", PID]);
+      await expect(submitShareAnonymous(form({ projectId: PID, share: "maybe" }))).rejects.toThrow(/invalid/i);
+    });
+
+    it("both result forms require a signed-in user first", async () => {
+      const { db, recs } = fakeDb();
+      serverDb = db;
+      requireUser.mockRejectedValue(new Error("NEXT_REDIRECT"));
+      await expect(submitResultForm(form({ projectId: PID, amount: "1", claimedOn: "2026-10-07" }))).rejects.toThrow("NEXT_REDIRECT");
+      await expect(submitShareAnonymous(form({ projectId: PID, share: "1" }))).rejects.toThrow("NEXT_REDIRECT");
+      expect(recs).toHaveLength(0);
+    });
+  });
+
+  describe("getResults", () => {
+    const P3 = "55555555-5555-4555-8555-555555555555";
+    const ROWS = [
+      { project_id: PID, amount: 1250, no_reward: false, claimed_on: "2026-10-07", usd_at_claim: 400, share_anonymous: true },
+      { project_id: PID2, amount: null, no_reward: true, claimed_on: null, usd_at_claim: null, share_anonymous: false },
+      // A project the member stopped farming still counts in the total.
+      { project_id: P3, amount: "10.5", no_reward: false, claimed_on: "2026-09-01", usd_at_claim: "12.25", share_anonymous: false },
+    ];
+
+    function resultsDb(stats: Record<string, { contributors: number; avg_usd: number | string | null }>) {
+      return fakeDb((rec) => {
+        if (rec.table === "farming_results") return ok(ROWS);
+        if (rec.table === "project_signals") return ok({ value: { gecko_id: GECKO } });
+        if (rec.table === "rpc:farming_result_stats") {
+          const id = (rec.calls[0]![1] as { p_project_id: string }).p_project_id;
+          return ok(stats[id] ? [stats[id]] : [{ contributors: 0, avg_usd: null }]);
+        }
+        return ok([]);
+      });
+    }
+
+    it("sums usd_at_claim of every result of the member into the total", async () => {
+      const { db, recs } = resultsDb({});
+      const overview = await getResults(db, []);
+      expect(overview.totalUsd).toBe(412.25);
+      const read = recs.find((r) => r.table === "farming_results")!;
+      expect(read.calls).toContainEqual(["eq", "user_id", USER.id]);
+    });
+
+    it("gives each ended project its result with today's value, and the member average only when there is one", async () => {
+      fetchMock.mockImplementation(async () => llama(0.304));
+      const { db, recs } = resultsDb({
+        [PID]: { contributors: 23, avg_usd: "296.4" },
+        [PID2]: { contributors: 4, avg_usd: null },
+      });
+      const overview = await getResults(db, [PID, PID2]);
+      expect(overview.results[PID]).toEqual({
+        amount: 1250,
+        noReward: false,
+        claimedOn: "2026-10-07",
+        usdAtClaim: 400,
+        shareAnonymous: true,
+        usdNow: 380,
+      });
+      expect(overview.results[PID2]).toMatchObject({ noReward: true, amount: null, usdNow: null });
+      expect(overview.averages).toEqual({ [PID]: { contributors: 23, avgUsd: 296.4 } });
+      expect(String(fetchMock.mock.calls[0]![0])).toBe(`https://coins.llama.fi/prices/current/coingecko:${GECKO}`);
+      // Stats are asked for the ended projects on the board only.
+      expect(recs.filter((r) => r.table === "rpc:farming_result_stats").map((r) => r.calls[0]![1])).toEqual([
+        { p_project_id: PID },
+        { p_project_id: PID2 },
+      ]);
+    });
+
+    it("shows no current value when today's price is not found", async () => {
+      fetchMock.mockImplementation(async () => new Response("{}", { status: 503 }));
+      const overview = await getResults(resultsDb({}).db, [PID]);
+      expect(overview.results[PID]).toMatchObject({ usdAtClaim: 400, usdNow: null });
+    });
   });
 });
