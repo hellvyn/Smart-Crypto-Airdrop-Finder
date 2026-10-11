@@ -106,7 +106,7 @@ export const analystAnalyzer: Analyzer<AnalystAnswer, AnalystAnswer> = {
   promptVersion: ANALYST_PROMPT_VERSION,
   buildMessages: buildAnalystMessages,
   schema: analystSchema,
-  postProcess: postProcessAnalyst,
+  postProcess: (value, sources, project) => postProcessAnalyst(value, sources, project.steps),
   indonesianTexts: (result) => [...result.points.map((p) => p.text), result.effort.note, ...result.steps_id.map((s) => s.text)],
   /**
    * Writes the translations only when they line up with the project's steps: same count and the same cadence at

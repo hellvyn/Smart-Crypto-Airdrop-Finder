@@ -39,8 +39,11 @@ export interface Analyzer<T = unknown, R = unknown> {
   buildMessages(project: ProjectForScoring, sources: SourceText[]): ChatMessage[];
   /** The answer must match this schema, or the next model is tried. */
   schema: z.ZodType<T>;
-  /** Turns a schema-valid answer into the stored `ai_analyses.result` (e.g. drops points whose quote is not in `sources`). */
-  postProcess(value: T, sources: SourceText[]): R;
+  /**
+   * Turns a schema-valid answer into the stored `ai_analyses.result` (e.g. drops points whose quote is not in
+   * `sources`, or Analyst step translations not grounded in `project`'s steps).
+   */
+  postProcess(value: T, sources: SourceText[], project: ProjectForScoring): R;
   /**
    * The Indonesian prose of a stored result (never its quotes). A new analysis whose stored prose uses a forbidden
    * phrase counts once in `ai_style_violations`; it is stored all the same. Prose that `postProcess` dropped is never
@@ -161,7 +164,7 @@ export async function runAnalyses(
       else reportFailure(project, analyzer.kind, outcome.attempts.map((a) => a.error ?? "ok").join(", "));
       return;
     }
-    const result = analyzer.postProcess(outcome.value, sources);
+    const result = analyzer.postProcess(outcome.value, sources, project);
     await analyzer.saveDerived?.(repo, project, result);
     await repo.saveAiAnalysis({
       projectId: project.id,

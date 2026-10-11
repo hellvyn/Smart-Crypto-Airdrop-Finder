@@ -91,19 +91,31 @@ export function stepTranslationGrounded(step: string, translation: string): bool
  * Makes a schema-valid answer safe to store:
  * - a point is kept only when its `quote` passes `quoteInSource` against the text of the source its `source_url`
  *   names; when no point is left, the verdict becomes `pantau` with confidence `rendah`, since nothing backs it;
- * - em dashes in the Indonesian texts (points, effort note, steps; never quotes) become ", ".
+ * - em dashes in the Indonesian texts (points, effort note, steps; never quotes) become ", ";
+ * - `steps_id` is kept only when it lines up with the project's `steps` (same count, same cadence at every position)
+ *   and every translation passes `stepTranslationGrounded` against its step; otherwise it is stored empty. One
+ *   ungrounded translation drops the whole set, so a prompt injection in a source never reaches a reader through the
+ *   stored result (G5 C1), the same rule the `tasks.text_id` write follows.
  * Forbidden words are left in place (they are counted, not removed).
  */
-export function postProcessAnalyst(value: AnalystAnswer, sources: { url: string; text: string }[]): AnalystAnswer {
+export function postProcessAnalyst(
+  value: AnalystAnswer,
+  sources: { url: string; text: string }[],
+  steps: readonly { text: string; cadence: string }[],
+): AnalystAnswer {
   const supported = (p: AnalystAnswer["points"][number]): boolean =>
     sources.some((s) => s.url === p.source_url && quoteInSource(p.quote, s.text));
   const points = value.points.filter(supported).map((p) => ({ ...p, text: replaceEmDash(p.text) }));
   const unsupported = points.length === 0;
+  const translations = value.steps_id.map((s) => ({ ...s, text: replaceEmDash(s.text) }));
+  const usable =
+    translations.length === steps.length &&
+    translations.every((s, i) => s.cadence === steps[i]!.cadence && stepTranslationGrounded(steps[i]!.text, s.text));
   return {
     verdict: unsupported ? "pantau" : value.verdict,
     confidence: unsupported ? "rendah" : value.confidence,
     points,
     effort: { ...value.effort, note: replaceEmDash(value.effort.note) },
-    steps_id: value.steps_id.map((s) => ({ ...s, text: replaceEmDash(s.text) })),
+    steps_id: usable ? translations : [],
   };
 }

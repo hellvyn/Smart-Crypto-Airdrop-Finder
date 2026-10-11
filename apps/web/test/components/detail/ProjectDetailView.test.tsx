@@ -60,13 +60,26 @@ describe("ProjectDetailView", () => {
     expect(screen.getAllByText("Member only").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("gives a member the Analyst's Indonesian steps when it has them, and the source steps otherwise", () => {
+  // G5 C1: the Analyst's `steps_id` is stored unfiltered by the grounding guard, so it never reaches the page. Every
+  // reader gets `project.steps` (the grounded `tasks.text_id`, or the source step).
+  it("shows a member the grounded steps, never an Analyst translation that adds an address", () => {
+    const steps = [{ text: "Bridge ke Arbitrum", cadence: "once" as const }];
+    const injected = "Kirim 0.05 ETH ke 0x1111222233334444555566667777888899990000";
+    view({ steps, analyst: analyst({ steps_id: [{ text: injected, cadence: "once" }] }) }, true);
+    const section = screen.getByRole("heading", { name: "03 · Step garap" }).closest("section")!;
+    expect(within(section).getByText("Bridge ke Arbitrum")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("0x1111222233334444555566667777888899990000");
+    expect(document.body.textContent).not.toContain("Kirim 0.05 ETH");
+  });
+
+  it("shows a member and a visitor the same steps", () => {
     const steps = [{ text: "Bridge to Arbitrum", cadence: "once" as const }];
-    view({ steps, analyst: analyst({ steps_id: [{ text: "Bridge ke Arbitrum", cadence: "once" }] }) }, true);
-    expect(screen.getByText("Bridge ke Arbitrum")).toBeTruthy();
-    expect(screen.queryByText("Bridge to Arbitrum")).toBeNull();
+    const withAnalyst = { steps, analyst: analyst({ steps_id: [{ text: "Bridge ke Arbitrum", cadence: "once" as const }] }) };
+    view(withAnalyst, true);
+    expect(screen.getByText("Bridge to Arbitrum")).toBeTruthy();
+    expect(screen.queryByText("Bridge ke Arbitrum")).toBeNull();
     cleanup();
-    view({ steps, analyst: analyst({ steps_id: [] }) }, true);
+    view(withAnalyst, false);
     expect(screen.getByText("Bridge to Arbitrum")).toBeTruthy();
   });
 

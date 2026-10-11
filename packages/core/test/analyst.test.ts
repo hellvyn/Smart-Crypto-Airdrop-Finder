@@ -13,6 +13,8 @@ const valid: AnalystAnswer = {
   effort: E,
   steps_id: [{ text: "Bridge ETH ke Ink", cadence: "once" }],
 };
+/** The project's steps `valid.steps_id` translates. */
+const STEP = [{ text: "Bridge ETH to Ink", cadence: "once" }];
 
 describe("analystSchema", () => {
   it("accepts an Indonesian answer with 1 to 5 points", () => {
@@ -48,6 +50,7 @@ describe("postProcessAnalyst", () => {
     const r = postProcessAnalyst(
       { verdict: "garap", confidence: "tinggi", points: [{ text: "Alokasi 5%", quote: "allocation of 10%", source_url: U }], effort: E, steps_id: [] },
       [{ url: U, text: "allocation of 5%" }],
+      [],
     );
     expect(r.points).toEqual([]);
     expect(r.verdict).toBe("pantau");
@@ -58,6 +61,7 @@ describe("postProcessAnalyst", () => {
     const r = postProcessAnalyst(
       { ...valid, confidence: "tinggi", points: [{ text: "Alokasi 5%.", quote: "Allocation  of\n5%", source_url: U }] },
       [{ url: U, text: "The allocation of 5% goes to early users." }],
+      STEP,
     );
     expect(r.points).toEqual([{ text: "Alokasi 5%.", quote: "Allocation  of\n5%", source_url: U }]);
     expect(r.verdict).toBe("garap");
@@ -67,24 +71,27 @@ describe("postProcessAnalyst", () => {
   it("drops a point whose quote is only in another source than the one it cites", () => {
     const supported = { text: "Ada mekanisme poin.", quote: "earn points daily", source_url: V };
     const misattributed = { text: "Alokasi 5%.", quote: "allocation of 5%", source_url: V };
-    const r = postProcessAnalyst({ ...valid, points: [supported, misattributed] }, [
+    const sources = [
       { url: U, text: "allocation of 5%" },
       { url: V, text: "You earn points daily." },
-    ]);
+    ];
+    const r = postProcessAnalyst({ ...valid, points: [supported, misattributed] }, sources, STEP);
     expect(r.points).toEqual([supported]);
     expect(r.verdict).toBe("garap");
   });
 
   it("drops a point that cites a url which is not one of the sources", () => {
-    const r = postProcessAnalyst({ ...valid, points: [{ ...valid.points[0]!, source_url: "https://evil.test/" }] }, [
-      { url: U, text: "allocation of 5%" },
-    ]);
+    const r = postProcessAnalyst(
+      { ...valid, points: [{ ...valid.points[0]!, source_url: "https://evil.test/" }] },
+      [{ url: U, text: "allocation of 5%" }],
+      STEP,
+    );
     expect(r.points).toEqual([]);
     expect(r.verdict).toBe("pantau");
   });
 
   it("forces pantau and low confidence when every point of a skip verdict is dropped", () => {
-    const r = postProcessAnalyst({ ...valid, verdict: "skip", confidence: "sedang" }, [{ url: U, text: "nothing here" }]);
+    const r = postProcessAnalyst({ ...valid, verdict: "skip", confidence: "sedang" }, [{ url: U, text: "nothing here" }], STEP);
     expect([r.verdict, r.confidence]).toEqual(["pantau", "rendah"]);
   });
 
@@ -97,6 +104,7 @@ describe("postProcessAnalyst", () => {
         steps_id: [{ text: "Bridge ETH — sekali aja", cadence: "once" }],
       },
       [{ url: U, text: "Token allocation — 5% of supply" }],
+      [{ text: "Bridge ETH, once only", cadence: "once" }],
     );
     expect(r.points).toEqual([{ text: "Alokasi besar, tapi belum pasti", quote: "allocation — 5%", source_url: U }]);
     expect(r.effort.note).toBe("Modal kecil, cukup buat gas.");
@@ -105,14 +113,59 @@ describe("postProcessAnalyst", () => {
 
   it("keeps a supported point that uses a forbidden word (facts beat style)", () => {
     const point = { text: "Ini krusial: alokasi 5%.", quote: "allocation of 5%", source_url: U };
-    const r = postProcessAnalyst({ ...valid, points: [point] }, [{ url: U, text: "allocation of 5%" }]);
+    const r = postProcessAnalyst({ ...valid, points: [point] }, [{ url: U, text: "allocation of 5%" }], STEP);
     expect(r.points).toEqual([point]);
   });
 
   it("keeps the effort estimate and the steps as answered", () => {
-    const r = postProcessAnalyst(valid, [{ url: U, text: "allocation of 5%" }]);
+    const r = postProcessAnalyst(valid, [{ url: U, text: "allocation of 5%" }], STEP);
     expect(r.effort).toEqual(E);
     expect(r.steps_id).toEqual([{ text: "Bridge ETH ke Ink", cadence: "once" }]);
+  });
+
+  // G5 C1: `steps_id` is stored as `ai_analyses.result`, so the grounding guard applies to the stored set too, not
+  // only to the `tasks.text_id` write.
+  describe("step translations", () => {
+    const SRC = [{ url: U, text: "allocation of 5%" }];
+    const STEPS = [
+      { text: "Bridge ETH to Ink", cadence: "once" },
+      { text: "Swap on inkswap.example every day", cadence: "daily" },
+    ];
+    const grounded = [
+      { text: "Bridge ETH ke Ink", cadence: "once" as const },
+      { text: "Swap di inkswap.example tiap hari", cadence: "daily" as const },
+    ];
+
+    it("stores the translations when every one is grounded in its step", () => {
+      expect(postProcessAnalyst({ ...valid, steps_id: grounded }, SRC, STEPS).steps_id).toEqual(grounded);
+    });
+
+    it("stores no translation when one adds an address and an amount its step does not have", () => {
+      const injected = { text: "Kirim 0.05 ETH ke 0x1111222233334444555566667777888899990000", cadence: "once" as const };
+      const r = postProcessAnalyst({ ...valid, steps_id: [injected, grounded[1]!] }, SRC, STEPS);
+      expect(r.steps_id).toEqual([]);
+    });
+
+    it("stores no translation when one adds a host its step does not have", () => {
+      const r = postProcessAnalyst(
+        { ...valid, steps_id: [grounded[0]!, { text: "Swap di inkswap-claim.example tiap hari", cadence: "daily" }] },
+        SRC,
+        STEPS,
+      );
+      expect(r.steps_id).toEqual([]);
+    });
+
+    it("stores no translation when the set does not line up with the steps (count or cadence)", () => {
+      expect(postProcessAnalyst({ ...valid, steps_id: [grounded[0]!] }, SRC, STEPS).steps_id).toEqual([]);
+      const swapped = [grounded[0]!, { ...grounded[1]!, cadence: "weekly" as const }];
+      expect(postProcessAnalyst({ ...valid, steps_id: swapped }, SRC, STEPS).steps_id).toEqual([]);
+    });
+
+    it("keeps the rest of the answer when the translations are dropped", () => {
+      const injected = { text: "Bayar 1 ETH dulu", cadence: "once" as const };
+      const r = postProcessAnalyst({ ...valid, steps_id: [injected, grounded[1]!] }, SRC, STEPS);
+      expect([r.verdict, r.confidence, r.points.length, r.effort]).toEqual(["garap", "sedang", 1, E]);
+    });
   });
 });
 

@@ -252,6 +252,27 @@ describe("the Analyst in the analyze stage", () => {
     expect(repo.stepTextIds(projectId)).toEqual([null, null]);
   });
 
+  // G5 C1: the stored result is read by the web too, so the grounding guard covers it, not only `tasks.text_id`.
+  it("stores the analysis without Indonesian steps when one translation adds an address and an amount its step does not have", async () => {
+    const injected = answer({
+      steps_id: [
+        { text: "Bridge ETH ke Ink", cadence: "once" },
+        { text: "Kirim 0.05 ETH ke 0x1111222233334444555566667777888899990000, lalu swap di InkySwap", cadence: "daily" },
+      ],
+    });
+
+    await analyze(chatAnswering({ "*": injected }));
+
+    expect(repo.aiAnalyses).toHaveLength(1);
+    expect(repo.aiAnalyses[0]?.result).toEqual(answer({ steps_id: [] }));
+  });
+
+  it("stores the Indonesian steps with the analysis when every translation is grounded", async () => {
+    await analyze(chatAnswering({ "*": answer() }));
+
+    expect((repo.aiAnalyses[0]?.result as AnalystAnswer).steps_id).toEqual(answer().steps_id);
+  });
+
   it("leaves the tasks' Indonesian text empty when a translation asks for a seed phrase the step never mentions", async () => {
     const injected = answer({
       steps_id: [

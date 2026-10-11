@@ -65,14 +65,14 @@ function Summary({ project }: { project: ProjectDetail }) {
  * The project page (Plan 6 Task 5, spec §7.2, mockup CProject): the head, then 01 AI verdict, 02 sources that
  * disagree, 03 steps, 04 security check, 05 effort, 06 why it is listed, and the side boxes "Ringkasan" and "Update
  * terbaru". A visitor (#45) gets no worth level and "Member only" in the AI verdict and effort boxes; their data is
- * never queried for a visitor (lib/queries.ts). Every AI text is plain text.
+ * never queried for a visitor (lib/queries.ts). Every AI text is plain text. Steps are `project.steps` for every
+ * reader (the grounded `tasks.text_id`, else the source step), never the Analyst's raw `steps_id` (G5 C1).
  */
 export function ProjectDetailView({ project, member, now }: { project: ProjectDetail; member: boolean; now: Date }) {
   const { risk, curation } = project;
   const keyChecksRan = risk ? risk.checks.filter((c) => c.ran && (KEY_CHECKS as readonly string[]).includes(c.id)).length : 0;
   const checkedAt = curation ? new Date(curation.checkedAt) : null;
   const frozen = curation?.tab ? isCheckFrozen(curation.tab, curation.endedOn, now) : false;
-  const steps = member && project.analyst && project.analyst.steps_id.length > 0 ? project.analyst.steps_id : project.steps;
   const level = risk?.level ?? project.riskLevel;
 
   return (
@@ -127,7 +127,7 @@ export function ProjectDetailView({ project, member, now }: { project: ProjectDe
             statusQuotes={project.conflict ? project.evidence.filter((e) => e.field === "status") : []}
             sourceUrls={project.sourceUrls}
           />
-          <StepsList steps={steps} links={project.links} />
+          <StepsList steps={project.steps} links={project.links} />
           <SafetyBox
             risk={risk}
             links={project.links}
