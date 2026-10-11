@@ -8,7 +8,7 @@ import type { ChatFn } from "./llm/extract.js";
 import type { FetchImage, FetchUntrusted } from "./http.js";
 import { ANALYZERS, claimPageSources, combineExtraSources, listedFirst, officialSiteSources, runAnalyses } from "./steps/analyze.js";
 import type { Analyzer, SourceText } from "./steps/analyze.js";
-import { collectSources } from "./steps/collect.js";
+import { collectSources, defillamaDetailSources } from "./steps/collect.js";
 import type { SpeculativeItem } from "./steps/collect.js";
 import type { ExtractionResult } from "@saf/core";
 import { extractPending } from "./steps/extract.js";
@@ -24,7 +24,7 @@ import { refreshSignals } from "./steps/signals.js";
 import type { SignalCoverage } from "./steps/signals.js";
 import { emptyStats } from "./stats.js";
 import type { DailyStats } from "./stats.js";
-import type { Fact, PipelineRepo, StoredDocument } from "./store/repo.js";
+import type { Fact, PipelineRepo, ProjectForScoring, StoredDocument } from "./store/repo.js";
 
 export type { PipelineConfig } from "./config.js";
 
@@ -191,7 +191,11 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   const alphaDrops = countAlphaDropsRequests(deps.http);
   const collected = await stage(
     "collect",
-    { speculative: [] as SpeculativeItem[], protocols: null as DefillamaProtocol[] | null },
+    {
+      speculative: [] as SpeculativeItem[],
+      protocols: null as DefillamaProtocol[] | null,
+      detailTexts: new Map<string, string>(),
+    },
     () => collectSources({ ...deps, http: alphaDrops.http }, config, now, stats),
   );
   // Single-slot merge queue: each merge starts after the previous one settled. mergeOne never rejects.
@@ -240,12 +244,34 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   // Official website text of the listed projects (the Analyst's extra source), by project id; analyze_listed adds to it.
   const officialPages = new Map<string, SourceText[]>();
   const readsOfficialSites = analyzers.some((a) => a.kind === "analyst");
+  /**
+   * Reads the official sites of `projects` into `officialPages`. It is optional enrichment: an error here (a repository
+   * read, say) is counted in `official_pages_failed` and never fails the run; the analyses then go without the sites.
+   */
+  const readOfficialSites = async (
+    projects: ProjectForScoring[],
+    opts: { phishing?: ReadonlyMap<string, boolean | null> } = {},
+  ): Promise<void> => {
+    try {
+      const pages = await loadOfficialSites(deps, config, projects, now, stats, opts);
+      for (const [id, sources] of pages) officialPages.set(id, sources);
+    } catch {
+      stats.official_pages_failed += 1;
+    }
+  };
   await stage("official_sites", undefined, async () => {
     if (!readsOfficialSites) return;
-    const all = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
-    const pages = await loadOfficialSites(deps, config, all, now, stats);
-    for (const [id, sources] of pages) officialPages.set(id, sources);
+    const all = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now).catch(() => null);
+    if (all === null) {
+      stats.official_pages_failed += 1;
+      return;
+    }
+    await readOfficialSites(all);
   });
+  const analystSources = combineExtraSources(
+    officialSiteSources(officialPages),
+    defillamaDetailSources(repo, collected.detailTexts, now),
+  );
   let claimPages = new Map<string, SourceText[]>();
   // The projects the analyze stage already treated as listed (uncapped); analyze_listed takes only the others.
   let analyzedAsListed = new Set<string>();
@@ -264,7 +290,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
       {
         ...deps,
         analyzers,
-        extraSources: combineExtraSources(claimPageSources(claimPages), officialSiteSources(officialPages)),
+        extraSources: combineExtraSources(claimPageSources(claimPages), analystSources),
         uncapped: new Set(listedIds),
       },
       config,
@@ -292,14 +318,13 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     const catchUp = emptyStats();
     if (readsOfficialSites) {
       // Their domains must now also be GoPlus-clean in this run, as for the favicon. Page counts go to the run's stats.
-      const pages = await loadOfficialSites(deps, config, newlyListed, now, stats, { phishing });
-      for (const [id, sources] of pages) officialPages.set(id, sources);
+      await readOfficialSites(newlyListed, { phishing });
     }
     await runAnalyses(
       {
         ...deps,
         analyzers,
-        extraSources: combineExtraSources(claimPageSources(claimPages), officialSiteSources(officialPages)),
+        extraSources: combineExtraSources(claimPageSources(claimPages), analystSources),
         uncapped: listed,
       },
       { ...config, analyzeBudgetMinutes: config.analyzeListedBudgetMinutes },

@@ -103,6 +103,11 @@ export interface PipelineConfig {
    * `maxPerRun` sites a run (never-fetched first, then the oldest). A site is fetched again after 7 days.
    */
   officialSites: { concurrency: number; budgetMinutes: number; maxPerRun: number };
+  /**
+   * The optional enrichments (DefiLlama details, official websites) start no request more than this many minutes after
+   * the run started, so a slow day keeps its time for `score`, `analyze` and `purge` (they count as skipped).
+   */
+  enrichmentCutoffMinutes: number;
 }
 
 /**
@@ -188,5 +193,6 @@ export const defaultConfig: PipelineConfig = {
   textRetentionDays: 90,
   vcs: VC_LIST,
   logos: { budgetMinutes: 2, concurrency: 3, maxXAvatarsPerRun: 20 },
-  officialSites: { concurrency: 2, budgetMinutes: 3, maxPerRun: 30 },
+  officialSites: { concurrency: 2, budgetMinutes: 2, maxPerRun: 30 },
+  enrichmentCutoffMinutes: 40,
 };

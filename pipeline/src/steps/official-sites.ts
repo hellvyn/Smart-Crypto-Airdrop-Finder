@@ -79,6 +79,8 @@ export function pickOfficialPages(html: string, baseUrl: string, domain: string)
       return;
     }
     if ((url.protocol !== "http:" && url.protocol !== "https:") || registrableDomain(url.href) !== domain) return;
+    // Default port only (the URL parser drops :443 on https and :80 on http): no service on a port of its own.
+    if (url.port !== "") return;
     if (FILE_EXTENSION.test(url.pathname)) return;
     const link = normalizedLink(url);
     if (link === self) return;
@@ -145,8 +147,11 @@ const pathOf = (url: string): string => {
  *   starts after `budgetMinutes` (by `deps.now()`). Each domain is fetched once however many projects share it.
  * - A site: the homepage (`https://<domain>/`), then at most 2 pages found on it (`pickOfficialPages`), one after the
  *   other. Only 2xx answers whose final URL is still on the domain count; text is `claimPageText` cut at 8,000
- *   characters per page, under a `[Page <path>]` heading. A homepage that fails keeps the cached text; one that is not
- *   HTML stores an empty text so the site waits a week.
+ *   characters per page, under a `[Page <path>]` heading. A homepage that fails keeps a still usable cached text; with
+ *   none (or one older than 14 days) an empty text is stored, so the site waits a week instead of heading the queue on
+ *   every run. A homepage that is not HTML stores an empty text too.
+ * - Nothing is asked once more than `config.enrichmentCutoffMinutes` have passed since `now` (the run's start) by
+ *   `deps.now()`: the due sites count as skipped and the cache is still read.
  * - A cached text is used up to 14 days after its fetch; an empty one gives no source.
  * Counts pages in `official_pages_fetched`, `_failed` and `_skipped` (not HTML, or a site not started). Item errors
  * (a page, a write) count as failed; a repository read error is thrown. Never logs.
@@ -177,10 +182,13 @@ export async function loadOfficialSites(
   const due = domains
     .filter((domain) => now.getTime() - fetchedAt(domain) > FRESH_MS)
     .sort((a, b) => fetchedAt(a) - fetchedAt(b) || (a < b ? -1 : a > b ? 1 : 0));
-  const toFetch = due.slice(0, config.officialSites.maxPerRun);
+  // The run is already old (its other stages need the time left): no site is asked, the cache is still used.
+  const startedAt = deps.now().getTime();
+  const late = startedAt - now.getTime() > config.enrichmentCutoffMinutes * MINUTE_MS;
+  const toFetch = late ? [] : due.slice(0, config.officialSites.maxPerRun);
   stats.official_pages_skipped += due.length - toFetch.length;
 
-  const deadline = deps.now().getTime() + config.officialSites.budgetMinutes * MINUTE_MS;
+  const deadline = startedAt + config.officialSites.budgetMinutes * MINUTE_MS;
 
   const fetchPage = async (url: string, domain: string): Promise<PageResult> => {
     try {
@@ -188,7 +196,7 @@ export async function loadOfficialSites(
       if (res.status < 200 || res.status >= 300) return { kind: "failed" };
       const finalUrl = res.finalUrl ?? url;
       // A redirect to another site: what it shows is not the project's website.
-      if (registrableDomain(finalUrl) !== domain) return { kind: "failed" };
+      if (registrableDomain(finalUrl) !== domain || new URL(finalUrl).port !== "") return { kind: "failed" };
       return res.body === "" ? { kind: "empty" } : { kind: "ok", html: res.body, finalUrl };
     } catch {
       return { kind: "failed" };
@@ -203,6 +211,13 @@ export async function loadOfficialSites(
     const home = await fetchPage(`https://${domain}/`, domain);
     if (home.kind === "failed") {
       stats.official_pages_failed += 1;
+      // No usable row (none, or older than 14 days): leave an empty one, so the site waits 7 days instead of being
+      // first in the queue (never fetched) on every run. A row that is still usable keeps its text and is retried.
+      const row = cache.get(keyOf(domain));
+      if (row === undefined || now.getTime() - row.fetchedAt.getTime() > MAX_AGE_MS) {
+        await repo.saveClaimPage(keyOf(domain), "", now).catch(() => undefined);
+        cache.set(keyOf(domain), { url: keyOf(domain), text: "", fetchedAt: now });
+      }
       return;
     }
     const sections: string[] = [];

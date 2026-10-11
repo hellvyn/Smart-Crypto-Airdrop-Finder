@@ -3584,7 +3584,7 @@ describe("runDaily curation", () => {
       expect(stats.official_pages_fetched).toBe(0);
     });
 
-    it("reports a failing official_sites stage as failed_step 13 and still analyzes and scores", async () => {
+    it("does not fail the run when the official_sites stage errors: it counts the failure and carries on", async () => {
       const repo = new MemoryRepo();
       const list = repo.listClaimPages.bind(repo);
       let down = false;
@@ -3596,11 +3596,79 @@ describe("runDaily curation", () => {
       const failing = { ...deps, repo };
       await runDaily(failing, config); // first run: nobody listed yet, nothing to read
       down = true;
-      await expect(runDaily({ ...failing, now: () => new Date(NOW.getTime() + DAY) }, config)).rejects.toThrow("db down");
 
-      const last = repo.runs[repo.runs.length - 1];
-      expect(last?.stats.failed_step).toBe(13);
-      expect(last?.stats.assessed).toBe(3);
+      const stats = await runDaily({ ...failing, now: () => new Date(NOW.getTime() + DAY) }, config);
+
+      expect(stats.run_error).toBeUndefined();
+      expect(stats.failed_step).toBeUndefined();
+      expect(runExitCode(stats)).toBe(0);
+      expect(stats.official_pages_failed).toBeGreaterThan(0);
+      expect(stats.assessed).toBe(3);
+    });
+
+    it("reads no site when the run is already more than 40 minutes old, and counts them skipped", async () => {
+      const { repo, deps, config, pages, untrusted } = siteSetup();
+      await runDaily(deps, config);
+      untrusted.requested.length = 0;
+      const nextWeek = new Date(NOW.getTime() + 8 * DAY);
+      let late = false;
+      const list = repo.listProjectsForScoring.bind(repo);
+      let listCalls = 0;
+      // The first listing is the signals stage's: after it the fake clock says 41 minutes have passed.
+      repo.listProjectsForScoring = async (days, at) => {
+        const rows = await list(days, at);
+        if (++listCalls === 1) late = true;
+        return rows;
+      };
+      pages[SITE] = { status: 200, body: SITE_HTML.replace("Trade", "Swap") };
+
+      const stats = await runDaily(
+        { ...deps, now: () => (late ? new Date(nextWeek.getTime() + 41 * 60_000) : nextWeek) },
+        config,
+      );
+
+      expect(untrusted.requested.filter((u) => u.startsWith("https://deepbook.tech"))).toEqual([]);
+      expect(stats.official_pages_fetched).toBe(0);
+      expect(stats.official_pages_skipped).toBeGreaterThan(0);
+      expect(stats.run_error).toBeUndefined();
+    });
+  });
+
+  describe("DefiLlama detail lines for the AI Analyst only", () => {
+    it("gives the description, audits and github of the listing to the Analyst, and leaves the other analyses' input as it was", async () => {
+      const pages = basePages();
+      const withDetails = PROTOCOL_LIST.map((p) =>
+        p.slug === "hyperdrive-lend"
+          ? { ...p, description: "Hyperdrive is a money market.", audits: "2", github: ["hyperdrive-fi"], methodology: null, raises: null }
+          : p,
+      );
+      pages[PROTOCOLS] = { status: 200, body: JSON.stringify(withDetails) };
+      const base = fakeChat();
+      const prompts: { system: string; user: string }[] = [];
+      const chat: FakeChat = {
+        ...base,
+        chat: async (model, messages) => {
+          prompts.push({ system: messages[0]?.content ?? "", user: messages[1]?.content ?? "" });
+          return base.chat(model, messages);
+        },
+      };
+      const { deps, config } = setup({ pages, chat });
+
+      await runDaily(deps, config);
+
+      const forHyperdrive = prompts.filter((p) => p.user.includes("PROJECT: Hyperdrive Lend"));
+      const analyst = forHyperdrive.filter((p) => p.system.includes('"verdict"'));
+      const others = forHyperdrive.filter((p) => !p.system.includes('"verdict"'));
+      expect(analyst.length).toBeGreaterThan(0);
+      expect(analyst[0]?.user).toContain("defillama-detail://hyperdrive-lend ---");
+      expect(analyst[0]?.user).toContain("Description: Hyperdrive is a money market.");
+      expect(analyst[0]?.user).toContain("GitHub: hyperdrive-fi");
+      expect(others.length).toBeGreaterThan(0);
+      for (const p of others) {
+        expect(p.user).not.toContain("Description:");
+        expect(p.user).not.toContain("GitHub:");
+        expect(p.user).not.toContain("defillama-detail://");
+      }
     });
   });
 

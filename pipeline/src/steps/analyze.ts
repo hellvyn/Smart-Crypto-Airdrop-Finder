@@ -69,7 +69,7 @@ export interface AnalyzeDeps {
    * Extra input documents of one analyzer for one project (e.g. claim portal pages for the scam analyst), next to
    * the project's own source texts. They go into that analyzer's prompt and input hash only.
    */
-  extraSources?: (project: ProjectForScoring, kind: AiKind) => Promise<SourceText[]>;
+  extraSources?: (project: ProjectForScoring, kind: AiKind, own: SourceText[]) => Promise<SourceText[]>;
   /**
    * Projects whose analyses `maxAnalysesPerRun` does not limit: the listed ones, which members see and which must not
    * show an empty AI section. The time budget (`analyzeBudgetMinutes`) still applies to them.
@@ -104,7 +104,7 @@ export function officialSiteSources(
 export function combineExtraSources(
   ...parts: NonNullable<AnalyzeDeps["extraSources"]>[]
 ): NonNullable<AnalyzeDeps["extraSources"]> {
-  return async (project, kind) => (await Promise.all(parts.map((part) => part(project, kind)))).flat();
+  return async (project, kind, own) => (await Promise.all(parts.map((part) => part(project, kind, own)))).flat();
 }
 
 /**
@@ -170,7 +170,7 @@ export async function runAnalyses(
   let started = 0;
 
   const analyzeOne = async (project: ProjectForScoring, own: SourceText[], analyzer: Analyzer): Promise<void> => {
-    const extra = deps.extraSources ? await deps.extraSources(project, analyzer.kind) : [];
+    const extra = deps.extraSources ? await deps.extraSources(project, analyzer.kind, own) : [];
     const sources = [...own, ...extra];
     if (sources.length === 0) return;
     const inputHash = analysisInputHash(project, sources.map((s) => `${s.url}\n${s.text}`));

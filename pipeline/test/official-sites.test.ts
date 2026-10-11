@@ -113,6 +113,16 @@ describe("pickOfficialPages", () => {
     expect(pickOfficialPages(html, "https://arcus.xyz/", "arcus.xyz")).toEqual(["https://arcus.xyz/docs/start"]);
   });
 
+  it("keeps only links on the default port", () => {
+    const html = `<a href="https://arcus.xyz:8443/airdrop">Airdrop</a><a href="https://arcus.xyz:22/points">Points</a>
+      <a href="http://arcus.xyz:443/rewards">Rewards</a><a href="https://arcus.xyz:443/quests">Quests</a>
+      <a href="http://arcus.xyz:80/campaign">Campaign</a>`;
+    expect(pickOfficialPages(html, "https://arcus.xyz/", "arcus.xyz")).toEqual([
+      "https://arcus.xyz/quests",
+      "http://arcus.xyz/campaign",
+    ]);
+  });
+
   it("matches the link text as well as the path, and gives none for a page without such links", () => {
     expect(pickOfficialPages('<a href="/p/17">Quests</a>', "https://arcus.xyz/", "arcus.xyz")).toEqual(["https://arcus.xyz/p/17"]);
     expect(pickOfficialPages('<a href="/about">About</a><a href="/team">Team</a>', "https://arcus.xyz/", "arcus.xyz")).toEqual([]);
@@ -257,7 +267,8 @@ describe("loadOfficialSites", () => {
     const sources = await loadOfficialSites({ repo, fetchUntrusted: net.fetchUntrusted, now: () => NOW }, CFG, [project("arcus", ["arcus.xyz"])], NOW, stats);
 
     expect(stats).toMatchObject({ official_pages_fetched: 0, official_pages_failed: 1 });
-    expect(repo.claimPages.size).toBe(0);
+    // An empty row, so the site is not asked again before 7 days.
+    expect(repo.claimPages.get("official-site://arcus.xyz")).toEqual({ url: "official-site://arcus.xyz", text: "", fetchedAt: NOW });
     expect(sources.get("arcus") ?? []).toEqual([]);
   });
 
@@ -320,7 +331,7 @@ describe("loadOfficialSites", () => {
     expect(capped.requested.sort()).toEqual(["https://b.xyz/", "https://c.xyz/"]);
     expect(stats).toMatchObject({ official_pages_fetched: 2, official_pages_skipped: 2 });
 
-    // The clock is past the 3-minute budget from the first read on: nothing starts.
+    // The clock is past the 2-minute budget from the first read on: nothing starts.
     const late = fakeFetch(pages);
     let reads = 0;
     const clock = () => new Date(NOW.getTime() + (reads++ === 0 ? 0 : 4 * 60_000));
@@ -330,6 +341,75 @@ describe("loadOfficialSites", () => {
     await loadOfficialSites({ repo: fresh, fetchUntrusted: late.fetchUntrusted, now: clock }, CFG, projects, NOW, stats2);
     expect(late.requested).toEqual([]);
     expect(stats2).toMatchObject({ official_pages_fetched: 0, official_pages_skipped: 4 });
+  });
+
+  it("does not retry a failing site the next day, and a failing site does not starve a healthy one", async () => {
+    const repo = new MemoryRepo();
+    await listed(repo, "a", "z");
+    const cfg = { ...CFG, officialSites: { ...CFG.officialSites, maxPerRun: 1 } };
+    const projects = [project("a", ["a.xyz"]), project("z", ["z.xyz"])];
+    const pages: Record<string, Page> = { "https://z.xyz/": { status: 200, body: "<p>healthy</p>" } };
+
+    // Day 1: a.xyz (never fetched, first by name) fails. A row with "" is left, so it waits 7 days.
+    const day1 = fakeFetch(pages);
+    const stats1 = emptyStats();
+    await loadOfficialSites({ repo, fetchUntrusted: day1.fetchUntrusted, now: () => NOW }, cfg, projects, NOW, stats1);
+    expect(day1.requested).toEqual(["https://a.xyz/"]);
+    expect(stats1.official_pages_failed).toBe(1);
+    expect(repo.claimPages.get("official-site://a.xyz")).toEqual({ url: "official-site://a.xyz", text: "", fetchedAt: NOW });
+
+    // Day 2: the healthy site is taken, a.xyz is not asked again.
+    const next = new Date(NOW.getTime() + DAY);
+    const day2 = fakeFetch(pages);
+    const sources = await loadOfficialSites({ repo, fetchUntrusted: day2.fetchUntrusted, now: () => next }, cfg, projects, next, emptyStats());
+    expect(day2.requested).toEqual(["https://z.xyz/"]);
+    expect(sources.get("z")?.[0]?.text).toContain("healthy");
+
+    // 8 days after the failure it is tried again.
+    const later = new Date(NOW.getTime() + 8 * DAY);
+    const day8 = fakeFetch(pages);
+    await loadOfficialSites({ repo, fetchUntrusted: day8.fetchUntrusted, now: () => later }, cfg, projects, later, emptyStats());
+    expect(day8.requested).toContain("https://a.xyz/");
+  });
+
+  it("on a failed refresh keeps a still usable row as it is, and replaces a row older than 14 days by an empty one", async () => {
+    const repo = new MemoryRepo();
+    await listed(repo, "arcus");
+    const p = project("arcus", ["arcus.xyz"]);
+    const down = fakeFetch({});
+    await repo.saveClaimPage("official-site://arcus.xyz", "[Page /]\nOld", daysAgo(9));
+    await loadOfficialSites({ repo, fetchUntrusted: down.fetchUntrusted, now: () => NOW }, CFG, [p], NOW, emptyStats());
+    expect(repo.claimPages.get("official-site://arcus.xyz")).toEqual({ url: "official-site://arcus.xyz", text: "[Page /]\nOld", fetchedAt: daysAgo(9) });
+
+    await repo.saveClaimPage("official-site://arcus.xyz", "[Page /]\nOld", daysAgo(15));
+    await loadOfficialSites({ repo, fetchUntrusted: down.fetchUntrusted, now: () => NOW }, CFG, [p], NOW, emptyStats());
+    expect(repo.claimPages.get("official-site://arcus.xyz")).toEqual({ url: "official-site://arcus.xyz", text: "", fetchedAt: NOW });
+  });
+
+  it("fetches nothing more than 40 minutes after the run started, counts the due sites skipped and still uses the cache", async () => {
+    const repo = new MemoryRepo();
+    await listed(repo, "a", "b");
+    await repo.saveClaimPage("official-site://a.xyz", "[Page /]\nCached", daysAgo(10));
+    const net = fakeFetch({ "https://a.xyz/": { status: 200, body: "<p>new</p>" }, "https://b.xyz/": { status: 200, body: "<p>b</p>" } });
+    const late = () => new Date(NOW.getTime() + 41 * 60_000);
+    const stats = emptyStats();
+
+    const sources = await loadOfficialSites(
+      { repo, fetchUntrusted: net.fetchUntrusted, now: late },
+      { ...CFG, officialSites: { ...CFG.officialSites, budgetMinutes: 600 } },
+      [project("a", ["a.xyz"]), project("b", ["b.xyz"])],
+      NOW,
+      stats,
+    );
+
+    expect(net.requested).toEqual([]);
+    expect(stats).toMatchObject({ official_pages_fetched: 0, official_pages_skipped: 2 });
+    expect(sources.get("a")?.[0]?.text).toBe("[Page /]\nCached");
+    expect(CFG.enrichmentCutoffMinutes).toBe(40);
+
+    const early = fakeFetch({ "https://b.xyz/": { status: 200, body: "<p>b</p>" } });
+    await loadOfficialSites({ repo, fetchUntrusted: early.fetchUntrusted, now: () => new Date(NOW.getTime() + 39 * 60_000) }, CFG, [project("b", ["b.xyz"])], NOW, emptyStats());
+    expect(early.requested).toEqual(["https://b.xyz/"]);
   });
 
   it("never logs page text", async () => {
@@ -348,17 +428,17 @@ describe("officialSiteSources", () => {
   it("gives the site text to the AI Analyst only: not to the public contradiction check, nor to the scam analyst", async () => {
     const extra = officialSiteSources(map);
     const p = project("p", ["p.xyz"]);
-    expect(await extra(p, "analyst")).toEqual([{ url: "official-site://p.xyz", text: "[Page /]\nHello" }]);
-    expect(await extra(p, "scam")).toEqual([]);
-    expect(await extra(p, "contradictions")).toEqual([]);
-    expect(await extra(project("other", []), "analyst")).toEqual([]);
+    expect(await extra(p, "analyst", [])).toEqual([{ url: "official-site://p.xyz", text: "[Page /]\nHello" }]);
+    expect(await extra(p, "scam", [])).toEqual([]);
+    expect(await extra(p, "contradictions", [])).toEqual([]);
+    expect(await extra(project("other", []), "analyst", [])).toEqual([]);
   });
 
   it("combines with the claim portal sources", async () => {
     const claim = async (_p: ProjectForScoring, kind: string) => (kind === "scam" ? [{ url: "https://c/", text: "claim" }] : []);
     const both = combineExtraSources(claim as never, officialSiteSources(map));
     const p = project("p", ["p.xyz"]);
-    expect((await both(p, "scam")).map((s) => s.url)).toEqual(["https://c/"]);
-    expect((await both(p, "analyst")).map((s) => s.url)).toEqual(["official-site://p.xyz"]);
+    expect((await both(p, "scam", [])).map((s) => s.url)).toEqual(["https://c/"]);
+    expect((await both(p, "analyst", [])).map((s) => s.url)).toEqual(["official-site://p.xyz"]);
   });
 });
