@@ -274,3 +274,9 @@ Ruling: AlphaDrops is capped at 120 requests per run — two caps that were neve
 
 ## Progress (Plan 5)
 - G4-4a started: P5.T1 ∥ P5.T2 from 0c7f28d
+- P5 Task 1: complete (commits 0c7f28d..4c1de0c, review clean). Minor (deferred): expiry bumps `last_seen` via `updateProject`. Pipeline-level expiry tests cover only `live`. No stat for expired projects. The Supabase `deadlines` embed is not exercised by a unit test (it is exercised through e2e/smoke).
+- P5 Task 2: complete (commits 0c7f28d..ca2a94c, review clean). pgTAP mutation-checked (anon given SELECT on all of curations → 5 assertions fail). The first passing curation writes `curated` null→"true". `public_fail_reason` is null when the curation passes.
+- P5 Task 2: carried: to P6.T7, the change feed must accept `old_value` null for `curated`, and the first run writes a null→true row for every passing project (feed flood: show "baru masuk list" or cap it). To P5.T4, `saveVcPortfolio` is a non-atomic delete+insert and 0 domains caches nothing, so treat an empty fetch as failed. To P5.T13 (it appends to 0011), add `check (passed or tab is null)` to curations.
+- P5 Task 2: minor (deferred): `saveCuration` and its `project_changes` insert are not in one transaction (same as `saveRiskAssessment`). `replaceSignals` is non-atomic. MemoryRepo copies AI analyses shallowly. Stray stderr from `FarmingCard.test.tsx`.
+- G4-4a merged: P5.T2, then P5.T1 with a CONFLICT in the import lists of `repo.ts` and `supabase-repo.ts`, resolved by hand as the union (no logic involved). Tests: core 213, pipeline 392, web 350 unit · typecheck ok · pgTAP Tests=279 · e2e 74/74.
+- G4-4b started: P5.T3 ∥ P5.T5 ∥ P5.T8
