@@ -39,7 +39,10 @@ export function findBanned(text: string): string[] {
   return BANNED_PATTERNS.filter(({ pattern }) => pattern.test(text)).map(({ word }) => word);
 }
 
-/** Replaces each em dash (with the spaces around it) by ", ", the punctuation the style rules allow instead. */
+/**
+ * Replaces each em dash (with the spaces around it) by ", ", the punctuation the style rules allow instead.
+ * Same rule as `replaceEmDash` in curate/ai-style.ts; one of the two should absorb the other.
+ */
 export function cleanStyle(text: string): string {
   return text.replace(/\s*—\s*/g, ", ");
 }
