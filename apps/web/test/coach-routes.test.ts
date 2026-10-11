@@ -577,6 +577,15 @@ describe("POST /api/coach/chat: streaming", () => {
     expect(deps.signal.aborted).toBe(true);
   });
 
+  it("gives the model chain 20 s for its first text and 50 s in all, inside the 60 s function limit", async () => {
+    streamText.mockReturnValue(events({ delta: "Oke. " }, DONE()));
+    await (await post(chatPOST, chatBody())).text();
+    const deps = streamText.mock.calls[0]![2] as { firstTextTimeoutMs: number; deadlineMs: number };
+    expect(deps.firstTextTimeoutMs).toBe(20_000);
+    expect(deps.deadlineMs).toBe(50_000);
+    expect(deps.deadlineMs).toBeLessThan(chatMaxDuration * 1000);
+  });
+
   it("sends two system blocks, the earlier answered turns, then the new message, and never the email", async () => {
     setup({
       tables: {

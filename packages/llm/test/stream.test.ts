@@ -1,6 +1,6 @@
 import { APIError } from "@anthropic-ai/sdk";
 import type Anthropic from "@anthropic-ai/sdk";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCircuitBreaker } from "../src/circuit-breaker.js";
 import type { ClaudeStreamClient } from "../src/claude.js";
 import { COACH_MODELS, ANALYZE_MODELS } from "../src/models.js";
@@ -500,5 +500,158 @@ describe("streamText when nothing works", () => {
     expect(events).toEqual([{ failed: true }]);
     expect(requests).toBe(1);
     expect(breaker.opened()).toEqual([]);
+  });
+});
+
+describe("streamText timeouts", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A fetch that never answers, and ignores the abort signal (the worst case: only our own timer can end the wait). */
+  const hangingFetch = (): { fetch: typeof fetch; calls: FetchCall[] } => {
+    const calls: FetchCall[] = [];
+    const f = ((input: unknown, init?: RequestInit) => {
+      calls.push({ url: String(input), init: init ?? {} });
+      return new Promise<Response>(() => {});
+    }) as unknown as typeof fetch;
+    return { fetch: f, calls };
+  };
+
+  /** A fetch that hangs for the models in `hang` (by call number, from 1) and answers with GOOD_SSE for the others. */
+  const mixedFetch = (hang: number[]): { fetch: typeof fetch; calls: FetchCall[] } => {
+    const calls: FetchCall[] = [];
+    const f = ((input: unknown, init?: RequestInit) => {
+      calls.push({ url: String(input), init: init ?? {} });
+      return hang.includes(calls.length) ? new Promise<Response>(() => {}) : Promise.resolve(sseResponse(GOOD_SSE));
+    }) as unknown as typeof fetch;
+    return { fetch: f, calls };
+  };
+
+  it("falls back to the next model when the first sends no text within firstTextTimeoutMs, and counts a failure", async () => {
+    vi.useFakeTimers();
+    const { fetch: f, calls } = mixedFetch([1]);
+    const breaker = createCircuitBreaker(1);
+    const pending = collect(
+      streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, breaker, firstTextTimeoutMs: 20_000 }),
+    );
+
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(calls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(2);
+    const events = await pending;
+
+    expect(calls).toHaveLength(2);
+    expect(events.at(-1)).toMatchObject({ done: { model: "nvidia:z-ai/glm-5.3-flash" } });
+    expect(breaker.opened()).toEqual(["freellm:auto"]);
+    // The abandoned request was told to stop.
+    expect((calls[0]!.init.signal as AbortSignal).aborted).toBe(true);
+  });
+
+  it("does the same for a Claude stream that never yields", async () => {
+    vi.useFakeTimers();
+    const client: ClaudeStreamClient = {
+      messages: {
+        stream: () => ({
+          [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<Anthropic.MessageStreamEvent>>(() => {}) }),
+          finalMessage: () => new Promise<Message>(() => {}),
+        }),
+      },
+    };
+    const { fetch: f, calls } = fakeFetch(sseResponse(GOOD_SSE));
+    const pending = collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client, firstTextTimeoutMs: 20_000 }));
+
+    await vi.advanceTimersByTimeAsync(20_001);
+    const events = await pending;
+
+    expect(calls).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ done: { model: "freellm:auto" } });
+  });
+
+  it("does not time out an answer whose first text arrived in time, however long the rest takes", async () => {
+    vi.useFakeTimers();
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(enc.encode(sseLine(sseDelta("Halo "))));
+        await new Promise((resolve) => setTimeout(resolve, 25_000));
+        controller.enqueue(enc.encode(sseLine(sseDelta("dunia", "stop")) + "data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    const { fetch: f, calls } = fakeFetch(new Response(body, { status: 200 }));
+    const pending = collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, firstTextTimeoutMs: 20_000 }));
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    const events = await pending;
+
+    expect(events.map((e) => ("delta" in e ? e.delta : Object.keys(e)[0]))).toEqual(["Halo ", "dunia", "done"]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("a caller abort during the wait ends with failed, tries no other model and records no failure", async () => {
+    vi.useFakeTimers();
+    const { fetch: f, calls } = hangingFetch();
+    const breaker = createCircuitBreaker(1);
+    const controller = new AbortController();
+    const pending = collect(
+      streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, breaker, signal: controller.signal, firstTextTimeoutMs: 20_000 }),
+    );
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    const events = await pending;
+
+    expect(events).toEqual([{ failed: true }]);
+    expect(calls).toHaveLength(1);
+    expect(breaker.opened()).toEqual([]);
+  });
+
+  it("ends with failed at deadlineMs without trying the models left, and without blaming the model in flight", async () => {
+    vi.useFakeTimers();
+    const { fetch: f, calls } = hangingFetch();
+    const breaker = createCircuitBreaker(1);
+    const pending = collect(
+      streamText([FREE, NVIDIA, FREE], MESSAGES, {
+        providers: PROVIDERS,
+        fetch: f,
+        claude: null,
+        breaker,
+        firstTextTimeoutMs: 20_000,
+        deadlineMs: 30_000,
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(20_001);
+    expect(calls).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const events = await pending;
+
+    expect(events).toEqual([{ failed: true }]);
+    expect(calls).toHaveLength(2);
+    expect(breaker.opened()).toEqual(["freellm:auto"]);
+  });
+
+  it("ends an answer that stalls after its first text at deadlineMs", async () => {
+    vi.useFakeTimers();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc.encode(sseLine(sseDelta("Halo "))));
+      },
+    });
+    const { fetch: f } = fakeFetch(new Response(body, { status: 200 }));
+    const pending = collect(streamText([FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, deadlineMs: 50_000 }));
+
+    await vi.advanceTimersByTimeAsync(50_001);
+    expect(await pending).toEqual([{ delta: "Halo " }, { failed: true }]);
+  });
+
+  it("changes nothing without the options (a slow answer is waited for)", async () => {
+    vi.useFakeTimers();
+    const { fetch: f, calls } = mixedFetch([]);
+    const pending = collect(streamText([FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null }));
+    await vi.advanceTimersByTimeAsync(100_000);
+    expect((await pending).at(-1)).toMatchObject({ done: { model: "freellm:auto" } });
+    expect(calls).toHaveLength(1);
   });
 });

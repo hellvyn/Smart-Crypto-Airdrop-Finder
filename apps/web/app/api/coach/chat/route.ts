@@ -9,6 +9,8 @@ import { streamText } from "@saf/llm";
 import type { StreamTextEvent } from "@saf/llm";
 import { getUser } from "@/lib/auth";
 import {
+  CHAT_DEADLINE_MS,
+  CHAT_FIRST_TEXT_TIMEOUT_MS,
   MAX_MESSAGE_CHARS,
   candidateContext,
   candidateLinks,
@@ -89,6 +91,8 @@ export async function POST(request: Request): Promise<Response> {
       breaker: llm.breaker,
       signal,
       cache: true,
+      firstTextTimeoutMs: CHAT_FIRST_TEXT_TIMEOUT_MS,
+      deadlineMs: CHAT_DEADLINE_MS,
     })[Symbol.asyncIterator]();
 
     // Nothing is sent before the first text: a chain that fails outright is a plain 503, not a broken stream.

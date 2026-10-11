@@ -36,6 +36,10 @@ export const CHAT_MAX_TOKENS = 3000;
 const HISTORY_MESSAGES = 20;
 /** A sentence longer than this is released at a space without waiting for its end. */
 const MAX_HELD_CHARS = 1500;
+/** How long a chat model may take to send its first text before the next model is tried. */
+export const CHAT_FIRST_TEXT_TIMEOUT_MS = 20_000;
+/** The chat stream's whole budget: inside the platform's 60 s function limit (the routes export `maxDuration = 60`). */
+export const CHAT_DEADLINE_MS = 50_000;
 /** The plan call must be over before the platform's 60 s function limit (the routes export `maxDuration = 60`). */
 export const PLAN_BUDGET_MS = 50_000;
 

@@ -44,6 +44,18 @@ export interface StreamTextDeps {
    * OpenAI-compatible request is the same either way.
    */
   cache?: boolean;
+  /**
+   * How long one model may take to send its first text (ms). A model that has sent none by then is abandoned and the
+   * next one is tried; that counts as a failure of the model on the breaker (unless the caller aborted first). The
+   * default is no limit beyond the request timeout of 180 s, which is longer than a serverless function lives.
+   */
+  firstTextTimeoutMs?: number;
+  /**
+   * The whole stream's budget (ms), from the first call. When it runs out the stream ends with `failed` at once, with
+   * or without text sent, and no later model is tried. It is the platform's limit minus the time the route still
+   * needs, so the route can answer before it is killed. The model in flight is not blamed on the breaker.
+   */
+  deadlineMs?: number;
 }
 
 /** How one model's attempt ended. `status` is the HTTP status, 200 for a reachable model, 0 for anything else. */
@@ -62,6 +74,36 @@ interface Progress {
   emitted: boolean;
 }
 
+/** The limits of one attempt, made by `streamText`. */
+interface Guard {
+  /** Aborted by the first-text timer or the overall deadline. */
+  signal: AbortSignal;
+  /** Called when the first text came: the first-text timer stops. */
+  textArrived(): void;
+}
+
+/** `promise`, but rejected as soon as `signal` aborts, so a source that ignores the signal cannot hold the stream. */
+function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    promise.catch(() => {});
+    return Promise.reject(new Error("aborted"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(new Error("aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 /**
  * Streams the answer to `messages` (a chat history: `system`, `user` and `assistant` turns) from the first model of
  * `models` that works.
@@ -74,6 +116,8 @@ interface Progress {
  *   counts as such a failure.
  * - When `deps.signal` is aborted the stream ends with `failed` at once: no further model is tried and the circuit
  *   breaker records nothing.
+ * - `deps.firstTextTimeoutMs` ends the wait for a model that sends no text in time: it counts as a failure of that
+ *   model and the next one is tried. `deps.deadlineMs` ends the whole stream with `failed` once it runs out.
  * - Without a usable model (none left, all circuits open, Claude without a key) the stream is just `failed`.
  *
  * Claude goes through the SDK (`messages.stream()`), every other model through its OpenAI-compatible endpoint.
@@ -88,43 +132,64 @@ export async function* streamText(
   // A function, not a value: the signal can flip while an attempt runs.
   const aborted = (): boolean => deps.signal?.aborted === true;
 
-  for (const model of models) {
-    const key = modelKey(model);
-    if (deps.breaker?.isOpen(key) === true) continue;
-    if (model.provider === "anthropic" && (deps.claude === null || deps.providers.anthropic.apiKey === "")) continue;
+  const deadline = new AbortController();
+  const deadlineTimer = deps.deadlineMs === undefined ? undefined : setTimeout(() => deadline.abort(), Math.max(0, deps.deadlineMs));
+  try {
+    for (const model of models) {
+      const key = modelKey(model);
+      if (deps.breaker?.isOpen(key) === true) continue;
+      if (model.provider === "anthropic" && (deps.claude === null || deps.providers.anthropic.apiKey === "")) continue;
 
-    if (aborted()) {
-      yield { failed: true };
-      return;
-    }
-    const end = yield* attempt(model, messages, deps, progress);
+      if (aborted() || deadline.signal.aborted) {
+        yield { failed: true };
+        return;
+      }
+      const wait = new AbortController();
+      let timedOut = false;
+      const waitTimer =
+        deps.firstTextTimeoutMs === undefined
+          ? undefined
+          : setTimeout(() => {
+              timedOut = true;
+              wait.abort();
+            }, Math.max(0, deps.firstTextTimeoutMs));
+      const guard: Guard = { signal: AbortSignal.any([wait.signal, deadline.signal]), textArrived: () => clearTimeout(waitTimer) };
+      let end: AttemptEnd;
+      try {
+        end = yield* attempt(model, messages, deps, progress, guard);
+      } finally {
+        clearTimeout(waitTimer);
+      }
 
-    if (end.ok) {
-      deps.breaker?.recordSuccess(key);
-      yield {
-        done: {
-          model: key,
-          inputTokens: end.inputTokens,
-          outputTokens: end.outputTokens,
-          cacheReadTokens: end.cacheReadTokens,
-          cacheCreationTokens: end.cacheCreationTokens,
-        },
-      };
-      return;
+      if (end.ok) {
+        deps.breaker?.recordSuccess(key);
+        yield {
+          done: {
+            model: key,
+            inputTokens: end.inputTokens,
+            outputTokens: end.outputTokens,
+            cacheReadTokens: end.cacheReadTokens,
+            cacheCreationTokens: end.cacheCreationTokens,
+          },
+        };
+        return;
+      }
+      if (aborted() || deadline.signal.aborted) {
+        yield { failed: true };
+        return;
+      }
+      if (end.status === 200 && !timedOut) deps.breaker?.recordSuccess(key);
+      else deps.breaker?.recordFailure(key);
+      if (progress.emitted) {
+        yield { failed: true };
+        return;
+      }
     }
-    if (aborted()) {
-      yield { failed: true };
-      return;
-    }
-    if (end.status === 200) deps.breaker?.recordSuccess(key);
-    else deps.breaker?.recordFailure(key);
-    if (progress.emitted) {
-      yield { failed: true };
-      return;
-    }
+
+    yield { failed: true };
+  } finally {
+    clearTimeout(deadlineTimer);
   }
-
-  yield { failed: true };
 }
 
 function attempt(
@@ -132,14 +197,18 @@ function attempt(
   messages: ChatMessage[],
   deps: StreamTextDeps,
   progress: Progress,
+  guard: Guard,
 ): AsyncGenerator<{ delta: string }, AttemptEnd, undefined> {
-  if (model.provider === "anthropic") return attemptClaude(model, messages, deps, progress);
-  return attemptOpenAi(model, messages, deps, progress);
+  if (model.provider === "anthropic") return attemptClaude(model, messages, deps, progress, guard);
+  return attemptOpenAi(model, messages, deps, progress, guard);
 }
 
-/** The request timeout, the caller's signal and `own` (aborted when the attempt is over or abandoned) in one signal. */
-function requestSignal(own: AbortController, caller: AbortSignal | undefined): AbortSignal {
-  const signals = [AbortSignal.timeout(REQUEST_TIMEOUT_MS), own.signal];
+/**
+ * The request timeout, the caller's signal, the attempt's limits (first-text timer, deadline) and `own` (aborted when
+ * the attempt is over or abandoned) in one signal.
+ */
+function requestSignal(own: AbortController, caller: AbortSignal | undefined, guard: Guard): AbortSignal {
+  const signals = [AbortSignal.timeout(REQUEST_TIMEOUT_MS), own.signal, guard.signal];
   if (caller !== undefined) signals.push(caller);
   return AbortSignal.any(signals);
 }
@@ -149,19 +218,26 @@ async function* attemptClaude(
   messages: ChatMessage[],
   deps: StreamTextDeps,
   progress: Progress,
+  guard: Guard,
 ): AsyncGenerator<{ delta: string }, AttemptEnd, undefined> {
   const own = new AbortController();
   try {
+    const signal = requestSignal(own, deps.signal, guard);
     const stream = (deps.claude as ClaudeStreamClient).messages.stream(buildClaudeBody(model, messages, { cache: deps.cache === true }), {
-      signal: requestSignal(own, deps.signal),
+      signal,
       timeout: REQUEST_TIMEOUT_MS,
     });
-    for await (const event of stream) {
+    const iterator = stream[Symbol.asyncIterator]();
+    for (;;) {
+      const next = await raceAbort(iterator.next(), signal);
+      if (next.done) break;
+      const event = next.value;
       if (event.type !== "content_block_delta" || event.delta.type !== "text_delta" || event.delta.text === "") continue;
       progress.emitted = true;
+      guard.textArrived();
       yield { delta: event.delta.text };
     }
-    const message = await stream.finalMessage();
+    const message = await raceAbort(stream.finalMessage(), signal);
     // A refusal or a cut-off answer is not a usable one; the model itself was reachable.
     if (!progress.emitted || (message.stop_reason !== "end_turn" && message.stop_reason !== "stop_sequence")) {
       return { ok: false, status: 200 };
@@ -186,12 +262,14 @@ async function* attemptOpenAi(
   messages: ChatMessage[],
   deps: StreamTextDeps,
   progress: Progress,
+  guard: Guard,
 ): AsyncGenerator<{ delta: string }, AttemptEnd, undefined> {
   const own = new AbortController();
   try {
     const provider = deps.providers[model.provider as "freellm" | "nvidia"];
-    const request = chatCompletionsRequest(model, messages, provider, requestSignal(own, deps.signal));
-    const response = await deps.fetch(request.url, request.init);
+    const signal = requestSignal(own, deps.signal, guard);
+    const request = chatCompletionsRequest(model, messages, provider, signal);
+    const response = await raceAbort(deps.fetch(request.url, request.init), signal);
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
       return { ok: false, status: response.status };
@@ -201,7 +279,11 @@ async function* attemptOpenAi(
     let finishReason: string | null = null;
     let inputTokens: number | null = null;
     let outputTokens: number | null = null;
-    for await (const chunk of readSseChunks(response.body)) {
+    const chunks = readSseChunks(response.body);
+    for (;;) {
+      const next = await raceAbort(chunks.next(), signal);
+      if (next.done) break;
+      const chunk = next.value;
       const prompt = chunk.usage?.prompt_tokens;
       const completion = chunk.usage?.completion_tokens;
       if (typeof prompt === "number") inputTokens = prompt;
@@ -212,6 +294,7 @@ async function* attemptOpenAi(
       const piece = choice.delta?.content;
       if (typeof piece === "string" && piece !== "") {
         progress.emitted = true;
+        guard.textArrived();
         yield { delta: piece };
       }
     }
