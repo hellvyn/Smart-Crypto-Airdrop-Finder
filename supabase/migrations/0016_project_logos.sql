@@ -49,6 +49,20 @@ revoke all on public.project_logos from anon, authenticated;
 grant select on public.project_logos to anon, authenticated;
 create policy "project logos public read" on public.project_logos for select to anon, authenticated using (true);
 
+-- When the pipeline last tried to get each project's logo and how it went (fix round 1): a project whose tiers all
+-- failed waits 7 days before it is tried again, and projects never tried come first, so the same failing projects
+-- cannot use up a run (or the unavatar.io cap) day after day. A table of its own, not a column on project_logos:
+-- logo rows exist only for a stored image (data_b64 is not null), and attempt times are pipeline bookkeeping, not
+-- public data. Service role only: RLS on, no grant and no policy for anon or authenticated.
+create table public.project_logo_attempts (
+  project_id uuid primary key references public.projects (id) on delete cascade,
+  outcome text not null check (outcome in ('stored', 'failed')),
+  attempted_at timestamptz not null
+);
+
+alter table public.project_logo_attempts enable row level security;
+revoke all on public.project_logo_attempts from anon, authenticated;
+
 -- The list views gain logo_source (null without a logo), so a card renders an <img> only when there is a logo, and
 -- the unavatar.io attribution only under an X avatar. One query for the page, an index lookup per row.
 -- The definitions below are those of 0012 with logo_source added at the end (create or replace view can only add

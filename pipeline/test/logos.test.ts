@@ -1,4 +1,5 @@
 // Project logos (owner request 2026-10-11): the image download rules, the X handle, and the `logos` stage.
+import type { CurationRecord } from "@saf/core";
 import { describe, expect, it } from "vitest";
 import type { DefillamaProtocol } from "../src/collectors/defillama.js";
 import { defaultConfig } from "../src/config.js";
@@ -191,7 +192,7 @@ describe("xHandle", () => {
     ["https://x.com/ArcusFi", "ArcusFi"],
     ["https://twitter.com/arcus_fi/", "arcus_fi"],
     ["https://www.x.com/arcus?lang=en", "arcus"],
-    ["https://x.com/arcus/status/1849", "arcus"],
+    ["https://x.com/arcus/", "arcus"],
     ["https://mobile.twitter.com/A1234567890_bcd", "A1234567890_bcd"],
   ])("reads the handle of %s", (url, handle) => {
     expect(xHandle(social(url))).toBe(handle);
@@ -209,6 +210,8 @@ describe("xHandle", () => {
     ["explore", "https://x.com/explore"],
     ["hashtag", "https://x.com/hashtag/arcus"],
     ["a lookalike host", "https://x.com.evil.io/arcus"],
+    ["a tweet of another account", "https://x.com/other/status/123"],
+    ["a profile sub-page", "https://x.com/arcus/followers"],
     ["another platform", "https://t.me/arcus"],
     ["not a URL", "x.com/arcus"],
   ])("finds no handle in %s", (_name, url) => {
@@ -221,7 +224,9 @@ describe("xHandle", () => {
   });
 
   it("takes one handle written several ways (X handles ignore case)", () => {
-    expect(xHandle(social("https://x.com/Arcus", "https://twitter.com/arcus/status/1", "https://t.me/arcus"))).toBe("Arcus");
+    expect(xHandle(social("https://x.com/Arcus", "https://twitter.com/arcus/", "https://t.me/arcus"))).toBe("Arcus");
+    // A tweet of another account is not a profile: it neither gives a handle nor makes the project ambiguous.
+    expect(xHandle(social("https://x.com/arcus", "https://x.com/other/status/123"))).toBe("arcus");
   });
 
   it("skips a project with several different handles: it is ambiguous", () => {
@@ -285,6 +290,21 @@ function fakeFetchImage(images: Record<string, LogoImage | null>, probes: string
 }
 
 const png: LogoImage = { mime: "image/png", bytes: PNG };
+
+/** A curation record that passed (listed) or failed. */
+function curation(passed: boolean): CurationRecord {
+  return {
+    passed,
+    worthLevel: "low",
+    worthPoints: 0,
+    tab: passed ? "live_now" : null,
+    statusAt: "live",
+    endedOn: null,
+    reasons: [],
+    coverage: { defillama: true, vc: true, alphadrops_raises: true },
+    coingeckoListed: null,
+  };
+}
 const ico: LogoImage = { mime: "image/x-icon", bytes: ICO };
 const PNG_B64 = "iVBORw0KGgoAAAAN";
 const ICO_B64 = "AAABAAEAEBA=";
@@ -444,7 +464,7 @@ describe("refreshLogos X avatar tier", () => {
     expect(stats.logos_x_avatar_requests).toBe(0);
   });
 
-  it("asks unavatar.io at most 20 times per run; the projects left wait for a later run", async () => {
+  it("asks unavatar.io at most 20 times per run; past the cap a project goes on to its favicon", async () => {
     const projects = Array.from({ length: 25 }, (_, i) =>
       project(`p${String(i).padStart(2, "0")}`, {
         officialDomains: [`p${i}.xyz`],
@@ -452,17 +472,55 @@ describe("refreshLogos X avatar tier", () => {
       }),
     );
     const phishing = new Map(projects.map((p) => [p.officialDomains[0]!, false]));
-    // No avatar for anyone: each asked project goes on to its favicon, which works.
+    // No avatar for anyone: each project goes on to its favicon, which works.
     const images = Object.fromEntries(projects.map((p) => [`https://${p.officialDomains[0]}/apple-touch-icon.png`, png]));
     const fake = fakeFetchImage(images);
     const { repo, stats, done } = run(projects, fake.fetchImage, { phishing });
     await done;
 
     expect(fake.urls().filter((u) => u.startsWith("https://unavatar.io/"))).toHaveLength(20);
-    expect(stats).toMatchObject({ logos_x_avatar_requests: 20, logos_x_avatar_deferred: 5, logos_favicon: 20, logos_fetched: 20 });
-    // A deferred project is not given its favicon in the meantime: the X avatar comes first once it is asked.
-    expect(repo.projectLogos.size).toBe(20);
-    expect(fake.urls().filter((u) => u.endsWith("/apple-touch-icon.png"))).toHaveLength(20);
+    expect(stats).toMatchObject({ logos_x_avatar_requests: 20, logos_x_avatar_deferred: 5, logos_favicon: 25, logos_fetched: 25 });
+    expect(repo.projectLogos.size).toBe(25);
+  });
+
+  it("gives a later project its favicon in the same run when 25 always-failing X projects come first", async () => {
+    const failing = Array.from({ length: 25 }, (_, i) =>
+      project(`a${String(i).padStart(2, "0")}`, { links: [{ url: `https://x.com/fail${i}`, kind: "social" }] }),
+    );
+    const later = project("z-later", { officialDomains: ["later.io"], links: [{ url: "https://x.com/later", kind: "social" }] });
+    const fake = fakeFetchImage({ "https://later.io/apple-touch-icon.png": png });
+    const config = { ...defaultConfig, logos: { ...defaultConfig.logos, concurrency: 1 } };
+    const { repo, stats, done } = run([later, ...failing], fake.fetchImage, { phishing: new Map([["later.io", false]]), config });
+    await done;
+
+    expect(fake.urls().at(-1)).toBe("https://later.io/apple-touch-icon.png");
+    expect(repo.projectLogos.get("z-later")?.source).toBe("favicon");
+    expect(stats).toMatchObject({ logos_x_avatar_requests: 20, logos_x_avatar_deferred: 6, logos_failed: 20, logos_favicon: 1 });
+  });
+
+  it("does not spend the cap on the same failing projects again the next day", async () => {
+    const failing = Array.from({ length: 25 }, (_, i) =>
+      project(`a${String(i).padStart(2, "0")}`, { links: [{ url: `https://x.com/fail${i}`, kind: "social" }] }),
+    );
+    const repo = new MemoryRepo();
+    const first = fakeFetchImage({});
+    await run(failing, first.fetchImage, { repo }).done;
+    const asked = new Set(first.urls());
+    expect(asked.size).toBe(20);
+
+    // One day later: the 20 that failed wait a week; the 5 that were never asked are asked now.
+    const second = fakeFetchImage({});
+    const stats = emptyStats();
+    await refreshLogos(
+      { repo, fetchImage: second.fetchImage, now: () => new Date(NOW.getTime() + DAY) },
+      defaultConfig,
+      failing,
+      { protocols: [], phishing: new Map() },
+      new Date(NOW.getTime() + DAY),
+      stats,
+    );
+    expect(second.urls()).toHaveLength(5);
+    expect(second.urls().some((u) => asked.has(u))).toBe(false);
   });
 
   it("does not spend the cap on projects that already got a DefiLlama logo", async () => {
@@ -580,21 +638,54 @@ describe("refreshLogos refresh, budget and failures", () => {
     expect(stats.logos_failed).toBe(1);
   });
 
-  it("asks projects without a logo first, then the oldest logo first", async () => {
-    const repo = new MemoryRepo();
-    const old = { source: "favicon" as const, mime: "image/x-icon" as const, dataB64: ICO_B64 };
-    await repo.saveProjectLogo("a-newer", old, daysAgo(8));
-    await repo.saveProjectLogo("b-older", old, daysAgo(20));
-    const ps = ["a-newer", "b-older", "c-never"].map((id) => project(id, { links: [{ url: `https://x.com/${id.slice(2)}`, kind: "social" }] }));
-    const fake = fakeFetchImage({});
+  it("orders listed projects first, then never tried, then the oldest attempt or logo, whatever the input order", async () => {
+    const seeded = async (): Promise<MemoryRepo> => {
+      const repo = new MemoryRepo();
+      const old = { source: "favicon" as const, mime: "image/x-icon" as const, dataB64: ICO_B64 };
+      // Listed: latest curation passed. u-dropped passed once, then failed.
+      for (const id of ["l-never", "l-logo20", "l-tried9", "u-dropped"]) await repo.saveCuration(id, curation(true), daysAgo(3));
+      await repo.saveCuration("u-dropped", curation(false), daysAgo(1));
+      await repo.saveProjectLogo("l-logo20", old, daysAgo(20));
+      await repo.saveLogoAttempt("l-tried9", "failed", daysAgo(9));
+      await repo.saveProjectLogo("u-logo8", old, daysAgo(8));
+      await repo.saveLogoAttempt("u-tried30", "failed", daysAgo(30));
+      return repo;
+    };
+    const ids = ["u-logo8", "l-tried9", "u-never", "u-dropped", "l-logo20", "u-tried30", "l-never"];
+    const expected = ["l-never", "l-logo20", "l-tried9", "u-dropped", "u-never", "u-tried30", "u-logo8"].map(
+      (id) => `https://unavatar.io/x/${id.replace("-", "_")}?fallback=false`,
+    );
     const config = { ...defaultConfig, logos: { ...defaultConfig.logos, concurrency: 1 } };
-    const { done } = run(ps, fake.fetchImage, { repo, config });
+    for (const order of [ids, [...ids].reverse(), [...ids.slice(3), ...ids.slice(0, 3)]]) {
+      const ps = order.map((id) => project(id, { links: [{ url: `https://x.com/${id.replace("-", "_")}`, kind: "social" }] }));
+      const fake = fakeFetchImage({});
+      await run(ps, fake.fetchImage, { repo: await seeded(), config }).done;
+      expect(fake.urls(), order.join(",")).toEqual(expected);
+    }
+  });
+
+  it("waits 7 days after a failed attempt before trying again, and records every attempt", async () => {
+    const repo = new MemoryRepo();
+    await repo.saveLogoAttempt("six", "failed", daysAgo(6));
+    await repo.saveLogoAttempt("eight", "failed", daysAgo(8));
+    const ps = ["six", "eight", "ok"].map((id) => project(id, { links: [{ url: `https://x.com/${id}`, kind: "social" }] }));
+    const fake = fakeFetchImage({ "https://unavatar.io/x/ok?fallback=false": png });
+    await run(ps, fake.fetchImage, { repo }).done;
+
+    expect(fake.urls().sort()).toEqual(["https://unavatar.io/x/eight?fallback=false", "https://unavatar.io/x/ok?fallback=false"]);
+    expect(repo.logoAttempts.get("six")).toEqual({ outcome: "failed", attemptedAt: daysAgo(6) });
+    expect(repo.logoAttempts.get("eight")).toEqual({ outcome: "failed", attemptedAt: NOW });
+    expect(repo.logoAttempts.get("ok")).toEqual({ outcome: "stored", attemptedAt: NOW });
+  });
+
+  it("records no attempt for a project whose X avatar waited for the cap and that got nothing else", async () => {
+    const ps = Array.from({ length: 21 }, (_, i) => project(`p${String(i).padStart(2, "0")}`, { links: [{ url: `https://x.com/h${i}`, kind: "social" }] }));
+    const config = { ...defaultConfig, logos: { ...defaultConfig.logos, concurrency: 1 } };
+    const { repo, stats, done } = run(ps, fakeFetchImage({}).fetchImage, { config });
     await done;
-    expect(fake.urls()).toEqual([
-      "https://unavatar.io/x/never?fallback=false",
-      "https://unavatar.io/x/older?fallback=false",
-      "https://unavatar.io/x/newer?fallback=false",
-    ]);
+    expect(stats).toMatchObject({ logos_x_avatar_deferred: 1, logos_failed: 20 });
+    expect(repo.logoAttempts.has("p20")).toBe(false);
+    expect(repo.logoAttempts.get("p19")?.outcome).toBe("failed");
   });
 
   it("starts no project after the time budget (2 minutes); the rest wait for the next run", async () => {

@@ -64,7 +64,7 @@ const X_RESERVED: ReadonlySet<string> = new Set([
 
 /**
  * The project's X handle, from its own `social` links on x.com or twitter.com (extraction copies them verbatim from
- * the source text): the first path segment when it is a valid handle (letters, digits, `_`, at most 15) and not a
+ * the source text) that are profile URLs: the one path segment when it is a valid handle (letters, digits, `_`, at most 15) and not a
  * reserved path. Handles are compared ignoring case (X does), and the first spelling is kept. Null when there is none,
  * or when there are several different ones: which account is the project's would be a guess.
  */
@@ -79,7 +79,11 @@ export function xHandle(links: { url: string; kind: string }[]): string | null {
       continue;
     }
     if ((url.protocol !== "https:" && url.protocol !== "http:") || !X_HOSTS.has(url.hostname.toLowerCase())) continue;
-    const first = url.pathname.split("/")[1] ?? "";
+    // A profile URL only: exactly one path segment (a trailing slash is fine). A tweet (`/other/status/1`) or a
+    // profile sub-page names an account that need not be the project's.
+    const segments = url.pathname.split("/").filter((part) => part !== "");
+    if (segments.length !== 1) continue;
+    const first = segments[0]!;
     if (!X_HANDLE.test(first) || X_RESERVED.has(first.toLowerCase())) continue;
     if (!handles.has(first.toLowerCase())) handles.set(first.toLowerCase(), first);
   }
@@ -102,19 +106,42 @@ function defillamaLogo(project: ProjectForScoring, protocols: DefillamaProtocol[
 
 type Outcome = { source: LogoSource; image: LogoImage } | "failed" | "deferred" | "none";
 
+/** One project due for a logo, with what orders the queue. */
+interface Candidate {
+  project: ProjectForScoring;
+  /** Its latest curation passed: it is on the list, so its card is seen. */
+  listed: boolean;
+  /** It was tried before (an attempt, or a stored logo). */
+  tried: boolean;
+  /** When it was last tried (the attempt, else the stored logo), in ms; 0 when never. Always finite. */
+  since: number;
+}
+
+/** Listed first, then never tried, then the oldest attempt or logo, then by id. A total order on finite numbers. */
+function queueOrder(a: Candidate, b: Candidate): number {
+  if (a.listed !== b.listed) return a.listed ? -1 : 1;
+  if (a.tried !== b.tried) return a.tried ? 1 : -1;
+  if (a.since !== b.since) return a.since - b.since;
+  return a.project.id < b.project.id ? -1 : a.project.id > b.project.id ? 1 : 0;
+}
+
 /**
- * The `logos` stage. For every project of `projects` whose stored logo is missing or at least 7 days old (no logo
- * first, then the oldest), a few at a time (`config.logos.concurrency`):
+ * The `logos` stage. A project is due when neither its stored logo nor its latest attempt (`project_logo_attempts`) is
+ * younger than 7 days, so a project whose tiers all failed waits a week before it is tried again. Due projects go in
+ * this order: listed (latest curation passed) before the others, never tried before tried, then the oldest attempt or
+ * logo first. A few at a time (`config.logos.concurrency`), each project:
  * - tries the tiers in order and stores the first usable image (`logos_fetched`, and `logos_defillama`,
- *   `logos_x_avatar` or `logos_favicon`); when none is usable the stored logo, if any, stays (`logos_failed`);
+ *   `logos_x_avatar` or `logos_favicon`), recording a `stored` attempt; when none is usable the stored logo, if any,
+ *   stays and a `failed` attempt is recorded (`logos_failed`);
  * - asks unavatar.io at most `maxXAvatarsPerRun` times a run (`logos_x_avatar_requests`, of which
- *   `logos_x_avatar_failed` gave nothing). A project whose turn comes after that waits for a later run without trying
- *   its favicon, so the X avatar keeps its place in the order (`logos_x_avatar_deferred`);
+ *   `logos_x_avatar_failed` gave nothing). A project whose X avatar comes after that goes on to its favicon
+ *   (`logos_x_avatar_deferred`); the weekly refresh can upgrade it to the X avatar later. When that leaves it with
+ *   nothing, no attempt is recorded, so it is tried again (X avatar first) on the next run;
  * - starts no project after `budgetMinutes` (by `deps.now()`, from the start of the stage); those wait for the next
  *   run (`logos_skipped`).
- * A project with nothing to try counts nowhere. A project whose logo cannot be stored counts as `logos_failed`; the
- * others go on. `phishing` holds the GoPlus answers of this run's `score` stage by registrable domain: only `false`
- * (checked, not listed) lets a favicon be asked.
+ * A project with nothing to try counts nowhere. A project whose logo or attempt cannot be stored counts as
+ * `logos_failed`; the others go on. `phishing` holds the GoPlus answers of this run's `score` stage by registrable
+ * domain: only `false` (checked, not listed) lets a favicon be asked.
  */
 export async function refreshLogos(
   deps: { repo: PipelineRepo; fetchImage: FetchImage; now: () => Date },
@@ -125,17 +152,28 @@ export async function refreshLogos(
   stats: DailyStats,
 ): Promise<void> {
   const { repo, fetchImage } = deps;
-  const stored = new Map(
-    (await repo.listProjectLogos(projects.map((p) => p.id))).map((r) => [r.projectId, r.fetchedAt.getTime()]),
-  );
-  const age = (id: string): number => now.getTime() - (stored.get(id) ?? Number.NEGATIVE_INFINITY);
-  const due = projects
-    .filter((p) => age(p.id) >= LOGO_FRESH_MS)
-    .sort((a, b) => age(b.id) - age(a.id) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const ids = projects.map((p) => p.id);
+  const [logos, attempts, listedIds] = await Promise.all([
+    repo.listProjectLogos(ids),
+    repo.listLogoAttempts(ids),
+    repo.listListedProjects(ids),
+  ]);
+  const logoAt = new Map(logos.map((r) => [r.projectId, r.fetchedAt.getTime()]));
+  const attemptAt = new Map(attempts.map((r) => [r.projectId, r.attemptedAt.getTime()]));
+  const listed = new Set(listedIds);
+  const fresh = (at: number | undefined): boolean => at !== undefined && now.getTime() - at < LOGO_FRESH_MS;
+  const due: Candidate[] = projects
+    .filter((p) => !fresh(logoAt.get(p.id)) && !fresh(attemptAt.get(p.id)))
+    .map((project) => {
+      const last = attemptAt.get(project.id) ?? logoAt.get(project.id);
+      return { project, listed: listed.has(project.id), tried: last !== undefined, since: last ?? 0 };
+    })
+    .sort(queueOrder);
 
   let xRequests = 0;
   const logoFor = async (project: ProjectForScoring): Promise<Outcome> => {
     let tried = false;
+    let deferred = false;
     const attempt = (url: string, allowHost: (host: string) => boolean): Promise<LogoImage | null> => {
       tried = true;
       return fetchImage(url, allowHost);
@@ -149,13 +187,18 @@ export async function refreshLogos(
 
     const handle = xHandle(project.links);
     if (handle !== null) {
-      if (xRequests >= config.logos.maxXAvatarsPerRun) return "deferred";
-      xRequests += 1;
-      stats.logos_x_avatar_requests += 1;
-      // fallback=false: unavatar answers 404 instead of a generic placeholder when it finds no avatar.
-      const image = await attempt(`https://unavatar.io/x/${handle}?fallback=false`, isUnavatarHost);
-      if (image !== null) return { source: "x_avatar", image };
-      stats.logos_x_avatar_failed += 1;
+      if (xRequests >= config.logos.maxXAvatarsPerRun) {
+        // The cap is reached: the favicon below still gets its turn, and the X avatar waits for a later run.
+        deferred = true;
+        stats.logos_x_avatar_deferred += 1;
+      } else {
+        xRequests += 1;
+        stats.logos_x_avatar_requests += 1;
+        // fallback=false: unavatar answers 404 instead of a generic placeholder when it finds no avatar.
+        const image = await attempt(`https://unavatar.io/x/${handle}?fallback=false`, isUnavatarHost);
+        if (image !== null) return { source: "x_avatar", image };
+        stats.logos_x_avatar_failed += 1;
+      }
     }
 
     for (const domain of project.officialDomains) {
@@ -166,13 +209,14 @@ export async function refreshLogos(
         if (image !== null) return { source: "favicon", image };
       }
     }
+    if (deferred) return "deferred";
     return tried ? "failed" : "none";
   };
 
   const deadline = deps.now().getTime() + config.logos.budgetMinutes * MINUTE_MS;
   const limit = pLimit(config.logos.concurrency);
   await Promise.all(
-    due.map((project) =>
+    due.map(({ project }) =>
       limit(async () => {
         if (deps.now().getTime() >= deadline) {
           stats.logos_skipped += 1;
@@ -180,12 +224,9 @@ export async function refreshLogos(
         }
         try {
           const outcome = await logoFor(project);
-          if (outcome === "none") return;
-          if (outcome === "deferred") {
-            stats.logos_x_avatar_deferred += 1;
-            return;
-          }
+          if (outcome === "none" || outcome === "deferred") return;
           if (outcome === "failed") {
+            await repo.saveLogoAttempt(project.id, "failed", now);
             stats.logos_failed += 1;
             return;
           }
@@ -195,6 +236,7 @@ export async function refreshLogos(
             { source, mime: image.mime, dataB64: Buffer.from(image.bytes).toString("base64") },
             now,
           );
+          await repo.saveLogoAttempt(project.id, "stored", now);
           stats.logos_fetched += 1;
           stats[`logos_${source}`] += 1;
         } catch {

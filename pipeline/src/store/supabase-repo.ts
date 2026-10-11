@@ -24,6 +24,7 @@ import type {
   ClaimPage,
   ExtractionStatus,
   LinkCheck,
+  LogoAttemptOutcome,
   LogoSource,
   NewAiAnalysis,
   NewEvidence,
@@ -1036,6 +1037,54 @@ export class SupabaseRepo implements PipelineRepo {
         { onConflict: "project_id" },
       ),
     );
+  }
+
+  async saveLogoAttempt(projectId: string, outcome: LogoAttemptOutcome, at: Date): Promise<void> {
+    check(
+      "saveLogoAttempt",
+      await this.db
+        .from("project_logo_attempts")
+        .upsert({ project_id: projectId, outcome, attempted_at: at.toISOString() }, { onConflict: "project_id" }),
+    );
+  }
+
+  async listLogoAttempts(
+    projectIds: string[],
+  ): Promise<{ projectId: string; outcome: LogoAttemptOutcome; attemptedAt: Date }[]> {
+    type Row = { project_id: string; outcome: LogoAttemptOutcome; attempted_at: string };
+    const rows: Row[] = [];
+    for (const chunk of chunks(projectIds, URL_CHUNK)) {
+      const data = check(
+        "listLogoAttempts",
+        await this.db
+          .from("project_logo_attempts")
+          .select("project_id, outcome, attempted_at")
+          .in("project_id", chunk)
+          .returns<Row[]>(),
+      );
+      rows.push(...(data ?? []));
+    }
+    return rows
+      .map((r) => ({ projectId: r.project_id, outcome: r.outcome, attemptedAt: new Date(r.attempted_at) }))
+      .sort((a, b) => (a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0));
+  }
+
+  async listListedProjects(projectIds: string[]): Promise<string[]> {
+    const listed: string[] = [];
+    // latest_curations (0012) holds the latest curation of each project.
+    for (const chunk of chunks(projectIds, URL_CHUNK)) {
+      const data = check(
+        "listListedProjects",
+        await this.db
+          .from("latest_curations")
+          .select("project_id")
+          .in("project_id", chunk)
+          .eq("passed", true)
+          .returns<{ project_id: string }[]>(),
+      );
+      listed.push(...(data ?? []).map((r) => r.project_id));
+    }
+    return listed.sort();
   }
 
   async listProjectLogos(projectIds: string[]): Promise<{ projectId: string; source: LogoSource; fetchedAt: Date }[]> {

@@ -251,11 +251,14 @@ visitor's browser never contacts a project domain or unavatar.io. Tiers, first u
 Every download: https only (default port), 5 s in all, at most 2 redirects, at most 64 KB (reading stops past it),
 type decided by the magic bytes (PNG, JPEG, GIF, WebP, ICO), never SVG. The table refuses the same things again
 (mime allow-list, magic bytes per mime, 64 KB). A logo is fetched again at most once a week; a failed refresh keeps the
-old one. The stage starts no project after 2 minutes (`logos.budgetMinutes`), 3 at a time.
+old one. Every attempt is recorded in `project_logo_attempts` (service role only): a project whose tiers all failed
+waits 7 days before it is tried again. Due projects go listed (latest curation passed) first, then never tried, then
+the oldest attempt or logo. The stage starts no project after 2 minutes (`logos.budgetMinutes`), 3 at a time.
 
 **unavatar.io limits and terms.** The free (anonymous) plan allows 25 avatar requests per day per IP according to
 its README on 2026-10-11 (other sources say 50; cache hits are free). The stage asks at most 20 per run
-(`logos.maxXAvatarsPerRun`); projects past the cap wait for a later run and are not given their favicon meanwhile.
+(`logos.maxXAvatarsPerRun`); a project past the cap goes on to its favicon meanwhile (the weekly refresh can upgrade it
+to the X avatar), and one left with nothing records no attempt, so it is asked again on the next run.
 The free plan requires attribution: every card showing an X-avatar logo says "Logo: unavatar.io" (`copy.ts`). The
 README asks for a followable link to `https://unavatar.io` (no `nofollow`, no redirect); see the open question in the
 list-cards report. Whether the free plan may be used by a commercial product is **UNKNOWN** (no terms found); the
@@ -291,10 +294,10 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `link_checks_total` | distinct claim/app links checked in `score` and written to `link_checks` (status from the GoPlus answers of the run, no extra request) |
 | `link_checks_phishing` | of those, links on the phishing list: never rendered as a link, and the project's risk is high (`phishing_claim_link`) |
 | `logos_fetched` / `logos_defillama` / `logos_x_avatar` / `logos_favicon` | logos stored this run, all together and per source ("Project logos") |
-| `logos_failed` | projects due for a logo (none yet, or a week old) with something to try where nothing usable came back; a stored logo stays |
+| `logos_failed` | projects due for a logo (none yet, or a week old) with something to try where nothing usable came back; a stored logo stays, and the project waits 7 days |
 | `logos_skipped` | projects due for a logo not tried because the 2-minute budget ran out (tried next run) |
 | `logos_x_avatar_requests` / `logos_x_avatar_failed` | unavatar.io requests this run (at most 20) / of those, the ones that gave no logo (404, other answer, refused image) |
-| `logos_x_avatar_deferred` | projects whose X avatar was next after the 20 requests were used; they wait for a later run |
+| `logos_x_avatar_deferred` | projects whose X avatar was next after the 20 requests were used; they went on to their favicon, and the X avatar waits for a later run |
 | `claim_pages_read` | claim portal pages fetched in `analyze` for the AI Scam Analyst (at most 20 per run; pages fetched in the last 7 days come from `claim_pages`) |
 | `track_record_total` / `_listed` / `_no_token` / `_risk_raised` | the public track record (#43); see "Track record" below |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |

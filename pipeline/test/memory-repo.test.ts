@@ -971,3 +971,39 @@ describe("MemoryRepo project logos", () => {
     expect(repo.projectLogos.get("p-1")).toEqual({ source: "x_avatar", mime: "image/jpeg", dataB64: "/9j/4AAQ", fetchedAt: later });
   });
 });
+
+describe("MemoryRepo logo attempts and listed projects", () => {
+  it("keeps the latest logo attempt per project and lists only the asked ones", async () => {
+    const repo = new MemoryRepo();
+    const later = new Date(T0.getTime() + 86_400_000);
+    await repo.saveLogoAttempt("p-1", "failed", T0);
+    await repo.saveLogoAttempt("p-2", "stored", T0);
+    await repo.saveLogoAttempt("p-1", "stored", later);
+    expect(await repo.listLogoAttempts(["p-2", "p-1", "p-never"])).toEqual([
+      { projectId: "p-1", outcome: "stored", attemptedAt: later },
+      { projectId: "p-2", outcome: "stored", attemptedAt: T0 },
+    ]);
+    expect(await repo.listLogoAttempts([])).toEqual([]);
+  });
+
+  it("lists the asked projects whose latest curation passed", async () => {
+    const repo = new MemoryRepo();
+    const record = (passed: boolean): CurationRecord => ({
+      passed,
+      worthLevel: "low",
+      worthPoints: 0,
+      tab: passed ? "live_now" : null,
+      statusAt: "live",
+      endedOn: null,
+      reasons: [],
+      coverage: { defillama: true, vc: true, alphadrops_raises: true },
+      coingeckoListed: null,
+    });
+    await repo.saveCuration("p-pass", record(true), T0);
+    await repo.saveCuration("p-dropped", record(true), T0);
+    await repo.saveCuration("p-dropped", record(false), new Date(T0.getTime() + 1000));
+    await repo.saveCuration("p-other", record(true), T0);
+    expect(await repo.listListedProjects(["p-pass", "p-dropped", "p-never"])).toEqual(["p-pass"]);
+    expect(await repo.listListedProjects([])).toEqual([]);
+  });
+});

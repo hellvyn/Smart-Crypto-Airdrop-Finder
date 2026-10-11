@@ -116,7 +116,7 @@ export interface DailyStats extends RunStats {
   /** unavatar.io requests this run (at most `logos.maxXAvatarsPerRun`), and of those the ones that gave no logo. */
   logos_x_avatar_requests: number;
   logos_x_avatar_failed: number;
-  /** Projects whose X avatar was next but the per-run unavatar.io cap was reached; they wait for a later run. */
+  /** Projects whose X avatar was next but the per-run unavatar.io cap was reached; they went on to their favicon. */
   logos_x_avatar_deferred: number;
 }
 

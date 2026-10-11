@@ -6,7 +6,12 @@ import { getProjectLogo } from "@/lib/logos";
 import { createPublicClient } from "@/lib/supabase/public";
 import { isUuid } from "@/lib/uuid";
 
-/** Sent with every answer: never sniffed into another type, and nothing in it can run or load anything. */
+/**
+ * Sent with every answer: never sniffed into another type, and nothing in it can run or load anything.
+ * Note: when next.config.ts and a route handler set the same header, Next keeps the config's value. The site-wide
+ * `Content-Security-Policy: frame-ancestors 'none'` would win over the CSP below, so the `/logo/:projectId` rule in
+ * next.config.ts is what actually sends `default-src 'none'; sandbox` here. Do not remove that rule.
+ */
 const LOCKED = {
   "X-Content-Type-Options": "nosniff",
   "Content-Security-Policy": "default-src 'none'; sandbox",

@@ -9,7 +9,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(42);
+select plan(49);
 
 -- 1x1 images (or just their headers: only the leading magic bytes are checked).
 create temp table img (k text primary key, b64 text);
@@ -184,9 +184,40 @@ select is(
      and c.signals = p.signals and c.capital = p.capital and c.logo_source is not distinct from p.logo_source),
   2, 'curated_list carries the public_list columns unchanged');
 
+-- ---------- project_logo_attempts (fix round 1): pipeline bookkeeping, service role only ----------
+-- 30-32.
+select has_table('public', 'project_logo_attempts', 'project_logo_attempts exists');
+select columns_are('public', 'project_logo_attempts', array['project_id', 'outcome', 'attempted_at'],
+  'project_logo_attempts holds the project, the outcome and when');
+select is((select relrowsecurity from pg_class where oid = 'public.project_logo_attempts'::regclass), true,
+  'row level security is enabled on project_logo_attempts');
+-- 33. No grant and no policy: anon and authenticated can do nothing with it.
+select results_eq(
+  $$ select count(*)::int from unnest(array['anon', 'authenticated']) r,
+       unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) p
+     where has_table_privilege(r, 'public.project_logo_attempts', p) $$,
+  $$ values (0) $$,
+  'anon and authenticated hold no privilege on project_logo_attempts');
+-- 34.
+select is((select count(*)::int from pg_policies where schemaname = 'public' and tablename = 'project_logo_attempts'), 0,
+  'project_logo_attempts has no policy');
+-- 35. Outcome allow-list.
+select throws_ok(
+  $$ insert into project_logo_attempts (project_id, outcome, attempted_at)
+     values ('1a000000-0000-4000-8000-000000000006', 'maybe', now()) $$,
+  '23514', null, 'an outcome other than stored or failed is refused');
+-- 36. Goes with its project.
+insert into projects (id, slug, name, name_key, status, chains, first_seen, last_seen) values
+  ('1a000000-0000-4000-8000-000000000008', 'lg-try', 'LG Try', 'lgtry', 'live', '{}', now(), now());
+insert into project_logo_attempts (project_id, outcome, attempted_at)
+  values ('1a000000-0000-4000-8000-000000000008', 'failed', now());
+delete from projects where id = '1a000000-0000-4000-8000-000000000008';
+select is((select count(*)::int from project_logo_attempts where project_id = '1a000000-0000-4000-8000-000000000008'), 0,
+  'deleting a project deletes its logo attempt');
+
 -- ---------- anon ----------
 set local role anon;
--- 30-31.
+-- 37-38.
 select results_eq(
   $$ select project_id::text, source, mime, data_b64 = (select b64 from img where k = 'png') from project_logos
      where project_id = '1a000000-0000-4000-8000-000000000001' $$,
@@ -194,7 +225,7 @@ select results_eq(
   'anon reads a logo');
 select is((select count(*)::int from project_logos where project_id::text like '1a000000-%'), 5,
   'anon reads every logo, listed project or not');
--- 32-34.
+-- 39-41.
 select throws_ok(
   $$ insert into project_logos (project_id, source, mime, data_b64, fetched_at)
      select '1a000000-0000-4000-8000-000000000006', 'favicon', 'image/png', b64, now() from img where k = 'png' $$,
@@ -203,7 +234,7 @@ select throws_ok(
   $$ update project_logos set fetched_at = now() where project_id = '1a000000-0000-4000-8000-000000000001' $$,
   '42501', null, 'anon cannot update a logo');
 select throws_ok($$ delete from project_logos $$, '42501', null, 'anon cannot delete a logo');
--- 35-36.
+-- 42-43.
 select results_eq(
   $$ select slug, logo_source from public_list where slug like 'lg-%' order by slug $$,
   $$ values ('lg-none'::text, null::text), ('lg-png', 'defillama') $$,
@@ -214,7 +245,7 @@ reset role;
 -- ---------- authenticated ----------
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"1a000000-0000-4000-8000-00000000aaaa","role":"authenticated"}';
--- 37-40.
+-- 44-47.
 select is((select count(*)::int from project_logos where project_id::text like '1a000000-%'), 5,
   'authenticated reads the logos');
 select throws_ok(
@@ -225,7 +256,7 @@ select throws_ok(
   $$ update project_logos set mime = 'image/png' where project_id = '1a000000-0000-4000-8000-000000000001' $$,
   '42501', null, 'authenticated cannot update a logo');
 select throws_ok($$ delete from project_logos $$, '42501', null, 'authenticated cannot delete a logo');
--- 41-42.
+-- 48-49.
 select results_eq(
   $$ select slug, logo_source from curated_list where slug like 'lg-%' order by slug $$,
   $$ values ('lg-none'::text, null::text), ('lg-png', 'defillama') $$,

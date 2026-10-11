@@ -169,6 +169,9 @@ export interface LinkCheck {
 /** Where a project's logo came from (`project_logos.source`). */
 export type LogoSource = "defillama" | "x_avatar" | "favicon";
 
+/** How a logo attempt went (`project_logo_attempts.outcome`). */
+export type LogoAttemptOutcome = "stored" | "failed";
+
 /** One `project_logos` row to write: the image as standard base64. */
 export interface NewProjectLogo {
   source: LogoSource;
@@ -324,4 +327,10 @@ export interface PipelineRepo {
   saveProjectLogo(projectId: string, logo: NewProjectLogo, at: Date): Promise<void>;
   /** Source and fetch time of the stored logos of these projects (projects without one left out), by project id. */
   listProjectLogos(projectIds: string[]): Promise<{ projectId: string; source: LogoSource; fetchedAt: Date }[]>;
+  /** Inserts or replaces the latest logo attempt of one project (`project_logo_attempts`, service role only). */
+  saveLogoAttempt(projectId: string, outcome: LogoAttemptOutcome, at: Date): Promise<void>;
+  /** The latest logo attempt of these projects (projects never tried left out), by project id. */
+  listLogoAttempts(projectIds: string[]): Promise<{ projectId: string; outcome: LogoAttemptOutcome; attemptedAt: Date }[]>;
+  /** Those of these projects whose latest curation passed (they are on the list), sorted. */
+  listListedProjects(projectIds: string[]): Promise<string[]>;
 }
