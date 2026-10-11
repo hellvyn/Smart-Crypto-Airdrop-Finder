@@ -849,6 +849,7 @@ export class SupabaseRepo implements PipelineRepo {
         project_id: projectId,
         passed: c.passed,
         worth_level: c.worthLevel,
+        worth_points: c.worthPoints,
         tab: c.tab,
         status_at: c.statusAt,
         ended_on: c.endedOn,

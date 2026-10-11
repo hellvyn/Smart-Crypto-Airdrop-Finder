@@ -181,11 +181,12 @@ Set the two variables on the same command line as above, e.g. `SUPABASE_URL=<pro
   - G3 counts passing curations outside the `ended` tab whose latest assessment did not run all four key checks
     (`dangerous_asks`, `lookalike`, `domain_age`, `phishing_list`). Ended projects are exempt (decision #40).
   - G9 is the mean `curation_passed_live_now` of the 3 runs.
-- `worth-review.ts` prints the top 20 passing projects per tab (`live_now`, `early_bets`, `ended`): name, worth level
-  and the worth reasons. The owner marks the entries whose order makes no sense; the final weights and the reasons are
-  then recorded by hand in spec section 6.3. `curations` stores the worth level and reasons but not the point total, so
-  no points are printed; the order is worth level, then newest `last_seen` (the list view also uses signal strength and
-  deadline as tie-breakers).
+- `worth-review.ts` prints the top 20 passing projects per tab (`live_now`, `early_bets`, `ended`): name, worth level,
+  point total and the worth reasons. The owner marks the entries whose order makes no sense; the final weights and the reasons are
+  then recorded by hand in spec section 6.3. The point total is `curations.worth_points` (migration 0012, written by the
+  score step from `worth().points`; "poin n/a" for a curation stored before it existed, until the next daily run
+  rewrites it). The order is worth level, then newest `last_seen` (the list view also uses signal strength and deadline
+  as tie-breakers).
 - `ai-samples.ts` writes the 20 newest `analyst` analyses (one per project) to `eval/cases/ai-samples.md` (git-ignored: it
   holds source quotes): verdict, points with quotes and source URL, the model that answered, and the forbidden style
   phrases found, with a line for the owner's rating. It prints only the count and the path. G11 needs at least 80% of 20

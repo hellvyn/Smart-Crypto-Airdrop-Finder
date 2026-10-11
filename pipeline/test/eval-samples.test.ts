@@ -9,6 +9,7 @@ const reason = (message: string, kind: "pass" | "fail" | "worth" = "worth") => (
 const row = (over: Partial<ReviewRow> & { name: string }): ReviewRow => ({
   tab: "live_now",
   worthLevel: "medium",
+  worthPoints: 2,
   reasons: [],
   lastSeen: "2026-10-10T00:00:00Z",
   ...over,
@@ -51,6 +52,7 @@ describe("formatWorthReview", () => {
           row({
             name: "Alpha",
             worthLevel: "high",
+            worthPoints: 5,
             reasons: [reason("Lolos semua syarat kurasi.", "pass"), reason("Didukung VC tier 1 yang terverifikasi."), reason("Belum ada token yang diperdagangkan.")],
           }),
         ],
@@ -58,10 +60,18 @@ describe("formatWorthReview", () => {
       ),
     );
     expect(text).toContain("live_now");
-    expect(text).toMatch(/1\. Alpha\s+high/);
+    expect(text).toMatch(/1\. Alpha\s+high\s+5 poin/);
     expect(text).toContain("Didukung VC tier 1 yang terverifikasi.");
     expect(text).toContain("Belum ada token yang diperdagangkan.");
     expect(text).not.toContain("Lolos semua syarat kurasi.");
+  });
+
+  it("shows a negative point total as is and marks a curation stored before points were kept", () => {
+    const text = formatWorthReview(
+      topPerTab([row({ name: "Costly", worthLevel: "low", worthPoints: -2 }), row({ name: "Old", worthLevel: "low", worthPoints: null, lastSeen: "2026-10-01T00:00:00Z" })], 20),
+    );
+    expect(text).toMatch(/1\. Costly\s+low\s+-2 poin/);
+    expect(text).toMatch(/2\. Old\s+low\s+poin n\/a/);
   });
 
   it("says so for a tab with no passing project", () => {

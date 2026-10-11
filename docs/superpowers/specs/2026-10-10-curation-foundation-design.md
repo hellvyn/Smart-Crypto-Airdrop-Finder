@@ -140,6 +140,7 @@ Riwayat, pola sama dengan `risk_assessments`: "terbaru" = `computed_at` terbesar
 | `status_at` | status project (setelah `expireStatus`) saat kurasi dihitung; dasar aturan "pernah lolos sebelum berakhir" (§6.2) |
 | `ended_on` | tanggal berakhir (date, null kalau belum berakhir): tanggal deadline dasar `expireStatus` kalau ada, kalau gak ada tanggal pertama status tercatat `ended` (dibawa dari curation sebelumnya) |
 | `worth_level` | `high`, `medium`, `low`, `insufficient_data` |
+| `worth_points` | integer: total poin `worth()` di balik `worth_level` (migrasi 0012); khusus member seperti `worth_level`; null untuk baris lama |
 | `reasons` | jsonb: alasan lolos/gagal + alasan worth (kode + pesan, seperti `RiskReason`) |
 | `coverage` | jsonb: sinyal mana yang dicek vs belum (mis. portfolio VC gagal diambil) |
 | `computed_at`, `seq` | seperti `risk_assessments` |

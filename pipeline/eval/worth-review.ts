@@ -11,6 +11,8 @@ export interface ReviewRow {
   name: string;
   tab: Tab;
   worthLevel: WorthLevel | null;
+  /** The `worth()` point total; null for a curation stored before points were kept. */
+  worthPoints: number | null;
   reasons: CurationReason[];
   /** ISO timestamp of the project's `last_seen`. */
   lastSeen: string;
@@ -36,8 +38,8 @@ export function topPerTab(rows: readonly ReviewRow[], n: number): Record<Tab, Re
 }
 
 /**
- * Text for the owner's review (gate G10): per tab, each project's name, worth level and the worth reasons that gave
- * it. The point total is not stored in `curations` (only the reasons are), so it is not printed.
+ * Text for the owner's review (gate G10): per tab, each project's name, worth level, point total and the worth reasons
+ * that gave it.
  */
 export function formatWorthReview(top: Record<Tab, ReviewRow[]>): string {
   const lines: string[] = [];
@@ -45,7 +47,8 @@ export function formatWorthReview(top: Record<Tab, ReviewRow[]>): string {
     lines.push(`\n== ${tab} (top ${TOP_N}) ==`);
     if (top[tab].length === 0) lines.push("  (none)");
     top[tab].forEach((r, i) => {
-      lines.push(`${String(i + 1).padStart(2)}. ${r.name}  ${r.worthLevel ?? "no worth level"}`);
+      const points = r.worthPoints === null ? "poin n/a" : `${r.worthPoints} poin`;
+      lines.push(`${String(i + 1).padStart(2)}. ${r.name}  ${r.worthLevel ?? "no worth level"}  ${points}`);
       for (const reason of r.reasons.filter((x) => x.kind === "worth")) lines.push(`      - ${reason.message}`);
     });
   }
@@ -59,10 +62,10 @@ async function main(): Promise<number> {
     return 2;
   }
   const [curations, projects] = await Promise.all([
-    latestPerProject<{ project_id: string; passed: boolean; tab: Tab | null; worth_level: WorthLevel | null; reasons: CurationReason[] }>(
+    latestPerProject<{ project_id: string; passed: boolean; tab: Tab | null; worth_level: WorthLevel | null; worth_points: number | null; reasons: CurationReason[] }>(
       db,
       "curations",
-      "project_id, passed, tab, worth_level, reasons, computed_at, seq",
+      "project_id, passed, tab, worth_level, worth_points, reasons, computed_at, seq",
       "computed_at",
     ),
     readProjects(db),
@@ -71,7 +74,7 @@ async function main(): Promise<number> {
   for (const c of curations) {
     const project = projects.get(c.project_id);
     if (!c.passed || c.tab === null || project === undefined) continue;
-    rows.push({ name: project.name, tab: c.tab, worthLevel: c.worth_level, reasons: c.reasons, lastSeen: project.last_seen });
+    rows.push({ name: project.name, tab: c.tab, worthLevel: c.worth_level, worthPoints: c.worth_points, reasons: c.reasons, lastSeen: project.last_seen });
   }
   console.log(`Curated list: ${rows.length} projects. Mark the ones whose order makes no sense, then record the final weights in spec 6.3.`);
   console.log(formatWorthReview(topPerTab(rows, TOP_N)));

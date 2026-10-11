@@ -37,6 +37,8 @@ export type AiKind = "analyst" | "scam" | "contradictions";
 export interface CurationRecord {
   passed: boolean;
   worthLevel: WorthLevel | null;
+  /** `worth()` points behind `worthLevel`; null when the curation was stored before points were kept. */
+  worthPoints: number | null;
   tab: Tab | null;
   statusAt: Status;
   endedOn: string | null;

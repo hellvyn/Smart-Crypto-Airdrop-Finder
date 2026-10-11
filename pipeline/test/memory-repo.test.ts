@@ -557,6 +557,7 @@ function curation(overrides: Partial<CurationRecord> = {}): CurationRecord {
   return {
     passed: true,
     worthLevel: "medium",
+    worthPoints: 2,
     tab: "live_now",
     statusAt: "live",
     endedOn: null,
@@ -567,7 +568,7 @@ function curation(overrides: Partial<CurationRecord> = {}): CurationRecord {
 }
 
 const failed = (overrides: Partial<CurationRecord> = {}): CurationRecord =>
-  curation({ passed: false, worthLevel: null, tab: null, reasons: [], ...overrides });
+  curation({ passed: false, worthLevel: null, worthPoints: null, tab: null, reasons: [], ...overrides });
 
 describe("MemoryRepo curations", () => {
   const t = (n: number) => new Date(T0.getTime() + n * 1000);
@@ -621,6 +622,7 @@ describe("MemoryRepo curations", () => {
       projectId: p.id,
       passed: true,
       worthLevel: "medium",
+      worthPoints: 2,
       tab: "live_now",
       statusAt: "live",
       endedOn: null,

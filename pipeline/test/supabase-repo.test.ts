@@ -373,6 +373,7 @@ describe("SupabaseRepo.saveCuration", () => {
       {
         passed: false,
         worthLevel: null,
+        worthPoints: -1,
         tab: null,
         statusAt: "live",
         endedOn: null,
@@ -393,6 +394,7 @@ describe("SupabaseRepo.saveCuration", () => {
           project_id: "p-1",
           passed: false,
           worth_level: null,
+          worth_points: -1,
           tab: null,
           status_at: "live",
           ended_on: null,
@@ -428,6 +430,7 @@ describe("SupabaseRepo.saveCuration", () => {
       {
         passed: true,
         worthLevel: "high",
+        worthPoints: 4,
         tab: "ended",
         statusAt: "ended",
         endedOn: "2026-10-05",
@@ -440,7 +443,7 @@ describe("SupabaseRepo.saveCuration", () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatchObject({
       table: "curations",
-      row: { worth_level: "high", tab: "ended", status_at: "ended", ended_on: "2026-10-05", public_fail_reason: null },
+      row: { worth_level: "high", worth_points: 4, tab: "ended", status_at: "ended", ended_on: "2026-10-05", public_fail_reason: null },
     });
   });
 });
