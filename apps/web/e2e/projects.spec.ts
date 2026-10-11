@@ -351,3 +351,51 @@ test("an unknown slug is a 404", async ({ page }) => {
   await page.getByRole("link", { name: "← Balik ke list" }).click();
   await expect(page).toHaveURL(/\/airdrops$/);
 });
+
+// ---- Not curated: warning, noindex (Plan 6 Task 6) ----
+
+const noindex = (page: Page) => page.locator('meta[name="robots"]');
+const banner = (page: Page) => page.getByTestId("not-curated");
+
+test("a project whose latest curation failed opens with the warning above everything and is noindex", async ({ page }) => {
+  const res = await page.goto(`/projects/${curated.failed.slug}`);
+  expect(res?.status()).toBe(200);
+  await expect(banner(page)).toHaveText("Gak masuk list: Risiko tinggi");
+  await expect(page.locator("article.detail > :first-child")).toHaveAttribute("data-testid", "not-curated");
+  await expect(noindex(page)).toHaveAttribute("content", "noindex");
+  // Not a tab project: no pass stamp either.
+  await expect(page.getByRole("img", { name: /LOLOS/ })).toHaveCount(0);
+});
+
+test("a project without any curation opens with 'belum dinilai' and is noindex", async ({ page }) => {
+  const res = await page.goto(`/projects/${seed.main.slug}`);
+  expect(res?.status()).toBe(200);
+  await expect(banner(page)).toHaveText("Gak masuk list: belum dinilai");
+  await expect(noindex(page)).toHaveAttribute("content", "noindex");
+});
+
+test("a project that passed has no warning and is indexable, also after it ended", async ({ page }) => {
+  for (const slug of [curated.live.slug, curated.early.slug, curated.ended.slug]) {
+    await page.goto(`/projects/${slug}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(banner(page)).toHaveCount(0);
+    await expect(noindex(page)).toHaveCount(0);
+  }
+  await page.goto(`/projects/${curated.ended.slug}`);
+  await expect(page.getByTestId("status-badge")).toHaveText("Status Ended");
+  await expect(page.getByTestId("ended-on")).toHaveText("Ended 15 Jan 2025");
+});
+
+test("a member sees the same public reason in the banner, never the member-only one", async ({ page }) => {
+  await signIn(page);
+  await page.goto(`/projects/${curated.failed.slug}`);
+  await expect(banner(page)).toHaveText("Gak masuk list: Risiko tinggi");
+  await expect(banner(page)).not.toContainText(curated.failedMemberReason);
+  await expect(noindex(page)).toHaveAttribute("content", "noindex");
+});
+
+test("a visitor's page for a failed project carries none of its member-only text", async ({ request }) => {
+  const res = await request.get(`/projects/${curated.failed.slug}`);
+  expect(res.status()).toBe(200);
+  expect(await res.text()).not.toContain(curated.failedMemberReason);
+});

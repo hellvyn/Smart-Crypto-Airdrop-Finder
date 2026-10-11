@@ -105,4 +105,43 @@ describe("ProjectDetailView", () => {
     const { container } = view({ analyst: analyst() }, true);
     expect(container.textContent).not.toMatch(/\bsafe\b|\baman\b|eligible/i);
   });
+
+  describe("not curated", () => {
+    const failed = () => ({ ...projectDetail().curation!, passed: false, tab: null, publicFailReason: "Risiko tinggi" });
+
+    it("puts 'Gak masuk list: {alasan}' above the head, with the public reason, for a visitor and a member alike", () => {
+      const member = { ...failed(), reasons: [{ code: "x", kind: "fail" as const, message: "Teks khusus member" }] };
+      for (const [curation, isMember] of [[failed(), false], [member, true]] as const) {
+        const { container } = view({ curation }, isMember);
+        const banner = screen.getByTestId("not-curated");
+        expect(banner.textContent).toBe("Gak masuk list: Risiko tinggi");
+        expect(container.querySelector("article")!.firstElementChild).toBe(banner);
+        expect(within(banner).queryByText(/Teks khusus member/)).toBeNull();
+        cleanup();
+      }
+    });
+
+    it("says belum dinilai for a project without any curation", () => {
+      view({ curation: null });
+      expect(screen.getByTestId("not-curated").textContent).toBe("Gak masuk list: belum dinilai");
+    });
+
+    it("has no banner for a project that passed, and none for one that passed and then ended", () => {
+      view({});
+      expect(screen.queryByTestId("not-curated")).toBeNull();
+      cleanup();
+      view({
+        status: "ended",
+        curation: { ...projectDetail().curation!, tab: "ended", endedOn: "2025-01-15" },
+      });
+      expect(screen.queryByTestId("not-curated")).toBeNull();
+      expect(screen.getByTestId("status-badge").textContent).toBe("Status Ended");
+      expect(screen.getByTestId("ended-on").textContent).toBe("Ended 15 Jan 2025");
+    });
+
+    it("shows no end date outside the ended tab", () => {
+      view({});
+      expect(screen.queryByTestId("ended-on")).toBeNull();
+    });
+  });
 });

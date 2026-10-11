@@ -7,6 +7,7 @@ import {
   endedLabel,
   isCheckFrozen,
   isCheckStale,
+  notCuratedReason,
   parseCuratedFilters,
   coverageLine,
   deadlineKindLabel,
@@ -352,5 +353,26 @@ describe("curatedHref", () => {
         3,
       ),
     ).toBe("/airdrops?tab=ended&status=live&status=ended&risk=high&chain=base&worth=high&modal=free&page=3");
+  });
+});
+
+describe("notCuratedReason", () => {
+  it("is null for a project whose latest curation passed, in any tab, so no banner and no noindex", () => {
+    expect(notCuratedReason({ passed: true, publicFailReason: null })).toBeNull();
+    // A project that passed and then ended is not failed (#40); a stray reason on a passed row is not shown either.
+    expect(notCuratedReason({ passed: true, publicFailReason: "Risiko tinggi" })).toBeNull();
+  });
+
+  it("is the public fail reason of a curation that did not pass", () => {
+    expect(notCuratedReason({ passed: false, publicFailReason: "Risiko tinggi" })).toBe("Risiko tinggi");
+  });
+
+  it("says belum dinilai when there is no curation at all", () => {
+    expect(notCuratedReason(null)).toBe("belum dinilai");
+  });
+
+  it("does not claim belum dinilai for a failed curation without a stored reason", () => {
+    expect(notCuratedReason({ passed: false, publicFailReason: null })).toBe("alasannya belum tercatat");
+    expect(notCuratedReason({ passed: false, publicFailReason: "   " })).toBe("alasannya belum tercatat");
   });
 });

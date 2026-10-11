@@ -206,6 +206,15 @@ export const list = {
   },
 };
 
+/** The warning for a project that is not on the curated list (Plan 6 Task 6): the page banner and the watchlist label. */
+export const notCurated = {
+  banner: (reason: string) => `Gak masuk list: ${reason}`,
+  /** No curation row at all: the pipeline has not run for the project yet. */
+  unrated: "belum dinilai",
+  /** A failed curation stored before the public reason existed. */
+  noReason: "alasannya belum tercatat",
+};
+
 /** The project page (Plan 6 Task 5; mockup docs/design/airdropiq-c/CProject.dc.html). */
 export const detail = {
   back: "← Balik ke list",

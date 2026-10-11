@@ -277,6 +277,15 @@ button:disabled {
   color: var(--warn);
 }
 
+.banner-not-curated {
+  margin: 0 0 1rem;
+}
+
+.project-row-not-curated {
+  margin: 0.25rem 0;
+  color: var(--warn);
+}
+
 .banner h2 {
   margin: 0 0 0.25rem;
   font-size: 1.05rem;
@@ -1887,7 +1896,8 @@ blockquote {
   color: var(--error);
 }
 
-.detail-checked {
+.detail-checked,
+.detail-ended {
   font-size: 14px;
   font-weight: 600;
 }

@@ -145,6 +145,7 @@ describe("isWatching", () => {
 
 describe("getWatchlist", () => {
   const row = {
+    id: PID,
     slug: "demo",
     name: "Demo",
     status: "live",
@@ -164,9 +165,11 @@ describe("getWatchlist", () => {
   });
 
   it("reads project_list for the watched ids, ordered like the list", async () => {
-    const { db, recs } = fakeDb((rec) =>
-      rec.table === "watchlist" ? { data: [{ project_id: PID }], error: null } : { data: [row], error: null },
-    );
+    const { db, recs } = fakeDb((rec) => {
+      if (rec.table === "watchlist") return { data: [{ project_id: PID }], error: null };
+      if (rec.table === "latest_curations") return { data: [{ project_id: PID, passed: true, public_fail_reason: null }], error: null };
+      return { data: [row], error: null };
+    });
     const items = await getWatchlist(db);
     expect(recs[0]!.calls).toContainEqual(["eq", "user_id", USER.id]);
     const list = recs[1]!;
@@ -183,7 +186,53 @@ describe("getWatchlist", () => {
         chains: ["ethereum"],
         nextDeadline: { date: "2026-11-01", kind: "claim", precision: "exact" },
         lastSeen: "2026-10-09T00:00:00Z",
+        notCuratedReason: null,
       },
     ]);
+  });
+
+  describe("the not-curated label", () => {
+    const PID2 = "33333333-3333-4333-8333-333333333333";
+    const PID3 = "44444444-4444-4444-8444-444444444444";
+
+    it("reads the latest curation of all watched projects in ONE query, public columns only", async () => {
+      const { db, recs } = fakeDb((rec) => {
+        if (rec.table === "watchlist") return { data: [{ project_id: PID }, { project_id: PID2 }, { project_id: PID3 }], error: null };
+        if (rec.table === "latest_curations") return { data: [], error: null };
+        return { data: [{ ...row, id: PID }, { ...row, id: PID2, slug: "b" }, { ...row, id: PID3, slug: "c" }], error: null };
+      });
+      await getWatchlist(db);
+      const curations = recs.filter((r) => r.table === "latest_curations");
+      expect(curations).toHaveLength(1);
+      expect(curations[0]!.calls).toContainEqual(["in", "project_id", [PID, PID2, PID3]]);
+      const selected = String(curations[0]!.calls.find((c) => c[0] === "select")![1]);
+      expect(selected.split(",").map((c) => c.trim())).toEqual(["project_id", "passed", "public_fail_reason"]);
+    });
+
+    it("gives each item the public reason of a failed curation, belum dinilai without one, and nothing for a pass", async () => {
+      const { db } = fakeDb((rec) => {
+        if (rec.table === "watchlist") return { data: [{ project_id: PID }, { project_id: PID2 }, { project_id: PID3 }], error: null };
+        if (rec.table === "latest_curations")
+          return {
+            data: [
+              { project_id: PID, passed: false, public_fail_reason: "Risiko tinggi" },
+              { project_id: PID2, passed: true, public_fail_reason: null },
+            ],
+            error: null,
+          };
+        return { data: [{ ...row, id: PID }, { ...row, id: PID2, slug: "b" }, { ...row, id: PID3, slug: "c" }], error: null };
+      });
+      const byslug = Object.fromEntries((await getWatchlist(db)).map((i) => [i.slug, i.notCuratedReason]));
+      expect(byslug).toEqual({ demo: "Risiko tinggi", b: null, c: "belum dinilai" });
+    });
+
+    it("surfaces a failed curation read", async () => {
+      const { db } = fakeDb((rec) => {
+        if (rec.table === "watchlist") return { data: [{ project_id: PID }], error: null };
+        if (rec.table === "latest_curations") return { data: null, error: { message: "boom" } };
+        return { data: [row], error: null };
+      });
+      await expect(getWatchlist(db)).rejects.toThrow(/boom/);
+    });
   });
 });

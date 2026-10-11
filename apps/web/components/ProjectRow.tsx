@@ -3,7 +3,7 @@ import { RiskBadge } from "./RiskBadge";
 import { SignalBadges } from "./SignalBadges";
 import { StatusBadge } from "./StatusBadge";
 import { Tag, WorthBadge, type TagTone } from "@/components/ui";
-import { labels, list, ui } from "@/lib/copy";
+import { labels, list, notCurated, ui } from "@/lib/copy";
 import {
   capitalLabel,
   checkedLabel,
@@ -28,16 +28,20 @@ function isCurated(item: ProjectListItem | CuratedItem): item is CuratedItem {
 /**
  * One airdrop of a list. A curated row (the /airdrops tabs) also shows its capital tag, the claim badge, how many key
  * checks ran, when it was checked, its signals, and the worth level for members ("Member only" for visitors). In the
- * ended tab, "Ended {tanggal}" takes the place of the next deadline. The watchlist passes plain list items.
+ * ended tab, "Ended {tanggal}" takes the place of the next deadline. The watchlist passes plain list items, and
+ * labels the ones that are not on the list with "Gak masuk list: {alasan}".
  */
 export function ProjectRow({
   item,
   member = false,
   now = new Date(),
+  notCuratedReason = null,
 }: {
   item: ProjectListItem | CuratedItem;
   member?: boolean;
   now?: Date;
+  /** Why the project is not on the curated list (the watchlist passes it; the public reason only). */
+  notCuratedReason?: string | null;
 }) {
   const curated = isCurated(item) ? item : null;
   const d = item.nextDeadline;
@@ -62,6 +66,11 @@ export function ProjectRow({
           ) : null}
           {curated?.claimOpenChecked ? <Tag tone="claimOpen">{list.claimOpen}</Tag> : null}
         </p>
+        {notCuratedReason !== null ? (
+          <p className="project-row-not-curated" data-testid="not-curated">
+            {notCurated.banner(notCuratedReason)}
+          </p>
+        ) : null}
         <p className="muted">
           <span>{item.chains.length > 0 ? item.chains.join(", ") : list.chainUnknown}</span>
           {" · "}

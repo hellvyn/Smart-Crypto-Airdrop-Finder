@@ -117,3 +117,23 @@ describe("ProjectRow (curated list)", () => {
     expect(checked.getAttribute("data-tone")).not.toBe("warn");
   });
 });
+
+describe("ProjectRow (watchlist label)", () => {
+  const plain = () => {
+    const { tab: _tab, endedOn: _e, checkedAt: _c, signals: _s, claimOpenChecked: _o, capital: _p, capitalMinUsd: _m, keyChecksRan: _k, worthLevel: _w, ...rest } = item();
+    return rest;
+  };
+
+  it("labels a watched project that did not pass with the banner wording and its reason", () => {
+    render(<ProjectRow item={plain()} notCuratedReason="Risiko tinggi" />);
+    expect(screen.getByTestId("not-curated").textContent).toBe("Gak masuk list: Risiko tinggi");
+  });
+
+  it("has no label without a reason (the project passed)", () => {
+    render(<ProjectRow item={plain()} notCuratedReason={null} />);
+    expect(screen.queryByTestId("not-curated")).toBeNull();
+    cleanup();
+    render(<ProjectRow item={plain()} />);
+    expect(screen.queryByTestId("not-curated")).toBeNull();
+  });
+});

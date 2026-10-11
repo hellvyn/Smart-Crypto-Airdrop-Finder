@@ -1,5 +1,6 @@
 import { KEY_CHECKS } from "@saf/core";
 import { ExternalLink } from "./ExternalLink";
+import { NotCuratedBanner } from "./NotCuratedBanner";
 import { StatusBadge } from "./StatusBadge";
 import { AiDecision } from "./detail/AiDecision";
 import { Contradictions } from "./detail/Contradictions";
@@ -14,8 +15,10 @@ import { formatCalendarDay, isCheckedKind, sourceName, wibStampDay } from "@/lib
 import {
   checkedLabel,
   deadlineKindLabel,
+  endedLabel,
   isCheckFrozen,
   isCheckStale,
+  notCuratedReason,
   precisionLabel,
   riskLabel,
   safeHttpUrl,
@@ -73,9 +76,11 @@ export function ProjectDetailView({ project, member, now }: { project: ProjectDe
   const frozen = curation?.tab ? isCheckFrozen(curation.tab, curation.endedOn, now) : false;
   const steps = member && project.analyst && project.analyst.steps_id.length > 0 ? project.analyst.steps_id : project.steps;
   const level = risk?.level ?? project.riskLevel;
+  const notListed = notCuratedReason(curation);
 
   return (
     <article className="detail">
+      {notListed !== null ? <NotCuratedBanner reason={notListed} /> : null}
       <header className="detail-head">
         <div className="detail-head-text">
           <h1 className="ui-display detail-title">
@@ -84,6 +89,11 @@ export function ProjectDetailView({ project, member, now }: { project: ProjectDe
           </h1>
           <p className="badges">
             <StatusBadge status={project.status} />
+            {curation?.tab === "ended" && curation.endedOn ? (
+              <span className="detail-ended" data-testid="ended-on">
+                {endedLabel(curation.endedOn)}
+              </span>
+            ) : null}
             <span className="detail-risk" data-testid="risk-head" data-level={level ?? "none"}>
               {copy.riskHead(riskLabel(level))}
             </span>

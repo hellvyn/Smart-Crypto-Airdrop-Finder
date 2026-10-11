@@ -16,10 +16,15 @@ import type {
   WorthLevel,
 } from "@saf/core";
 import { ENDED_SCORING_DAYS } from "@saf/core";
-import { labels } from "./copy";
+import { labels, notCurated } from "./copy";
 import { LIST_PATH } from "./routes";
 
 export type { Tab, WorthLevel } from "@saf/core";
+
+/** A watched project with why it is not on the list (null when its latest curation passed). */
+export interface WatchedItem extends ProjectListItem {
+  notCuratedReason: string | null;
+}
 
 export interface ProjectListItem {
   slug: string;
@@ -242,6 +247,17 @@ export function dayLabel(day: string): string {
 /** "Ended 5 Okt 2026" from a `YYYY-MM-DD` end date. */
 export function endedLabel(endedOn: string): string {
   return labels.endedOn(dayLabel(endedOn));
+}
+
+/**
+ * Why a project is not on the curated list, or null when it is (its latest curation passed, in any tab: one that
+ * passed and then ended is not failed, #40). Only the public reason is used (#55): `reasons` is member-only. No
+ * curation at all counts as failed ("belum dinilai").
+ */
+export function notCuratedReason(curation: { passed: boolean; publicFailReason: string | null } | null): string | null {
+  if (curation === null) return notCurated.unrated;
+  if (curation.passed) return null;
+  return curation.publicFailReason?.trim() || notCurated.noReason;
 }
 
 const ONE_DECIMAL = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 });

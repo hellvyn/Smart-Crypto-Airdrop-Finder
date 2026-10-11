@@ -1,12 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 import { adminClient, createConfirmedUser, deleteCreatedUsers, uniqueEmail } from "./support/admin";
-import { cleanupSeed, seedProjects, type Seed } from "./support/seed";
+import { cleanupSeed, seedCuratedList, seedProjects, type CuratedSeed, type Seed } from "./support/seed";
 
 const PASSWORD = "correct-horse-1";
 let seed: Seed;
+let curated: CuratedSeed;
 
 test.beforeAll(async () => {
   seed = await seedProjects();
+  curated = await seedCuratedList();
 });
 
 test.afterAll(async () => {
@@ -200,4 +202,23 @@ test("a member who does not watch the project never sees its changes", async ({ 
   await expect(changesSection(page)).toHaveCount(0);
   await page.goto("/airdrops");
   await expect(changesSection(page)).toHaveCount(0);
+});
+
+// ---- The "Gak masuk list" label (Plan 6 Task 6) ----
+
+test("the watchlist labels a project that failed curation or has none, and leaves passed ones alone", async ({ page }) => {
+  await signedInUser(page, "wl-label");
+  for (const slug of [curated.failed.slug, seed.main.slug, curated.live.slug, curated.ended.slug]) await watch(page, slug);
+
+  await page.goto("/watchlist");
+  const label = (slug: string) => rowFor(page, slug).getByTestId("not-curated");
+  await expect(label(curated.failed.slug)).toHaveText("Gak masuk list: Risiko tinggi");
+  await expect(label(seed.main.slug)).toHaveText("Gak masuk list: belum dinilai");
+  // Passed, also the one that passed and then ended (#40): no label.
+  await expect(rowFor(page, curated.live.slug)).toBeVisible();
+  await expect(label(curated.live.slug)).toHaveCount(0);
+  await expect(rowFor(page, curated.ended.slug)).toBeVisible();
+  await expect(label(curated.ended.slug)).toHaveCount(0);
+  // The member-only reason stays out of the label.
+  await expect(label(curated.failed.slug)).not.toContainText(curated.failedMemberReason);
 });

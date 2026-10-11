@@ -286,6 +286,8 @@ export interface CuratedSeed {
   ended: SeededProject;
   /** Its latest curation failed: in no tab at all. */
   failed: SeededProject;
+  /** The failed curation's member-only `reasons` text, which must never appear in the visitor-facing banner. */
+  failedMemberReason: string;
 }
 
 /**
@@ -309,8 +311,9 @@ export async function seedCuratedList(): Promise<CuratedSeed> {
     early: project("early", "Early"),
     ended: project("ended", "Ended"),
     failed: project("failed", "Failed"),
+    failedMemberReason: `Alasan khusus member ${tag}`,
   };
-  const ids: Record<keyof CuratedSeed, string> = {
+  const ids: Record<"live" | "early" | "ended" | "failed", string> = {
     live: await insertProject({ slug: seed.live.slug, name: seed.live.name, name_key: seed.live.slug, chains: ["base"], status: "live" }),
     early: await insertProject({ slug: seed.early.slug, name: seed.early.name, name_key: seed.early.slug, chains: ["ethereum"], status: "speculative" }),
     ended: await insertProject({ slug: seed.ended.slug, name: seed.ended.name, name_key: seed.ended.slug, chains: ["base"], status: "ended" }),
@@ -336,10 +339,11 @@ export async function seedCuratedList(): Promise<CuratedSeed> {
     await db
       .from("curations")
       .insert([
-        { project_id: ids.live, passed: true, worth_level: "low", tab: "live_now", status_at: "live", computed_at: at(3_600_000) },
-        { project_id: ids.early, passed: true, worth_level: "medium", tab: "early_bets", status_at: "speculative", computed_at: at(1_800_000) },
+        { project_id: ids.live, reasons: [], passed: true, worth_level: "low", tab: "live_now", status_at: "live", computed_at: at(3_600_000) },
+        { project_id: ids.early, reasons: [], passed: true, worth_level: "medium", tab: "early_bets", status_at: "speculative", computed_at: at(1_800_000) },
         {
           project_id: ids.ended,
+          reasons: [],
           passed: true,
           worth_level: "medium",
           tab: "ended",
@@ -348,8 +352,15 @@ export async function seedCuratedList(): Promise<CuratedSeed> {
           computed_at: "2025-04-01T23:00:00Z",
         },
         // Passed once, then failed: the latest curation decides.
-        { project_id: ids.failed, passed: true, worth_level: "high", tab: "live_now", status_at: "live", computed_at: at(86_400_000) },
-        { project_id: ids.failed, passed: false, status_at: "live", public_fail_reason: "Risiko tinggi", computed_at: at(3_600_000) },
+        { project_id: ids.failed, reasons: [], passed: true, worth_level: "high", tab: "live_now", status_at: "live", computed_at: at(86_400_000) },
+        {
+          project_id: ids.failed,
+          passed: false,
+          status_at: "live",
+          public_fail_reason: "Risiko tinggi",
+          reasons: [{ code: "risk_high", kind: "fail", message: seed.failedMemberReason }],
+          computed_at: at(3_600_000),
+        },
       ])
       .select("id"),
     "curations",

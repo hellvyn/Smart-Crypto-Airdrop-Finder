@@ -25,7 +25,7 @@ export default async function WatchlistPage() {
       ) : (
         <div className="project-list">
           {items.map((item) => (
-            <ProjectRow key={item.slug} item={item} />
+            <ProjectRow key={item.slug} item={item} notCuratedReason={item.notCuratedReason} />
           ))}
         </div>
       )}
