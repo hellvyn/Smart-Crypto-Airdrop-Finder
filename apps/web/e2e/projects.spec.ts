@@ -88,7 +88,7 @@ test("the detail page shows reasons, coverage, evidence with its source, and the
   await expect(page.getByText("Claim domain is younger than 30 days")).toBeVisible();
   await expect(
     page.getByText(
-      "4/9 security check jalan. Belum bisa dicek: Risiko kontrak token, Kontrak verified, Riwayat hack, Cross-check antar source, Review AI.",
+      "4/9 cek jalan. Belum bisa dicek: Risiko kontrak token, Kontrak verified, Riwayat hack, Cross-check antar source, Review AI.",
     ),
   ).toBeVisible();
 

@@ -1,5 +1,6 @@
 // Pure view helpers and view-model types for the public pages. No I/O, so they run in Vitest without Supabase.
 import type {
+  CheckId,
   DatePrecision,
   DeadlineKind,
   RiskCheck,
@@ -162,12 +163,17 @@ export function riskLabel(l: RiskLevel | null): string {
   return l === null ? labels.notAssessed : (labels.risk[l] ?? labels.notAssessed);
 }
 
+/** The label for `key` when the map has one; data from the database may hold keys the types do not know. */
+function lookup(map: Record<string, string>, key: string): string | undefined {
+  return Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
 export function deadlineKindLabel(kind: string): string {
-  return labels.deadlineKind[kind] ?? kind.replaceAll("_", " ");
+  return lookup(labels.deadlineKind, kind) ?? kind.replaceAll("_", " ");
 }
 
 export function precisionLabel(precision: string): string {
-  return labels.precision[precision] ?? precision;
+  return lookup(labels.precision, precision) ?? precision;
 }
 
 /** Only exact and approximate dates count as a deadline for sorting, "next deadline" and notifications. */
@@ -181,26 +187,26 @@ function time(value: string): number {
 }
 
 /** Every risk check the pipeline runs (`CheckId` of @saf/core, `ai_review` included), in display order. */
-const CHECK_IDS = Object.keys(labels.checks);
+const CHECK_IDS = Object.keys(labels.checks) as CheckId[];
 
 /**
- * "7/9 security check jalan. Belum bisa dicek: Umur domain, Review AI." A check that did not run is never counted as
+ * "7/9 cek jalan. Belum bisa dicek: Umur domain, Review AI." A check that did not run is never counted as
  * passed, and a check missing from the row counts as not run.
  */
 export function coverageLine(checks: RiskCheck[]): string {
   const total = Math.max(checks.length, CHECK_IDS.length);
   const ran = checks.filter((c) => c.ran).length;
   const missing = CHECK_IDS.filter((id) => !checks.some((c) => c.id === id && c.ran));
-  return labels.coverage(ran, total, missing.map((id) => labels.checks[id]!));
+  return labels.coverage(ran, total, missing.map((id) => labels.checks[id]));
 }
 
 export function evidenceFieldLabel(field: string): string {
-  return labels.evidenceField[field] ?? field.replaceAll("_", " ");
+  return lookup(labels.evidenceField, field) ?? field.replaceAll("_", " ");
 }
 
 /** "Tingkat tinggi" for a risk reason's severity; an unknown severity is shown as stored. */
 export function severityLabel(severity: string): string {
-  return labels.severity[severity] ?? severity;
+  return lookup(labels.severity, severity) ?? severity;
 }
 
 /** The URL normalised, if (and only if) it is http(s). Anything else must be shown as plain text, never linked. */

@@ -1,7 +1,8 @@
 // Every user-facing string of the web app, grouped by page or area. Wording follows the Plan 6 glossary first and the
 // design C mockups (docs/design/airdropiq-c) second. Style rules: "kamu" tone, no em dash, straight quotes, and none of
 // the banned words; test/copy-style.test.ts checks every string literal in this file.
-// Pure module (no I/O, no server-only imports), so client components can use it too.
+// Pure module (no I/O, no server-only imports, type-only imports), so client components can use it too.
+import type { CheckId, DatePrecision, DeadlineKind, RiskLevel, Severity, Status } from "@saf/core";
 
 const BRAND = "AirdropIQ";
 
@@ -60,14 +61,14 @@ export const labels = {
     speculative: "Spekulatif",
     ended: "Ended",
     unknown: "Belum pasti",
-  },
+  } satisfies Record<Status, string>,
   risk: {
     low: "Rendah",
     medium: "Sedang",
     high: "Tinggi",
     critical: "Kritis",
     insufficient_data: "Data belum cukup",
-  },
+  } satisfies Record<RiskLevel, string>,
   notAssessed: "Belum dinilai",
   riskBadge: "Risiko",
   statusBadge: "Status",
@@ -78,13 +79,13 @@ export const labels = {
     withdraw_funds: "Tarik dana",
     tge: "TGE",
     other: "Lainnya",
-  } as Record<string, string>,
+  } satisfies Record<DeadlineKind, string>,
   precision: {
     exact: "tanggal tepat",
     approximate: "tanggal perkiraan",
     month: "bulannya aja",
     quarter: "kuartalnya aja",
-  } as Record<string, string>,
+  } satisfies Record<DatePrecision, string>,
   /** Risk checks, in the order coverage lists them (glossary #53 where it names them). */
   checks: {
     dangerous_asks: "Minta seed phrase / bayar dulu",
@@ -96,11 +97,11 @@ export const labels = {
     hack_history: "Riwayat hack",
     corroboration: "Cross-check antar source",
     ai_review: "Review AI",
-  } as Record<string, string>,
+  } satisfies Record<CheckId, string>,
+  /** Coverage of all checks. "{k}/4 security check jalan" is reserved for the 4 key checks (glossary). */
   coverage: (ran: number, total: number, missing: string[]) =>
-    missing.length > 0
-      ? `${ran}/${total} security check jalan. Belum bisa dicek: ${missing.join(", ")}.`
-      : `${ran}/${total} security check jalan`,
+    missing.length > 0 ? `${ran}/${total} cek jalan. Belum bisa dicek: ${missing.join(", ")}.` : `${ran}/${total} cek jalan`,
+  /** Evidence fields are free-form strings in the database (no core type), so the map stays open. */
   evidenceField: {
     status: "Status",
     defillama_listing: "Listing DefiLlama",
@@ -111,7 +112,7 @@ export const labels = {
     high: "Tingkat tinggi",
     medium: "Tingkat sedang",
     info: "Info",
-  } as Record<string, string>,
+  } satisfies Record<Severity, string>,
   /** "Dicek ..." of a curated project (#44). */
   checked: {
     today: "Dicek hari ini",

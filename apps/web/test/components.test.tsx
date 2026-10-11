@@ -238,7 +238,7 @@ describe("ProjectDetailView", () => {
     render(<ProjectDetailView project={detail()} />);
     expect(
       screen.getByText(
-        "4/9 security check jalan. Belum bisa dicek: Risiko kontrak token, Kontrak verified, Riwayat hack, Cross-check antar source, Review AI.",
+        "4/9 cek jalan. Belum bisa dicek: Risiko kontrak token, Kontrak verified, Riwayat hack, Cross-check antar source, Review AI.",
       ),
     ).toBeTruthy();
   });
@@ -301,7 +301,7 @@ describe("ProjectDetailView", () => {
     render(<ProjectDetailView project={detail({ risk: null, riskLevel: null })} />);
     expect(screen.getByText("Belum dinilai")).toBeTruthy();
     expect(screen.getByText("Project ini belum dinilai.")).toBeTruthy();
-    expect(screen.queryByText(/security check jalan/)).toBeNull();
+    expect(screen.queryByText(/cek jalan/)).toBeNull();
   });
 
   it("uses wallet activity wording only, never eligible or safe", () => {

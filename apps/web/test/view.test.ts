@@ -144,23 +144,23 @@ describe("coverageLine", () => {
 
   it("counts ran checks and names the ones that did not run, the AI review included", () => {
     const line = coverageLine(ids.map((id, i) => ({ id, ran: i !== 2 && id !== "ai_review" })));
-    expect(line).toBe("7/9 security check jalan. Belum bisa dicek: Umur domain, Review AI.");
+    expect(line).toBe("7/9 cek jalan. Belum bisa dicek: Umur domain, Review AI.");
   });
 
   it("counts a missing AI review row as not run", () => {
     const line = coverageLine(ids.filter((id) => id !== "ai_review").map((id) => ({ id, ran: true })));
-    expect(line).toBe("8/9 security check jalan. Belum bisa dicek: Review AI.");
+    expect(line).toBe("8/9 cek jalan. Belum bisa dicek: Review AI.");
   });
 
   it("names every check by its Indonesian label", () => {
     expect(coverageLine([])).toBe(
-      "0/9 security check jalan. Belum bisa dicek: Minta seed phrase / bayar dulu, Database phishing, Umur domain, " +
+      "0/9 cek jalan. Belum bisa dicek: Minta seed phrase / bayar dulu, Database phishing, Umur domain, " +
         "Domain tiruan, Risiko kontrak token, Kontrak verified, Riwayat hack, Cross-check antar source, Review AI.",
     );
   });
 
   it("says nothing more when every check ran", () => {
-    expect(coverageLine(ids.map((id) => ({ id, ran: true })))).toBe("9/9 security check jalan");
+    expect(coverageLine(ids.map((id) => ({ id, ran: true })))).toBe("9/9 cek jalan");
   });
 });
 
