@@ -206,7 +206,7 @@ portfolio company).
 
 | VC | Tier | Status (2026-10-11) | Reason |
 |---|---|---|---|
-| a16z crypto | 1 | dipakai, menunggu konfirmasi owner (2026-10-11) | page 200, 121 portfolio domains (after dropping `a16z.com`), `robots.txt` allows. Terms on `a16z.com`: no automation or scraping ban, no personal/noncommercial restriction, but the general clause "should not be used, modified, or reproduced without our prior written consent" is ambiguous for a commercial product. Removing it = moving the entry back to `VC_CANDIDATES` |
+| a16z crypto | 1 | dipakai, dikonfirmasi owner 2026-10-11 (risiko klausul diterima) | page 200, 121 portfolio domains (after dropping `a16z.com`), `robots.txt` allows. Terms on `a16z.com`: no automation or scraping ban, no personal/noncommercial restriction, but the general clause "should not be used, modified, or reproduced without our prior written consent" is ambiguous for a commercial product. Removing it = moving the entry back to `VC_CANDIDATES` |
 | Paradigm | 1 | ditunda | terms forbid accessing or collecting data from the site by automated means. Page moved to `/investments` (200, 95 domains) |
 | Polychain Capital | 1 | ditunda | 404: no portfolio page on `polychain.capital` (the homepage links only to job boards) |
 | Pantera Capital | 1 | ditunda | JavaScript-rendered: the list is not in the HTML (3 domains, all investor-portal links) |
