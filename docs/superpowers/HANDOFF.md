@@ -1,6 +1,6 @@
 # Handoff: AirdropIQ (Smart Airdrop Finder)
 
-Last updated 2026-10-10. Read this first when starting a new session on this repo.
+Last updated 2026-10-11. Read this first when starting a new session on this repo.
 
 ## Where things stand
 
@@ -9,7 +9,12 @@ Last updated 2026-10-10. Read this first when starting a new session on this rep
 - Owner: respond in Indonesian, casual "gue/lo". Label claims [FACT] / [INFERENCE] / [UNKNOWN]. Data first, no
   guessing, challenge the owner's assumptions.
 - Branch: develop and push only on `claude/dreamy-carson-vv0ru2`. No PR unless the owner asks.
-- The spec and all plans are written and pushed. **No implementation of Plans 4–8 has started yet.**
+- **Plans 4–8 are implemented, reviewed and pushed** (waves G1–G5, plus a Claude Sonnet provider for the analyze
+  step). Progress, rulings and deferred items: `docs/superpowers/execution-ledger.md`. All gates pass: core 536,
+  pipeline 727, web 698 unit, typecheck, pgTAP 453, e2e 98.
+- **Not deployed yet.** The hosted Supabase has only the Plan 1–3 migrations. Follow the deploy checklist in
+  `docs/ops/web.md` (signup off → repair → db push 0007–0015 → web deploy immediately → secrets → daily.yml
+  dispatch → check /airdrops).
 
 ## Source of truth
 
@@ -36,23 +41,15 @@ Latest decisions (this session's tail):
   - view `public_risk_checks`;
   - `ai_analyses` kind `scam` becomes authenticated-only.
 
-## Next step: execute the plans with the Workflow tool (owner said "pakai workflow")
+## Next step
 
-1. **Build the dependency map first.** Run the saved workflow `docs/superpowers/workflows/plan-dependency-map.js`
-   (Workflow tool, `scriptPath`). It maps per task: files, symbols produced and consumed, migrations, deps, and
-   security sensitivity. It also runs a critic pass. The previous run was stopped before finishing, so it has no
-   results.
-2. **Turn the map into execution waves and show the owner** before launching implementation. The draft from plan
-   reading is:
-   - Wave 1: P7 ∥ P4. They overlap on `pipeline/src/run.ts`, `stats.ts`, `store`, `config.ts`.
-   - Wave 2: P8 ∥ P5. Small overlap: `packages/core/src/index.ts` and migrations.
-   - Wave 3: P6.
-   - Also fan out inside a plan where tasks are independent. Plan 4 Tasks 1/2/3/7/8/9 look independent.
-3. **Review policy agreed with the owner.**
-   - Per-task review for security-sensitive tasks (RLS/grants/auth/member gating). Lighter, grouped review for the
-     rest.
-   - Do not cut scope.
-   - Use worktree isolation per parallel branch, merge locally, run all tests, then push only the designated branch.
+1. Deploy, with the owner's approval, following the checklist in `docs/ops/web.md`. Migrations change the hosted
+   DB, so ask first.
+2. Watch the first runs:
+   - `pipeline_runs.stats`, including `ai_models_tripped`;
+   - `ai_analyses.model`: `anthropic:claude-sonnet-5-5` while the Claude credit lasts, until 2026-10-27;
+   - the `/airdrops` tabs.
+3. Deferred items are listed in the ledger ("minor (deferred)" and "parked" lines). Triage them with the owner.
 
 ## Environment facts (from the old container; re-check)
 
@@ -78,8 +75,12 @@ Latest decisions (this session's tail):
 ## Owner to-dos (not code)
 
 - Buy airdropiq.ai if wanted, and check the trademark.
-- Disable signup and secure password change in Supabase.
+- Disable signup in Supabase.
 - Turn on freellm auth.
-- Add LLM secrets.
-- Check Vercel Hobby commercial-use terms.
-- Check CoinGecko free-API limits during implementation.
+- Check the LLM secrets in GitHub (`LLM_API_KEY`, `NVIDIA_API_KEY`, `ANTHROPIC_API_KEY`, `SUPABASE_*`).
+- Check the Vercel Hobby commercial-use terms.
+- CoinGecko Demo key: it is in Vercel, and the owner accepted the licence risk (Demo needs attribution and has no
+  commercial licence). DefiLlama is the fallback. Its terms are unverified.
+- Revoke `ANTHROPIC_API_KEY` after 2026-10-27, when the credit expires.
+- Sign off the new copy "Gak masuk list: alasannya belum tercatat".
+- Consider the model order for extraction (FX7 eval: NVIDIA-first passed status and radar but failed deadline).
