@@ -12,8 +12,8 @@ import {
   toRiskInput,
 } from "../eval/scam-set/build.js";
 import type { Enrichment, LegitEntry } from "../eval/scam-set/build.js";
-import { summarize } from "../eval/scam-set/run.js";
-import type { Result } from "../eval/scam-set/run.js";
+import { curateAssessed, summarize, summarizeCuration } from "../eval/scam-set/run.js";
+import type { CuratedResult, Result } from "../eval/scam-set/run.js";
 
 const legit: LegitEntry[] = [
   { name: "Arbitrum", officialDomain: "arbitrum.io" },
@@ -174,6 +174,73 @@ describe("summarize", () => {
       ...results("legit", ["low", "medium", "high", "critical", "insufficient_data"]),
     ]);
     expect(s.legit).toEqual({ total: 5, hidden: 2, insufficientData: 1 });
+  });
+});
+
+describe("curateAssessed", () => {
+  const clean = (domains: string[]): Enrichment => ({
+    domainAgeDays: Object.fromEntries(domains.map((d) => [d, 900])),
+    phishingFlags: Object.fromEntries(domains.map((d) => [d, false])),
+  });
+  const curateOf = (c: Parameters<typeof toRiskInput>[0], enrich: Enrichment) => {
+    const input = toRiskInput(c, legitIndex, enrich);
+    return curateAssessed(input, assessRisk(input));
+  };
+  const failCodes = (r: { reasons: { kind: string; code: string }[] }): string[] =>
+    r.reasons.filter((x) => x.kind === "fail").map((x) => x.code);
+
+  it("passes a legit case whose key checks all ran clean, with only the weakest legit signal (curated_source)", () => {
+    const result = curateOf({ kind: "legit", name: "Jupiter", officialDomain: "jup.ag" }, clean(["jup.ag"]));
+    expect(result).toMatchObject({ passed: true, tab: "live_now" });
+  });
+
+  it("hides a legit case whose domain age did not answer, with insufficient_checks", () => {
+    const enrich: Enrichment = { domainAgeDays: {}, phishingFlags: { "jup.ag": false } };
+    const result = curateOf({ kind: "legit", name: "Jupiter", officialDomain: "jup.ag" }, enrich);
+    expect(result.passed).toBe(false);
+    expect(failCodes(result)).toEqual(["insufficient_checks"]);
+  });
+
+  it("does not pass a phishing-listed scam even though every check ran", () => {
+    const enrich: Enrichment = {
+      domainAgeDays: { "jup-claim.xyz": 3, "jup.ag": 900 },
+      phishingFlags: { "jup-claim.xyz": true, "jup.ag": false },
+    };
+    const result = curateOf({ kind: "scam", domain: "jup-claim.xyz", brand: "Jupiter" }, enrich);
+    expect(result.passed).toBe(false);
+    expect(failCodes(result)).toContain("risk_too_high");
+  });
+
+  it("gives a scam of an unknown brand no official domain, so it fails on insufficient_checks", () => {
+    const result = curateOf({ kind: "scam", domain: "unknownbrand-drop.xyz", brand: "UnknownBrand" }, clean(["unknownbrand-drop.xyz"]));
+    expect(result.passed).toBe(false);
+    expect(failCodes(result)).toContain("insufficient_checks");
+  });
+});
+
+describe("summarizeCuration", () => {
+  const r = (kind: "scam" | "legit", passed: boolean, failCodes: string[] = []): CuratedResult => ({ kind, passed, failCodes });
+
+  it("counts scams that passed curation (G7) and those stopped only by a check that did not run", () => {
+    const s = summarizeCuration([
+      r("scam", true),
+      r("scam", false, ["risk_too_high"]),
+      r("scam", false, ["insufficient_checks"]),
+      r("scam", false, ["insufficient_checks", "lookalike"]),
+      r("legit", true),
+    ]);
+    expect(s.scam).toEqual({ total: 4, passed: 1, stoppedOnlyByMissingChecks: 1 });
+  });
+
+  it("counts hidden legit cases (G8), split into those with a check that did not run among the reasons and those with a rule other than that", () => {
+    const s = summarizeCuration([
+      r("legit", true),
+      r("legit", false, ["insufficient_checks"]),
+      r("legit", false, ["risk_too_high", "insufficient_checks"]),
+      r("legit", false, ["lookalike"]),
+      r("scam", false, ["risk_too_high"]),
+    ]);
+    expect(s.legit).toEqual({ total: 4, hidden: 3, hiddenWithMissingChecks: 2, hiddenByOtherRules: 2 });
   });
 });
 

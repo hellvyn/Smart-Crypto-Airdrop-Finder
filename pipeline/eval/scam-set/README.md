@@ -2,7 +2,8 @@
 
 Measures the risk engine (`assessRisk` in `@saf/core`) on two sets: fake-airdrop domains from public phishing
 lists, and airdrops that paid out. It feeds spec section 12, gates G7 (scam that passes) and G8 (legit that is
-hidden), in the risk-only version. `curate()` is not part of this yet; Plan 5 adds it to `run.ts`.
+hidden). `run.ts` reports both the risk-only version (risk engine alone) and the version with `curate()` (see
+"Results with curate()" below); the gates are the `curate()` ones.
 
 ## Files
 
@@ -14,8 +15,10 @@ hidden), in the risk-only version. `curate()` is not part of this yet; Plan 5 ad
   ScamSniffer `scam-database` `blacklist/domains.json` (array of strings), keeps apex domains that look like a
   fake airdrop and name a project from `legit.json`, and writes `cases/scam.json`. 60 cases, at most 3 per
   brand, picked by a hash of the domain so the choice is stable and does not favour early letters.
-- `run.ts`: runs the real enrichment (GoPlus phishing check, RDAP domain age with the crt.sh fallback) and
-  `assessRisk` on every case and prints a report. The exit code is always 0: it is a report, not a CI gate.
+- `run.ts`: runs the real enrichment (GoPlus phishing check, RDAP domain age with the crt.sh fallback), `assessRisk`
+  and then `curate()` on every case and prints a report. The exit code is always 0: it is a report, not a CI gate.
+  `curateAssessed` gives every case, scam and legit, the same `curated_source` signal (the weakest legit signal the
+  rules accept) and no lookalike project or AI scam flag, so G7 and G8 measure the risk and key-check rules alone.
 - `cases/` is **gitignored**. It holds the scam domains. Never commit domain lists from third parties; only
   numbers go into the repo (this file and the spec).
 
@@ -70,6 +73,34 @@ Reasons found: scam, `phishing_listed` 60 and `lookalike_domain` 54; legit, `loo
 
 Coverage (domains with an answer): phishing check 60/60 scam and 49/49 legit; domain age 2/60 scam and 3/49 legit;
 domain age from crt.sh 0 (blocked here).
+
+## Results with curate() (2026-10-11)
+
+Same set and the same kind of environment (crt.sh blocked, RDAP partly unreachable), run after Plan 5's `curate()` was
+added to `run.ts`.
+
+| Measure | Result |
+|---|---|
+| G7 scam that passed curation | 0 of 60 (target 0 of at least 30) |
+| G7 scam stopped only by a key check that did not run | 0 of 60 (all 60 are also phishing-listed) |
+| G8 legit hidden by curation | 44 of 45 (97.8%; target at most 20%) |
+| G8 legit hidden with a key check that did not run among the reasons | 44 of 45 |
+| G8 legit hidden by another rule (risk, lookalike) | 2 of 45 (4.4%), the same two `lookalike_domain` cases as in the risk-only run |
+
+Coverage: phishing check 60/60 scam and 49/49 legit; **domain age 3/60 scam and 1/49 legit**.
+
+How to read this:
+
+- **G8 is not a judgement of the rules here.** `curate()` needs the `domain_age` check to have run (spec 6.2 item 5).
+  With 1 of 49 legit domains answering, 44 legit cases are hidden for "insufficient_checks" only. Re-run G8 where RDAP
+  and crt.sh answer (the daily job's environment) before using the number. The 4.4% that the other rules hide is the
+  figure comparable to the risk-only result.
+- **G7 is close to circular.** All 60 scams are on public phishing lists, GoPlus reads similar lists, and every scam
+  names a project of `legit.json`, which is what the lookalike check looks for (and `brandOf` matches by substring, which
+  inflates the lookalike catch). With the GoPlus answer removed, 0 of 60 passed risk, but 6 ended as `insufficient_data`
+  (short project names, see below); curation would stop those too, for the same missing-data reason as above. A scam
+  that is not on a phishing list, or that does not carry a project name in its domain, is not represented.
+- Both numbers use the weakest legit signal for every case. They say nothing about the VC, TVL and AI-scam-pattern rules.
 
 ### Patterns to hand to Plan 5
 
