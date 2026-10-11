@@ -1,5 +1,5 @@
 import pLimit from "p-limit";
-import { assessRisk, registrableDomain } from "@saf/core";
+import { assessRisk, expireStatus, registrableDomain } from "@saf/core";
 import type { RiskInput } from "@saf/core";
 import type { Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
@@ -105,15 +105,19 @@ export async function scoreProjects(
     if (project.officialDomains.some((d) => phishing.get(d) != null)) stats.phishing_list_ran += 1;
   }
 
+  const today = now.toISOString().slice(0, 10);
   for (const project of projects) {
     const projectLinks = domainsByProject.get(project.id) ?? [];
     const projectDomains = enrichDomains(projectLinks);
     try {
+      // A passed claim/campaign_end with nothing ahead ends the project; the status change is logged by updateProject.
+      const { status, expired } = expireStatus(project.status, project.deadlines, today);
+      if (expired) await repo.updateProject(project.id, { status }, now);
       const input: RiskInput = {
         project: {
           name: project.name,
           officialDomains: project.officialDomains,
-          status: project.status,
+          status,
           tokenSymbol: project.tokenSymbol,
           conflict: project.conflict,
           sourceCount: project.sourceCount,

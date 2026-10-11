@@ -1,4 +1,6 @@
 import type {
+  DatePrecision,
+  DeadlineKind,
   ExtractedDeadline,
   ExtractionResult,
   RiskAssessment,
@@ -88,6 +90,8 @@ export interface ProjectForScoring extends ProjectRow {
   steps: { text: string; cadence: string }[];
   /** Evidence rows of the `FACT_FIELDS`, in insertion order. */
   facts: Fact[];
+  /** Every stored deadline of the project, from all documents. `date` is `YYYY-MM-DD` or null. */
+  deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[];
   links: { url: string; kind: string }[];
   /** Number of distinct document source keys among the project's evidence. */
   sourceCount: number;
