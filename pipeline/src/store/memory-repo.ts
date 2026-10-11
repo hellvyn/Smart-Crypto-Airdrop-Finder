@@ -9,7 +9,7 @@ import type {
   Status,
   StatusEvidence,
 } from "@saf/core";
-import type { CollectedDocument } from "../collectors/types.js";
+import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 import { FACT_FIELDS, curatedChange, publicFailReason } from "./repo.js";
 import type {
@@ -271,10 +271,14 @@ export class MemoryRepo implements PipelineRepo {
     for (const p of this.projects.values()) {
       if (p.lastSeen.getTime() < cutoff) continue;
       const sourceKeys = new Set<string>();
+      const sourceKinds = new Set<SourceKind>();
       for (const e of this.evidence) {
         if (e.projectId !== p.id) continue;
         const d = this.documents.get(e.documentId);
-        if (d) sourceKeys.add(d.sourceKey);
+        if (d) {
+          sourceKeys.add(d.sourceKey);
+          sourceKinds.add(d.sourceKind);
+        }
       }
       const other = p.lookalikeOf === null ? undefined : this.projects.get(p.lookalikeOf);
       // Order: document_id, position (same as SupabaseRepo).
@@ -295,6 +299,7 @@ export class MemoryRepo implements PipelineRepo {
           .map((d) => ({ kind: d.kind, date: d.date, precision: d.precision })),
         links: this.links.filter((l) => l.projectId === p.id).map((l) => ({ url: l.url, kind: l.kind })),
         sourceCount: sourceKeys.size,
+        sourceKinds: [...sourceKinds].sort(compareText),
         lookalikeOfName: other?.name ?? null,
         lookalikeOfDomains: other ? [...other.officialDomains] : [],
         // Insertion order, same as SupabaseRepo's evidence.seq.

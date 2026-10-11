@@ -403,6 +403,39 @@ describe("MemoryRepo scoring extras", () => {
   });
 });
 
+describe("MemoryRepo source kinds", () => {
+  it("lists the distinct source kinds of the project's evidence documents, sorted", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const other = await repo.createProject(project({ slug: "other", nameKey: "other", name: "Other" }), T0);
+    const tg = await repo.upsertDocument(
+      doc({ sourceKind: "telegram", sourceKey: "telegram:chan", url: "https://t.me/chan/1" }),
+      "t1",
+    );
+    const a1 = await repo.upsertDocument(doc({ url: "https://airdrops.io/a1/" }), "a1");
+    const a2 = await repo.upsertDocument(doc({ url: "https://airdrops.io/a2/" }), "a2");
+    const alpha = await repo.upsertDocument(
+      doc({ sourceKind: "alphadrops", sourceKey: "alphadrops", url: "https://alphadrops.net/airdrops/x" }),
+      "x",
+    );
+    for (const d of [tg, a1, a2]) {
+      await repo.addEvidence({ projectId: p.id, documentId: d.id, field: "status", value: "live", quote: "q", at: T0 });
+    }
+    // Another project's document is not this project's source.
+    await repo.addEvidence({ projectId: other.id, documentId: alpha.id, field: "status", value: "live", quote: "q", at: T0 });
+    const byId = new Map((await repo.listProjectsForScoring(30, T0)).map((s) => [s.id, s]));
+    expect(byId.get(p.id)?.sourceKinds).toEqual(["airdrops_io", "telegram"]);
+    expect(byId.get(other.id)?.sourceKinds).toEqual(["alphadrops"]);
+  });
+
+  it("is empty for a project without evidence", async () => {
+    const repo = new MemoryRepo();
+    await repo.createProject(project(), T0);
+    const [scored] = await repo.listProjectsForScoring(30, T0);
+    expect(scored?.sourceKinds).toEqual([]);
+  });
+});
+
 describe("MemoryRepo risk and runs", () => {
   it("writes project_changes for the first assessment and for level changes only", async () => {
     const repo = new MemoryRepo();

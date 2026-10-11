@@ -14,6 +14,40 @@ export interface SpeculativeCandidate {
   listedAt: Date | null;
 }
 
+/** One entry of the full DefiLlama `/protocols` list, as the `signals` stage matches it to projects by domain. */
+export interface DefillamaProtocol {
+  name: string;
+  url: string | null;
+  /** Current TVL in USD, or null when missing or not a finite number. */
+  tvl: number | null;
+  /** CoinGecko id (the protocol has a listed token), or null. */
+  geckoId: string | null;
+}
+
+const nonEmptyString = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
+
+/**
+ * Every protocol of a `/protocols` answer, tokened ones included (unlike `selectSpeculativeCandidates`). Entries
+ * without a name are skipped; missing, empty or wrongly typed fields become null. Not an array: [].
+ */
+export function parseProtocols(raw: unknown): DefillamaProtocol[] {
+  if (!Array.isArray(raw)) return [];
+  const protocols: DefillamaProtocol[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const p = entry as Record<string, unknown>;
+    const name = nonEmptyString(p.name);
+    if (name === null) continue;
+    protocols.push({
+      name,
+      url: nonEmptyString(p.url),
+      tvl: typeof p.tvl === "number" && Number.isFinite(p.tvl) ? p.tvl : null,
+      geckoId: nonEmptyString(p.gecko_id),
+    });
+  }
+  return protocols;
+}
+
 const protocolSchema = z.object({
   name: z.string(),
   slug: z.string(),

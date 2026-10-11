@@ -12,7 +12,7 @@ import type {
   Status,
   StatusEvidence,
 } from "@saf/core";
-import type { CollectedDocument } from "../collectors/types.js";
+import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 
 /** `merge_failed`: extracted, but merging threw; it goes back to `pending` only when its hash changes. */
@@ -99,6 +99,8 @@ export interface ProjectForScoring extends ProjectRow {
   links: { url: string; kind: string }[];
   /** Number of distinct document source keys among the project's evidence. */
   sourceCount: number;
+  /** Distinct `source_kind`s of the documents among the project's evidence, sorted. */
+  sourceKinds: SourceKind[];
   /** Name of the `lookalikeOf` project (null when there is none). */
   lookalikeOfName: string | null;
   /** Official domains of the `lookalikeOf` project ([] when there is none). */

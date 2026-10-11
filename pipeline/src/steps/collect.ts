@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { collectAirdropsIo } from "../collectors/airdrops-io.js";
 import { collectAlphaDrops } from "../collectors/alphadrops.js";
-import { selectSpeculativeCandidates } from "../collectors/defillama.js";
-import type { SpeculativeCandidate } from "../collectors/defillama.js";
+import { parseProtocols, selectSpeculativeCandidates } from "../collectors/defillama.js";
+import type { DefillamaProtocol, SpeculativeCandidate } from "../collectors/defillama.js";
 import { collectTelegram } from "../collectors/telegram.js";
 import type { CollectedDocument, CollectorResult, Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
@@ -47,23 +47,33 @@ export function defillamaDocument(candidate: SpeculativeCandidate, now: Date): C
   };
 }
 
-/** Fetches DefiLlama protocols and keeps the speculative candidates. `failed` on HTTP, JSON or shape errors. */
-async function collectDefillama(
-  http: Http,
-  config: PipelineConfig,
-  now: Date,
-): Promise<{ failed: boolean; candidates: SpeculativeCandidate[] }> {
+interface DefillamaResult {
+  /** The full protocol list for the `signals` stage, or null when it could not be fetched. */
+  protocols: DefillamaProtocol[] | null;
+  candidates: SpeculativeCandidate[];
+}
+
+const DEFILLAMA_FAILED: DefillamaResult = { protocols: null, candidates: [] };
+
+/**
+ * Fetches DefiLlama protocols once: the full list (for signals) and the speculative candidates. `protocols` is null
+ * on HTTP, JSON or shape errors.
+ */
+async function collectDefillama(http: Http, config: PipelineConfig, now: Date): Promise<DefillamaResult> {
   const res = await http.get(PROTOCOLS_URL);
-  if (res.status !== 200) return { failed: true, candidates: [] };
+  if (res.status !== 200) return DEFILLAMA_FAILED;
   let raw: unknown;
   try {
     raw = JSON.parse(res.body);
   } catch {
-    return { failed: true, candidates: [] };
+    return DEFILLAMA_FAILED;
   }
   // An empty list means the API changed or broke, not that there are no protocols.
-  if (!Array.isArray(raw) || raw.length === 0) return { failed: true, candidates: [] };
-  return { failed: false, candidates: selectSpeculativeCandidates(raw, { ...config.defillama, now }) };
+  if (!Array.isArray(raw) || raw.length === 0) return DEFILLAMA_FAILED;
+  return {
+    protocols: parseProtocols(raw),
+    candidates: selectSpeculativeCandidates(raw, { ...config.defillama, now }),
+  };
 }
 
 /** Stores a collected document when its hash is new or changed. */
@@ -88,15 +98,16 @@ async function ingestSafely(repo: PipelineRepo, doc: CollectedDocument, stats: D
  * Collects every source. A source that throws or reports `failed` counts toward `source_failed`;
  * any documents it still returned are ingested. Each document is ingested on its own: one that cannot be
  * stored counts as `ingest_failed` and the rest (and the other sources) continue. DefiLlama documents are
- * stored as `done` (never sent to the LLM) and returned for the speculative merge. `sleep` paces the AlphaDrops
- * detail pages.
+ * stored as `done` (never sent to the LLM) and returned for the speculative merge, together with the full DefiLlama
+ * protocol list for the `signals` stage (null when it could not be fetched). `sleep` paces the AlphaDrops detail
+ * pages.
  */
 export async function collectSources(
   deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void> },
   config: PipelineConfig,
   now: Date,
   stats: DailyStats,
-): Promise<SpeculativeItem[]> {
+): Promise<{ speculative: SpeculativeItem[]; protocols: DefillamaProtocol[] | null }> {
   const { repo, http } = deps;
 
   const runCollector = async (collect: () => Promise<CollectorResult>): Promise<void> => {
@@ -119,13 +130,13 @@ export async function collectSources(
     await runCollector(() => collectAlphaDrops(http, now, config.alphadrops, deps.sleep ?? defaultSleep));
   }
 
-  let llama: { failed: boolean; candidates: SpeculativeCandidate[] };
+  let llama: DefillamaResult;
   try {
     llama = await collectDefillama(http, config, now);
   } catch {
-    llama = { failed: true, candidates: [] };
+    llama = DEFILLAMA_FAILED;
   }
-  if (llama.failed) stats.source_failed += 1;
+  if (llama.protocols === null) stats.source_failed += 1;
 
   const items: SpeculativeItem[] = [];
   for (const candidate of llama.candidates) {
@@ -143,5 +154,5 @@ export async function collectSources(
       stats.ingest_failed += 1;
     }
   }
-  return items;
+  return { speculative: items, protocols: llama.protocols };
 }

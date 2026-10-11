@@ -22,7 +22,7 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
         const query: Record<string, unknown> = {
           then: (resolve: (value: typeof result) => unknown) => resolve(result),
         };
-        for (const method of ["eq", "neq", "order", "limit", "returns", "maybeSingle", "single"]) {
+        for (const method of ["eq", "neq", "gte", "order", "limit", "range", "returns", "maybeSingle", "single"]) {
           query[method] = () => query;
         }
         return query;
@@ -314,5 +314,50 @@ describe("SupabaseRepo VC portfolios and AI analyses", () => {
         },
       },
     ]);
+  });
+});
+
+describe("SupabaseRepo.listProjectsForScoring", () => {
+  it("lists the distinct source kinds of the evidence documents, sorted", async () => {
+    const evidence = (field: string, source_key: string, source_kind: string) => ({
+      field,
+      value: "live",
+      quote: "q",
+      documents: { source_key, source_kind },
+    });
+    const { client } = recordingClient({
+      projects: [
+        {
+          id: "p-1",
+          slug: "ink",
+          name: "Ink",
+          name_key: "ink",
+          token_symbol: null,
+          chains: [],
+          official_domains: ["inkonchain.com"],
+          status: "live",
+          conflict: false,
+          lookalike_of: null,
+          first_seen: "2026-10-01T00:00:00Z",
+          last_seen: "2026-10-10T00:00:00Z",
+          tasks: [],
+          deadlines: [],
+          links: [],
+          evidence: [
+            evidence("status", "telegram:airdrops_io", "telegram"),
+            evidence("status", "airdrops_io:latest", "airdrops_io"),
+            evidence("dangerous_ask", "airdrops_io:latest", "airdrops_io"),
+            { field: "status", value: "live", quote: "q", documents: null },
+          ],
+          lookalike: null,
+        },
+      ],
+    });
+    const repo = new SupabaseRepo(client);
+
+    const [scored] = await repo.listProjectsForScoring(30, new Date("2026-10-10T03:00:00Z"));
+
+    expect(scored?.sourceKinds).toEqual(["airdrops_io", "telegram"]);
+    expect(scored?.sourceCount).toBe(2);
   });
 });

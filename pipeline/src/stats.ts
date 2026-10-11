@@ -30,6 +30,12 @@ export interface DailyStats extends RunStats {
   phishing_list_rate_limited: number;
   /** Of the failed domains, those never asked because the GoPlus time budget ran out or too many failed in a row. */
   phishing_list_skipped: number;
+  /** Projects that got a verified DefiLlama `tvl` signal (domain-matched). */
+  signals_tvl: number;
+  /** Projects that got a verified `coingecko_listed` signal (domain-matched DefiLlama protocol with a CoinGecko id). */
+  signals_coingecko: number;
+  /** Projects whose signals could not be built or stored; they keep no signals until a later run succeeds. */
+  signals_failed: number;
   /** Projects whose risk assessment threw. */
   score_failed: number;
   source_failed: number;
@@ -58,6 +64,9 @@ export function emptyStats(): DailyStats {
     phishing_list_failed: 0,
     phishing_list_rate_limited: 0,
     phishing_list_skipped: 0,
+    signals_tvl: 0,
+    signals_coingecko: 0,
+    signals_failed: 0,
     score_failed: 0,
     source_failed: 0,
     ingest_failed: 0,
@@ -67,11 +76,11 @@ export function emptyStats(): DailyStats {
 
 /**
  * Process exit code for a finished run: 1 (the scheduled workflow shows as failed) when a stage failed or any
- * source, document ingest, merge or assessment failed; 0 otherwise. Model failures (`extract_failed`) and
+ * source, document ingest, merge, signal write or assessment failed; 0 otherwise. Model failures (`extract_failed`) and
  * budget deferrals are retried or expected and do not fail the job.
  */
 export function runExitCode(stats: RunStats): 0 | 1 {
-  const failed = ["run_error", "source_failed", "ingest_failed", "merge_failed", "score_failed"].some(
+  const failed = ["run_error", "source_failed", "ingest_failed", "merge_failed", "signals_failed", "score_failed"].some(
     (counter) => (stats[counter] ?? 0) > 0,
   );
   return failed ? 1 : 0;

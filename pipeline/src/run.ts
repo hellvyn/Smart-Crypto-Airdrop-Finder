@@ -1,5 +1,5 @@
 import { cleanUrl } from "@saf/core";
-import type { SpeculativeCandidate } from "./collectors/defillama.js";
+import type { DefillamaProtocol, SpeculativeCandidate } from "./collectors/defillama.js";
 import type { Http } from "./collectors/types.js";
 import type { PipelineConfig } from "./config.js";
 import type { ChatFn } from "./llm/extract.js";
@@ -11,6 +11,7 @@ import { mergeDocument } from "./steps/merge.js";
 import type { ProjectInput } from "./steps/merge.js";
 import { purgeOldText } from "./steps/purge.js";
 import { scoreProjects } from "./steps/score.js";
+import { refreshSignals } from "./steps/signals.js";
 import { emptyStats } from "./stats.js";
 import type { DailyStats } from "./stats.js";
 import type { Fact, PipelineRepo, StoredDocument } from "./store/repo.js";
@@ -29,9 +30,10 @@ export interface PipelineDeps {
 /**
  * Stage numbers reported in `failed_step` for the first stage-level error. Merging runs inside the extract
  * stage (each document is merged as soon as it is extracted), so 3 is no longer reported. 7 was a stage that
- * no longer exists; the numbers of the other stages stay as they were.
+ * no longer exists; the numbers of the other stages stay as they were, and later stages get new numbers
+ * (`signals` = 8, run between `speculative` and `score`).
  */
-const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6 } as const;
+const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6, signals: 8 } as const;
 
 type ExtractedProject = ExtractionResult["projects"][number];
 
@@ -98,15 +100,15 @@ function speculativeInput(c: SpeculativeCandidate): ProjectInput {
 
 /**
  * One daily pipeline run: collect, extract (each document merged right after its extraction), DefiLlama
- * speculative merge, score, purge.
+ * speculative merge, signals, score, purge.
  *
  * Merges go through a single-slot queue: they run one at a time, in the order extractions finish, while
  * other extractions continue. The extract stage waits for the queue to drain, even when it fails.
  * Extraction stops starting LLM calls after `extractBudgetMinutes`, so score and purge always get their turn
  * within the job's time limit.
  *
- * Item-level failures (one document's merge, one project's assessment, one extraction) are counted
- * (`merge_failed`, `score_failed`, `extract_failed`) and never stop the run. A stage-level
+ * Item-level failures (one document's merge, one project's signals, one project's assessment, one extraction) are
+ * counted (`merge_failed`, `signals_failed`, `score_failed`, `extract_failed`) and never stop the run. A stage-level
  * failure is recorded as `run_error: 1` plus `failed_step` (the first failing stage); the remaining stages still
  * run, so scoring and purging always happen. The run row is always finished, and a stage-level error is
  * rethrown at the end. Stats are numeric counters only.
@@ -147,8 +149,10 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     }
   };
 
-  const speculative = await stage(STEP.collect, [] as SpeculativeItem[], () =>
-    collectSources(deps, config, now, stats),
+  const collected = await stage(
+    STEP.collect,
+    { speculative: [] as SpeculativeItem[], protocols: null as DefillamaProtocol[] | null },
+    () => collectSources(deps, config, now, stats),
   );
   // Single-slot merge queue: each merge starts after the previous one settled. mergeOne never rejects.
   let mergeTail: Promise<void> = Promise.resolve();
@@ -164,10 +168,15 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   });
 
   await stage(STEP.speculative, undefined, async () => {
-    for (const { document, candidate } of speculative) {
+    for (const { document, candidate } of collected.speculative) {
       await mergeOne(document, [speculativeInput(candidate)], false);
     }
   });
+
+  // VC portfolios are not loaded yet: vc_backer is "not checked".
+  await stage(STEP.signals, undefined, () =>
+    refreshSignals(deps, config, now, stats, { protocols: collected.protocols, vc: null }),
+  );
 
   await stage(STEP.score, undefined, () => scoreProjects(deps, config, now, stats));
   await stage(STEP.purge, undefined, () => purgeOldText(repo, config.textRetentionDays, now, stats));

@@ -419,7 +419,12 @@ export class SupabaseRepo implements PipelineRepo {
       tasks: { description: string; cadence: string }[];
       deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[];
       links: { url: string; kind: string }[];
-      evidence: { field: string; value: string; quote: string; documents: { source_key: string } | null }[];
+      evidence: {
+        field: string;
+        value: string;
+        quote: string;
+        documents: { source_key: string; source_kind: SourceKind } | null;
+      }[];
       lookalike: { name: string; official_domains: string[] } | null;
     };
     const rows = await this.fetchAll<ScoringDb>("listProjectsForScoring", (from, to) =>
@@ -427,7 +432,7 @@ export class SupabaseRepo implements PipelineRepo {
         .from("projects")
         .select(
           `${PROJECT_COLUMNS}, tasks(description, cadence), deadlines(kind, date, precision), links(url, kind), ` +
-            "evidence(field, value, quote, documents(source_key)), lookalike:lookalike_of(name, official_domains)",
+            "evidence(field, value, quote, documents(source_key, source_kind)), lookalike:lookalike_of(name, official_domains)",
         )
         .gte("last_seen", cutoff)
         .order("id")
@@ -449,6 +454,8 @@ export class SupabaseRepo implements PipelineRepo {
       deadlines: r.deadlines.map((d) => ({ kind: d.kind, date: d.date, precision: d.precision })),
       links: r.links.map((l) => ({ url: l.url, kind: l.kind })),
       sourceCount: new Set(r.evidence.flatMap((e) => (e.documents ? [e.documents.source_key] : []))).size,
+      // Byte-order sort, same as MemoryRepo.
+      sourceKinds: [...new Set(r.evidence.flatMap((e) => (e.documents ? [e.documents.source_kind] : [])))].sort(),
       lookalikeOfName: r.lookalike?.name ?? null,
       lookalikeOfDomains: r.lookalike?.official_domains ?? [],
       sourceAsks: r.evidence.filter((e) => e.field === "dangerous_ask").map((e) => ({ code: e.value, quote: e.quote })),

@@ -171,6 +171,7 @@ async function main(): Promise<void> {
   ]);
   assert.deepEqual(scored.links, [{ url: "https://smoke.test/", kind: "claim" }]);
   assert.equal(scored.sourceCount, 1);
+  assert.deepEqual(scored.sourceKinds, ["airdrops_io"]);
   // dangerous_ask evidence comes back in insertion order; no lookalike for p, the twin names p.
   assert.deepEqual(scored.sourceAsks, [
     { code: "asks_payment", quote: "Send 0.1 ETH to claim your tokens." },

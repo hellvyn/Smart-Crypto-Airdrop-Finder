@@ -442,8 +442,13 @@ describe("runDaily", () => {
 
   it("still purges, finishes the run with run_error and rethrows when scoring fails at stage level", async () => {
     const repo = new MemoryRepo();
-    repo.listProjectsForScoring = async () => {
-      throw new Error("db down");
+    const list = repo.listProjectsForScoring.bind(repo);
+    let calls = 0;
+    // The signals stage lists projects first and succeeds; the score stage's listing fails.
+    repo.listProjectsForScoring = async (days, now) => {
+      calls += 1;
+      if (calls > 1) throw new Error("db down");
+      return list(days, now);
     };
     let purgeCalls = 0;
     const purge = repo.purgeDocumentText.bind(repo);
@@ -1733,5 +1738,105 @@ describe("runDaily expiry", () => {
 
     expect((await deepbook(repo))?.status).toBe("ended");
     expect(repo.projectChanges.filter((c) => c.field === "status")).toHaveLength(1);
+  });
+});
+
+describe("runDaily signals", () => {
+  /** DeepBook as DefiLlama lists it: tokened, so it is a signal source but never a speculative candidate. */
+  const LLAMA_DEEPBOOK = {
+    name: "DeepBook", slug: "deepbook", url: "https://deepbook.tech", chains: ["Sui"], tvl: 3e7, change_7d: 1, category: "Dexs", gecko_id: "deepbook", symbol: "DEEP",
+  };
+  /** A protocol named like Ink on another domain: a name match never gives Ink its signals. */
+  const LLAMA_FAKE_INK = {
+    name: "Ink Chain", slug: "ink-chain", url: "https://ink-chain.finance", chains: ["Ink"], tvl: 9e8, change_7d: 1, category: "Chain", gecko_id: "ink-fake", symbol: "INKF",
+  };
+  const withProtocols = (...extra: Record<string, unknown>[]): Pages => {
+    const pages = basePages();
+    pages[PROTOCOLS] = { status: 200, body: JSON.stringify([...PROTOCOL_LIST, ...extra]) };
+    return pages;
+  };
+  const signalsOf = async (repo: MemoryRepo, nameKey: string) => {
+    const id = (await repo.findProjectsByNameKey(nameKey))[0]?.id;
+    return repo.signals
+      .filter((s) => s.projectId === id)
+      .map(({ kind, value, source, verified }) => ({ kind, value, source, verified }));
+  };
+
+  it("stores domain-matched DefiLlama signals and curated sources for every project, speculative ones included", async () => {
+    const { repo, deps, config } = setup({ pages: withProtocols(LLAMA_DEEPBOOK, LLAMA_FAKE_INK) });
+    const stats = await runDaily(deps, config);
+
+    expect(await signalsOf(repo, "deepbook")).toEqual([
+      { kind: "tvl", value: { tvl_usd: 3e7 }, source: "defillama", verified: true },
+      { kind: "coingecko_listed", value: { gecko_id: "deepbook" }, source: "defillama", verified: true },
+      { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: false },
+    ]);
+    // The project created by the speculative stage already has its TVL: signals run after it.
+    expect(await signalsOf(repo, "hyperdrivelend")).toEqual([
+      { kind: "tvl", value: { tvl_usd: 25_000_000 }, source: "defillama", verified: true },
+    ]);
+    expect(await signalsOf(repo, "ink")).toEqual([
+      { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: false },
+      { kind: "curated_source", value: { source_kind: "telegram" }, source: "telegram", verified: false },
+    ]);
+    expect(repo.signals.every((s) => s.observedAt.getTime() === NOW.getTime())).toBe(true);
+    expect(stats).toMatchObject({ signals_tvl: 2, signals_coingecko: 1, signals_failed: 0 });
+    expect(stats.run_error).toBeUndefined();
+  });
+
+  it("drops DefiLlama signals but keeps the others when the protocol list cannot be fetched", async () => {
+    const { repo, deps, config } = setup({ pages: withProtocols(LLAMA_DEEPBOOK) });
+    await runDaily(deps, config);
+
+    const pages = basePages();
+    pages[PROTOCOLS] = { status: 503, body: "" };
+    const stats = await runDaily({ ...deps, http: fakeHttp(pages), now: () => new Date(NOW.getTime() + DAY) }, config);
+
+    expect(await signalsOf(repo, "deepbook")).toEqual([
+      { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: false },
+    ]);
+    expect(stats).toMatchObject({ source_failed: 1, signals_tvl: 0, signals_coingecko: 0, signals_failed: 0 });
+    expect(stats.run_error).toBeUndefined();
+  });
+
+  it("counts a project whose signals cannot be stored and still stores the others and scores all", async () => {
+    const repo = new MemoryRepo();
+    const replace = repo.replaceSignals.bind(repo);
+    repo.replaceSignals = async (projectId, signals, at) => {
+      if ((await repo.findProjectsByNameKey("deepbook"))[0]?.id === projectId) throw new Error("db write failed");
+      return replace(projectId, signals, at);
+    };
+    const { deps, config } = setup({ repo, pages: withProtocols(LLAMA_DEEPBOOK) });
+    const stats = await runDaily(deps, config);
+
+    expect(stats).toMatchObject({ signals_failed: 1, signals_tvl: 1, signals_coingecko: 0, assessed: 3 });
+    expect(await signalsOf(repo, "hyperdrivelend")).toHaveLength(1);
+    expect(stats.run_error).toBeUndefined();
+  });
+
+  it("records failed_step 8 when the signals stage fails, and still scores and purges", async () => {
+    const repo = new MemoryRepo();
+    const list = repo.listProjectsForScoring.bind(repo);
+    let calls = 0;
+    // The signals stage lists projects first; only that call fails.
+    repo.listProjectsForScoring = async (days, now) => {
+      calls += 1;
+      if (calls === 1) throw new Error("db down");
+      return list(days, now);
+    };
+    let purgeCalls = 0;
+    const purge = repo.purgeDocumentText.bind(repo);
+    repo.purgeDocumentText = async (days, now) => {
+      purgeCalls += 1;
+      return purge(days, now);
+    };
+    const { deps, config } = setup({ repo });
+    await expect(runDaily(deps, config)).rejects.toThrow("db down");
+
+    expect(repo.signals).toEqual([]);
+    expect(repo.runs[0]?.stats.run_error).toBe(1);
+    expect(repo.runs[0]?.stats.failed_step).toBe(8);
+    expect(repo.runs[0]?.stats.assessed).toBe(3);
+    expect(purgeCalls).toBe(1);
   });
 });
