@@ -123,3 +123,113 @@ export function createFetchUntrusted(fetchImpl: typeof fetch = fetch): FetchUntr
     return { status: 0, body: "" };
   };
 }
+
+/** Raster image types a logo may be (`project_logos.mime`); never SVG, which can carry script. */
+export type LogoMime = "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "image/x-icon";
+
+export interface LogoImage {
+  mime: LogoMime;
+  bytes: Uint8Array;
+}
+
+/**
+ * GET of one logo image. `allowHost` decides the first URL's host and the host of every redirect. Never throws: an
+ * image refused or failed for any reason is null.
+ */
+export type FetchImage = (url: string, allowHost: (host: string) => boolean) => Promise<LogoImage | null>;
+
+/** Most bytes a logo may have (`project_logos` refuses more); a longer body is not read further. */
+export const LOGO_MAX_BYTES = 65_536;
+const LOGO_TIMEOUT_MS = 5_000;
+const LOGO_MAX_REDIRECTS = 2;
+
+const startsWith = (bytes: Uint8Array, prefix: readonly number[], offset = 0): boolean =>
+  bytes.length >= offset + prefix.length && prefix.every((b, i) => bytes[offset + i] === b);
+const ascii = (text: string): number[] => [...text].map((c) => c.charCodeAt(0));
+
+/**
+ * The image type of `bytes`, from their magic bytes only: PNG, JPEG, GIF (87a/89a), WebP (RIFF....WEBP) or ICO (type 1,
+ * icon). Anything else (SVG, HTML, a cursor, a truncated header) is null.
+ */
+export function sniffImage(bytes: Uint8Array): LogoMime | null {
+  if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
+  if (startsWith(bytes, [0xff, 0xd8, 0xff])) return "image/jpeg";
+  if (startsWith(bytes, ascii("GIF87a")) || startsWith(bytes, ascii("GIF89a"))) return "image/gif";
+  if (startsWith(bytes, ascii("RIFF")) && startsWith(bytes, ascii("WEBP"), 8)) return "image/webp";
+  if (startsWith(bytes, [0x00, 0x00, 0x01, 0x00])) return "image/x-icon";
+  return null;
+}
+
+/** The body, or null when it is longer than `maxBytes` (reading stops right there). */
+async function readAtMost(res: Response, maxBytes: number): Promise<Uint8Array | null> {
+  if (res.body === null) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > maxBytes) return null;
+      parts.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) {
+    bytes.set(part, offset);
+    offset += part.length;
+  }
+  return bytes;
+}
+
+/** An https URL whose host `allowHost` accepts, parsed; null otherwise. */
+function allowedHttps(url: string, allowHost: (host: string) => boolean): URL | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" || parsed.port !== "" || parsed.username !== "" || parsed.password !== "") return null;
+  return allowHost(parsed.hostname.toLowerCase()) ? parsed : null;
+}
+
+/**
+ * The logo download (owner request 2026-10-11): a plain GET with the collectors' User-Agent and no cookies, https
+ * only (default port, no credentials in the URL), 5 s in all (redirects and body included), at most 2 redirects, each followed by hand and only to an https URL
+ * whose host `allowHost` accepts. Only a 200 answer counts; its body is read up to 64 KB (a longer one is refused
+ * without reading the rest) and its type is decided by the magic bytes (`sniffImage`), never by the header alone. A
+ * response that says it is SVG is refused whatever its bytes. The image is stored as bytes and never decoded here.
+ */
+export function createFetchImage(fetchImpl: typeof fetch = fetch, opts: { timeoutMs?: number } = {}): FetchImage {
+  const headers = { "User-Agent": USER_AGENT };
+  return async (url, allowHost) => {
+    const signal = AbortSignal.timeout(opts.timeoutMs ?? LOGO_TIMEOUT_MS);
+    let current = allowedHttps(url, allowHost);
+    for (let hop = 0; current !== null && hop <= LOGO_MAX_REDIRECTS; hop++) {
+      try {
+        const res = await fetchImpl(current.href, { headers, redirect: "manual", credentials: "omit", signal });
+        if (res.status >= 300 && res.status < 400) {
+          const location = res.headers.get("location");
+          await res.body?.cancel().catch(() => undefined);
+          current = location === null ? null : allowedHttps(new URL(location, current).href, allowHost);
+          continue;
+        }
+        if (res.status !== 200 || /svg/i.test(res.headers.get("content-type") ?? "")) {
+          await res.body?.cancel().catch(() => undefined);
+          return null;
+        }
+        const bytes = await readAtMost(res, LOGO_MAX_BYTES);
+        const mime = bytes === null ? null : sniffImage(bytes);
+        return bytes === null || mime === null ? null : { mime, bytes };
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+}

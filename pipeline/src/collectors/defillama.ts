@@ -22,6 +22,8 @@ export interface DefillamaProtocol {
   tvl: number | null;
   /** CoinGecko id (the protocol has a listed token), or null. */
   geckoId: string | null;
+  /** Logo URL as DefiLlama gives it (any host: the logo stage only downloads from icons.llama.fi), or null. */
+  logo: string | null;
 }
 
 const nonEmptyString = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
@@ -43,6 +45,7 @@ export function parseProtocols(raw: unknown): DefillamaProtocol[] {
       url: nonEmptyString(p.url),
       tvl: typeof p.tvl === "number" && Number.isFinite(p.tvl) ? p.tvl : null,
       geckoId: nonEmptyString(p.gecko_id),
+      logo: nonEmptyString(p.logo),
     });
   }
   return protocols;

@@ -24,9 +24,11 @@ import type {
   ClaimPage,
   ExtractionStatus,
   LinkCheck,
+  LogoSource,
   NewAiAnalysis,
   NewEvidence,
   NewProject,
+  NewProjectLogo,
   PipelineRepo,
   ProjectForScoring,
   ProjectRow,
@@ -1024,6 +1026,35 @@ export class SupabaseRepo implements PipelineRepo {
       rows.push(...(data ?? []));
     }
     return rows.map((r) => ({ url: r.url, text: r.text, fetchedAt: new Date(r.fetched_at) })).sort(byUrl);
+  }
+
+  async saveProjectLogo(projectId: string, logo: NewProjectLogo, at: Date): Promise<void> {
+    check(
+      "saveProjectLogo",
+      await this.db.from("project_logos").upsert(
+        { project_id: projectId, source: logo.source, mime: logo.mime, data_b64: logo.dataB64, fetched_at: at.toISOString() },
+        { onConflict: "project_id" },
+      ),
+    );
+  }
+
+  async listProjectLogos(projectIds: string[]): Promise<{ projectId: string; source: LogoSource; fetchedAt: Date }[]> {
+    const rows: { project_id: string; source: LogoSource; fetched_at: string }[] = [];
+    // Never the bytes: the stage only needs to know which logos are fresh.
+    for (const chunk of chunks(projectIds, URL_CHUNK)) {
+      const data = check(
+        "listProjectLogos",
+        await this.db
+          .from("project_logos")
+          .select("project_id, source, fetched_at")
+          .in("project_id", chunk)
+          .returns<{ project_id: string; source: LogoSource; fetched_at: string }[]>(),
+      );
+      rows.push(...(data ?? []));
+    }
+    return rows
+      .map((r) => ({ projectId: r.project_id, source: r.source, fetchedAt: new Date(r.fetched_at) }))
+      .sort((a, b) => (a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0));
   }
 }
 

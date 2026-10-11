@@ -19,6 +19,7 @@ import type {
 import { ENDED_SCORING_DAYS } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { RaisePage } from "../enrich/alphadrops-raises.js";
+import type { LogoMime } from "../http.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 
 /** `merge_failed`: extracted, but merging threw; it goes back to `pending` only when its hash changes. */
@@ -165,6 +166,16 @@ export interface LinkCheck {
   checkedAt: Date;
 }
 
+/** Where a project's logo came from (`project_logos.source`). */
+export type LogoSource = "defillama" | "x_avatar" | "favicon";
+
+/** One `project_logos` row to write: the image as standard base64. */
+export interface NewProjectLogo {
+  source: LogoSource;
+  mime: LogoMime;
+  dataB64: string;
+}
+
 /** One `claim_pages` row (#56): the text of a claim portal page as last fetched. Service role only. */
 export interface ClaimPage {
   url: string;
@@ -309,4 +320,8 @@ export interface PipelineRepo {
   saveClaimPage(url: string, text: string, at: Date): Promise<void>;
   /** The cached claim portal pages of these URLs (URLs never fetched are left out), ordered by url. */
   listClaimPages(urls: string[]): Promise<ClaimPage[]>;
+  /** Inserts or replaces the logo of one project (`project_logos`, project_id is the key), fetched at `at`. */
+  saveProjectLogo(projectId: string, logo: NewProjectLogo, at: Date): Promise<void>;
+  /** Source and fetch time of the stored logos of these projects (projects without one left out), by project id. */
+  listProjectLogos(projectIds: string[]): Promise<{ projectId: string; source: LogoSource; fetchedAt: Date }[]>;
 }

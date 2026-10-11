@@ -104,6 +104,20 @@ export interface DailyStats extends RunStats {
   /** Collected documents that could not be stored (the other documents still were). */
   ingest_failed: number;
   purged: number;
+  /** Logos stored this run (`logos` stage), all sources together, and per source. */
+  logos_fetched: number;
+  logos_defillama: number;
+  logos_x_avatar: number;
+  logos_favicon: number;
+  /** Projects due for a logo with at least one source to try where none gave a usable image (or it could not be stored). */
+  logos_failed: number;
+  /** Projects due for a logo that were not tried because the stage's time budget ran out; the next run tries them. */
+  logos_skipped: number;
+  /** unavatar.io requests this run (at most `logos.maxXAvatarsPerRun`), and of those the ones that gave no logo. */
+  logos_x_avatar_requests: number;
+  logos_x_avatar_failed: number;
+  /** Projects whose X avatar was next but the per-run unavatar.io cap was reached; they wait for a later run. */
+  logos_x_avatar_deferred: number;
 }
 
 export function emptyStats(): DailyStats {
@@ -157,6 +171,15 @@ export function emptyStats(): DailyStats {
     source_failed: 0,
     ingest_failed: 0,
     purged: 0,
+    logos_fetched: 0,
+    logos_defillama: 0,
+    logos_x_avatar: 0,
+    logos_favicon: 0,
+    logos_failed: 0,
+    logos_skipped: 0,
+    logos_x_avatar_requests: 0,
+    logos_x_avatar_failed: 0,
+    logos_x_avatar_deferred: 0,
   };
 }
 

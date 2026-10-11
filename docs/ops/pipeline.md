@@ -230,6 +230,37 @@ portfolio company).
 | Delphi Ventures | 2 | ditunda | JavaScript-rendered: `/portfolio-crypto` has only the first 10 companies in the HTML, the rest load with "Load More" |
 | Jump Crypto | 2 | ditunda | terms (on `jumptrading.com`) license the site for private, non-commercial use only. List at `/invest` (200, 21 domains), `robots.txt` allows |
 
+### Project logos (`logos` stage, list cards)
+
+After `score`, the `logos` stage (`pipeline/src/steps/logos.ts`) stores one logo per scored project in
+`project_logos` (public read, service-role write). The web serves the stored bytes from `/logo/<project id>`, so a
+visitor's browser never contacts a project domain or unavatar.io. Tiers, first usable one wins:
+
+1. **DefiLlama**: the `logo` of the protocol matched by official domain (the same match as the `tvl` signal), only
+   from `https://icons.llama.fi` (redirects too).
+2. **X avatar** through unavatar.io: `https://unavatar.io/x/<handle>?fallback=false`. The handle comes only from the
+   project's own `social` links on x.com/twitter.com (first path segment, `^[A-Za-z0-9_]{1,15}$`, reserved paths like
+   `i`, `home`, `search`, `intent`, `share` refused). A project with two different handles skips this tier.
+   `fallback=false` makes unavatar answer 404 instead of a generic placeholder (unavatar README, "Fallback"), so a
+   missing avatar is "no logo", never a stock picture. Redirects are allowed only to `unavatar.io`, its subdomains
+   (its own CDN) and `pbs.twimg.com` (X's image CDN, where the avatar lives).
+3. **Favicon** of an official domain whose GoPlus phishing check answered "not phishing" in this run:
+   `https://<domain>/apple-touch-icon.png`, then `/favicon.ico`. No HTML is read. Redirects stay on the same registrable
+   domain. A domain GoPlus flagged, skipped or failed gets no request.
+
+Every download: https only (default port), 5 s in all, at most 2 redirects, at most 64 KB (reading stops past it),
+type decided by the magic bytes (PNG, JPEG, GIF, WebP, ICO), never SVG. The table refuses the same things again
+(mime allow-list, magic bytes per mime, 64 KB). A logo is fetched again at most once a week; a failed refresh keeps the
+old one. The stage starts no project after 2 minutes (`logos.budgetMinutes`), 3 at a time.
+
+**unavatar.io limits and terms.** The free (anonymous) plan allows 25 avatar requests per day per IP according to
+its README on 2026-10-11 (other sources say 50; cache hits are free). The stage asks at most 20 per run
+(`logos.maxXAvatarsPerRun`); projects past the cap wait for a later run and are not given their favicon meanwhile.
+The free plan requires attribution: every card showing an X-avatar logo says "Logo: unavatar.io" (`copy.ts`). The
+README asks for a followable link to `https://unavatar.io` (no `nofollow`, no redirect); see the open question in the
+list-cards report. Whether the free plan may be used by a commercial product is **UNKNOWN** (no terms found); the
+owner accepted that on 2026-10-11. To stop using it, set `maxXAvatarsPerRun` to 0.
+
 ## 4. Read the result
 
 The job log contains exactly one JSON line of numeric counters (never URLs, text, names, emails or wallets).
@@ -259,12 +290,17 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `raises_failed` | AlphaDrops raise requests that failed: `llms-full.txt` (not 200 or no fundraising entry) and raise pages (not 200, broken connection, or no round on the page) |
 | `link_checks_total` | distinct claim/app links checked in `score` and written to `link_checks` (status from the GoPlus answers of the run, no extra request) |
 | `link_checks_phishing` | of those, links on the phishing list: never rendered as a link, and the project's risk is high (`phishing_claim_link`) |
+| `logos_fetched` / `logos_defillama` / `logos_x_avatar` / `logos_favicon` | logos stored this run, all together and per source ("Project logos") |
+| `logos_failed` | projects due for a logo (none yet, or a week old) with something to try where nothing usable came back; a stored logo stays |
+| `logos_skipped` | projects due for a logo not tried because the 2-minute budget ran out (tried next run) |
+| `logos_x_avatar_requests` / `logos_x_avatar_failed` | unavatar.io requests this run (at most 20) / of those, the ones that gave no logo (404, other answer, refused image) |
+| `logos_x_avatar_deferred` | projects whose X avatar was next after the 20 requests were used; they wait for a later run |
 | `claim_pages_read` | claim portal pages fetched in `analyze` for the AI Scam Analyst (at most 20 per run; pages fetched in the last 7 days come from `claim_pages`) |
 | `track_record_total` / `_listed` / `_no_token` / `_risk_raised` | the public track record (#43); see "Track record" below |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
-| `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 5 score, 6 purge, in run order); the other stages still ran |
+| `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 8 signals, 9 analyze, 5 score, 10 logos, 6 purge, in run order); the other stages still ran |
 
 Exit code (shown as the workflow status): **failed** when `run_error`, `source_failed`, `ingest_failed`,
 `merge_failed` or `score_failed` is above 0, or when the Supabase settings are missing (`{"config_error":1}`). Everything is

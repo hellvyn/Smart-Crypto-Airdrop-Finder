@@ -63,6 +63,13 @@ export interface PipelineConfig {
   textRetentionDays: number;
   /** VCs whose portfolio pages give verified `vc_backer` signals (`VC_LIST`). */
   vcs: VcConfig[];
+  /**
+   * Logo stage (owner request 2026-10-11): no project starts after `budgetMinutes` (counted from the start of the
+   * stage), `concurrency` projects at a time, and at most `maxXAvatarsPerRun` unavatar.io requests per run (its free
+   * plan allows 25 to 50 avatars per day per IP; the docs and other sources disagree). Projects left over wait for the
+   * next run.
+   */
+  logos: { budgetMinutes: number; concurrency: number; maxXAvatarsPerRun: number };
 }
 
 /**
@@ -210,4 +217,5 @@ export const defaultConfig: PipelineConfig = {
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
   vcs: VC_LIST,
+  logos: { budgetMinutes: 2, concurrency: 3, maxXAvatarsPerRun: 20 },
 };

@@ -231,6 +231,8 @@ function countCuration(stats: DailyStats, c: CurationRecord): void {
  * One project failing to save, whose analyses cannot be read, or whose curation throws, counts as `score_failed` and
  * does not stop the others. Last, the track record stats (#43) are counted from the curation history, also when no
  * project was scored; a failed read of that history is a stage error.
+ * Returns the GoPlus answer of this run per registrable domain (null: no answer), for the `logos` stage: a favicon is
+ * only fetched from an official domain answered as not phishing.
  */
 export async function scoreProjects(
   deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void>; now: () => Date },
@@ -238,13 +240,13 @@ export async function scoreProjects(
   now: Date,
   stats: DailyStats,
   coverage: ReadonlyMap<string, SignalCoverage> = new Map(),
-): Promise<void> {
+): Promise<ReadonlyMap<string, boolean | null>> {
   const { repo, http } = deps;
   const sleep = deps.sleep ?? defaultSleep;
   const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
   if (projects.length === 0) {
     await countTrackRecord(repo, stats);
-    return;
+    return new Map();
   }
 
   const domainsByProject = new Map(projects.map((p) => [p.id, linkDomains(p)]));
@@ -361,4 +363,5 @@ export async function scoreProjects(
   // After every project is scored, so a link_checks write that fails (a stage error) never keeps a project unscored.
   await saveLinkChecks(repo, claimLinks.byUrl, now, stats);
   await countTrackRecord(repo, stats);
+  return phishing;
 }

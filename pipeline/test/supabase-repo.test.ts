@@ -878,3 +878,46 @@ describe("SupabaseRepo.listProjectsForScoring ended curated projects", () => {
     expect(reads[0]?.columns).toContain("project_signals(kind, value, source, verified, observed_at)");
   });
 });
+
+describe("SupabaseRepo project logos", () => {
+  const at = new Date("2026-10-11T03:00:00Z");
+
+  it("upserts a project's logo by project id", async () => {
+    const { client, upserts } = recordingClient();
+
+    await new SupabaseRepo(client).saveProjectLogo("p-1", { source: "x_avatar", mime: "image/png", dataB64: "iVBORw0KGgo=" }, at);
+
+    expect(upserts).toEqual([
+      {
+        table: "project_logos",
+        row: { project_id: "p-1", source: "x_avatar", mime: "image/png", data_b64: "iVBORw0KGgo=", fetched_at: "2026-10-11T03:00:00.000Z" },
+        options: { onConflict: "project_id" },
+      },
+    ]);
+  });
+
+  it("reads when each asked project's logo was fetched and from where, never the bytes", async () => {
+    const stored = [{ project_id: "p-1", source: "defillama", fetched_at: "2026-10-11T03:00:00+00:00" }];
+    const { client, reads } = recordingClient({ project_logos: stored });
+
+    expect(await new SupabaseRepo(client).listProjectLogos(["p-1", "p-2"])).toEqual([
+      { projectId: "p-1", source: "defillama", fetchedAt: at },
+    ]);
+    expect(reads).toEqual([
+      { table: "project_logos", columns: "project_id, source, fetched_at", filters: [["project_id", ["p-1", "p-2"]]], orders: [] },
+    ]);
+  });
+
+  it("reads many projects in chunks of 100 and reads nothing for none", async () => {
+    const { client, reads } = recordingClient();
+    const ids = Array.from({ length: 150 }, (_, i) => `p-${i}`);
+
+    await new SupabaseRepo(client).listProjectLogos(ids);
+    await new SupabaseRepo(client).listProjectLogos([]);
+
+    expect(reads.map((r) => [r.table, (r.filters[0]?.[1] as string[]).length])).toEqual([
+      ["project_logos", 100],
+      ["project_logos", 50],
+    ]);
+  });
+});

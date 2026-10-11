@@ -20,8 +20,10 @@ import type {
   ExtractionStatus,
   LinkCheck,
   NewAiAnalysis,
+  LogoSource,
   NewEvidence,
   NewProject,
+  NewProjectLogo,
   PipelineRepo,
   ProjectForScoring,
   ProjectRow,
@@ -126,6 +128,7 @@ export class MemoryRepo implements PipelineRepo {
   private readonly alphaRaises = new Map<string, RaisePage & { fetchedAt: Date }>();
   readonly linkChecks = new Map<string, LinkCheck>();
   readonly claimPages = new Map<string, ClaimPage>();
+  readonly projectLogos = new Map<string, NewProjectLogo & { fetchedAt: Date }>();
 
   /** Snapshot of every stored document (test helper). */
   allDocuments(): StoredDocument[] {
@@ -564,6 +567,19 @@ export class MemoryRepo implements PipelineRepo {
 
   async listClaimPages(urls: string[]): Promise<ClaimPage[]> {
     return rowsOf(this.claimPages, urls);
+  }
+
+  async saveProjectLogo(projectId: string, logo: NewProjectLogo, at: Date): Promise<void> {
+    this.projectLogos.set(projectId, { ...logo, fetchedAt: at });
+  }
+
+  async listProjectLogos(projectIds: string[]): Promise<{ projectId: string; source: LogoSource; fetchedAt: Date }[]> {
+    return [...new Set(projectIds)]
+      .sort()
+      .flatMap((projectId) => {
+        const row = this.projectLogos.get(projectId);
+        return row === undefined ? [] : [{ projectId, source: row.source, fetchedAt: row.fetchedAt }];
+      });
   }
 }
 

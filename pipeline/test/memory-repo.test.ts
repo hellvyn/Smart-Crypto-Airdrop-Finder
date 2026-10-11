@@ -953,3 +953,21 @@ describe("MemoryRepo.countOfficialDomains", () => {
     expect(await new MemoryRepo().countOfficialDomains()).toBe(0);
   });
 });
+
+describe("MemoryRepo project logos", () => {
+  it("keeps one logo per project, a later save replacing it, and lists only the asked projects without their bytes", async () => {
+    const repo = new MemoryRepo();
+    const later = new Date(T0.getTime() + 8 * 86_400_000);
+    await repo.saveProjectLogo("p-1", { source: "favicon", mime: "image/x-icon", dataB64: "AAABAA==" }, T0);
+    await repo.saveProjectLogo("p-2", { source: "defillama", mime: "image/png", dataB64: "iVBORw0KGgo=" }, T0);
+    await repo.saveProjectLogo("p-1", { source: "x_avatar", mime: "image/jpeg", dataB64: "/9j/4AAQ" }, later);
+
+    expect(await repo.listProjectLogos(["p-2", "p-1", "p-never"])).toEqual([
+      { projectId: "p-1", source: "x_avatar", fetchedAt: later },
+      { projectId: "p-2", source: "defillama", fetchedAt: T0 },
+    ]);
+    expect(await repo.listProjectLogos(["p-2"])).toEqual([{ projectId: "p-2", source: "defillama", fetchedAt: T0 }]);
+    expect(await repo.listProjectLogos([])).toEqual([]);
+    expect(repo.projectLogos.get("p-1")).toEqual({ source: "x_avatar", mime: "image/jpeg", dataB64: "/9j/4AAQ", fetchedAt: later });
+  });
+});

@@ -12,6 +12,7 @@ import { runDaily } from "../src/run.js";
 import type { Analyzer } from "../src/steps/analyze.js";
 import { runExitCode } from "../src/stats.js";
 import { classifyLink, pickSlug } from "../src/steps/merge.js";
+import type { FetchImage, LogoImage } from "../src/http.js";
 import type { StoredDocument } from "../src/store/repo.js";
 import { MemoryRepo } from "../src/store/memory-repo.js";
 
@@ -260,11 +261,26 @@ function fakeFetchUntrusted(pages: Pages): { fetchUntrusted: (url: string) => Pr
   };
 }
 
-function setup(opts: { pages?: Pages; chat?: FakeChat; repo?: MemoryRepo; now?: Date; config?: PipelineConfig } = {}) {
+/** The logo download of a run: answers from `images` (others: no usable image) and records each URL. */
+function fakeFetchImage(images: Record<string, LogoImage> = {}): { fetchImage: FetchImage; requested: string[] } {
+  const requested: string[] = [];
+  return {
+    requested,
+    fetchImage: async (url) => {
+      requested.push(url);
+      return images[url] ?? null;
+    },
+  };
+}
+
+function setup(
+  opts: { pages?: Pages; chat?: FakeChat; repo?: MemoryRepo; now?: Date; config?: PipelineConfig; images?: Record<string, LogoImage> } = {},
+) {
   const repo = opts.repo ?? new MemoryRepo();
   const pages = opts.pages ?? basePages();
   const http = fakeHttp(pages);
   const untrusted = fakeFetchUntrusted(pages);
+  const logos = fakeFetchImage(opts.images);
   const chat = opts.chat ?? fakeChat();
   const now = opts.now ?? NOW;
   // Failed AI analyses are reported here instead of on the console.
@@ -273,12 +289,13 @@ function setup(opts: { pages?: Pages; chat?: FakeChat; repo?: MemoryRepo; now?: 
     repo,
     http,
     fetchUntrusted: untrusted.fetchUntrusted,
+    fetchImage: logos.fetchImage,
     chat: chat.chat,
     sleep: async () => {},
     now: () => now,
     warn: (line: string) => warnings.push(line),
   };
-  return { repo, http, untrusted, chat, deps, warnings, config: opts.config ?? defaultConfig };
+  return { repo, http, untrusted, logos, chat, deps, warnings, config: opts.config ?? defaultConfig };
 }
 
 async function projects(repo: MemoryRepo) {
@@ -297,6 +314,45 @@ function telegramWith(...messages: string[]): { status: number; body: string } {
 }
 
 describe("runDaily", () => {
+  it("stores logos after scoring: the matched DefiLlama logo, the X avatar, the favicon of a domain GoPlus found clean", async () => {
+    const pages = basePages();
+    const withLogo = PROTOCOL_LIST.map((p) => (p.slug === "hyperdrive-lend" ? { ...p, logo: "https://icons.llama.fi/hyperdrive-lend.png" } : p));
+    pages[PROTOCOLS] = { status: 200, body: JSON.stringify(withLogo) };
+    const png: LogoImage = { mime: "image/png", bytes: Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) };
+    const { repo, deps, config, logos } = setup({
+      pages,
+      images: {
+        "https://icons.llama.fi/hyperdrive-lend.png": png,
+        "https://unavatar.io/x/inkonchain?fallback=false": png,
+        "https://deepbook.tech/favicon.ico": png,
+      },
+    });
+
+    const stats = await runDaily(deps, config);
+
+    const sourceOf = async (nameKey: string) => repo.projectLogos.get((await repo.findProjectsByNameKey(nameKey))[0]!.id)?.source;
+    expect(await sourceOf("hyperdrivelend")).toBe("defillama");
+    expect(await sourceOf("ink")).toBe("x_avatar");
+    // GoPlus answered deepbook.tech as not phishing in this run (the fake answers every domain clean).
+    expect(await sourceOf("deepbook")).toBe("favicon");
+    expect(logos.requested).toContain("https://deepbook.tech/apple-touch-icon.png");
+    expect(stats).toMatchObject({ logos_fetched: 3, logos_defillama: 1, logos_x_avatar: 1, logos_favicon: 1, logos_x_avatar_requests: 1 });
+    expect(repo.runs[0]?.stats).toEqual(stats);
+  });
+
+  it("asks for no favicon when the scoring stage failed and no phishing answer is known", async () => {
+    const { repo, deps, config, logos } = setup();
+    // Thrown at the end of `score`, after GoPlus answered: the stage fails as a whole.
+    repo.listCurationHistoryForTrackRecord = async () => {
+      throw new Error("db down");
+    };
+
+    await expect(runDaily(deps, config)).rejects.toThrow("db down");
+
+    expect(logos.requested.filter((u) => u.endsWith("/favicon.ico") || u.endsWith("/apple-touch-icon.png"))).toEqual([]);
+    expect(repo.runs[0]?.stats.failed_step).toBe(5);
+  });
+
   it("collects, extracts, merges and scores on the first run", async () => {
     const { repo, deps, config, chat } = setup();
     const stats = await runDaily(deps, config);
@@ -500,7 +556,8 @@ describe("runDaily", () => {
     const repo = new MemoryRepo();
     const list = repo.listProjectsForScoring.bind(repo);
     let calls = 0;
-    // The signals (1st) and analyze (2nd) stages list projects and succeed; only the score stage's listing fails.
+    // The signals (1st) and analyze (2nd) stages list projects and succeed; only the score stage's listing fails. The
+    // logos stage lists them again after it (4th, and succeeds).
     repo.listProjectsForScoring = async (days, now) => {
       calls += 1;
       if (calls === 3) throw new Error("db down");
@@ -517,7 +574,7 @@ describe("runDaily", () => {
     expect(purgeCalls).toBe(1);
     expect(repo.runs).toHaveLength(1);
     expect(repo.runs[0]?.stats.run_error).toBe(1);
-    expect(calls).toBe(3);
+    expect(calls).toBe(4);
     expect(repo.runs[0]?.stats.failed_step).toBe(5);
     // Scoring failed at stage level: nothing was assessed.
     expect(repo.runs[0]?.stats.assessed).toBe(0);
