@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import pLimit from "p-limit";
 import type { z } from "zod";
+import { forbiddenPhrases } from "@saf/core";
 import type { AiKind } from "@saf/core";
 import type { PipelineConfig } from "../config.js";
 import { createCircuitBreaker } from "../llm/circuit-breaker.js";
 import type { ChatMessage } from "../llm/nvidia.js";
+import { analystAnalyzer } from "../llm/prompts/analyst.js";
 import { callStructured } from "../llm/structured.js";
 import type { ChatFn } from "../llm/structured.js";
 import type { DailyStats } from "../stats.js";
@@ -24,19 +26,33 @@ export interface SourceText {
  * must hand it to the model as data, never as instructions (spec §13). The stored result can only add warnings or
  * lower a recommendation; it never decides whether a project passes curation.
  */
-export interface Analyzer<T = unknown> {
+export interface Analyzer<T = unknown, R = unknown> {
   kind: AiKind;
   /** Stored with each analysis; a new version makes every project of this kind analyzed again. */
   promptVersion: string;
+  /**
+   * The prompt may only use what `analysisInputHash` covers (name, status, steps, facts, sources), so an unchanged
+   * hash really means an unchanged prompt and the cached analysis stays valid.
+   */
   buildMessages(project: ProjectForScoring, sources: SourceText[]): ChatMessage[];
   /** The answer must match this schema, or the next model is tried. */
   schema: z.ZodType<T>;
   /** Turns a schema-valid answer into the stored `ai_analyses.result` (e.g. drops points whose quote is not in `sources`). */
-  postProcess(value: T, sources: SourceText[]): unknown;
+  postProcess(value: T, sources: SourceText[]): R;
+  /**
+   * The Indonesian prose of an answer (never its quotes). A new analysis whose prose uses a forbidden phrase counts
+   * once in `ai_style_violations`; it is stored all the same.
+   */
+  indonesianTexts?(value: T): string[];
+  /**
+   * Writes what other tables take from a new result (e.g. the Analyst's step translations in `tasks.text_id`). Runs
+   * before the analysis is stored, so when it throws the previous analysis stays the latest and the next run retries.
+   */
+  saveDerived?(repo: PipelineRepo, project: ProjectForScoring, result: R): Promise<void>;
 }
 
 /** The analyses each run makes, in this order per project. */
-export const ANALYZERS: Analyzer[] = [];
+export const ANALYZERS: Analyzer[] = [analystAnalyzer];
 
 export interface AnalyzeDeps {
   repo: PipelineRepo;
@@ -50,15 +66,18 @@ export interface AnalyzeDeps {
    * the project's own source texts. They go into that analyzer's prompt and input hash only.
    */
   extraSources?: (project: ProjectForScoring, kind: AiKind) => Promise<SourceText[]>;
+  /** Where a failed analysis is reported (project id and kind only, never source text); defaults to console.warn. */
+  warn?: (line: string) => void;
 }
 
 /**
- * sha256 (hex) of what an analysis reads: the source texts, the project's steps (in order), its facts and its
- * status. Sources and facts are sorted first, so the order the database returns them in does not matter.
+ * sha256 (hex) of what an analysis reads: the source texts, the project's name, steps (in order), facts and status.
+ * Sources and facts are sorted first, so the order the database returns them in does not matter.
  */
 export function analysisInputHash(project: ProjectForScoring, sourceTexts: string[]): string {
   const facts = project.facts.map((f) => JSON.stringify([f.field, f.value, f.quote])).sort();
   const canonical = JSON.stringify({
+    name: project.name,
     status: project.status,
     steps: project.steps.map((s) => [s.text, s.cadence]),
     facts,
@@ -78,8 +97,9 @@ export function analysisInputHash(project: ProjectForScoring, sourceTexts: strin
  *   `maxAnalysesPerRun` analyses start. Analyses not started, or stopped between models, count as
  *   `ai_analyses_deferred`; so does an analysis that finds every model's circuit open.
  * - Models are tried as in extraction (`callStructured`), with one circuit breaker for the whole stage. When every
- *   model fails, or the analysis throws, it counts as `ai_analyses_failed` and the previous analysis stays the
- *   latest. No failure stops the other analyses.
+ *   model fails, or the analysis throws, it counts as `ai_analyses_failed`, is reported through `warn` (project id
+ *   and kind), and the previous analysis stays the latest. No failure stops the other analyses.
+ * - Style: a new analysis whose `indonesianTexts` use a forbidden phrase counts in `ai_style_violations`.
  */
 export async function runAnalyses(
   deps: AnalyzeDeps,
@@ -90,6 +110,11 @@ export async function runAnalyses(
   const { repo } = deps;
   const analyzers = deps.analyzers ?? ANALYZERS;
   if (analyzers.length === 0) return;
+  const warn = deps.warn ?? ((line: string) => console.warn(line));
+  const reportFailure = (project: ProjectForScoring, kind: AiKind, why: string): void => {
+    stats.ai_analyses_failed += 1;
+    warn(`analyze: ${kind} analysis of project ${project.id} failed (${why})`);
+  };
   const deadline = deps.now().getTime() + config.analyzeBudgetMinutes * MINUTE_MS;
   const budgetSpent = (): boolean => deps.now().getTime() >= deadline;
   const breaker = createCircuitBreaker(CIRCUIT_BREAKER_THRESHOLD);
@@ -119,38 +144,48 @@ export async function runAnalyses(
     });
     if (!outcome.ok) {
       if (outcome.stopped) stats.ai_analyses_deferred += 1;
-      else stats.ai_analyses_failed += 1;
+      // Failure codes only (e.g. http_429, schema); the raw answers can quote the sources.
+      else reportFailure(project, analyzer.kind, outcome.attempts.map((a) => a.error ?? "ok").join(", "));
       return;
     }
+    const result = analyzer.postProcess(outcome.value, sources);
+    await analyzer.saveDerived?.(repo, project, result);
     await repo.saveAiAnalysis({
       projectId: project.id,
       kind: analyzer.kind,
       inputHash,
-      result: analyzer.postProcess(outcome.value, sources),
+      result,
       model: outcome.model,
       servedModel: outcome.servedModel,
       promptVersion: analyzer.promptVersion,
       createdAt: deps.now(),
     });
     stats.ai_analyses_run += 1;
+    const prose = analyzer.indonesianTexts?.(outcome.value) ?? [];
+    if (prose.some((text) => forbiddenPhrases(text).length > 0)) stats.ai_style_violations += 1;
   };
 
   const analyzeProject = async (project: ProjectForScoring): Promise<void> => {
     let own: SourceText[];
     try {
       own = await repo.listProjectSourceTexts(project.id);
-    } catch {
-      stats.ai_analyses_failed += analyzers.length;
+    } catch (error) {
+      for (const analyzer of analyzers) reportFailure(project, analyzer.kind, `sources: ${errorName(error)}`);
       return;
     }
     for (const analyzer of analyzers) {
       try {
         await analyzeOne(project, own, analyzer);
-      } catch {
-        stats.ai_analyses_failed += 1;
+      } catch (error) {
+        // The error's name only: its message could carry source text or stored values.
+        reportFailure(project, analyzer.kind, `threw ${errorName(error)}`);
       }
     }
   };
 
   await Promise.all(projects.map((project) => limit(() => analyzeProject(project))));
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
 }

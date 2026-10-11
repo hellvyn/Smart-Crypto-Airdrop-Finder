@@ -104,12 +104,12 @@ const farmingRow = (rec: Recorded, row: { archived_at: string | null } | null): 
 
 describe("startFarming", () => {
   const SOURCE = [
-    { description: "Follow @proj on X", cadence: "once" },
-    { description: "Bridge ETH to the chain", cadence: "once" },
-    { description: "follow @PROJ on x", cadence: "daily" },
-    { description: "  Swap on the DEX  ", cadence: "daily" },
-    { description: "   ", cadence: "daily" },
-    { description: "Claim the faucet", cadence: "weekly" },
+    { description: "Follow @proj on X", text_id: null, cadence: "once" },
+    { description: "Bridge ETH to the chain", text_id: null, cadence: "once" },
+    { description: "follow @PROJ on x", text_id: null, cadence: "daily" },
+    { description: "  Swap on the DEX  ", text_id: null, cadence: "daily" },
+    { description: "   ", text_id: null, cadence: "daily" },
+    { description: "Claim the faucet", text_id: null, cadence: "weekly" },
   ];
 
   it("creates the farming row, then snapshots once/daily/weekly source steps with case-insensitive dedup", async () => {
@@ -121,6 +121,7 @@ describe("startFarming", () => {
     expect(recs.some((r) => r.table === "farming_projects" && (has(r, "update") || has(r, "upsert")))).toBe(false);
 
     const source = recs.find((r) => r.table === "tasks")!;
+    expect(arg(source, "select")).toBe("description, text_id, cadence");
     expect(source.calls).toContainEqual(["eq", "project_id", PID]);
     expect(source.calls).toContainEqual(["in", "cadence", ["once", "daily", "weekly"]]);
     const orders = source.calls.filter((c) => c[0] === "order").map((c) => c[1]);
@@ -136,10 +137,24 @@ describe("startFarming", () => {
     ]);
   });
 
+  it("uses a step's Indonesian text when it has one, and the source text otherwise", async () => {
+    const steps = [
+      { description: "Bridge ETH to the chain", text_id: "Bridge ETH ke chain-nya", cadence: "once" },
+      { description: "Swap on the DEX", text_id: null, cadence: "daily" },
+      { description: "Claim the faucet", text_id: "   ", cadence: "weekly" },
+      { description: "Bridge some ETH", text_id: "bridge eth ke CHAIN-nya", cadence: "once" },
+    ];
+    const { db, recs } = fakeDb((rec) => farmingRow(rec, null) ?? (rec.table === "tasks" ? ok(steps) : ok([])));
+    await startFarming(db, PID);
+    const rows = arg(recs.find((r) => r.table === "farming_tasks" && has(r, "insert"))!, "insert") as { text: string }[];
+    // A blank translation falls back to the source text; duplicates are found on the text used.
+    expect(rows.map((r) => r.text)).toEqual(["Bridge ETH ke chain-nya", "Swap on the DEX", "Claim the faucet"]);
+  });
+
   it("clips a source step longer than 200 characters so the row passes the text check", async () => {
     const long = "x".repeat(250);
     const { db, recs } = fakeDb(
-      (rec) => farmingRow(rec, null) ?? (rec.table === "tasks" ? ok([{ description: long, cadence: "daily" }]) : ok([])),
+      (rec) => farmingRow(rec, null) ?? (rec.table === "tasks" ? ok([{ description: long, text_id: null, cadence: "daily" }]) : ok([])),
     );
     await startFarming(db, PID);
     const rows = arg(recs.find((r) => r.table === "farming_tasks" && has(r, "insert"))!, "insert") as { text: string }[];
@@ -147,7 +162,7 @@ describe("startFarming", () => {
   });
 
   it("snapshots at most 30 steps, the limit of active tasks per project", async () => {
-    const many = Array.from({ length: 33 }, (_, i) => ({ description: `Step ${i + 1}`, cadence: "daily" }));
+    const many = Array.from({ length: 33 }, (_, i) => ({ description: `Step ${i + 1}`, text_id: null, cadence: "daily" }));
     const { db, recs } = fakeDb((rec) => farmingRow(rec, null) ?? (rec.table === "tasks" ? ok(many) : ok([])));
     await startFarming(db, PID);
     const rows = arg(recs.find((r) => r.table === "farming_tasks" && has(r, "insert"))!, "insert") as { text: string }[];
@@ -236,9 +251,9 @@ describe("refreshFromSource", () => {
     { id: T_OWN, text: "Check Discord", origin: "custom", position: 2 },
   ];
   const SOURCE = [
-    { description: "swap on the dex", cadence: "daily" },
-    { description: "Post a meme", cadence: "once" },
-    { description: "Mint the NFT", cadence: "once" },
+    { description: "swap on the dex", text_id: null, cadence: "daily" },
+    { description: "Post a meme", text_id: null, cadence: "once" },
+    { description: "Mint the NFT", text_id: null, cadence: "once" },
   ];
   const route = (rec: Recorded): Result =>
     farmingRow(rec, { archived_at: null }) ??
@@ -261,6 +276,20 @@ describe("refreshFromSource", () => {
     const insert = recs.find((r) => r.table === "farming_tasks" && has(r, "insert"))!;
     expect(arg(insert, "insert")).toEqual([
       { user_id: USER.id, project_id: PID, text: "Mint the NFT", cadence: "once", origin: "source", position: 6 },
+    ]);
+  });
+
+  it("replaces a source task with its Indonesian text once the step is translated", async () => {
+    const translated = [{ description: "Swap on the DEX", text_id: "Swap di DEX", cadence: "daily" }];
+    const { db, recs } = fakeDb(
+      (rec) =>
+        farmingRow(rec, { archived_at: null }) ??
+        (rec.table === "tasks" ? ok(translated) : rec.table === "farming_tasks" && has(rec, "select") ? ok([ACTIVE[0]]) : ok()),
+    );
+    expect(await refreshFromSource(db, PID)).toEqual({ added: 1, archived: 1 });
+    expect(recs.find((r) => r.table === "farming_tasks" && has(r, "update"))!.calls).toContainEqual(["in", "id", [T_SWAP]]);
+    expect(arg(recs.find((r) => r.table === "farming_tasks" && has(r, "insert"))!, "insert")).toEqual([
+      { user_id: USER.id, project_id: PID, text: "Swap di DEX", cadence: "daily", origin: "source", position: 0 },
     ]);
   });
 

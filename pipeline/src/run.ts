@@ -29,6 +29,8 @@ export interface PipelineDeps {
   now: () => Date;
   /** The AI analyses of the `analyze` stage; defaults to `ANALYZERS`. */
   analyzers?: Analyzer[];
+  /** Where a failed AI analysis is reported (project id and kind only); defaults to console.warn. */
+  warn?: (line: string) => void;
 }
 
 /**

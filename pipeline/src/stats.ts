@@ -44,6 +44,11 @@ export interface DailyStats extends RunStats {
   ai_analyses_failed: number;
   /** AI analyses not started (or stopped between models) because the analysis budget or limit ran out. */
   ai_analyses_deferred: number;
+  /**
+   * New AI analyses whose Indonesian text uses a phrase the style rules forbid (`FORBIDDEN_PHRASES`). They are stored
+   * all the same; the count is for the owner's review of AI writing (gate G13).
+   */
+  ai_style_violations: number;
   /** Projects whose risk assessment threw. */
   score_failed: number;
   source_failed: number;
@@ -79,6 +84,7 @@ export function emptyStats(): DailyStats {
     ai_analyses_cached: 0,
     ai_analyses_failed: 0,
     ai_analyses_deferred: 0,
+    ai_style_violations: 0,
     score_failed: 0,
     source_failed: 0,
     ingest_failed: 0,

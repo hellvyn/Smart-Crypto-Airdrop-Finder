@@ -191,13 +191,28 @@ const REPLIES: Record<string, unknown> = {
   },
 };
 
+/**
+ * The answer to an AI Analyst prompt (the default analyze stage; its prompt has no `Source:` line). Schema-valid; its
+ * one point quotes nothing, so the stored analysis has no points and verdict `pantau`.
+ */
+const ANALYST_REPLY = {
+  verdict: "pantau",
+  confidence: "rendah",
+  points: [{ text: "Belum ada info alokasi.", quote: "(tidak ada kutipan)", source_url: "(tidak ada)" }],
+  effort: { minutes_per_day: null, capital_usd_min: null, note: "Belum jelas." },
+  steps_id: [],
+};
+
 interface FakeChat {
   chat: ChatFn;
   calls: string[];
   maxInFlight: number;
 }
 
-/** Answers by the document URL in the prompt; unknown URLs (or `fail`) get HTTP 500. */
+/**
+ * Answers an extraction prompt by the document URL in it; unknown URLs (or `fail`) get HTTP 500. Records the URL of
+ * each extraction call. An AI Analyst prompt gets `ANALYST_REPLY` and is not recorded.
+ */
 function fakeChat(replies: Record<string, unknown> = REPLIES, fail: Set<string> = new Set()): FakeChat {
   let inFlight = 0;
   const fake: FakeChat = {
@@ -205,6 +220,9 @@ function fakeChat(replies: Record<string, unknown> = REPLIES, fail: Set<string> 
     maxInFlight: 0,
     chat: async (_model, messages) => {
       const url = /^Source: (\S+)/.exec(messages[1]?.content ?? "")?.[1] ?? "";
+      if (url === "") {
+        return { content: JSON.stringify(ANALYST_REPLY), finishReason: "stop", latencyMs: 1, httpStatus: 200, servedModel: null };
+      }
       fake.calls.push(url);
       inFlight++;
       fake.maxInFlight = Math.max(fake.maxInFlight, inFlight);
@@ -225,8 +243,10 @@ function setup(opts: { pages?: Pages; chat?: FakeChat; repo?: MemoryRepo; now?: 
   const http = fakeHttp(opts.pages ?? basePages());
   const chat = opts.chat ?? fakeChat();
   const now = opts.now ?? NOW;
-  const deps = { repo, http, chat: chat.chat, sleep: async () => {}, now: () => now };
-  return { repo, http, chat, deps, config: opts.config ?? defaultConfig };
+  // Failed AI analyses are reported here instead of on the console.
+  const warnings: string[] = [];
+  const deps = { repo, http, chat: chat.chat, sleep: async () => {}, now: () => now, warn: (line: string) => warnings.push(line) };
+  return { repo, http, chat, deps, warnings, config: opts.config ?? defaultConfig };
 }
 
 async function projects(repo: MemoryRepo) {
@@ -448,7 +468,8 @@ describe("runDaily", () => {
     const repo = new MemoryRepo();
     const list = repo.listProjectsForScoring.bind(repo);
     let calls = 0;
-    // The signals stage lists projects first and succeeds; the score stage's listing fails.
+    // The signals stage lists projects first and succeeds; every later listing fails: the analyze stage's (the AI
+    // Analyst runs by default) and the score stage's.
     repo.listProjectsForScoring = async (days, now) => {
       calls += 1;
       if (calls > 1) throw new Error("db down");
@@ -465,7 +486,10 @@ describe("runDaily", () => {
     expect(purgeCalls).toBe(1);
     expect(repo.runs).toHaveLength(1);
     expect(repo.runs[0]?.stats.run_error).toBe(1);
-    expect(repo.runs[0]?.stats.failed_step).toBe(5);
+    // failed_step names the first failing stage: analyze (9) now lists projects before score (5) does.
+    expect(repo.runs[0]?.stats.failed_step).toBe(9);
+    // Scoring failed at stage level too: nothing was assessed.
+    expect(repo.runs[0]?.stats.assessed).toBe(0);
     expect(repo.runs[0]?.stats.docs_collected).toBe(5);
     expect(repo.runs[0]?.stats.projects_created).toBe(3);
     expect(repo.runs[0]?.finishedAt).not.toBeNull();
@@ -571,7 +595,8 @@ describe("runDaily extraction budget and merge queue", () => {
     const chat: FakeChat = {
       ...inner,
       chat: async (model, messages) => {
-        byModel.push(model.id);
+        // Extraction calls only; the analyze stage that follows has a circuit breaker of its own.
+        if (messages[1]?.content.startsWith("Source: ")) byModel.push(model.id);
         if (model.id === first) return { content: "", finishReason: null, latencyMs: 180_000, httpStatus: 0, servedModel: null };
         return inner.chat(model, messages);
       },
@@ -1644,13 +1669,16 @@ describe("runDailyJob LLM providers", () => {
     ["an empty LLM_API_KEY sends no Authorization", "", undefined],
     ["a set LLM_API_KEY is sent as a bearer token", "llm-test-key", "Bearer llm-test-key"],
   ])("calls freellm auto first, then NVIDIA when auto answers unparsable JSON: %s", async (_name, llmKey, llmAuth) => {
-    const requests: { url: string; auth: string | undefined }[] = [];
+    const requests: { url: string; auth: string | undefined; analysis: boolean }[] = [];
     vi.stubGlobal("fetch", async (input: unknown, init?: RequestInit) => {
       const url = String(input);
-      requests.push({ url, auth: (init?.headers as Record<string, string>)["Authorization"] });
-      if (url.startsWith("https://llm.test/")) return sse("gpt-oss:120b", "not json");
       const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
       const source = /^Source: (\S+)/.exec(body.messages[1]?.content ?? "")?.[1] ?? "";
+      // AI Analyst prompts (the default analyze stage) have no Source line.
+      const analysis = source === "";
+      requests.push({ url, auth: (init?.headers as Record<string, string>)["Authorization"], analysis });
+      if (url.startsWith("https://llm.test/")) return sse("gpt-oss:120b", "not json");
+      if (analysis) return sse("glm-served", JSON.stringify(ANALYST_REPLY));
       const reply = REPLIES[source];
       if (reply === undefined) return new Response("unknown", { status: 500 });
       return sse("glm-served", JSON.stringify(reply));
@@ -1665,8 +1693,9 @@ describe("runDailyJob LLM providers", () => {
     );
 
     expect(code).toBe(0);
-    const freellm = requests.filter((r) => r.url.startsWith("https://llm.test/"));
-    const nvidia = requests.filter((r) => !r.url.startsWith("https://llm.test/"));
+    const extraction = requests.filter((r) => !r.analysis);
+    const freellm = extraction.filter((r) => r.url.startsWith("https://llm.test/"));
+    const nvidia = extraction.filter((r) => !r.url.startsWith("https://llm.test/"));
     expect(new Set(freellm.map((r) => r.url))).toEqual(new Set(["https://llm.test/v1/chat/completions"]));
     expect(new Set(freellm.map((r) => r.auth))).toEqual(new Set([llmAuth]));
     expect(new Set(nvidia.map((r) => r.url))).toEqual(new Set(["https://integrate.api.nvidia.com/v1/chat/completions"]));
@@ -1686,6 +1715,11 @@ describe("runDailyJob LLM providers", () => {
     expect(stats.extract_ok).toBe(4);
     expect(stats.llm_models_tripped).toBe(0);
     expect(lines.join("\n")).not.toContain("test-key");
+    // The Analyst of each of the 3 projects follows the same chain: freellm auto, then NVIDIA.
+    const analysis = requests.filter((r) => r.analysis);
+    expect(analysis.filter((r) => r.url.startsWith("https://llm.test/"))).toHaveLength(3);
+    expect(analysis.filter((r) => !r.url.startsWith("https://llm.test/"))).toHaveLength(3);
+    expect(stats.ai_analyses_run).toBe(3);
   });
 });
 
@@ -1957,6 +1991,18 @@ describe("runDaily AI analyses", () => {
     expect(stats.assessed).toBe(3);
     expect(stats.run_error).toBeUndefined();
     expect(runExitCode(stats)).toBe(0);
+  });
+
+  it("runs the AI Analyst on every project by default", async () => {
+    const { repo, deps, config, warnings } = setup();
+
+    const stats = await runDaily(deps, config);
+
+    expect(stats.ai_analyses_run).toBe(3);
+    expect(repo.aiAnalyses.map((a) => [a.kind, a.promptVersion])).toEqual(Array(3).fill(["analyst", "analyst-2026-10-10.1"]));
+    // ANALYST_REPLY quotes nothing: its point is dropped and the verdict stays "pantau".
+    expect(repo.aiAnalyses[0]?.result).toMatchObject({ verdict: "pantau", confidence: "rendah", points: [] });
+    expect(warnings).toEqual([]);
   });
 
   it("reports a failing analyze stage as failed_step 9 and still scores", async () => {

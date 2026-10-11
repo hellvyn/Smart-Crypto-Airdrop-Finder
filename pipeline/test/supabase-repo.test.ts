@@ -10,21 +10,47 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
   client: SupabaseClient;
   inserts: { table: string; row: unknown }[];
   deletes: { table: string; filters: [string, unknown][] }[];
+  updates: { table: string; row: unknown; filters: [string, unknown][] }[];
+  reads: { table: string; columns: string; filters: [string, unknown][]; orders: string[] }[];
 } {
   const inserts: { table: string; row: unknown }[] = [];
   const deletes: { table: string; filters: [string, unknown][] }[] = [];
+  const updates: { table: string; row: unknown; filters: [string, unknown][] }[] = [];
+  const reads: { table: string; columns: string; filters: [string, unknown][]; orders: string[] }[] = [];
   const ok = { data: null, error: null, count: null, status: 204, statusText: "No Content" };
   const client = {
     from: (table: string) => ({
       // A read answers `selectRows[table]` (or no row) whatever its filters, ordering or limit.
-      select: () => {
+      select: (columns = "*") => {
         const result = { ...ok, data: selectRows[table] ?? null, status: 200, statusText: "OK" };
+        const read = { table, columns, filters: [] as [string, unknown][], orders: [] as string[] };
+        reads.push(read);
         const query: Record<string, unknown> = {
           then: (resolve: (value: typeof result) => unknown) => resolve(result),
+          eq: (column: string, value: unknown) => {
+            read.filters.push([column, value]);
+            return query;
+          },
+          order: (column: string) => {
+            read.orders.push(column);
+            return query;
+          },
         };
-        for (const method of ["eq", "neq", "gte", "order", "limit", "range", "returns", "maybeSingle", "single"]) {
+        for (const method of ["neq", "gte", "limit", "range", "returns", "maybeSingle", "single"]) {
           query[method] = () => query;
         }
+        return query;
+      },
+      update: (row: unknown) => {
+        const filters: [string, unknown][] = [];
+        updates.push({ table, row, filters });
+        const query = {
+          eq: (column: string, value: unknown) => {
+            filters.push([column, value]);
+            return query;
+          },
+          then: (resolve: (value: typeof ok) => unknown) => resolve(ok),
+        };
         return query;
       },
       insert: async (row: unknown) => {
@@ -49,7 +75,7 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
       },
     }),
   } as unknown as SupabaseClient;
-  return { client, inserts, deletes };
+  return { client, inserts, deletes, updates, reads };
 }
 
 describe("SupabaseRepo.replaceTasks", () => {
@@ -72,6 +98,30 @@ describe("SupabaseRepo.replaceTasks", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("SupabaseRepo.saveStepTranslations", () => {
+  it("writes each text to the project's task at the same place in step order", async () => {
+    const { client, updates, reads } = recordingClient({ tasks: [{ id: "t-1" }, { id: "t-2" }] });
+    const repo = new SupabaseRepo(client);
+
+    await repo.saveStepTranslations("p-1", ["Bridge dulu", "Swap tiap hari"]);
+
+    expect(reads).toEqual([{ table: "tasks", columns: "id", filters: [["project_id", "p-1"]], orders: ["document_id", "position"] }]);
+    expect(updates).toEqual([
+      { table: "tasks", row: { text_id: "Bridge dulu" }, filters: [["id", "t-1"], ["project_id", "p-1"]] },
+      { table: "tasks", row: { text_id: "Swap tiap hari" }, filters: [["id", "t-2"], ["project_id", "p-1"]] },
+    ]);
+  });
+
+  it("writes nothing when the number of texts differs from the project's tasks", async () => {
+    const { client, updates } = recordingClient({ tasks: [{ id: "t-1" }, { id: "t-2" }] });
+    const repo = new SupabaseRepo(client);
+
+    await repo.saveStepTranslations("p-1", ["Bridge dulu"]);
+
+    expect(updates).toEqual([]);
   });
 });
 
