@@ -70,8 +70,6 @@ export interface PipelineConfig {
  * `scripts/vc-portfolio-check.ts`. The `portfolioUrl` is the page that lists the portfolio where one was found.
  */
 export const VC_CANDIDATES: VcConfig[] = [
-  // Terms not checked: the terms of use are on a16z.com, which the egress proxy refuses (CONNECT 403).
-  { id: "a16z-crypto", name: "a16z crypto", aliases: ["a16z", "Andreessen Horowitz"], tier: 1, portfolioUrl: "https://a16zcrypto.com/portfolio/" },
   // Terms forbid it: no access to or collection of data from the site by automated means.
   { id: "paradigm", name: "Paradigm", aliases: [], tier: 1, portfolioUrl: "https://www.paradigm.xyz/investments" },
   // 404: no portfolio page on polychain.capital (the homepage links only to job boards).
@@ -98,17 +96,24 @@ export const VC_CANDIDATES: VcConfig[] = [
   { id: "placeholder", name: "Placeholder", aliases: ["Placeholder VC"], tier: 2, portfolioUrl: "https://www.placeholder.vc/" },
   // JavaScript-rendered: only the first 10 companies are in the HTML, the rest load with "Load More".
   { id: "delphi-ventures", name: "Delphi Ventures", aliases: ["Delphi Digital"], tier: 2, portfolioUrl: "https://delphiventures.io/portfolio-crypto" },
-  // Terms not checked: the terms of use are on jumptrading.com, which the egress proxy refuses (CONNECT 403).
+  // Terms forbid it: the site (terms on jumptrading.com) is licensed for private, non-commercial use only.
   { id: "jump-crypto", name: "Jump Crypto", aliases: ["Jump"], tier: 2, portfolioUrl: "https://jumpcrypto.com/invest" },
 ];
 
 /**
- * Verified VCs: the only ones the pipeline fetches and trusts (`defaultConfig.vcs`). Empty after the check of
- * 2026-10-11 (no candidate passed every condition), so no unverified page can give a project a verified `vc_backer`.
- * An unreachable or link-less page of a listed VC only leaves that VC "not checked" in a run; it never removes signals
- * from the other VCs.
+ * Verified VCs: the only ones the pipeline fetches and trusts (`defaultConfig.vcs`), each one passed every condition
+ * above (check of 2026-10-11, docs/ops/pipeline.md "Daftar VC"), so no unverified page can give a project a verified
+ * `vc_backer`. An unreachable or link-less page of a listed VC only leaves that VC "not checked" in a run; it never
+ * removes signals from the other VCs.
  */
-export const VC_LIST: VcConfig[] = [];
+export const VC_LIST: VcConfig[] = [
+  // Page 200, 121 portfolio domains in the HTML, robots.txt allows /portfolio/. Its terms (on a16z.com) have no
+  // automation or scraping ban and no personal/noncommercial restriction, but their general clause "all content and
+  // material on the Services ... including information ... should not be used, modified, or reproduced without our
+  // prior written consent" is ambiguous for a commercial product. Used, awaiting owner confirmation (2026-10-11); to
+  // remove it, move this entry back to VC_CANDIDATES. Its sister site a16z.com is in NON_PORTFOLIO_DOMAINS.
+  { id: "a16z-crypto", name: "a16z crypto", aliases: ["a16z", "Andreessen Horowitz"], tier: 1, portfolioUrl: "https://a16zcrypto.com/portfolio/" },
+];
 
 /**
  * Model fallback order (curation spec decision #30). `max_tokens` and `temperature` are set by `streamChat`.

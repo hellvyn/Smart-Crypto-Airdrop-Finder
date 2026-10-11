@@ -51,6 +51,23 @@ describe("parsePortfolioDomains", () => {
     ]);
   });
 
+  it("keeps a16z crypto's portfolio companies and drops its sister site a16z.com (and its subdomains)", () => {
+    const a16zCrypto: VcConfig = {
+      id: "a16z-crypto",
+      name: "a16z crypto",
+      aliases: ["a16z", "Andreessen Horowitz"],
+      tier: 1,
+      portfolioUrl: "https://a16zcrypto.com/portfolio/",
+    };
+    expect(parsePortfolioDomains(fixture("vc-portfolio-a16z-crypto.html"), a16zCrypto)).toEqual([
+      "eigenlayer.xyz",
+      "layerzero.network",
+      "lido.fi",
+      "phantom.app",
+      "uniswap.org",
+    ]);
+  });
+
   it("returns nothing for a page rendered by JavaScript without links in its HTML", () => {
     const html = '<html><body><div id="__next"></div><script src="https://www.paradigm.xyz/app.js"></script></body></html>';
     expect(parsePortfolioDomains(html, PARADIGM)).toEqual([]);

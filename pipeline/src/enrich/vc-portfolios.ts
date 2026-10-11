@@ -69,6 +69,8 @@ const NON_PORTFOLIO_DOMAINS: readonly string[] = [
   "dune.com",
   "airdrops.io",
   "alphadrops.net",
+  // Sister sites of a VC in VC_LIST that its portfolio page links to (a16z crypto: a16z.com).
+  "a16z.com",
 ];
 
 const isNonPortfolio = (domain: string): boolean =>
