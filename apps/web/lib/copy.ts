@@ -24,7 +24,16 @@ export function pageTitle(page: string): string {
 export const site = {
   title: BRAND,
   description: "Airdrop yang udah dicek, lengkap dengan source-nya.",
+  /** Search result and share-card description of the landing page. */
+  longDescription:
+    "Daftar airdrop kripto yang sudah dicek: status, tingkat risiko, deadline, dan langkah garap, lengkap dengan source-nya.",
 };
+
+/** Search and share-card text of a project page; the name and chains come from the project. */
+export function projectSeoDescription(name: string, chains: string[]): string {
+  const where = chains.length > 0 ? ` di ${chains.slice(0, 3).join(", ")}` : "";
+  return `Cek airdrop ${name}${where}: status, tingkat risiko, deadline, dan langkah garap, lengkap dengan source-nya.`;
+}
 
 export const header = {
   navLabel: "Menu utama",
