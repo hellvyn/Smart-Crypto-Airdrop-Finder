@@ -1,13 +1,17 @@
 // Pure view helpers and view-model types for the public pages. No I/O, so they run in Vitest without Supabase.
 import type {
   CheckId,
+  ContradictionsAnswer,
+  CurationReason,
   DatePrecision,
   DeadlineKind,
+  LinkCheckStatus,
   RiskCheck,
   RiskLevel,
   RiskReason,
   SignalKind,
   Status,
+  StoredAnalyst,
   Tab,
   WorthLevel,
 } from "@saf/core";
@@ -27,16 +31,83 @@ export interface ProjectListItem {
   lastSeen: string;
 }
 
+/** Repeating or one-off step (`tasks.cadence`, Analyst `steps_id`). */
+export type Cadence = "daily" | "weekly" | "once";
+
+/**
+ * One risk check on the project page (#53). `detail` is what the check looked at (null on rows stored before details
+ * existed, and for a visitor's advanced checks, which are member-only, #54). `flagged`: a warning of the assessment
+ * came from this check (`CHECK_OF_REASON`).
+ */
+export interface DetailCheck extends Omit<RiskCheck, "detail"> {
+  detail: Record<string, string | number | null> | null;
+  flagged: boolean;
+}
+
+/** The latest curation. `worthLevel` and `reasons` are member-only: always null for a visitor (#45, #55). */
+export interface DetailCuration {
+  passed: boolean;
+  worthLevel: WorthLevel | null;
+  tab: Tab | null;
+  reasons: CurationReason[] | null;
+  publicFailReason: string | null;
+  endedOn: string | null;
+  /** `computed_at` ("Dicek ...", #44). */
+  checkedAt: string;
+}
+
+/** One evidence row: a source's quote for a field, with the source document's URL. */
+export interface EvidenceRow {
+  field: string;
+  value: string;
+  quote: string;
+  sourceUrl: string;
+  at: string;
+}
+
+/** A link of the project with its check result (#42); null = never checked (no `link_checks` row). */
+export interface DetailLink {
+  url: string;
+  kind: string;
+  status: LinkCheckStatus | null;
+}
+
+/** A flag of the AI Scam Analyst (member-only, #54). */
+export interface ScamFlag {
+  pattern: string;
+  quote: string;
+  explanation: string;
+}
+
+export type Contradiction = ContradictionsAnswer["items"][number];
+
 export interface ProjectDetail extends ProjectListItem {
   /** projects.id, for the watch button. */
   id: string;
   tokenSymbol: string | null;
   conflict: boolean;
-  risk: { level: RiskLevel; reasons: RiskReason[]; checks: RiskCheck[]; computedAt: string } | null;
+  risk: { level: RiskLevel; reasons: RiskReason[]; checks: DetailCheck[]; computedAt: string } | null;
+  curation: DetailCuration | null;
+  /** Signals observed in the last 14 days, the ones curation used (like `public_list`). */
+  signals: CuratedSignal[];
+  /** Latest Analyst result (#54): member-only, never queried for a visitor; null when missing or unreadable. */
+  analyst: StoredAnalyst | null;
+  /** Latest Scam Analyst flags: member-only, never queried for a visitor (null). */
+  scamFlags: ScamFlag[] | null;
+  /** Latest contradiction analysis (public). */
+  contradictions: Contradiction[];
+  /** Source steps in `position` order; `text_id` (Indonesian) when there is one. */
+  steps: { text: string; cadence: Cadence }[];
+  /** v3 extraction facts (key_parameter:*, source_rating:*, latest_update, claimed_backer, capital_required). */
+  facts: EvidenceRow[];
+  /** Every other evidence row (status quotes and the like). */
+  evidence: EvidenceRow[];
+  /** Distinct source document URLs among the evidence: the only URLs an AI `source_url` may link to. */
+  sourceUrls: string[];
   deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision; text: string }[];
-  tasks: string[];
-  links: { url: string; kind: string }[];
-  evidence: { field: string; value: string; quote: string; sourceUrl: string; at: string }[];
+  links: DetailLink[];
+  /** "Claim open · link dicek" (#42): an open claim deadline and every claim link checked as official. */
+  claimOpenChecked: boolean;
 }
 
 export interface ListFilters {
@@ -218,11 +289,6 @@ export function isFirmPrecision(precision: string): boolean {
   return precision === "exact" || precision === "approximate";
 }
 
-function time(value: string): number {
-  const t = Date.parse(value);
-  return Number.isNaN(t) ? 0 : t;
-}
-
 /** Every risk check the pipeline runs (`CheckId` of @saf/core, `ai_review` included), in display order. */
 const CHECK_IDS = Object.keys(labels.checks) as CheckId[];
 
@@ -268,19 +334,6 @@ export function formatDateTime(d: Date): string {
 }
 
 // ---- Row selection helpers (pure, used by lib/queries.ts) ----
-
-/** The latest risk assessment: greatest `computedAt`, ties broken by greatest `seq`. */
-export function pickLatestRisk<T extends { computedAt: string; seq: number }>(rows: T[]): T | null {
-  let best: T | null = null;
-  for (const r of rows) {
-    if (!best) best = r;
-    else {
-      const dt = time(r.computedAt) - time(best.computedAt);
-      if (dt > 0 || (dt === 0 && r.seq > best.seq)) best = r;
-    }
-  }
-  return best;
-}
 
 /** `YYYY-MM-DD` of `now` in UTC. */
 export function utcToday(now: Date): string {

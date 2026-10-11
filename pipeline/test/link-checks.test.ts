@@ -29,6 +29,7 @@ function scored(id: string, links: { url: string; kind: string }[], officialDoma
     deadlines: [],
     links,
     sourceCount: 1,
+    documentCount: 1,
     sourceKinds: ["airdrops_io"],
     lookalikeOfName: null,
     lookalikeOfDomains: [],

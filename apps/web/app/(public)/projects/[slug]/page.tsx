@@ -17,10 +17,15 @@ import { listWallets } from "@/lib/wallets";
 export default async function ProjectPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const db = await createServerClient();
-  const [project, lastRunAt] = await Promise.all([getProjectDetail(db, slug), getLastSuccessfulRunAt(db)]);
-  if (!project) notFound();
-  // The page is public; only a signed-in user gets the watch and farming state (null = signed out).
+  // The page is public. Signed in = member (#45): only then are the member-only parts queried at all.
   const user = await getUser();
+  const now = new Date();
+  const [project, lastRunAt] = await Promise.all([
+    getProjectDetail(db, slug, { member: user !== null, now }),
+    getLastSuccessfulRunAt(db),
+  ]);
+  if (!project) notFound();
+  // Only a signed-in user gets the watch and farming state (null = signed out).
   const [watching, farming] = user
     ? await Promise.all([isWatching(db, project.id), isFarming(db, project.id)])
     : [null, null];
@@ -31,12 +36,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
       <p>
         <Link href={LIST_PATH}>{detail.back}</Link>
       </p>
-      <StaleBanner lastRunAt={lastRunAt} now={new Date()} />
+      <StaleBanner lastRunAt={lastRunAt} now={now} />
       <div className="project-actions">
         <WatchButton projectId={project.id} slug={project.slug} watching={watching} />
         <FarmButton projectId={project.id} farming={farming} />
       </div>
-      <ProjectDetailView project={project} />
+      <ProjectDetailView project={project} member={user !== null} now={now} />
       <WalletActivitySection project={project} wallets={wallets} />
     </>
   );

@@ -70,6 +70,7 @@ function project(id: string, name: string, officialDomains: string[]): ProjectFo
     deadlines: [],
     links: [],
     sourceCount: 1,
+    documentCount: 1,
     sourceKinds: [],
     lookalikeOfName: null,
     lookalikeOfDomains: [],

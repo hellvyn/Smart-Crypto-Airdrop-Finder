@@ -34,6 +34,15 @@ export const analystSchema = z.object({
 });
 
 export type AnalystAnswer = z.infer<typeof analystSchema>;
+
+/**
+ * A stored Analyst result (`ai_analyses.result` of kind `analyst`), for display. The same contract as `analystSchema`
+ * except that `points` may be empty: `postProcessAnalyst` drops every point whose quote is not in its source, and a
+ * result can be left with none. The answer schema keeps requiring a point, so a model answer without one is refused.
+ */
+export const storedAnalystSchema = analystSchema.extend({ points: z.array(pointSchema).max(5) });
+
+export type StoredAnalyst = z.infer<typeof storedAnalystSchema>;
 export type AnalystVerdict = AnalystAnswer["verdict"];
 
 const HOST_RE = /\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b/gi;

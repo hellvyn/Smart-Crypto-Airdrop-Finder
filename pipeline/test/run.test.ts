@@ -1339,6 +1339,32 @@ describe("runDaily domain check coverage", () => {
     return { http, gets };
   }
 
+  it("records what the checks looked at: official domains compared, documents read, the domain's age (#53)", async () => {
+    const { repo, deps, config } = setup();
+    await runDaily(deps, config);
+    const checks = (await latestRisk(repo, "ink"))?.checks ?? [];
+    const detail = (id: string) => checks.find((c) => c.id === id)?.detail;
+    // DeepBook, Ink and Hyperdrive Lend: one official domain each.
+    expect(detail("lookalike")).toEqual({ compared: 3 });
+    // The Ink page and the Telegram message that mentions Ink.
+    expect(detail("dangerous_asks")).toEqual({ sources: 2 });
+    // Registered 2020-01-01 (RDAP), checked on 2026-10-10.
+    expect(detail("domain_age")).toEqual({ domain: "inkonchain.com", ageDays: 2474 });
+  });
+
+  it("still scores every project, without the comparison count, when counting the official domains fails", async () => {
+    const { repo, deps, config } = setup();
+    repo.countOfficialDomains = async () => {
+      throw new Error("database unavailable");
+    };
+    const stats = await runDaily(deps, config);
+
+    expect(stats.run_error).toBeUndefined();
+    expect(stats.assessed).toBe(3);
+    expect(stats.score_failed ?? 0).toBe(0);
+    expect((await latestRisk(repo, "ink"))?.checks.find((c) => c.id === "lookalike")?.detail).toEqual({ compared: null });
+  });
+
   it("reports domain check coverage in the run stats", async () => {
     const { deps, config } = setup();
     const stats = await runDaily(deps, config);

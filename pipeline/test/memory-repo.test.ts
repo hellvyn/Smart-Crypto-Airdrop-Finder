@@ -308,6 +308,19 @@ describe("MemoryRepo projects", () => {
     expect(scored?.links).toEqual([{ url: "https://ink.test/", kind: "claim" }]);
   });
 
+  it("counts the distinct documents among the project's evidence", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    const d2 = await repo.upsertDocument(doc({ url: "https://x.test/2", sourceKey: "telegram:airdrops_io" }), "2");
+    await repo.upsertDocument(doc({ url: "https://x.test/3" }), "3");
+    for (const [documentId, field] of [[d1.id, "status"], [d1.id, "dangerous_ask"], [d2.id, "status"]] as const) {
+      await repo.addEvidence({ projectId: p.id, documentId, field, value: "live", quote: "q", at: T0 });
+    }
+    const [scored] = await repo.listProjectsForScoring(30, T0);
+    expect(scored?.documentCount).toBe(2);
+  });
+
   it("lists a document's steps in position order with their cadence", async () => {
     const repo = new MemoryRepo();
     const p = await repo.createProject(project(), T0);
@@ -937,5 +950,19 @@ describe("MemoryRepo link checks and claim pages", () => {
       { url: "https://claim.ink.xyz/", text: "Claim closed", fetchedAt: later },
     ]);
     expect(await repo.listClaimPages([])).toEqual([]);
+  });
+});
+
+describe("MemoryRepo.countOfficialDomains", () => {
+  it("counts each official domain of every project once, ignoring case", async () => {
+    const repo = new MemoryRepo();
+    await repo.createProject(project({ slug: "a", nameKey: "a", officialDomains: ["inkonchain.com", "ink.xyz"] }), T0);
+    await repo.createProject(project({ slug: "b", nameKey: "b", officialDomains: ["InkOnChain.com"] }), T0);
+    await repo.createProject(project({ slug: "c", nameKey: "c", officialDomains: [] }), T0);
+    expect(await repo.countOfficialDomains()).toBe(2);
+  });
+
+  it("is 0 without a project", async () => {
+    expect(await new MemoryRepo().countOfficialDomains()).toBe(0);
   });
 });

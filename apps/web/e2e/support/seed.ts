@@ -10,7 +10,8 @@ export interface SeededProject {
 }
 
 export interface Seed {
-  main: SeededProject;
+  /** Also has a claim link checked as phishing (`phishingUrl`), which must never be an anchor (#42). */
+  main: SeededProject & { phishingUrl: string };
   conflicted: SeededProject;
   runId: string;
 }
@@ -79,11 +80,12 @@ export async function seedProjects(): Promise<Seed> {
   const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 
   // Project 1: risk, deadline, evidence, links, tasks (once, daily and weekly steps).
-  const main: SeededProject = {
+  const main: Seed["main"] = {
     slug: `e2e-main-${tag}`,
     name: `E2E Main ${tag}`,
     sourceUrl: `https://source.example/e2e-main-${tag}`,
     claimUrl: `https://checker.example/${tag}`,
+    phishingUrl: `https://claim-phish-${tag}.example/claim`,
   };
   const mainDoc = await insertDocument(main.sourceUrl);
   const mainId = await insertProject({
@@ -146,10 +148,16 @@ export async function seedProjects(): Promise<Seed> {
         { project_id: mainId, url: main.claimUrl, kind: "claim" },
         { project_id: mainId, url: `https://docs.example/${tag}`, kind: "docs" },
         { project_id: mainId, url: "javascript:alert(1)", kind: "website" },
+        { project_id: mainId, url: main.phishingUrl, kind: "claim" },
       ])
       .select("id"),
     "links",
   );
+  must(
+    await db.from("link_checks").insert({ url: main.phishingUrl, status: "phishing", checked_at: new Date().toISOString() }).select("url"),
+    "phishing link check",
+  );
+  linkCheckUrls.push(main.phishingUrl);
   must(
     await db
       .from("evidence")
@@ -162,7 +170,7 @@ export async function seedProjects(): Promise<Seed> {
           quote: `Claims are open now ${tag}`,
           at: new Date().toISOString(),
         },
-        // v3 extraction facts: not shown on the public page until they get their own wording (Plan 6).
+        // v3 extraction facts: each has its own place on the project page (Plan 6 Task 5).
         ...[
           { field: "claimed_backer", value: "Paradigm", quote: `Backed by Paradigm ${tag}` },
           { field: "key_parameter:allocation", value: "10% of supply", quote: `10% of supply ${tag}` },
@@ -402,5 +410,162 @@ export async function seedCuratedList(): Promise<CuratedSeed> {
     "curated run",
   );
   runIds.push(run.id as string);
+  return seed;
+}
+
+export interface ProjectPageSeed extends SeededProject {
+  /** Text only a member may ever receive (#54): an Analyst point, its effort note, the curation's reason. */
+  memberOnly: { point: string; effortNote: string; reason: string };
+  /** The public contradiction's explanation and the Indonesian step text. */
+  contradiction: string;
+  step: string;
+  update: string;
+}
+
+/**
+ * The new project page (Plan 6 Task 5): a project that passed curation with every key check and three advanced checks
+ * run (hack history: 0 cases), an AI verdict, a contradiction, steps with Indonesian text, an update, a verified VC
+ * and a claimed backer, and an open claim whose only claim link is official.
+ */
+export async function seedProjectPage(): Promise<ProjectPageSeed> {
+  const db = adminClient();
+  const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const now = Date.now();
+  const at = (msAgo: number) => new Date(now - msAgo).toISOString();
+  const day = (offset: number) => new Date(now + offset * 86_400_000).toISOString().slice(0, 10);
+  const seed: ProjectPageSeed = {
+    slug: `e2e-pp-${tag}`,
+    name: `E2E PP ${tag}`,
+    sourceUrl: `https://source.example/e2e-pp-${tag}`,
+    claimUrl: `https://claim.e2e-pp-${tag}.example/`,
+    memberOnly: {
+      point: `Poin analisis khusus member ${tag}`,
+      effortNote: `Catatan effort khusus member ${tag}`,
+      reason: `Catatan penilaian khusus member ${tag}`,
+    },
+    contradiction: `Satu source bilang belum ada token ${tag}`,
+    step: `Trade minimal sekali di app ${tag}`,
+    update: `Season 2 points program udah mulai ${tag}`,
+  };
+  const otherSource = `https://t.me/e2e_pp_${tag}/1`;
+  const id = await insertProject({ slug: seed.slug, name: seed.name, name_key: seed.slug, chains: ["base"], status: "live" });
+  const docA = await insertDocument(seed.sourceUrl);
+  const docB = await insertDocument(otherSource);
+
+  must(
+    await db
+      .from("risk_assessments")
+      .insert({
+        project_id: id,
+        level: "low",
+        points: 0,
+        reasons: [],
+        checks: [
+          { id: "dangerous_asks", ran: true, detail: { sources: 2 } },
+          { id: "phishing_list", ran: true, detail: { checked: 2, hits: 0 } },
+          { id: "domain_age", ran: true, detail: { domain: `e2e-pp-${tag}.example`, ageDays: 820 } },
+          { id: "lookalike", ran: true, detail: { compared: 1240 } },
+          { id: "token_security", ran: false },
+          { id: "contract_verified", ran: false },
+          { id: "hack_history", ran: true, detail: { count: 0 } },
+          { id: "corroboration", ran: true, detail: { sources: 2 } },
+          { id: "ai_review", ran: true },
+        ],
+        computed_at: at(3_600_000),
+      })
+      .select("id"),
+    "page risk",
+  );
+  must(
+    await db
+      .from("curations")
+      .insert({
+        project_id: id,
+        passed: true,
+        worth_level: "high",
+        tab: "live_now",
+        status_at: "live",
+        reasons: [{ code: "e2e", kind: "worth", message: seed.memberOnly.reason }],
+        computed_at: at(3_600_000),
+      })
+      .select("id"),
+    "page curation",
+  );
+  must(
+    await db
+      .from("project_signals")
+      .insert({ project_id: id, kind: "vc_backer", value: { investor: "Paradigm", tier: 1 }, source: "vc_portfolio", verified: true, observed_at: at(0) })
+      .select("id"),
+    "page signal",
+  );
+  const fact = (document_id: string, field: string, value: string, quote: string) => ({ project_id: id, document_id, field, value, quote, at: at(0) });
+  must(
+    await db
+      .from("evidence")
+      .insert([
+        fact(docA, "status", "live", `Live now ${tag}`),
+        fact(docA, "latest_update", "2026-10-01", seed.update),
+        fact(docA, "source_rating:difficulty", "Easy", "Difficulty: Easy"),
+        fact(docA, "key_parameter:allocation", "10% of supply", "10% of supply"),
+        fact(docB, "claimed_backer", "Jump", `Backed by Jump ${tag}`),
+      ])
+      .select("id"),
+    "page evidence",
+  );
+  must(
+    await db
+      .from("tasks")
+      .insert([
+        { project_id: id, document_id: docA, description: "Trade once a day", text_id: seed.step, cadence: "daily", position: 0 },
+        { project_id: id, document_id: docA, description: "Bridge to Base", text_id: null, cadence: "once", position: 1 },
+      ])
+      .select("id"),
+    "page tasks",
+  );
+  must(
+    await db.from("deadlines").insert({ project_id: id, document_id: docA, kind: "claim", date: day(7), precision: "exact", text: "Claim" }).select("id"),
+    "page deadline",
+  );
+  must(await db.from("links").insert({ project_id: id, url: seed.claimUrl, kind: "claim" }).select("id"), "page link");
+  must(await db.from("link_checks").insert({ url: seed.claimUrl, status: "official", checked_at: at(0) }).select("url"), "page link check");
+  linkCheckUrls.push(seed.claimUrl);
+
+  const analysis = (kind: string, result: unknown) => ({
+    project_id: id,
+    kind,
+    input_hash: `e2e-${kind}`,
+    result,
+    model: "e2e",
+    prompt_version: "e2e",
+    created_at: at(3_600_000),
+  });
+  must(
+    await db
+      .from("ai_analyses")
+      .insert([
+        analysis("analyst", {
+          verdict: "garap",
+          confidence: "tinggi",
+          points: [{ text: seed.memberOnly.point, quote: "10% of supply", source_url: seed.sourceUrl }],
+          effort: { minutes_per_day: 10, capital_usd_min: 100, note: seed.memberOnly.effortNote },
+          steps_id: [],
+        }),
+        analysis("scam", { flags: [] }),
+        analysis("contradictions", {
+          items: [
+            {
+              topic: "Token",
+              quote_a: "No token has been announced yet",
+              url_a: seed.sourceUrl,
+              quote_b: "TGE expected in Q1",
+              url_b: otherSource,
+              explanation: seed.contradiction,
+            },
+          ],
+        }),
+      ])
+      .select("id"),
+    "page analyses",
+  );
   return seed;
 }

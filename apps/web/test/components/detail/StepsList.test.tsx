@@ -1,0 +1,67 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { StepsList } from "@/components/detail/StepsList";
+
+afterEach(cleanup);
+
+describe("StepsList", () => {
+  it("is titled 03 · Step garap", () => {
+    render(<StepsList steps={[]} links={[]} />);
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("03 · Step garap");
+  });
+
+  it("groups the steps by cadence, Daily, then Weekly, then Sekali, keeping their order", () => {
+    render(
+      <StepsList
+        steps={[
+          { text: "Bridge aset ke Arbitrum.", cadence: "once" },
+          { text: "Trade minimal sekali.", cadence: "daily" },
+          { text: "Cek points tiap Senin.", cadence: "weekly" },
+          { text: "Connect akun X.", cadence: "once" },
+          { text: "Check-in di dashboard.", cadence: "daily" },
+        ]}
+        links={[]}
+      />,
+    );
+    const groups = screen.getAllByRole("list").map((list) => [
+      list.getAttribute("aria-label"),
+      within(list).getAllByRole("listitem").map((li) => li.textContent),
+    ]);
+    expect(groups).toEqual([
+      ["Daily", ["Trade minimal sekali.", "Check-in di dashboard."]],
+      ["Weekly", ["Cek points tiap Senin."]],
+      ["Sekali", ["Bridge aset ke Arbitrum.", "Connect akun X."]],
+    ]);
+  });
+
+  it("says so when there is no step", () => {
+    render(<StepsList steps={[]} links={[]} />);
+    expect(screen.getByText("Belum ada step.")).toBeTruthy();
+  });
+
+  it("shows the check status of a link a step names, and never links a phishing one", () => {
+    const { container } = render(
+      <StepsList
+        steps={[
+          { text: "Trade di app.nebula.example tiap hari.", cadence: "daily" },
+          { text: "Claim di claim-nebula.example.", cadence: "once" },
+        ]}
+        links={[
+          { url: "https://app.nebula.example/trade", kind: "app", status: "official" },
+          { url: "https://claim-nebula.example/", kind: "claim", status: "phishing" },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "app.nebula.example/trade" }).getAttribute("href")).toBe("https://app.nebula.example/trade");
+    expect(screen.getByText("✓ Official domain")).toBeTruthy();
+    expect(screen.getByText("Link di-hide: kedeteksi phishing")).toBeTruthy();
+    expect(container.querySelector("a[href*='claim-nebula']")).toBeNull();
+  });
+
+  it("renders a step's markup and URL as text", () => {
+    const { container } = render(<StepsList steps={[{ text: "<b>Go</b> https://x.example", cadence: "once" }]} links={[]} />);
+    expect(container.querySelector("b, a")).toBeNull();
+    expect(screen.getByText("<b>Go</b> https://x.example")).toBeTruthy();
+  });
+});

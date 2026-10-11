@@ -115,6 +115,8 @@ export interface ProjectForScoring extends ProjectRow {
   links: { url: string; kind: string }[];
   /** Number of distinct document source keys among the project's evidence. */
   sourceCount: number;
+  /** Number of distinct documents among the project's evidence (the texts the risk scanner read). */
+  documentCount: number;
   /** Distinct `source_kind`s of the documents among the project's evidence, sorted. */
   sourceKinds: SourceKind[];
   /** Name of the `lookalikeOf` project (null when there is none). */
@@ -253,6 +255,8 @@ export interface PipelineRepo {
    */
   listProjectsForScoring(activeSinceDays: number, now: Date): Promise<ProjectForScoring[]>;
   latestRiskLevel(projectId: string): Promise<RiskLevel | null>;
+  /** Distinct official domains (case-insensitive) of every project, what the lookalike check compares against (#53). */
+  countOfficialDomains(): Promise<number>;
   /** Appends a history row. A level change (or the first assessment) also writes a `project_changes` row. */
   saveRiskAssessment(projectId: string, a: RiskAssessment, at: Date): Promise<void>;
   startRun(at: Date): Promise<string>;

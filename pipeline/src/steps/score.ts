@@ -292,6 +292,10 @@ export async function scoreProjects(
     if (official.phishing_list) stats.phishing_list_ran += 1;
   }
 
+  // What the lookalike check compared against (#53). Only shown on the project page, so a failed count is left unknown
+  // instead of stopping the scoring.
+  const officialDomainCount = await repo.countOfficialDomains().catch(() => null);
+
   const today = now.toISOString().slice(0, 10);
   for (const project of projects) {
     const projectLinks = domainsByProject.get(project.id) ?? [];
@@ -328,6 +332,8 @@ export async function scoreProjects(
         hackCount: hacks ? countHacks(hacks, project.name) : null,
         aiFlags: aiFlagsFromAnalyses(scam?.result ?? null, contradictions?.result ?? null),
         claimLinks: claimLinks.byProject.get(project.id) ?? [],
+        officialDomainCount,
+        documentsRead: project.documentCount,
       };
       const assessment = assessRisk(input);
       await repo.saveRiskAssessment(project.id, assessment, now);

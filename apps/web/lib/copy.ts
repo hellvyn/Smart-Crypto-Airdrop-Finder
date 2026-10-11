@@ -2,7 +2,17 @@
 // design C mockups (docs/design/airdropiq-c) second. Style rules: "kamu" tone, no em dash, straight quotes, and none of
 // the banned words; test/copy-style.test.ts checks every string literal in this file.
 // Pure module (no I/O, no server-only imports, type-only imports), so client components can use it too.
-import type { CheckId, DatePrecision, DeadlineKind, RiskLevel, Severity, Status, Tab, WorthLevel } from "@saf/core";
+import type {
+  AnalystVerdict,
+  CheckId,
+  DatePrecision,
+  DeadlineKind,
+  RiskLevel,
+  Severity,
+  Status,
+  Tab,
+  WorthLevel,
+} from "@saf/core";
 
 const BRAND = "AirdropIQ";
 
@@ -196,29 +206,140 @@ export const list = {
   },
 };
 
-/** The current project page (Plan 6 Task 5 rebuilds it). */
+/** The project page (Plan 6 Task 5; mockup docs/design/airdropiq-c/CProject.dc.html). */
 export const detail = {
   back: "← Balik ke list",
   chains: (chains: string[]) => `Chain: ${chains.join(", ")}`,
   chainUnknown: "Chain belum diketahui",
-  riskHeading: "Risiko",
-  riskReasons: "Alasan risiko",
-  noReasons: "Gak ada alasan risiko yang tercatat.",
-  assessed: (day: string) => `Dinilai ${day}`,
-  notAssessed: "Project ini belum dinilai.",
-  conflictHeading: "Sumber yang beda cerita",
-  conflictText: "Source-nya gak sepakat soal status airdrop ini. Anggap aja statusnya belum pasti.",
-  conflictQuotes: "Kutipan status yang beda",
-  deadlinesHeading: "Deadline",
-  dateUnknown: "tanggal belum diketahui",
-  noDeadlines: "Belum ada deadline.",
-  tasksHeading: "Step garap",
-  noTasks: "Belum ada step.",
-  linksHeading: "Link",
-  noLinks: "Gak ada link lain.",
-  evidenceHeading: "Bukti",
-  seeConflict: "Lihat kutipan yang beda cerita di atas.",
-  noEvidence: "Belum ada bukti yang tercatat.",
+  /** The risk level in the page head (glossary "Risiko rendah"). */
+  riskHead: (level: string) => `Risiko ${level.toLowerCase()}`,
+  aiLabel: "Analisis AI",
+  aiUnavailable: "Analisis AI belum tersedia",
+  sections: {
+    ai: "AI verdict",
+    contradictions: "Sumber yang beda cerita",
+    steps: "Step garap",
+    safety: "Security check",
+    effort: "Estimasi effort",
+    why: "Kenapa lolos",
+    summary: "Ringkasan",
+    latestUpdate: "Update terbaru",
+  },
+  ai: {
+    verdict: { garap: "Garap", pantau: "Pantau", skip: "Skip" } satisfies Record<AnalystVerdict, string>,
+    confidence: (level: string) => `Confidence: ${level}`,
+    points: "Poin analisis",
+    noPoints: "Belum ada poin yang kutipannya cocok sama source, jadi verdict-nya kami tahan di Pantau.",
+    source: "source",
+  },
+  contradictions: {
+    empty: "Belum ada source yang beda cerita.",
+    source: (n: number) => `source ${n}`,
+    statusText: "Source-nya gak sepakat soal status airdrop ini. Anggap aja statusnya belum pasti.",
+    statusQuotes: "Kutipan status yang beda",
+  },
+  steps: {
+    empty: "Belum ada step.",
+    cadence: { daily: "Daily", weekly: "Weekly", once: "Sekali" } satisfies Record<"daily" | "weekly" | "once", string>,
+  },
+  safety: {
+    recheck: (time: string) => `Re-check tiap pagi · terakhir ${time} WIB`,
+    stripLabel: "Ringkasan cek",
+    strip: { layers: "Lapis cek", sources: "Source dibaca", links: "Link dicek", redFlags: "Red flag" },
+    reasons: "Alasan risiko",
+    noReasons: "Gak ada alasan risiko yang tercatat.",
+    notAssessed: "Project ini belum dinilai.",
+    scamFlags: "Temuan Analisis AI di teks source",
+    mustPass: "Wajib lolos",
+    mustPassNote: "Satu aja gagal jalan, project ini gak bakal tampil. Bukan dianggap lolos.",
+    code: (n: number) => `Cek ${String(n).padStart(2, "0")}`,
+    /** Where each check gets its answer (glossary #53). */
+    sources: {
+      dangerous_asks: "Scanner AirdropIQ",
+      lookalike: "Database AirdropIQ",
+      domain_age: "RDAP registry",
+      phishing_list: "GoPlus Security",
+      token_security: "GoPlus Security",
+      contract_verified: "Blockscout",
+      hack_history: "DefiLlama Hacks",
+      corroboration: "Database AirdropIQ",
+      ai_review: "Analisis AI",
+    } satisfies Record<CheckId, string>,
+    notRun: "Gak jalan",
+    results: {
+      dangerous_asks: { clean: "Gak ada", found: "Ketemu" },
+      lookalike: { clean: "Gak ada yang mirip", found: "Ada yang mirip" },
+      domain_age: { clean: "Gak ada domain baru", found: "Ada domain baru" },
+      phishing_list: { clean: "Bersih", found: "Kedeteksi" },
+    },
+    details: {
+      dangerous_asks: (sources: number) =>
+        `Semua teks dari ${sources} source di-scan, termasuk tiap step garap. Kalimat peringatan kayak "jangan share seed phrase" gak dihitung.`,
+      lookalike: (compared: string) => `Link project ini dibandingin sama ${compared} domain official di database kami.`,
+      domain_age: (date: string) =>
+        `Terdaftar ${date}. Domain official di bawah 90 hari, atau link claim di bawah 30 hari, langsung bikin risiko naik.`,
+      phishing_list: (checked: number) => `${checked} domain dan link dicocokin satu-satu ke database phishing.`,
+    },
+    age: { years: (n: number) => `${n} tahun`, months: (n: number) => `${n} bulan`, days: (n: number) => `${n} hari` },
+    advanced: "Advanced check",
+    advancedTitles: {
+      token_security: "Risiko kontrak token",
+      contract_verified: "Kontrak verified",
+      hack_history: "Riwayat hack",
+      corroboration: "Cross-check antar source",
+      ai_review: "AI baca halaman claim",
+    },
+    advancedNotes: {
+      token_security: "Kontrak token dicek: honeypot, pemilik yang bisa cetak token, pembuat yang ditandai.",
+      contract_verified: "Source code kontrak token dicek udah diverifikasi atau belum.",
+      hack_history: "Nama project dicocokin ke database exploit DeFi.",
+      corroboration: "Status, deadline, dan link dibandingin antar source. Yang beda cerita kami tulis di bagian 02.",
+      ai_review: 'Dicari: desakan waktu, "connect wallet buat cek eligibility", admin palsu, minta seed phrase secara halus.',
+    },
+    hacks: (count: number) => `${count} kasus`,
+    sourceCount: (n: number) => `${n} source`,
+    scam: { clean: "Gak ada pola scam", found: "Ada pola scam" },
+    generic: { clean: "Gak ada temuan", found: "Ada temuan" },
+    flaggedPublic: "Ada temuan. Lihat alasan risiko di atas.",
+    links: "Link claim & app",
+  },
+  effort: {
+    minutes: (n: number) => `±${n}`,
+    minutesLabel: "menit / hari",
+    capital: (amount: string) => `$${amount}+`,
+    capitalLabel: "modal awal",
+    free: "Gratis",
+    unknown: "Belum jelas",
+    sourcesLabel: "Kata source",
+    rating: (source: string, value: string) => `${source}: ${value}`,
+    ratingNames: { difficulty: "Kesulitan", cost: "Biaya", capital: "Modal" },
+    capitalWords: { none: "gratis", low: "modal kecil", high: "modal besar" } as Record<string, string>,
+  },
+  why: {
+    empty: "Belum ada sinyal yang tercatat.",
+    verified: (source: string) => `Verified · ${source}`,
+    sources: { vc: "portfolio VC", tvl: "DefiLlama", coingecko: "CoinGecko" },
+    reportedLabel: "Laporan AlphaDrops, belum verified",
+    claimedLabel: "Klaim project, belum verified",
+    claimQuote: (quote: string) => `"${quote}"`,
+    curatedSourceNames: {
+      airdrops_io: "airdrops.io",
+      telegram: "Telegram",
+      alphadrops: "AlphaDrops",
+      defillama: "DefiLlama",
+    } as Record<string, string>,
+    notes: "Catatan penilaian kami",
+  },
+  summary: {
+    deadline: (kind: string, date: string, precision: string) => `${kind}: ${date} (${precision})`,
+    dateUnknown: "tanggal belum diketahui",
+    keyParameters: { allocation: "Alokasi", distribution: "Distribusi", tge: "TGE" } as Record<string, string>,
+    keyParameter: (name: string, value: string) => `${name}: ${value}`,
+  },
+  latestUpdate: {
+    empty: "Belum ada update dari source.",
+    source: "source",
+  },
   officialChecker: "Checker official (belum verified)",
   watch: "Tambah ke watchlist",
   unwatch: "Hapus dari watchlist",

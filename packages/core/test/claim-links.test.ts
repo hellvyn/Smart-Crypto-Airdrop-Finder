@@ -98,7 +98,17 @@ describe("assessRisk with claim links", () => {
         { url: "https://other-claim.io/", status: "unchecked" },
       ],
     });
-    expect(a).toEqual(assessRisk(input));
+    const base = assessRisk(input);
+    expect({ level: a.level, points: a.points, reasons: a.reasons }).toEqual({
+      level: base.level,
+      points: base.points,
+      reasons: base.reasons,
+    });
+    expect(a.checks.map(({ id, ran }) => ({ id, ran }))).toEqual(base.checks.map(({ id, ran }) => ({ id, ran })));
+    // The two checked links only count in what the phishing check looked at (#53).
+    expect(a.checks.find((c) => c.id === "phishing_list")?.detail?.checked).toBe(
+      Number(base.checks.find((c) => c.id === "phishing_list")?.detail?.checked) + 2,
+    );
   });
 
   it("never lowers a critical level", () => {

@@ -20,7 +20,7 @@ export type { Severity, RiskLevel, RiskReason } from "./types.js";
 export { DANGEROUS_ASK_CODES, detectDangerousAsks, findDangerousAskSentences } from "./risk/dangerous-asks.js";
 export type { DangerousAskCode } from "./risk/dangerous-asks.js";
 export { isLookalike } from "./risk/lookalike.js";
-export { assessRisk } from "./risk/assess.js";
+export { CHECK_OF_REASON, assessRisk } from "./risk/assess.js";
 export { classifyLink } from "./risk/claim-links.js";
 export type { ClaimLink, LinkCheckStatus } from "./risk/claim-links.js";
 export type { CheckId, RiskCheck, RiskInput, RiskAssessment } from "./risk/assess.js";
@@ -45,8 +45,8 @@ export { curate, ENDED_SCORING_DAYS, KEY_CHECKS, STRONG_SCAM_PATTERNS } from "./
 export { worth } from "./curate/worth.js";
 export { trackRecord } from "./curate/track-record.js";
 export type { TrackRecord, TrackRecordProject } from "./curate/track-record.js";
-export { analystSchema, postProcessAnalyst, stepTranslationGrounded } from "./curate/analyst.js";
-export type { AnalystAnswer, AnalystVerdict } from "./curate/analyst.js";
+export { analystSchema, postProcessAnalyst, stepTranslationGrounded, storedAnalystSchema } from "./curate/analyst.js";
+export type { AnalystAnswer, AnalystVerdict, StoredAnalyst } from "./curate/analyst.js";
 export { FORBIDDEN_PHRASES, forbiddenPhrases, replaceEmDash } from "./curate/ai-style.js";
 export {
   SCAM_PATTERNS,

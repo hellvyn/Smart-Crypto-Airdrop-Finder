@@ -1,56 +1,18 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { ProjectDetailView } from "../components/ProjectDetailView";
 import { Pagination } from "../components/Pagination";
 import { ProjectRow } from "../components/ProjectRow";
 import { RiskBadge } from "../components/RiskBadge";
+import { RiskLine } from "../components/RiskLine";
 import { StaleBanner } from "../components/StaleBanner";
 import { StatusBadge } from "../components/StatusBadge";
 import { WalletActivity } from "../components/WalletActivity";
-import type { ProjectDetail } from "../lib/view";
 
 afterEach(cleanup);
 
 const LEVELS = ["low", "medium", "high", "critical", "insufficient_data", null] as const;
 const STATUSES = ["live", "announced", "speculative", "ended", "unknown"] as const;
-
-const CHECK_IDS = [
-  "dangerous_asks",
-  "phishing_list",
-  "domain_age",
-  "lookalike",
-  "token_security",
-  "contract_verified",
-  "hack_history",
-  "corroboration",
-] as const;
-
-function detail(over: Partial<ProjectDetail> = {}): ProjectDetail {
-  return {
-    id: "p1",
-    slug: "demo",
-    name: "Demo Protocol",
-    status: "live",
-    riskLevel: "medium",
-    chains: ["ethereum"],
-    nextDeadline: null,
-    lastSeen: "2026-10-09T00:00:00Z",
-    tokenSymbol: "DEMO",
-    conflict: false,
-    risk: {
-      level: "medium",
-      reasons: [{ code: "young_domain", severity: "medium", message: "Domain is younger than 90 days", source: "rdap" }],
-      checks: CHECK_IDS.map((id, i) => ({ id, ran: i < 4 })),
-      computedAt: "2026-10-10T01:00:00Z",
-    },
-    deadlines: [],
-    tasks: [],
-    links: [],
-    evidence: [],
-    ...over,
-  };
-}
 
 describe("RiskBadge", () => {
   it("renders the Tinggi label under the Risiko heading", () => {
@@ -156,106 +118,9 @@ describe("ProjectRow", () => {
   });
 });
 
-describe("ProjectDetailView", () => {
-  it("shows Chain belum diketahui and no wallet check button when chains is empty", () => {
-    render(<ProjectDetailView project={detail({ chains: [] })} />);
-    expect(screen.getByText("Chain belum diketahui")).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.queryByText(/cek aktivitas wallet/i)).toBeNull();
-  });
-
-  it("lists the chains", () => {
-    render(<ProjectDetailView project={detail({ chains: ["ethereum", "base"] })} />);
-    expect(screen.getByText("Chain: ethereum, base")).toBeTruthy();
-  });
-
-  it("shows the two conflicting status quotes under Sumber yang beda cerita", () => {
-    render(
-      <ProjectDetailView
-        project={detail({
-          conflict: true,
-          evidence: [
-            { field: "status", value: "live", quote: "The airdrop is live now", sourceUrl: "https://a.example/post", at: "2026-10-08T00:00:00Z" },
-            { field: "status", value: "ended", quote: "The airdrop has ended", sourceUrl: "https://b.example/post", at: "2026-10-09T00:00:00Z" },
-          ],
-        })}
-      />,
-    );
-    expect(screen.getByRole("heading", { name: "Sumber yang beda cerita" })).toBeTruthy();
-    expect(
-      screen.getByText("Source-nya gak sepakat soal status airdrop ini. Anggap aja statusnya belum pasti."),
-    ).toBeTruthy();
-    const quotes = screen.getByRole("list", { name: "Kutipan status yang beda" });
-    expect(within(quotes).getAllByRole("listitem")).toHaveLength(2);
-    expect(screen.getByText("Lihat kutipan yang beda cerita di atas.")).toBeTruthy();
-    expect(screen.getByText(/The airdrop is live now/)).toBeTruthy();
-    expect(screen.getByText(/The airdrop has ended/)).toBeTruthy();
-  });
-
-  it("does not show Sumber yang beda cerita without a conflict", () => {
-    render(<ProjectDetailView project={detail()} />);
-    expect(screen.queryByText("Sumber yang beda cerita")).toBeNull();
-  });
-
-  it("names the sections in Indonesian and says when each one is empty", () => {
-    render(<ProjectDetailView project={detail()} />);
-    for (const name of ["Risiko", "Deadline", "Step garap", "Link", "Bukti"]) {
-      expect(screen.getByRole("heading", { level: 2, name })).toBeTruthy();
-    }
-    expect(screen.getByText("Belum ada deadline.")).toBeTruthy();
-    expect(screen.getByText("Belum ada step.")).toBeTruthy();
-    expect(screen.getByText("Gak ada link lain.")).toBeTruthy();
-    expect(screen.getByText("Belum ada bukti yang tercatat.")).toBeTruthy();
-    expect(screen.getByText("Dinilai 2026-10-10")).toBeTruthy();
-  });
-
-  it("shows deadlines with their kind and precision, and an unknown date in words", () => {
-    render(
-      <ProjectDetailView
-        project={detail({
-          deadlines: [
-            { kind: "snapshot", date: "2026-10-20", precision: "exact", text: "Snapshot tanggal 20" },
-            { kind: "tge", date: null, precision: "quarter", text: "" },
-          ],
-          tasks: ["Bridge ke mainnet"],
-        })}
-      />,
-    );
-    const deadlines = screen.getByRole("heading", { name: "Deadline" }).parentElement!;
-    expect(within(deadlines).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "Snapshot: 2026-10-20 (tanggal tepat) · Snapshot tanggal 20",
-      "TGE: tanggal belum diketahui (kuartalnya aja)",
-    ]);
-    expect(screen.getByText("Bridge ke mainnet")).toBeTruthy();
-  });
-
-  it("says when no reason was recorded", () => {
-    render(<ProjectDetailView project={detail({ risk: { ...detail().risk!, reasons: [] } })} />);
-    expect(screen.getByText("Gak ada alasan risiko yang tercatat.")).toBeTruthy();
-  });
-
-  it("shows check coverage", () => {
-    render(<ProjectDetailView project={detail()} />);
-    expect(
-      screen.getByText(
-        "4/9 cek jalan. Belum bisa dicek: Risiko kontrak token, Kontrak verified, Riwayat hack, Cross-check antar source, Review AI.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("shows the reasons and the level without a number", () => {
-    render(<ProjectDetailView project={detail()} />);
-    const reasons = screen.getByRole("list", { name: "Alasan risiko" });
-    expect(within(reasons).getByRole("listitem").textContent).toBe("Tingkat sedang: Domain is younger than 90 days (rdap)");
-    expect(screen.getByText("Sedang")).toBeTruthy();
-  });
-
+describe("RiskLine", () => {
   it("renders the claim link as an unverified official checker next to the risk badge", () => {
-    render(
-      <ProjectDetailView
-        project={detail({ links: [{ url: "https://claim.demo.example/check", kind: "claim" }] })}
-      />,
-    );
+    render(<RiskLine level="medium" links={[{ url: "https://claim.demo.example/check", kind: "claim", status: "official" }]} testId="risk-line" />);
     const link = screen.getByRole("link", { name: "Checker official (belum verified)" });
     expect(link.getAttribute("href")).toBe("https://claim.demo.example/check");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer nofollow");
@@ -264,57 +129,18 @@ describe("ProjectDetailView", () => {
     expect(badge.parentElement).toBe(link.closest("[data-testid='risk-line']"));
   });
 
-  it("does not turn non-http links into anchors, and never injects HTML", () => {
-    const { container } = render(
-      <ProjectDetailView
-        project={detail({
-          links: [{ url: "javascript:alert(1)", kind: "website" }],
-          evidence: [
-            { field: "dangerous_ask", value: "x", quote: "<img src=x onerror=alert(1)>", sourceUrl: "javascript:alert(2)", at: "2026-10-08T00:00:00Z" },
-          ],
-        })}
-      />,
-    );
-    expect(container.querySelector("a[href^='javascript']")).toBeNull();
-    expect(container.querySelector("img")).toBeNull();
-    expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
-  });
-
-  it("shows evidence with a source link and a date", () => {
-    render(
-      <ProjectDetailView
-        project={detail({
-          evidence: [
-            { field: "defillama_listing", value: "listed", quote: "Listed on DefiLlama", sourceUrl: "https://defillama.com/airdrops", at: "2026-10-08T05:00:00Z" },
-          ],
-        })}
-      />,
-    );
-    const list = screen.getByRole("list", { name: "Bukti" });
-    expect(within(list).getByText(/Listed on DefiLlama/)).toBeTruthy();
-    expect(within(list).getByRole("link").getAttribute("href")).toBe("https://defillama.com/airdrops");
-    expect(within(list).getByText(/2026-10-08/)).toBeTruthy();
-    expect(within(list).getByText("Listing DefiLlama")).toBeTruthy();
-  });
-
-  it("says when there is no risk assessment yet", () => {
-    render(<ProjectDetailView project={detail({ risk: null, riskLevel: null })} />);
-    expect(screen.getByText("Belum dinilai")).toBeTruthy();
-    expect(screen.getByText("Project ini belum dinilai.")).toBeTruthy();
-    expect(screen.queryByText(/cek jalan/)).toBeNull();
-  });
-
-  it("uses wallet activity wording only, never eligible or safe", () => {
-    const { container } = render(<ProjectDetailView project={detail()} />);
-    expect(container.textContent ?? "").not.toMatch(/eligible|\bsafe\b|\baman\b/i);
-  });
-});
-
-describe("unsafe claim link", () => {
   it("hides the official checker label entirely when the claim URL is not http(s)", () => {
-    render(<ProjectDetailView project={detail({ links: [{ url: "javascript:alert(1)", kind: "claim" }] })} />);
+    render(<RiskLine level="medium" links={[{ url: "javascript:alert(1)", kind: "claim", status: null }]} testId="risk-line" />);
     expect(screen.queryByText(/Checker official/)).toBeNull();
     expect(document.querySelector("a[href^='javascript']")).toBeNull();
+  });
+
+  it("never links a claim link checked as phishing (#42)", () => {
+    const { container } = render(
+      <RiskLine level="high" links={[{ url: "https://claim-phish.example/", kind: "claim", status: "phishing" }]} testId="risk-line" />,
+    );
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.innerHTML).not.toContain("claim-phish.example");
   });
 });
 

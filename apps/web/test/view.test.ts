@@ -21,7 +21,6 @@ import {
   rawChainParam,
   parsePage,
   pickLastSuccessfulRun,
-  pickLatestRisk,
   pickNextDeadline,
   precisionLabel,
   riskLabel,
@@ -90,18 +89,6 @@ describe("safeHttpUrl", () => {
     expect(safeHttpUrl("data:text/html,<b>x</b>")).toBeNull();
     expect(safeHttpUrl("ftp://example.com")).toBeNull();
     expect(safeHttpUrl("not a url")).toBeNull();
-  });
-});
-
-describe("pickLatestRisk", () => {
-  it("takes the greatest computedAt, ties by seq", () => {
-    const rows = [
-      { id: "a", computedAt: "2026-10-09T00:00:00Z", seq: 9 },
-      { id: "b", computedAt: "2026-10-10T00:00:00Z", seq: 1 },
-      { id: "c", computedAt: "2026-10-10T00:00:00Z", seq: 2 },
-    ];
-    expect(pickLatestRisk(rows)?.id).toBe("c");
-    expect(pickLatestRisk([])).toBeNull();
   });
 });
 

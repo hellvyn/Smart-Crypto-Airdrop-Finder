@@ -211,37 +211,151 @@ describe("getLastSuccessfulRunAt", () => {
   });
 });
 
-describe("getProjectDetail evidence query", () => {
-  it("orders by at then seq descending and caps at 100 rows", async () => {
-    const { db, recs } = fakeDb((rec) => {
-      if (rec.table === "projects")
-        return { data: { id: "p1", slug: "demo", name: "Demo", status: "live", chains: [], last_seen: "2026-10-09T00:00:00Z", token_symbol: null, conflict: false }, error: null };
-      return { data: [], error: null };
+describe("getProjectDetail", () => {
+  const NOW = new Date("2026-10-10T03:00:00Z");
+  const PROJECT = { id: "p1", slug: "demo", name: "Demo", status: "live", chains: [], last_seen: "2026-10-09T00:00:00Z", token_symbol: null, conflict: false };
+  const REASONS = [{ code: "hack_history", severity: "medium", message: "Project ini punya 1 catatan hack.", source: "defillama" }];
+  const CHECKS = [
+    { id: "dangerous_asks", ran: true, detail: { sources: 2 } },
+    { id: "lookalike", ran: true },
+    { id: "hack_history", ran: true, detail: { count: 1 } },
+    { id: "corroboration", ran: true, detail: { sources: 2 } },
+  ];
+  const ANALYST = {
+    verdict: "garap",
+    confidence: "tinggi",
+    points: [],
+    effort: { minutes_per_day: 5, capital_usd_min: null, note: "Ringan." },
+    steps_id: [{ text: "Bridge ke Base", cadence: "once" }],
+  };
+  const kindOf = (rec: { calls: Call[] }) => rec.calls.find((c) => c[0] === "eq" && c[1] === "kind")?.[2];
+  const selected = (recs: Recorded[], table: string) =>
+    recs.filter((r) => r.table === table).map((r) => String(r.calls.find((c) => c[0] === "select")?.[1]));
+
+  /** Answers every table getProjectDetail reads; `over` replaces one table's (or one ai_analyses kind's) data. */
+  function db(over: Record<string, unknown> = {}) {
+    const data: Record<string, unknown> = {
+      projects: PROJECT,
+      risk_assessments: [{ id: "r1", level: "medium", points: 10, reasons: REASONS, checks: CHECKS, computed_at: "2026-10-09T23:00:00Z", seq: 1 }],
+      public_risk_checks: [
+        {
+          assessment_id: "r1",
+          key_checks: [{ id: "dangerous_asks", ran: true, detail: { sources: 2 } }, { id: "lookalike", ran: true }],
+          advanced_checks: [{ id: "hack_history", ran: true, flagged: true }, { id: "corroboration", ran: true, flagged: false }],
+        },
+      ],
+      curations: [
+        { passed: true, tab: "live_now", public_fail_reason: null, ended_on: null, computed_at: "2026-10-09T23:00:00Z", seq: 3, worth_level: "high", reasons: [{ code: "c", kind: "worth", message: "Didukung VC." }] },
+      ],
+      project_signals: [{ kind: "vc_backer", value: { investor: "Paradigm" }, verified: true, source: "vc_portfolio", observed_at: "2026-10-09T23:00:00Z" }],
+      "ai_analyses:analyst": [{ result: ANALYST, created_at: "2026-10-09T23:00:00Z" }],
+      "ai_analyses:scam": [{ result: { flags: [{ pattern: "urgency", quote: "Only 2 hours", explanation: "Buru-buru." }] }, created_at: "2026-10-09T23:00:00Z" }],
+      "ai_analyses:contradictions": [{ result: { items: [{ topic: "t", quote_a: "a", url_a: "https://s.example/1", quote_b: "b", url_b: "https://s.example/2", explanation: "e" }] }, created_at: "2026-10-09T23:00:00Z" }],
+      tasks: [
+        { description: "Bridge to Base", text_id: "Bridge ke Base", cadence: "once", position: 0 },
+        { description: "Swap daily", text_id: null, cadence: "daily", position: 1 },
+      ],
+      links: [{ url: "https://claim.demo.example/", kind: "claim" }],
+      link_checks: [{ url: "https://claim.demo.example/", status: "official" }],
+      deadlines: [{ kind: "claim", date: "2026-10-20", precision: "exact", text: "Claim" }],
+      evidence: [
+        { field: "status", value: "live", quote: "Live now", source_url: "https://s.example/1", at: "2026-10-09T00:00:00Z", seq: 2 },
+        { field: "claimed_backer", value: "Jump", quote: "Backed by Jump", source_url: "https://s.example/2", at: "2026-10-09T00:00:00Z", seq: 1 },
+        { field: "source_rating:difficulty", value: "Easy", quote: "Easy", source_url: "https://s.example/1", at: "2026-10-09T00:00:00Z", seq: 0 },
+      ],
+      ...over,
+    };
+    return fakeDb((rec) => {
+      const key = rec.table === "ai_analyses" ? `ai_analyses:${String(kindOf(rec))}` : rec.table;
+      return { data: data[key] ?? [], error: null };
     });
-    const detail = await getProjectDetail(db, "demo");
-    expect(detail?.slug).toBe("demo");
-    const ev = recs.find((r) => r.table === "evidence")!;
-    expect(ev.calls).toContainEqual(["order", "at", { ascending: false }]);
-    expect(ev.calls).toContainEqual(["order", "seq", { ascending: false }]);
-    expect(ev.calls).toContainEqual(["limit", 100]);
+  }
+
+  it("never asks for member-only data for a visitor: no checks, no worth or reasons, no Analyst or scam result", async () => {
+    const { db: client, recs } = db();
+    const d = await getProjectDetail(client, "demo", { member: false, now: NOW });
+
+    expect(recs.filter((r) => r.table === "ai_analyses").map(kindOf)).toEqual(["contradictions"]);
+    expect(selected(recs, "risk_assessments").join()).not.toMatch(/checks/);
+    const curation = selected(recs, "curations").join();
+    expect(curation).toContain("public_fail_reason");
+    expect(curation).not.toMatch(/worth|reasons|coverage/);
+    expect(recs.find((r) => r.table === "public_risk_checks")?.calls).toContainEqual(["eq", "project_id", "p1"]);
+
+    expect(d?.analyst).toBeNull();
+    expect(d?.scamFlags).toBeNull();
+    // The fake answers worth_level and reasons anyway: they must not be read for a visitor.
+    expect(d?.curation).toMatchObject({ passed: true, tab: "live_now", worthLevel: null, reasons: null });
   });
 
-  it("leaves the unverified v3 fact fields out in the query, so they never take rows from the 100-row window", async () => {
-    const { db, recs } = fakeDb((rec) => {
-      if (rec.table === "projects")
-        return { data: { id: "p1", slug: "demo", name: "Demo", status: "live", chains: [], last_seen: "2026-10-09T00:00:00Z", token_symbol: null, conflict: false }, error: null };
-      return { data: [], error: null };
-    });
-    await getProjectDetail(db, "demo");
+  it("gives a visitor the key checks with their detail and the advanced checks as ran and flagged only", async () => {
+    const { db: client } = db();
+    const d = await getProjectDetail(client, "demo", { member: false, now: NOW });
+    expect(d?.risk?.checks).toEqual([
+      { id: "dangerous_asks", ran: true, detail: { sources: 2 }, flagged: false },
+      { id: "lookalike", ran: true, detail: null, flagged: false },
+      { id: "hack_history", ran: true, detail: null, flagged: true },
+      { id: "corroboration", ran: true, detail: null, flagged: false },
+    ]);
+    expect(d?.risk?.reasons).toEqual(REASONS);
+  });
+
+  it("gives a member every check with its detail, flagged by the warnings of the assessment", async () => {
+    const { db: client, recs } = db();
+    const d = await getProjectDetail(client, "demo", { member: true, now: NOW });
+    expect(selected(recs, "risk_assessments").join()).toContain("checks");
+    expect(recs.some((r) => r.table === "public_risk_checks")).toBe(false);
+    expect(d?.risk?.checks).toEqual([
+      { id: "dangerous_asks", ran: true, detail: { sources: 2 }, flagged: false },
+      { id: "lookalike", ran: true, detail: null, flagged: false },
+      { id: "hack_history", ran: true, detail: { count: 1 }, flagged: true },
+      { id: "corroboration", ran: true, detail: { sources: 2 }, flagged: false },
+    ]);
+  });
+
+  it("gives a member the worth, the reasons, the Analyst result (points may be empty) and the scam flags", async () => {
+    const { db: client } = db();
+    const d = await getProjectDetail(client, "demo", { member: true, now: NOW });
+    expect(d?.curation).toMatchObject({ worthLevel: "high", reasons: [{ code: "c", kind: "worth", message: "Didukung VC." }] });
+    expect(d?.analyst).toEqual(ANALYST);
+    expect(d?.scamFlags).toEqual([{ pattern: "urgency", quote: "Only 2 hours", explanation: "Buru-buru." }]);
+  });
+
+  it("treats an unreadable Analyst result as no analysis", async () => {
+    const { db: client } = db({ "ai_analyses:analyst": [{ result: { verdict: "aman" }, created_at: "2026-10-09T23:00:00Z" }] });
+    expect((await getProjectDetail(client, "demo", { member: true, now: NOW }))?.analyst).toBeNull();
+  });
+
+  it("reads the contradictions, the steps in position order (Indonesian first), links with their check and the claim badge", async () => {
+    const { db: client, recs } = db();
+    const d = await getProjectDetail(client, "demo", { member: false, now: NOW });
+    expect(d?.contradictions).toHaveLength(1);
+    expect(recs.find((r) => r.table === "tasks")?.calls).toContainEqual(["order", "position", { ascending: true }]);
+    expect(d?.steps).toEqual([
+      { text: "Bridge ke Base", cadence: "once" },
+      { text: "Swap daily", cadence: "daily" },
+    ]);
+    expect(d?.links).toEqual([{ url: "https://claim.demo.example/", kind: "claim", status: "official" }]);
+    expect(d?.claimOpenChecked).toBe(true);
+    expect(recs.find((r) => r.table === "project_signals")?.calls).toContainEqual(["gte", "observed_at", "2026-09-26T03:00:00.000Z"]);
+    expect(d?.signals.map((s) => s.kind)).toEqual(["vc_backer"]);
+  });
+
+  it("splits the evidence into facts and the rest, and lists the source documents once each", async () => {
+    const { db: client, recs } = db();
+    const d = await getProjectDetail(client, "demo", { member: false, now: NOW });
     const ev = recs.find((r) => r.table === "evidence")!;
-    expect(ev.calls).toContainEqual(["not", "field", "in", "(claimed_backer,capital_required,capital_min_usd,latest_update)"]);
-    expect(ev.calls).toContainEqual(["not", "field", "like", "key_parameter:*"]);
-    expect(ev.calls).toContainEqual(["not", "field", "like", "source_rating:*"]);
+    expect(ev.calls.some((c) => c[0] === "not")).toBe(false);
+    expect(ev.calls).toContainEqual(["order", "at", { ascending: false }]);
+    expect(ev.calls).toContainEqual(["order", "seq", { ascending: false }]);
+    expect(d?.facts.map((f) => f.field)).toEqual(["claimed_backer", "source_rating:difficulty"]);
+    expect(d?.evidence.map((e) => e.field)).toEqual(["status"]);
+    expect(d?.sourceUrls).toEqual(["https://s.example/1", "https://s.example/2"]);
   });
 
   it("returns null for an unknown slug", async () => {
-    const { db } = fakeDb(() => ({ data: null, error: null }));
-    expect(await getProjectDetail(db, "nope")).toBeNull();
+    const { db: client } = fakeDb(() => ({ data: null, error: null }));
+    expect(await getProjectDetail(client, "nope", { member: false })).toBeNull();
   });
 });
 

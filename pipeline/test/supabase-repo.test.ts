@@ -688,6 +688,54 @@ describe("SupabaseRepo.listProjectsForScoring", () => {
     expect(scored?.sourceKinds).toEqual(["airdrops_io", "telegram"]);
     expect(scored?.sourceCount).toBe(2);
   });
+
+  it("counts the distinct documents among the evidence", async () => {
+    const evidence = (document_id: string) => ({
+      field: "status",
+      value: "live",
+      quote: "q",
+      document_id,
+      documents: { source_key: "airdrops_io:latest", source_kind: "airdrops_io" },
+    });
+    const { client, reads } = recordingClient({
+      projects: [
+        {
+          id: "p-1",
+          slug: "ink",
+          name: "Ink",
+          name_key: "ink",
+          token_symbol: null,
+          chains: [],
+          official_domains: [],
+          status: "live",
+          conflict: false,
+          lookalike_of: null,
+          first_seen: "2026-10-01T00:00:00Z",
+          last_seen: "2026-10-10T00:00:00Z",
+          tasks: [],
+          deadlines: [],
+          links: [],
+          evidence: [evidence("d-1"), evidence("d-1"), evidence("d-2")],
+          lookalike: null,
+          project_signals: [],
+        },
+      ],
+    });
+    const [scored] = await new SupabaseRepo(client).listProjectsForScoring(30, new Date("2026-10-10T03:00:00Z"));
+
+    expect(scored?.documentCount).toBe(2);
+    expect(reads[0]?.columns).toContain("evidence(field, value, quote, document_id,");
+  });
+});
+
+describe("SupabaseRepo.countOfficialDomains", () => {
+  it("reads the projects' official domains and counts each domain once, ignoring case", async () => {
+    const { client, reads } = recordingClient({
+      projects: [{ official_domains: ["inkonchain.com", "Ink.xyz"] }, { official_domains: ["ink.xyz"] }, { official_domains: [] }],
+    });
+    expect(await new SupabaseRepo(client).countOfficialDomains()).toBe(2);
+    expect(reads).toEqual([expect.objectContaining({ table: "projects", columns: "official_domains" })]);
+  });
 });
 
 describe("SupabaseRepo.listProjectsForScoring ended curated projects", () => {

@@ -1,14 +1,24 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createConfirmedUser, deleteCreatedUsers, uniqueEmail } from "./support/admin";
-import { cleanupSeed, seedCuratedList, seedProjects, type CuratedSeed, type Seed } from "./support/seed";
+import {
+  cleanupSeed,
+  seedCuratedList,
+  seedProjectPage,
+  seedProjects,
+  type CuratedSeed,
+  type ProjectPageSeed,
+  type Seed,
+} from "./support/seed";
 
 let seed: Seed;
 let curated: CuratedSeed;
+let detailPage: ProjectPageSeed;
 
 test.beforeAll(async () => {
   seed = await seedProjects();
   // After seedProjects, so its run ("4 dicek, 3 lolos") is the newest.
   curated = await seedCuratedList();
+  detailPage = await seedProjectPage();
 });
 
 test.afterAll(async () => {
@@ -201,42 +211,124 @@ test.describe("360px phone", () => {
     expect(fits).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
   });
+
+  test("the project page fits without scrolling sideways, for a member too", async ({ page }) => {
+    await page.goto(`/projects/${detailPage.slug}`);
+    await expect(page.getByTestId("key-check")).toHaveCount(4);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+    await signIn(page);
+    await page.goto(`/projects/${detailPage.slug}`);
+    await expect(page.getByText("0 kasus")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+  });
 });
 
-test("the detail page shows reasons, coverage, evidence with its source, and the official checker link", async ({ page }) => {
+const SECTIONS = [
+  "01 · AI verdict",
+  "02 · Sumber yang beda cerita",
+  "03 · Step garap",
+  "04 · Security check",
+  "05 · Estimasi effort",
+  "06 · Kenapa lolos",
+  "Ringkasan",
+  "Update terbaru",
+];
+const section = (page: Page, title: string) => page.locator("section").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+
+test("a member sees every section in order, the AI verdict labelled Analisis AI, and what each check found", async ({ page }) => {
+  await signIn(page);
+  await page.goto(`/projects/${detailPage.slug}`);
+  await expect(page.locator("article.detail h2")).toHaveText(SECTIONS);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(detailPage.name);
+  await expect(page.getByTestId("risk-head")).toHaveText("Risiko rendah");
+  await expect(page.getByText("Claim open · link dicek")).toBeVisible();
+  await expect(page.getByText("Dicek hari ini")).toBeVisible();
+  await expect(page.getByText("Sangat worth it")).toBeVisible();
+
+  const ai = section(page, "01 · AI verdict");
+  await expect(ai.getByText("Analisis AI")).toBeVisible();
+  await expect(ai.getByText("Garap", { exact: true })).toBeVisible();
+  await expect(ai.getByText("Confidence: tinggi")).toBeVisible();
+  await expect(ai.getByText(detailPage.memberOnly.point)).toBeVisible();
+  await expect(ai.getByRole("link", { name: "source" })).toHaveAttribute("href", detailPage.sourceUrl);
+
+  const safety = section(page, "04 · Security check");
+  await expect(safety.getByText("0 kasus")).toBeVisible();
+  await expect(safety.getByText("2 source", { exact: true })).toBeVisible();
+  await expect(safety.getByText("Gak ada pola scam")).toBeVisible();
+  await expect(safety.getByText("Member only")).toHaveCount(0);
+
+  const effort = section(page, "05 · Estimasi effort");
+  await expect(effort.getByText("±10")).toBeVisible();
+  await expect(effort.getByText(detailPage.memberOnly.effortNote)).toBeVisible();
+  await expect(effort.getByText("source.example: Easy")).toBeVisible();
+  await expect(section(page, "06 · Kenapa lolos").getByText(detailPage.memberOnly.reason)).toBeVisible();
+});
+
+test("a visitor gets Member only for the AI verdict, effort and advanced checks, and none of their data in the HTML", async ({ page }) => {
+  const res = await page.goto(`/projects/${detailPage.slug}`);
+  expect(res?.status()).toBe(200);
+  await expect(page.locator("article.detail h2")).toHaveText(SECTIONS);
+  await expect(section(page, "01 · AI verdict").getByText("Member only")).toBeVisible();
+  await expect(section(page, "05 · Estimasi effort").getByText("Member only")).toBeVisible();
+
+  const advanced = page.getByRole("list", { name: "Advanced check" }).getByRole("listitem");
+  await expect(advanced).toHaveCount(3);
+  for (let i = 0; i < 3; i++) await expect(advanced.nth(i)).toContainText("Member only");
+  await expect(page.getByText("0 kasus")).toHaveCount(0);
+
+  // The public parts are all there.
+  const cards = page.getByTestId("key-check");
+  await expect(cards).toHaveCount(4);
+  await expect(cards.nth(2)).toContainText("2 tahun 3 bulan");
+  await expect(cards.nth(1)).toContainText("Link project ini dibandingin sama 1.240 domain official di database kami.");
+  await expect(page.getByText(detailPage.contradiction)).toBeVisible();
+  await expect(page.getByText(detailPage.step)).toBeVisible();
+  await expect(page.getByText(detailPage.update)).toBeVisible();
+  await expect(page.getByText("VC: Paradigm ✓")).toBeVisible();
+  await expect(page.getByText(/"Backed by Jump /)).toBeVisible();
+  await expect(page.getByText("Klaim project, belum verified")).toBeVisible();
+
+  await expect(page.getByText(/^(Garap|Pantau|Skip)$/)).toHaveCount(0);
+  await expect(page.getByText(/worth it/i)).toHaveCount(0);
+  await expect(page.getByText(/\bdaftar\b/i)).toHaveCount(0);
+  await expect(page.locator("a[href*='signup']")).toHaveCount(0);
+
+  // Not in the markup nor in the RSC payload: the member-only data is never queried for a visitor (#45, #54).
+  const html = await (await page.request.get(`/projects/${detailPage.slug}`)).text();
+  for (const text of Object.values(detailPage.memberOnly)) expect(html).not.toContain(text);
+  expect(html).not.toMatch(/"verdict"|Confidence:|Sangat worth it|worth_level|"worthLevel":"high"/);
+  expect(html).toContain(detailPage.contradiction);
+});
+
+test("the security check shows a phishing claim link as a warning, never as a link, and the facts in their own places", async ({ page }) => {
   await page.goto(`/projects/${seed.main.slug}`);
   await expect(page.getByRole("heading", { level: 1 })).toContainText(seed.main.name);
-  await expect(page.getByTestId("risk-badge")).toHaveText("Risiko Tinggi");
+  await expect(page.getByTestId("risk-head")).toHaveText("Risiko tinggi");
   await expect(page.getByTestId("status-badge")).toHaveText("Status Live");
-  await expect(page.getByText("Claim domain is younger than 30 days")).toBeVisible();
-  await expect(
-    page.getByText(
-      "4/9 cek jalan. Belum bisa dicek: Risiko kontrak token, Kontrak verified, Riwayat hack, Cross-check antar source, Review AI.",
-    ),
-  ).toBeVisible();
+  const safety = section(page, "04 · Security check");
+  await expect(safety.getByText("Claim domain is younger than 30 days")).toBeVisible();
+  await expect(safety.getByText("Link di-hide: kedeteksi phishing")).toBeVisible();
+  await expect(page.locator(`a[href="${seed.main.phishingUrl}"]`)).toHaveCount(0);
+  await expect(page.locator("a[href*='claim-phish-']")).toHaveCount(0);
+  await expect(safety.getByRole("link", { name: new URL(seed.main.claimUrl).host + new URL(seed.main.claimUrl).pathname })).toHaveAttribute(
+    "rel",
+    "noopener noreferrer nofollow",
+  );
+  // A row stored without details: the cards are there, without a detail sentence.
+  await expect(page.getByTestId("key-check")).toHaveCount(4);
+  await expect(page.getByText(/dicocokin satu-satu/)).toHaveCount(0);
 
-  const evidence = page.getByRole("list", { name: "Bukti" });
-  await expect(evidence).toContainText("Claims are open now");
-  const source = evidence.getByRole("link");
-  await expect(source).toHaveAttribute("href", `${seed.main.sourceUrl}`);
-  await expect(source).toHaveAttribute("rel", "noopener noreferrer nofollow");
-  // Unverified v3 facts (claimed backers, key parameters, ratings, capital, latest update) are not public evidence.
-  const hidden = [
-    "claimed backer", "Paradigm", "key parameter", "10% of supply", "source rating", "Difficulty",
-    "latest update", "Season 2 announced", "capital",
-  ];
-  for (const text of hidden) await expect(evidence).not.toContainText(text);
-  await expect(page.getByText("Paradigm")).toHaveCount(0);
+  // v3 facts: the claimed backer as a claim, the update and the key parameter in their boxes; no source rating for a visitor.
+  await expect(section(page, "06 · Kenapa lolos").getByText(/"Backed by Paradigm /)).toBeVisible();
+  await expect(section(page, "06 · Kenapa lolos").getByText("Klaim project, belum verified")).toBeVisible();
+  await expect(page.getByText("VC: Paradigm ✓")).toHaveCount(0);
+  await expect(section(page, "Update terbaru").getByText(/Season 2 announced/)).toBeVisible();
+  await expect(section(page, "Ringkasan").getByText("Alokasi: 10% of supply")).toBeVisible();
+  await expect(page.getByText(/Easy/)).toHaveCount(0);
 
-  const checker = page.getByRole("link", { name: "Checker official (belum verified)" });
-  await expect(checker).toHaveAttribute("href", seed.main.claimUrl);
-  await expect(checker).toHaveAttribute("target", "_blank");
-  // It sits in the same line as the Risk badge.
-  await expect(page.getByTestId("risk-line").getByTestId("risk-badge")).toBeVisible();
-  await expect(page.getByTestId("risk-line").getByRole("link", { name: "Checker official (belum verified)" })).toBeVisible();
-
-  // Deadlines and a non-http link are rendered, but the javascript: URL is plain text, never an anchor.
-  await expect(page.getByText("Snapshot on the 10th")).toBeVisible();
+  // Deadlines, steps and a non-http link are rendered, but the javascript: URL is plain text, never an anchor.
+  await expect(section(page, "Ringkasan").getByText(/Snapshot: \d{4}-\d{2}-\d{2} \(tanggal tepat\)/)).toBeVisible();
   await expect(page.getByText("Bridge to the main chain")).toBeVisible();
   await expect(page.locator("a[href^='javascript']")).toHaveCount(0);
   await expect(page.getByText("javascript:alert(1)")).toBeVisible();
@@ -244,7 +336,7 @@ test("the detail page shows reasons, coverage, evidence with its source, and the
 
 test("a project with conflicting sources shows both quotes, and Chain belum diketahui without a wallet check", async ({ page }) => {
   await page.goto(`/projects/${seed.conflicted.slug}`);
-  await expect(page.getByRole("heading", { name: "Sumber yang beda cerita" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "02 · Sumber yang beda cerita" })).toBeVisible();
   await expect(page.getByText(/Airdrop is live/)).toBeVisible();
   await expect(page.getByText(/Airdrop has ended/)).toBeVisible();
   await expect(page.getByText("Chain belum diketahui")).toBeVisible();

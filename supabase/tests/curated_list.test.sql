@@ -1,7 +1,8 @@
 -- pgTAP tests for 0012_curated_list.sql (Plan 6 Task 3; curation spec §4.5, §7.1, §15.5, decisions #40, #42, #44, #45,
 -- #52): latest_curations, public_list (visitors, no worth) and curated_list (members, with worth). Plan 6 Task 4 adds
 -- public_list.key_checks_ran ("{k}/4 security check jalan"), read through a security definer function so the column
--- keeps working for anon once 0013 takes risk_assessments.checks away from anon (advanced checks are member-only, #54).
+-- keeps working for anon now that 0013 has taken risk_assessments.checks away from anon (advanced checks are
+-- member-only, #54).
 -- Public vs member is locked in the database: anon reads latest_curations and public_list, never curated_list;
 -- public_list has no worth column (the views are security_invoker, so a worth column would refuse anon the whole view).
 begin;
@@ -322,14 +323,11 @@ select is(
   (select claim_open_checked from curated_list where slug = 'cl-pass'), true, 'authenticated reads the claim badge');
 reset role;
 
--- ---------- after 0013 (Task 5) takes risk_assessments.checks away from anon ----------
+-- ---------- 0013 takes risk_assessments.checks away from anon (advanced checks are member-only, #54) ----------
 -- 50-51.
--- The same column grants 0013 plans; rolled back with the rest of this test.
-revoke select on risk_assessments from anon;
-grant select (id, project_id, level, points, reasons, computed_at, seq) on risk_assessments to anon;
 set local role anon;
 select throws_ok($$ select checks from risk_assessments $$, '42501', null,
-  'with the 0013 grants anon cannot read risk_assessments.checks');
+  'anon cannot read risk_assessments.checks (0013)');
 select results_eq(
   $$ select slug, key_checks_ran, latest_risk_level from public_list where slug in ('cl-pass', 'cl-unknown') order by slug $$,
   $$ values ('cl-pass'::text, 3, 'low'::text), ('cl-unknown', 4, 'low') $$,

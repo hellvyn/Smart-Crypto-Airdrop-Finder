@@ -49,6 +49,7 @@ const PROJECT: ProjectForScoring = {
   deadlines: [{ kind: "claim", date: "2026-12-01", precision: "exact" }],
   links: [{ url: "https://inkonchain.com/", kind: "website" }],
   sourceCount: 1,
+  documentCount: 1,
   sourceKinds: ["airdrops_io"],
   lookalikeOfName: null,
   lookalikeOfDomains: [],

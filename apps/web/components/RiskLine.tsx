@@ -6,7 +6,8 @@ import { safeHttpUrl } from "@/lib/view";
 
 /**
  * The risk badge with the project's official checker links beside it (spec §7). Only http(s) claim URLs are shown,
- * always labelled "Checker official (belum verified)"; a non-linkable claim URL hides the label entirely.
+ * always labelled "Checker official (belum verified)"; a non-linkable claim URL hides the label entirely, and so does a
+ * claim link checked as phishing (#42): it is never an anchor on any page.
  */
 export function RiskLine({
   level,
@@ -14,10 +15,10 @@ export function RiskLine({
   testId,
 }: {
   level: RiskLevel | null;
-  links: { url: string; kind: string }[];
+  links: { url: string; kind: string; status?: string | null }[];
   testId: string;
 }) {
-  const claimLinks = links.filter((l) => l.kind === "claim" && safeHttpUrl(l.url) !== null);
+  const claimLinks = links.filter((l) => l.kind === "claim" && l.status !== "phishing" && safeHttpUrl(l.url) !== null);
   return (
     <div className="badges" data-testid={testId}>
       <RiskBadge level={level} />

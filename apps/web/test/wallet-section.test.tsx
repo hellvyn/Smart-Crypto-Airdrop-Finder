@@ -2,6 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectDetail } from "../lib/view";
+import { projectDetail } from "./fixtures/project-detail";
 
 const getUser = vi.fn();
 vi.mock("@/lib/auth", () => ({ getUser: () => getUser() }));
@@ -13,24 +14,15 @@ import { WalletActivitySection } from "../components/WalletActivitySection";
 afterEach(cleanup);
 
 function project(over: Partial<ProjectDetail> = {}): ProjectDetail {
-  return {
-    id: "p1",
+  return projectDetail({
     slug: "demo",
     name: "Demo Protocol",
-    status: "live",
     riskLevel: "high",
     chains: ["Ethereum"],
-    nextDeadline: null,
-    lastSeen: "2026-10-09T00:00:00Z",
-    tokenSymbol: null,
-    conflict: false,
     risk: null,
-    deadlines: [],
-    tasks: [],
-    links: [{ url: "https://claim.demo.example/check", kind: "claim" }],
-    evidence: [],
+    links: [{ url: "https://claim.demo.example/check", kind: "claim", status: "official" }],
     ...over,
-  };
+  });
 }
 
 const WALLET = { id: "33333333-3333-4333-8333-333333333333", address: "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae", label: "Main" };
@@ -75,7 +67,7 @@ describe("WalletActivitySection", () => {
   });
 
   it("shows the risk badge alone when there is no linkable claim URL", () => {
-    render(<WalletActivitySection project={project({ links: [{ url: "javascript:alert(1)", kind: "claim" }] })} wallets={[WALLET]} />);
+    render(<WalletActivitySection project={project({ links: [{ url: "javascript:alert(1)", kind: "claim", status: null }] })} wallets={[WALLET]} />);
     const line = screen.getByTestId("wallet-risk-line");
     expect(within(line).getByTestId("risk-badge")).toBeTruthy();
     expect(within(line).queryByRole("link")).toBeNull();

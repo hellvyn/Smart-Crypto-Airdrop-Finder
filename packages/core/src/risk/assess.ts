@@ -17,10 +17,47 @@ export type CheckId =
   | "corroboration"
   | "ai_review";
 
+/**
+ * One check of an assessment. `detail` says what the check looked at, for the project page's security check block
+ * (#53): only the checks below carry one, and a count the check was not given is null, never a guess. Rows stored
+ * before details existed have none.
+ * - `dangerous_asks` `{ sources }`: documents whose text was scanned;
+ * - `lookalike` `{ compared }`: official domains in the database the link domains were compared with;
+ * - `domain_age` `{ domain, ageDays }`: the main official domain and its age (null when unknown);
+ * - `phishing_list` `{ checked, hits }`: domains GoPlus answered plus claim/app links checked, and domains listed;
+ * - `hack_history` `{ count }`: hacks found (null when the check did not run);
+ * - `corroboration` `{ sources }`: distinct sources that mention the project.
+ */
 export interface RiskCheck {
   id: CheckId;
   ran: boolean;
+  detail?: Record<string, string | number | null>;
 }
+
+/**
+ * The check each warning comes from (#53, #54): a check is shown as "found something" when a reason of its code is
+ * present, so a visitor can see that without the check's member-only details. `speculative` (info) has no check.
+ * Mirrored by the `public_risk_checks` view (supabase/migrations/0013_member_checks.sql); apps/web/test checks they
+ * agree.
+ */
+export const CHECK_OF_REASON: Readonly<Record<string, CheckId>> = {
+  asks_secret: "dangerous_asks",
+  asks_payment: "dangerous_asks",
+  phishing_listed: "phishing_list",
+  phishing_claim_link: "phishing_list",
+  young_domain: "domain_age",
+  new_claim_domain: "domain_age",
+  lookalike_domain: "lookalike",
+  token_honeypot: "token_security",
+  token_owner_powers: "token_security",
+  malicious_creator: "token_security",
+  unverified_contract: "contract_verified",
+  hack_history: "hack_history",
+  single_source: "corroboration",
+  conflicting_evidence: "corroboration",
+  ai_contradiction: "corroboration",
+  ai_scam_pattern: "ai_review",
+};
 
 export interface RiskInput {
   project: {
@@ -63,6 +100,10 @@ export interface RiskInput {
    * `phishing_claim_link` reason (high). Missing = no claim/app links.
    */
   claimLinks?: ClaimLink[];
+  /** Distinct official domains of every project in the database, for `lookalike.detail.compared`. Missing = unknown. */
+  officialDomainCount?: number | null;
+  /** Documents among the project's evidence (whose text was scanned), for `dangerous_asks.detail.sources`. */
+  documentsRead?: number | null;
 }
 
 export interface RiskAssessment {
@@ -345,15 +386,30 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     });
   }
 
+  const mainDomain = project.officialDomains[0] ?? null;
+  const linksChecked = (input.claimLinks ?? []).filter((l) => l.status !== "unchecked").length;
+  const domainsAnswered = Object.values(input.phishingFlags).filter((f) => f !== null && f !== undefined).length;
   const checks: RiskCheck[] = [
-    { id: "dangerous_asks", ran: true },
-    { id: "phishing_list", ran: anyNonNull(input.phishingFlags) },
-    { id: "domain_age", ran: anyNonNull(input.domainAgeDays) },
-    { id: "lookalike", ran: project.officialDomains.length > 0 || project.lookalikeOf !== null },
+    { id: "dangerous_asks", ran: true, detail: { sources: input.documentsRead ?? null } },
+    {
+      id: "phishing_list",
+      ran: anyNonNull(input.phishingFlags),
+      detail: { checked: domainsAnswered + linksChecked, hits: seenPhishing.size },
+    },
+    {
+      id: "domain_age",
+      ran: anyNonNull(input.domainAgeDays),
+      detail: { domain: mainDomain, ageDays: mainDomain === null ? null : ageOf(keyOf(mainDomain), input.domainAgeDays) },
+    },
+    {
+      id: "lookalike",
+      ran: project.officialDomains.length > 0 || project.lookalikeOf !== null,
+      detail: { compared: input.officialDomainCount ?? null },
+    },
     { id: "token_security", ran: input.token !== null },
     { id: "contract_verified", ran: input.contractVerified !== null },
-    { id: "hack_history", ran: input.hackCount !== null },
-    { id: "corroboration", ran: true },
+    { id: "hack_history", ran: input.hackCount !== null, detail: { count: input.hackCount } },
+    { id: "corroboration", ran: true, detail: { sources: project.sourceCount } },
   ];
 
   // The level without AI first; AI reasons can then only raise it (spec §13: AI never lowers a risk).
