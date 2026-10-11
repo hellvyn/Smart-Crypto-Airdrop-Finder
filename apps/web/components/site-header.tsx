@@ -17,14 +17,15 @@ export async function SiteHeader() {
     <>
       <HazardBar />
       <header className="site-header">
+        {/* Logo alone on the left, the name and the beta label stacked to its right (owner 2026-10-11). */}
         <div className="brand-wrap">
-          <Link href="/" className="brand">
+          <Link href="/" className="brand" aria-label={header.brand}>
             <span className="brand-mark" aria-hidden="true">
               <BrandMark />
             </span>
             <span className="brand-name">{header.brand}</span>
+            <span className="brand-beta">{header.beta}</span>
           </Link>
-          <span className="brand-beta">{header.beta}</span>
         </div>
         {user ? (
           <nav className="site-nav site-nav-member" aria-label={header.navLabel}>
