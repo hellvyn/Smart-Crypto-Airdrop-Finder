@@ -1,11 +1,20 @@
 import Link from "next/link";
+import { ChangesSinceLastVisit } from "@/components/ChangesSinceLastVisit";
 import { Pagination } from "@/components/Pagination";
 import { ProjectRow } from "@/components/ProjectRow";
 import { StaleBanner } from "@/components/StaleBanner";
 import { TabBar } from "@/components/ui";
 import { getUser } from "@/lib/auth";
 import { landing, list, pageTitle, ui } from "@/lib/copy";
-import { getLastSuccessfulRunAt, getRunSummary, getTrackRecord, listChains, listCurated } from "@/lib/queries";
+import {
+  getChangesSeenAt,
+  getLastSuccessfulRunAt,
+  getRunSummary,
+  getTrackRecord,
+  listChains,
+  listChangesSince,
+  listCurated,
+} from "@/lib/queries";
 import { LIST_PATH } from "@/lib/routes";
 import { createServerClient } from "@/lib/supabase/server";
 import {
@@ -38,23 +47,25 @@ function first(v: string | string[] | undefined): string | undefined {
  * record once there is one, three tabs (`?tab=`), the "Modal:" sub-filter (`?modal=`), the filters, and the rows.
  * Visitors read `public_list` in the "Baru dicek" order: their `?worth=` is dropped and there is no `?sort=` to
  * pick, so nothing reveals the worth order (#45). Members also get the worth level, its filter and the "Paling worth
- * it" order.
+ * it" order, and "Perubahan sejak kunjungan terakhir" for their watched projects above the list.
  */
 export default async function AirdropsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const member = (await getUser()) !== null;
+  const user = await getUser();
+  const member = user !== null;
   const tab = parseTab(first(sp.tab));
   const filters = parseCuratedFilters(sp, member);
   const capital = filters.capital ?? "all";
   const page = parsePage(first(sp.page));
   const db = await createServerClient();
   const now = new Date();
-  const [curated, lastRunAt, summary, trackRecord, chains] = await Promise.all([
+  const [curated, lastRunAt, summary, trackRecord, chains, changes] = await Promise.all([
     listCurated(db, tab, filters, page, member),
     getLastSuccessfulRunAt(db),
     getRunSummary(db),
     getTrackRecord(db),
     listChains(db),
+    user ? getChangesSeenAt(db, user.id).then((since) => listChangesSince(db, since, now)) : [],
   ]);
   const { items, total, pageSize, capitalCounts } = curated;
   // An invalid chain value applies no filter but is still shown, as text only, in the form.
@@ -67,6 +78,7 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <StaleBanner lastRunAt={lastRunAt} now={now} />
+      <ChangesSinceLastVisit items={changes} />
       <section className="list-summary" aria-labelledby="list-summary-title">
         <h1 id="list-summary-title" className="ui-display list-summary-title">
           {list.summary.title}

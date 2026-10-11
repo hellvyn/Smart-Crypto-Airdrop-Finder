@@ -96,3 +96,75 @@ test("one user's watchlist is not visible to another", async ({ page, browser })
   await expect(watchButton(otherPage)).toBeVisible();
   await other.close();
 });
+
+// ---- "Perubahan sejak kunjungan terakhir" (Plan 6 Task 7) ----
+
+const changesSection = (page: Page) => page.getByRole("region", { name: "Perubahan sejak kunjungan terakhir" });
+
+/** Writes changes for one project as one pipeline run would: every row shares the run's changed_at. */
+async function recordRun(
+  slug: string,
+  rows: { field: string; old_value: string | null; new_value: string }[],
+): Promise<void> {
+  const db = adminClient();
+  const { data: p, error: pe } = await db.from("projects").select("id").eq("slug", slug).single();
+  if (pe) throw pe;
+  const changedAt = new Date().toISOString();
+  const { error } = await db
+    .from("project_changes")
+    .insert(rows.map((r) => ({ project_id: p.id as string, changed_at: changedAt, ...r })));
+  if (error) throw error;
+}
+
+async function watch(page: Page, slug: string): Promise<void> {
+  await page.goto(`/projects/${slug}`);
+  await watchButton(page).click();
+  await expect(unwatchButton(page)).toBeVisible();
+}
+
+test("a watched project leaving the list shows 'Keluar dari list' until 'Tandai sudah dibaca'", async ({ page }) => {
+  await signedInUser(page, "wl-changes-out");
+  await watch(page, seed.main.slug);
+  await recordRun(seed.main.slug, [{ field: "curated", old_value: "true", new_value: "false" }]);
+
+  await page.goto("/watchlist");
+  const onWatchlist = changesSection(page);
+  await expect(onWatchlist.getByText("Keluar dari list")).toBeVisible();
+  await expect(onWatchlist.getByRole("link", { name: seed.main.name })).toHaveAttribute(
+    "href",
+    `/projects/${seed.main.slug}`,
+  );
+
+  await page.goto("/airdrops");
+  await expect(changesSection(page).getByText("Keluar dari list")).toBeVisible();
+  await changesSection(page).getByRole("button", { name: "Tandai sudah dibaca" }).click();
+  await expect(changesSection(page)).toHaveCount(0);
+
+  await page.goto("/watchlist");
+  await expect(rowFor(page, seed.main.slug)).toBeVisible();
+  await expect(changesSection(page)).toHaveCount(0);
+});
+
+test("a watched project that ended shows 'Udah ended', not 'Keluar dari list', even if it left the list in that run", async ({
+  page,
+}) => {
+  await signedInUser(page, "wl-changes-ended");
+  await watch(page, seed.conflicted.slug);
+  await recordRun(seed.conflicted.slug, [
+    { field: "status", old_value: "live", new_value: "ended" },
+    { field: "curated", old_value: "true", new_value: "false" },
+  ]);
+
+  await page.goto("/watchlist");
+  await expect(changesSection(page).getByText("Udah ended")).toBeVisible();
+  await expect(changesSection(page).getByText("Keluar dari list")).toHaveCount(0);
+});
+
+test("a member who does not watch the project never sees its changes", async ({ page }) => {
+  await recordRun(seed.main.slug, [{ field: "risk_level", old_value: "low", new_value: "critical" }]);
+  await signedInUser(page, "wl-changes-other");
+  await page.goto("/watchlist");
+  await expect(changesSection(page)).toHaveCount(0);
+  await page.goto("/airdrops");
+  await expect(changesSection(page)).toHaveCount(0);
+});

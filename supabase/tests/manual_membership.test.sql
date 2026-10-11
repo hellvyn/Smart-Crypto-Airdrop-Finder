@@ -21,9 +21,9 @@ select hasnt_column('public', 'profiles', 'digest_enabled', 'profiles.digest_ena
 select hasnt_column('public', 'profiles', 'new_airdrops_opt_in', 'profiles.new_airdrops_opt_in is dropped');
 select hasnt_column('public', 'profiles', 'unsubscribe_token', 'profiles.unsubscribe_token is dropped');
 
--- 6. What remains of profiles.
-select columns_are('public', 'profiles', array['user_id', 'plan', 'timezone'],
-  'profiles keeps exactly user_id, plan and timezone');
+-- 6. What remains of profiles (0014 adds changes_seen_at for "Perubahan sejak kunjungan terakhir").
+select columns_are('public', 'profiles', array['user_id', 'plan', 'timezone', 'changes_seen_at'],
+  'profiles keeps exactly user_id, plan and timezone, plus changes_seen_at from 0014');
 
 -- 7-9. RLS and grants are intact.
 select is((select relrowsecurity from pg_class where oid = 'public.profiles'::regclass), true,

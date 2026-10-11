@@ -386,6 +386,21 @@ export const wallets = {
   },
 };
 
+/** "Perubahan sejak kunjungan terakhir" on /airdrops and the watchlist (Plan 6 Task 7). */
+export const changes = {
+  heading: "Perubahan sejak kunjungan terakhir",
+  markSeen: "Tandai sudah dibaca",
+  curatedIn: "Masuk list",
+  curatedOut: "Keluar dari list",
+  /** A run that brought many projects into the list for the first time, as one line. */
+  curatedInMany: (n: number) => `${n} project masuk list`,
+  ended: "Udah ended",
+  status: (from: string, to: string) => `Status berubah: ${from} → ${to}`,
+  risk: (from: string, to: string) => `Risiko berubah: ${from} → ${to}`,
+  deadline: (kind: string, date: string) => `Deadline ${kind} dalam 48 jam (${date})`,
+  approximateDate: (date: string) => `sekitar ${date}`,
+};
+
 export const watchlist = {
   title: "Watchlist",
   heading: "Watchlist kamu",

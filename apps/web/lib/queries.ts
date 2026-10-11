@@ -4,6 +4,13 @@ import { contradictionsSchema, scamSchema, storedAnalystSchema } from "@saf/core
 import type { CheckId, CurationReason, LinkCheckStatus, RiskLevel, RiskReason, Severity, Status } from "@saf/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cache } from "react";
+import {
+  CHANGE_DEADLINE_KINDS,
+  DEADLINE_WINDOW_MS,
+  buildChangeItems,
+  type ChangeItem,
+  type ChangeProject,
+} from "./changes";
 import { claimOpenChecked, isCheckedKind, isFlagged } from "./detail";
 import {
   RISK_LEVELS,
@@ -566,4 +573,84 @@ export async function getRunSummary(db: SupabaseClient): Promise<{ checked: numb
   const run = await getLastSuccessfulRun(db);
   const n = run ? counters(run.stats, ["curation_checked", "curation_passed"]) : null;
   return run && n ? { checked: n.curation_checked, passed: n.curation_passed, at: run.at } : null;
+}
+
+// ---- "Perubahan sejak kunjungan terakhir" (Plan 6 Task 7) ----
+
+/** Without a `changes_seen_at`, the feed covers the changes recorded in this last stretch. */
+const CHANGES_DEFAULT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/** Row window of the changes query, newest first: enough for every watched project's changes in one run. */
+const CHANGES_LIMIT = 500;
+
+/** When the member last marked the changes seen (`profiles.changes_seen_at`), or null. */
+export async function getChangesSeenAt(db: SupabaseClient, userId: string): Promise<Date | null> {
+  const { data, error } = await db.from("profiles").select("changes_seen_at").eq("user_id", userId).maybeSingle();
+  throwIf(error, "changes seen");
+  const at = isRecord(data) && typeof data.changes_seen_at === "string" ? Date.parse(data.changes_seen_at) : Number.NaN;
+  return Number.isNaN(at) ? null : new Date(at);
+}
+
+function asChangeProject(v: unknown): ChangeProject | null {
+  if (!isRecord(v) || typeof v.slug !== "string" || typeof v.name !== "string") return null;
+  return { slug: v.slug, name: v.name };
+}
+
+/**
+ * The signed-in member's feed: `project_changes` of the projects on their watchlist recorded after `since` (the last 7
+ * days without one), plus their claim / snapshot / campaign-end deadlines in the next 48 hours (exact or approximate).
+ * The watchlist read and the `project_changes` policy (0014) both keep it to the member's own watched projects.
+ */
+export async function listChangesSince(db: SupabaseClient, since: Date | null, now: Date): Promise<ChangeItem[]> {
+  const watched = await db.from("watchlist").select("project_id");
+  throwIf(watched.error, "watchlist");
+  const ids = ((watched.data ?? []) as Record<string, unknown>[]).map((r) => String(r.project_id));
+  if (ids.length === 0) return [];
+
+  const after = since ?? new Date(now.getTime() - CHANGES_DEFAULT_WINDOW_MS);
+  const [changes, deadlines] = await Promise.all([
+    db.from("project_changes")
+      .select("project_id, field, old_value, new_value, changed_at, seq, project:projects(slug, name)")
+      .in("project_id", ids)
+      .gt("recorded_at", after.toISOString())
+      .order("changed_at", { ascending: false })
+      .order("seq", { ascending: false })
+      .limit(CHANGES_LIMIT),
+    db.from("deadlines")
+      .select("project_id, kind, date, precision, project:projects(slug, name)")
+      .in("project_id", ids)
+      .in("kind", [...CHANGE_DEADLINE_KINDS])
+      .in("precision", ["exact", "approximate"])
+      .gte("date", utcToday(now))
+      .lte("date", utcToday(new Date(now.getTime() + DEADLINE_WINDOW_MS))),
+  ]);
+  throwIf(changes.error, "changes");
+  throwIf(deadlines.error, "deadlines");
+
+  const changeRows = ((changes.data ?? []) as unknown as Record<string, unknown>[]).flatMap((r) => {
+    const project = asChangeProject(r.project);
+    return project && typeof r.new_value === "string"
+      ? [{
+          projectId: String(r.project_id),
+          project,
+          field: String(r.field),
+          oldValue: typeof r.old_value === "string" ? r.old_value : null,
+          newValue: r.new_value,
+          changedAt: String(r.changed_at),
+          seq: Number(r.seq),
+        }]
+      : [];
+  });
+  const deadlineRows = ((deadlines.data ?? []) as unknown as Record<string, unknown>[]).flatMap((r) => {
+    const project = asChangeProject(r.project);
+    return project && typeof r.date === "string"
+      ? [{
+          projectId: String(r.project_id),
+          project,
+          kind: String(r.kind),
+          date: r.date,
+          precision: String(r.precision),
+        }]
+      : [];
+  });
+  return buildChangeItems(changeRows, deadlineRows, since, now);
 }

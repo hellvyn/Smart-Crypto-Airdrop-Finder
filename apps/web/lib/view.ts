@@ -232,11 +232,16 @@ export function isCheckFrozen(tab: Tab, endedOn: string | null, now: Date): bool
   return endedOn < new Date(now.getTime() - ENDED_SCORING_DAYS * DAY_MS).toISOString().slice(0, 10);
 }
 
-const endedDay = new Intl.DateTimeFormat("id-ID", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
+const calendarDay = new Intl.DateTimeFormat("id-ID", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
 
-/** "Ended 5 Okt 2026" from a `YYYY-MM-DD` end date; the date is a calendar day, so it is formatted in UTC. */
+/** "5 Okt 2026" from a `YYYY-MM-DD` calendar day (formatted in UTC, so the day never shifts). */
+export function dayLabel(day: string): string {
+  return calendarDay.format(new Date(`${day}T00:00:00Z`));
+}
+
+/** "Ended 5 Okt 2026" from a `YYYY-MM-DD` end date. */
 export function endedLabel(endedOn: string): string {
-  return labels.endedOn(endedDay.format(new Date(`${endedOn}T00:00:00Z`)));
+  return labels.endedOn(dayLabel(endedOn));
 }
 
 const ONE_DECIMAL = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 });
