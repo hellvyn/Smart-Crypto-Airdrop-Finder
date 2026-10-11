@@ -185,7 +185,7 @@ Kotak "Briefing pagi · {tanggal}" di atas `/airdrops` untuk member:
 
 ### 5.7 Keadaan khusus
 
-- Jatah habis: "Jatah 20 pesan hari ini habis, reset jam 00.00 waktu kamu."
+- Jatah habis: "Jatah 20 pesan hari ini habis, reset jam 00.00 WIB."
 - Semua model gagal: "Coach lagi gak bisa jawab, coba lagi sebentar." Pesan itu otomatis gak dihitung setelah 2 menit.
 - Kandidat kosong (misal modal Gratis aja dan gak ada project Gratis): pesan jujur tanpa memanggil AI, dan gak
   memotong jatah.
