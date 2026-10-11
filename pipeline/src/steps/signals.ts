@@ -206,7 +206,8 @@ function keptVcBackers(vcs: PipelineConfig["vcs"], vc: VcIndex | null): SignalKe
  * with their own `observed_at` instead of deleting them: all `defillama` signals when DefiLlama was not fetched, the
  * `vc_backer` of each VC whose portfolio was not checked, and the `reported_backer` of a project whose AlphaDrops
  * raises were not checked (its AlphaDrops `curated_source` is still rewritten). A project whose signals cannot be
- * built or stored counts as `signals_failed`; the others continue.
+ * built or stored counts as `signals_failed`; the others continue. Returns the coverage of each project whose signals
+ * were stored (by project id), for the `score` stage of the same run.
  */
 export async function refreshSignals(
   deps: { repo: PipelineRepo },
@@ -216,9 +217,10 @@ export async function refreshSignals(
   ctx: SignalContext,
   /** The projects seen within `scoreActiveSinceDays`, when the caller already listed them. */
   active?: ProjectForScoring[],
-): Promise<void> {
+): Promise<Map<string, SignalCoverage>> {
   const projects = active ?? (await deps.repo.listProjectsForScoring(config.scoreActiveSinceDays, now));
   const keepVc = keptVcBackers(config.vcs, ctx.vc);
+  const coverageByProject = new Map<string, SignalCoverage>();
   for (const project of projects) {
     try {
       const { signals, coverage } = buildSignals(project, ctx);
@@ -226,6 +228,7 @@ export async function refreshSignals(
       if (!coverage.defillama) keep.push("defillama");
       if (!coverage.alphadrops_raises) keep.push({ source: "alphadrops", kind: "reported_backer" });
       await deps.repo.replaceSignals(project.id, signals, now, keep);
+      coverageByProject.set(project.id, coverage);
       stats.signals_tvl += signals.filter((s) => s.kind === "tvl").length;
       stats.signals_coingecko += signals.filter((s) => s.kind === "coingecko_listed").length;
       if (signals.some((s) => s.kind === "vc_backer")) stats.signals_vc_backer += 1;
@@ -234,4 +237,5 @@ export async function refreshSignals(
       stats.signals_failed += 1;
     }
   }
+  return coverageByProject;
 }

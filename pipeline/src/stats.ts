@@ -65,7 +65,16 @@ export interface DailyStats extends RunStats {
    * all the same; the count is for the owner's review of AI writing (gate G13).
    */
   ai_style_violations: number;
-  /** Projects whose risk assessment threw. */
+  /** Projects whose curation (`curate` + `worth`) was computed and stored this run. */
+  curation_checked: number;
+  /** Of those, the curations that passed, in all tabs and per tab (`live_now` is what gate G9 counts). */
+  curation_passed: number;
+  curation_passed_live_now: number;
+  curation_passed_early_bets: number;
+  curation_passed_ended: number;
+  /** Failed curations with an `insufficient_checks` reason (no official domain, or a key check did not run). */
+  curation_hidden_insufficient_checks: number;
+  /** Projects whose risk assessment or curation threw. */
   score_failed: number;
   source_failed: number;
   /** Collected documents that could not be stored (the other documents still were). */
@@ -106,6 +115,12 @@ export function emptyStats(): DailyStats {
     ai_analyses_failed: 0,
     ai_analyses_deferred: 0,
     ai_style_violations: 0,
+    curation_checked: 0,
+    curation_passed: 0,
+    curation_passed_live_now: 0,
+    curation_passed_early_bets: 0,
+    curation_passed_ended: 0,
+    curation_hidden_insufficient_checks: 0,
     score_failed: 0,
     source_failed: 0,
     ingest_failed: 0,

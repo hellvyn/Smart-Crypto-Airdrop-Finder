@@ -2288,3 +2288,360 @@ describe("runDaily AI analyses", () => {
     expect(repo.runs[0]?.stats.assessed).toBe(3);
   });
 });
+
+describe("runDaily curation", () => {
+  /** Curations of the first project with this name key, oldest first. */
+  const curationsOf = async (repo: MemoryRepo, nameKey: string) => {
+    const id = (await repo.findProjectsByNameKey(nameKey))[0]?.id;
+    return repo.curations.filter((c) => c.projectId === id);
+  };
+  const latestCurationOf = async (repo: MemoryRepo, nameKey: string) => (await curationsOf(repo, nameKey)).at(-1);
+  const codes = (c: { reasons: { code: string }[] } | undefined) => c?.reasons.map((r) => r.code);
+  const curatedChanges = (repo: MemoryRepo) =>
+    repo.projectChanges.filter((c) => c.field === "curated").map((c) => [c.projectId, c.oldValue, c.newValue, c.changedAt]);
+  const at = (iso: string) => new Date(`${iso}T00:00:00Z`);
+
+  /** `http` with GoPlus reporting `domain` as a phishing site. */
+  const phishingFor = (http: Http, domain: string): Http => ({
+    ...http,
+    get: async (url) =>
+      url.startsWith("https://api.gopluslabs.io/") && url.includes(domain)
+        ? { status: 200, body: JSON.stringify({ code: 1, result: { phishing_site: 1 } }) }
+        : http.get(url),
+  });
+
+  /** REPLIES with DeepBook claimable until `claimDate` (exact). */
+  const deepbookClaimUntil = (claimDate: string): Record<string, unknown> => ({
+    ...REPLIES,
+    [DEEPBOOK]: {
+      is_airdrop_content: true,
+      projects: [
+        project({
+          name: "DeepBook",
+          status: "live",
+          status_evidence: "Airdrop confirmed",
+          chains: ["Sui"],
+          tasks: ["Join the waitlist"],
+          deadlines: [{ kind: "claim", date: claimDate, precision: "exact", text: "Claim window" }],
+          official_urls: ["https://deepbook.tech/waitlist"],
+        }),
+      ],
+    },
+  });
+
+  it("saves a curation per active project and counts passes", async () => {
+    const { repo, deps, config } = setup();
+
+    const stats = await runDaily(deps, config);
+
+    expect(stats.curation_checked).toBe(stats.assessed);
+    expect(repo.curations.length).toBe(stats.assessed);
+    expect(stats).toMatchObject({
+      curation_checked: 3,
+      curation_passed: 3,
+      curation_passed_live_now: 1,
+      curation_passed_early_bets: 2,
+      curation_passed_ended: 0,
+      curation_hidden_insufficient_checks: 0,
+    });
+    expect(await latestCurationOf(repo, "deepbook")).toMatchObject({
+      passed: true,
+      tab: "live_now",
+      statusAt: "live",
+      endedOn: null,
+      // No potential signal and capital unknown; the Analyst's "pantau" is still counted.
+      worthLevel: "insufficient_data",
+      coverage: { defillama: true, vc: false, alphadrops_raises: false },
+      publicFailReason: null,
+      computedAt: NOW,
+    });
+    expect(codes(await latestCurationOf(repo, "deepbook"))).toEqual(["passed", "no_token_yet", "capital_unknown", "ai_pantau"]);
+    expect((await latestCurationOf(repo, "ink"))?.tab).toBe("early_bets");
+    // TVL $25M (+1), no token yet (+2), Analyst "pantau" (-1): medium.
+    expect(await latestCurationOf(repo, "hyperdrivelend")).toMatchObject({ passed: true, tab: "early_bets", worthLevel: "medium" });
+    expect(codes(await latestCurationOf(repo, "hyperdrivelend"))).toEqual([
+      "passed",
+      "tvl_high",
+      "no_token_yet",
+      "capital_unknown",
+      "ai_pantau",
+    ]);
+    // A first passing curation is a change (null -> true) for every project.
+    expect(curatedChanges(repo).map(([, oldValue, newValue, changedAt]) => [oldValue, newValue, changedAt])).toEqual(
+      Array(3).fill([null, "true", NOW]),
+    );
+  });
+
+  it("leaves the Analyst out of worth when there is no analysis", async () => {
+    const { repo, deps, config } = setup();
+
+    await runDaily({ ...deps, analyzers: [] }, config);
+
+    expect(codes(await latestCurationOf(repo, "hyperdrivelend"))).toEqual(["passed", "tvl_high", "no_token_yet", "capital_unknown"]);
+  });
+
+  it("gives worth the most demanding capital level of the sources and a TGE that already passed", async () => {
+    const replies = {
+      ...REPLIES,
+      [INK_PAGE]: {
+        is_airdrop_content: true,
+        projects: [
+          project({
+            name: "Ink Chain",
+            status: "speculative",
+            chains: ["Ink"],
+            official_urls: ["https://inkonchain.com/", "https://x.com/inkonchain"],
+            capital_required: "high",
+            deadlines: [{ kind: "tge", date: "2026-10-01", precision: "exact", text: "TGE on 1 October" }],
+          }),
+        ],
+      },
+      "https://t.me/airdrops_io/102": {
+        is_airdrop_content: true,
+        projects: [project({ name: "$INK", token_symbol: "INK", status: "announced", capital_required: "low" })],
+      },
+    };
+    const { repo, deps, config } = setup({ chat: fakeChat(replies) });
+
+    await runDaily(deps, config);
+
+    const curation = await latestCurationOf(repo, "ink");
+    // Two sources (+1), high capital (-2), Analyst "pantau" (-1); no "no token yet" (+2) once the TGE is past.
+    expect(curation?.reasons.filter((r) => r.kind === "worth").map((r) => r.code)).toEqual([
+      "multiple_sources",
+      "capital_high",
+      "ai_pantau",
+    ]);
+    expect(curation?.worthLevel).toBe("low");
+  });
+
+  it("hides a project without an official domain, still with a worth level, and counts it", async () => {
+    const pages = basePages();
+    pages[TG] = telegramWith(tgMessage(108, "2026-10-08T08:00:00+00:00", "Nodomain airdrop is live. Do the quests."));
+    const replies = {
+      ...REPLIES,
+      "https://t.me/airdrops_io/108": { is_airdrop_content: true, projects: [project({ name: "Nodomain", status: "live" })] },
+    };
+    const { repo, deps, config } = setup({ pages, chat: fakeChat(replies) });
+
+    const stats = await runDaily(deps, config);
+
+    const curation = await latestCurationOf(repo, "nodomain");
+    expect(curation).toMatchObject({ passed: false, tab: null, statusAt: "live", worthLevel: "insufficient_data" });
+    expect(codes(curation)).toContain("insufficient_checks");
+    expect(curation?.publicFailReason).not.toBeNull();
+    expect(stats).toMatchObject({ curation_checked: 4, curation_passed: 3, curation_hidden_insufficient_checks: 1 });
+    // A first curation that fails is no change.
+    expect(curatedChanges(repo)).toHaveLength(3);
+  });
+
+  it("fails a project with a quoted strong AI scam pattern", async () => {
+    const text = "Scamdrop airdrop is live at https://scamdrop.xyz. Support will DM you to fix your wallet.";
+    const pages = basePages();
+    pages[TG] = telegramWith(tgMessage(108, "2026-10-08T08:00:00+00:00", text));
+    const replies = {
+      ...REPLIES,
+      "https://t.me/airdrops_io/108": {
+        is_airdrop_content: true,
+        projects: [project({ name: "Scamdrop", status: "live", official_urls: ["https://scamdrop.xyz"] })],
+      },
+    };
+    const base = fakeChat(replies);
+    const chat: FakeChat = {
+      ...base,
+      chat: async (model, messages) => {
+        const scamPrompt = (messages[0]?.content ?? "").includes('{"flags"');
+        if (!scamPrompt || !(messages[1]?.content ?? "").includes("PROJECT: Scamdrop")) return base.chat(model, messages);
+        const flags = [{ pattern: "fake_support", quote: "Support will DM you to fix your wallet.", explanation: "Admin palsu." }];
+        return { content: JSON.stringify({ flags }), finishReason: "stop", latencyMs: 1, httpStatus: 200, servedModel: null };
+      },
+    };
+    const { repo, deps, config } = setup({ pages, chat });
+
+    await runDaily(deps, config);
+
+    const curation = await latestCurationOf(repo, "scamdrop");
+    expect(curation).toMatchObject({ passed: false, tab: null });
+    expect(codes(curation)).toContain("scam_pattern");
+  });
+
+  it("logs a curated change when a watched project drops out", async () => {
+    const { repo, deps, config, http } = setup();
+    await runDaily(deps, config);
+    const nextDay = new Date(NOW.getTime() + DAY);
+
+    await runDaily({ ...deps, http: phishingFor(http, "deepbook.tech"), now: () => nextDay }, config);
+
+    const deepbook = (await repo.findProjectsByNameKey("deepbook"))[0]?.id;
+    const curation = await latestCurationOf(repo, "deepbook");
+    expect(curation).toMatchObject({ passed: false, tab: null, statusAt: "live", computedAt: nextDay });
+    expect(codes(curation)).toContain("risk_too_high");
+    expect(curatedChanges(repo).filter(([id]) => id === deepbook)).toEqual([
+      [deepbook, null, "true", NOW],
+      [deepbook, "true", "false", nextDay],
+    ]);
+  });
+
+  it("keeps a curated project listed when it ends and logs only a status change", async () => {
+    const { repo, deps, config } = setup({ chat: fakeChat(deepbookClaimUntil("2026-10-12")) });
+    await runDaily(deps, config);
+    expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: true, tab: "live_now" });
+
+    const stats = await runDaily({ ...deps, now: () => at("2026-10-15") }, config);
+
+    const deepbook = (await repo.findProjectsByNameKey("deepbook"))[0];
+    expect(deepbook?.status).toBe("ended");
+    expect(await latestCurationOf(repo, "deepbook")).toMatchObject({
+      passed: true,
+      tab: "ended",
+      statusAt: "ended",
+      endedOn: "2026-10-12",
+      computedAt: at("2026-10-15"),
+    });
+    expect(codes(await latestCurationOf(repo, "deepbook"))?.[0]).toBe("ended_after_curation");
+    expect(stats).toMatchObject({ curation_passed_ended: 1, curation_passed_live_now: 0 });
+    expect(repo.projectChanges.filter((c) => c.projectId === deepbook?.id).map((c) => [c.field, c.oldValue, c.newValue])).toEqual([
+      ["risk_level", null, "medium"],
+      ["curated", null, "true"],
+      ["status", "live", "ended"],
+    ]);
+
+    // Stored as ended now: the end date is carried from the latest curation.
+    await runDaily({ ...deps, now: () => at("2026-10-16") }, config);
+    expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: true, tab: "ended", endedOn: "2026-10-12" });
+  });
+
+  it("dates the end of a project a document reports ended to the day of the run", async () => {
+    const { repo, deps, config } = setup();
+    await runDaily(deps, config);
+    const pages = basePages();
+    pages[TG] = telegramWith(tgMessage(104, "2026-10-09T08:00:00+00:00", "DeepBook claim has ended"));
+    const later = new Date(NOW.getTime() + DAY);
+
+    await runDaily({ ...deps, http: fakeHttp(pages), now: () => later }, config);
+
+    expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: true, tab: "ended", endedOn: "2026-10-11" });
+  });
+
+  it("keeps scoring ended curated projects for 90 days after they ended", async () => {
+    // DeepBook ends on 2026-10-12 and is last seen on 2026-10-15, far outside scoreActiveSinceDays (60) below.
+    const ended = async () => {
+      const s = setup({ chat: fakeChat(deepbookClaimUntil("2026-10-12")) });
+      await runDaily(s.deps, s.config);
+      await runDaily({ ...s.deps, now: () => at("2026-10-15") }, s.config);
+      return s;
+    };
+
+    const day89 = await ended();
+    const stats89 = await runDaily({ ...day89.deps, now: () => at("2027-01-09") }, day89.config);
+    expect(await latestCurationOf(day89.repo, "deepbook")).toMatchObject({
+      passed: true,
+      tab: "ended",
+      endedOn: "2026-10-12",
+      computedAt: at("2027-01-09"),
+    });
+    expect(stats89.curation_passed_ended).toBe(1);
+
+    const day91 = await ended();
+    const stats91 = await runDaily({ ...day91.deps, now: () => at("2027-01-11") }, day91.config);
+    expect((await latestCurationOf(day91.repo, "deepbook"))?.computedAt).toEqual(at("2026-10-15"));
+    expect(stats91.curation_passed_ended).toBe(0);
+  });
+
+  it("does not keep scoring an ended project whose latest curation failed", async () => {
+    const { repo, deps, config, http } = setup({ chat: fakeChat(deepbookClaimUntil("2026-10-12")) });
+    await runDaily(deps, config);
+    // Ends and drops out on the same run (phishing): the latest curation failed.
+    await runDaily({ ...deps, http: phishingFor(http, "deepbook.tech"), now: () => at("2026-10-15") }, config);
+    expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: false, statusAt: "ended" });
+
+    await runDaily({ ...deps, now: () => at("2027-01-01") }, config);
+
+    expect((await latestCurationOf(repo, "deepbook"))?.computedAt).toEqual(at("2026-10-15"));
+  });
+
+  it("gives curate and worth only signals observed in the last 14 days", async () => {
+    const LLAMA_DEEPBOOK = {
+      name: "DeepBook", slug: "deepbook", url: "https://deepbook.tech", chains: ["Sui"], tvl: 3e7, change_7d: 1, category: "Dexs", gecko_id: "deepbook", symbol: "DEEP",
+    };
+    const withDeepbook = basePages();
+    withDeepbook[PROTOCOLS] = { status: 200, body: JSON.stringify([...PROTOCOL_LIST, LLAMA_DEEPBOOK]) };
+    const outage = basePages();
+    outage[PROTOCOLS] = { status: 503, body: "" };
+    const afterOutage = async (days: number) => {
+      const { repo, deps, config } = setup({ pages: withDeepbook });
+      await runDaily(deps, config);
+      expect(codes(await latestCurationOf(repo, "deepbook"))).toContain("tvl_high");
+      await runDaily({ ...deps, http: fakeHttp(outage), now: () => new Date(NOW.getTime() + days * DAY) }, config);
+      return latestCurationOf(repo, "deepbook");
+    };
+
+    // Carried through the outage and 14 days old: still used (TVL counts, CoinGecko listing means a token exists).
+    const fresh = await afterOutage(14);
+    expect(codes(fresh)).toContain("tvl_high");
+    expect(codes(fresh)).not.toContain("no_token_yet");
+    expect(fresh?.coverage).toEqual({ defillama: false, vc: false, alphadrops_raises: false });
+
+    // 15 days old: not checked, so neither TVL nor the listing is given to worth.
+    const stale = await afterOutage(15);
+    expect(codes(stale)).not.toContain("tvl_high");
+    expect(codes(stale)).toContain("no_token_yet");
+    expect(stale?.coverage).toEqual({ defillama: false, vc: false, alphadrops_raises: false });
+  });
+
+  it("marks VC backers not checked when one VC's backer is older than 14 days, even with another VC checked", async () => {
+    const paradigm = { id: "paradigm", name: "Paradigm", aliases: [], tier: 1 as const, portfolioUrl: "https://paradigm.test/portfolio" };
+    const variant = { id: "variant", name: "Variant", aliases: [], tier: 2 as const, portfolioUrl: "https://variant.test/portfolio" };
+    const pages = basePages();
+    pages[paradigm.portfolioUrl] = { status: 200, body: '<a href="https://deepbook.tech/">DeepBook</a>' };
+    pages[variant.portfolioUrl] = { status: 200, body: '<a href="https://other.xyz/">Other</a>' };
+    const { repo, deps } = setup({ pages });
+    const config = { ...defaultConfig, vcs: [paradigm, variant] };
+    await runDaily(deps, config);
+    expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ coverage: { vc: true } });
+    expect(codes(await latestCurationOf(repo, "deepbook"))).toContain("vc_backer");
+
+    // Paradigm's page is gone and its cache is 29 days old: its backer is kept from the first run, but too old to use.
+    const later = basePages();
+    later[variant.portfolioUrl] = pages[variant.portfolioUrl] as { status: number; body: string };
+    await runDaily({ ...deps, http: fakeHttp(later), now: () => new Date(NOW.getTime() + 29 * DAY) }, config);
+
+    expect(repo.signals.some((s) => s.kind === "vc_backer" && s.observedAt.getTime() === NOW.getTime())).toBe(true);
+    const curation = await latestCurationOf(repo, "deepbook");
+    expect(curation?.coverage).toEqual({ defillama: true, vc: false, alphadrops_raises: false });
+    expect(codes(curation)).not.toContain("vc_backer");
+  });
+
+  it("marks every source not checked when the signals stage fails", async () => {
+    const repo = new MemoryRepo();
+    const list = repo.listProjectsForScoring.bind(repo);
+    let calls = 0;
+    // The signals stage lists projects first; only that call fails.
+    repo.listProjectsForScoring = async (days, now) => {
+      calls += 1;
+      if (calls === 1) throw new Error("db down");
+      return list(days, now);
+    };
+    const { deps, config } = setup({ repo });
+
+    await expect(runDaily(deps, config)).rejects.toThrow("db down");
+
+    expect(repo.curations.map((c) => c.coverage)).toEqual(Array(3).fill({ defillama: false, vc: false, alphadrops_raises: false }));
+  });
+
+  it("counts a project whose curation cannot be saved as score_failed and curates the others", async () => {
+    const repo = new MemoryRepo();
+    const save = repo.saveCuration.bind(repo);
+    repo.saveCuration = async (id, c, when) => {
+      if ((await repo.findProjectsByNameKey("deepbook"))[0]?.id === id) throw new Error("write failed");
+      return save(id, c, when);
+    };
+    const { deps, config } = setup({ repo });
+
+    const stats = await runDaily(deps, config);
+
+    expect(stats).toMatchObject({ score_failed: 1, curation_checked: 2, curation_passed: 2 });
+    expect(repo.curations).toHaveLength(2);
+    expect(stats.run_error).toBeUndefined();
+  });
+});

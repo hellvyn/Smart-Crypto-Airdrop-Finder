@@ -53,6 +53,7 @@ const PROJECT: ProjectForScoring = {
   lookalikeOfName: null,
   lookalikeOfDomains: [],
   sourceAsks: [],
+  signals: [],
 };
 
 describe("buildAnalystMessages", () => {

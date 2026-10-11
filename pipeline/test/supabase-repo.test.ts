@@ -547,6 +547,7 @@ describe("SupabaseRepo.listProjectsForScoring", () => {
             { field: "status", value: "live", quote: "q", documents: null },
           ],
           lookalike: null,
+          project_signals: [],
         },
       ],
     });
@@ -556,5 +557,131 @@ describe("SupabaseRepo.listProjectsForScoring", () => {
 
     expect(scored?.sourceKinds).toEqual(["airdrops_io", "telegram"]);
     expect(scored?.sourceCount).toBe(2);
+  });
+});
+
+describe("SupabaseRepo.listProjectsForScoring ended curated projects", () => {
+  type Filter = [string, string, unknown];
+  interface Read {
+    table: string;
+    columns: string;
+    filters: Filter[];
+    single: boolean;
+  }
+
+  /** A read answers `answer(read)` (rows, or one row for `.maybeSingle()`), whatever its ordering or range. */
+  function filteringClient(answer: (read: Read) => unknown): { client: SupabaseClient; reads: Read[] } {
+    const reads: Read[] = [];
+    const client = {
+      from: (table: string) => ({
+        select: (columns = "*") => {
+          const read: Read = { table, columns, filters: [], single: false };
+          reads.push(read);
+          const query: Record<string, unknown> = {
+            then: (resolve: (value: unknown) => unknown) =>
+              resolve({ data: answer(read), error: null, count: null, status: 200, statusText: "OK" }),
+            maybeSingle: () => {
+              read.single = true;
+              return query;
+            },
+          };
+          for (const op of ["eq", "neq", "gte", "in"]) {
+            query[op] = (column: string, value: unknown) => {
+              read.filters.push([op, column, value]);
+              return query;
+            };
+          }
+          for (const method of ["order", "limit", "range", "returns"]) query[method] = () => query;
+          return query;
+        },
+      }),
+    } as unknown as SupabaseClient;
+    return { client, reads };
+  }
+
+  const projectRow = (id: string, status: string, lastSeen: string, signals: unknown[] = []) => ({
+    id,
+    slug: id,
+    name: id,
+    name_key: id,
+    token_symbol: null,
+    chains: [],
+    official_domains: [],
+    status,
+    conflict: false,
+    lookalike_of: null,
+    first_seen: "2026-01-01T00:00:00Z",
+    last_seen: lastSeen,
+    tasks: [],
+    deadlines: [],
+    links: [],
+    evidence: [],
+    lookalike: null,
+    project_signals: signals,
+  });
+  const has = (read: Read, op: string, column: string) => read.filters.find(([o, c]) => o === op && c === column);
+
+  it("adds ended projects whose latest curation passed and ended at most 90 days ago, by ended_on", async () => {
+    const latest: Record<string, { passed: boolean; ended_on: string | null }> = {
+      "p-ended": { passed: true, ended_on: "2026-07-12" },
+      "p-dropped": { passed: false, ended_on: "2026-09-01" },
+      "p-moved-on": { passed: true, ended_on: "2026-07-11" },
+    };
+    const { client, reads } = filteringClient((read) => {
+      if (read.table === "curations" && read.single) return latest[String(has(read, "eq", "project_id")?.[2])] ?? null;
+      // Passing curations that ended in the window (the active project's too: it is not read twice).
+      if (read.table === "curations") return ["p-active", "p-ended", "p-dropped", "p-ended", "p-moved-on"].map((project_id) => ({ project_id }));
+      if (has(read, "gte", "last_seen")) return [projectRow("p-active", "live", "2026-10-09T00:00:00Z")];
+      const ids = (has(read, "in", "id")?.[2] as string[] | undefined) ?? [];
+      return ids.map((id) => projectRow(id, "ended", "2026-05-01T00:00:00Z"));
+    });
+    const repo = new SupabaseRepo(client);
+
+    const scored = await repo.listProjectsForScoring(60, new Date("2026-10-10T03:00:00Z"));
+
+    expect(scored.map((p) => p.id)).toEqual(["p-active", "p-ended"]);
+    const candidates = reads.find((r) => r.table === "curations" && !r.single);
+    expect(candidates?.filters).toEqual([
+      ["eq", "passed", true],
+      ["gte", "ended_on", "2026-07-12"],
+    ]);
+    const endedRead = reads.find((r) => r.table === "projects" && has(r, "in", "id"));
+    expect(endedRead?.filters).toEqual([
+      ["eq", "status", "ended"],
+      ["in", "id", ["p-ended"]],
+    ]);
+    // The latest curation is read once per candidate outside the active window.
+    expect(reads.filter((r) => r.single).map((r) => has(r, "eq", "project_id")?.[2])).toEqual(["p-ended", "p-dropped", "p-moved-on"]);
+  });
+
+  it("reads no extra projects when no ended curated project qualifies", async () => {
+    const { client, reads } = filteringClient((read) =>
+      read.table === "projects" ? [projectRow("p-active", "live", "2026-10-09T00:00:00Z")] : [],
+    );
+
+    const scored = await new SupabaseRepo(client).listProjectsForScoring(60, new Date("2026-10-10T03:00:00Z"));
+
+    expect(scored.map((p) => p.id)).toEqual(["p-active"]);
+    expect(reads.filter((r) => r.table === "projects")).toHaveLength(1);
+  });
+
+  it("maps the project's stored signals with when each was observed", async () => {
+    const signal = {
+      kind: "tvl",
+      value: { tvl_usd: 3e7 },
+      source: "defillama",
+      verified: true,
+      observed_at: "2026-10-01T00:00:00+00:00",
+    };
+    const { client, reads } = filteringClient((read) =>
+      read.table === "projects" ? [projectRow("p-active", "live", "2026-10-09T00:00:00Z", [signal])] : [],
+    );
+
+    const [scored] = await new SupabaseRepo(client).listProjectsForScoring(60, new Date("2026-10-10T03:00:00Z"));
+
+    expect(scored?.signals).toEqual([
+      { kind: "tvl", value: { tvl_usd: 3e7 }, source: "defillama", verified: true, observedAt: new Date("2026-10-01T00:00:00Z") },
+    ]);
+    expect(reads[0]?.columns).toContain("project_signals(kind, value, source, verified, observed_at)");
   });
 });

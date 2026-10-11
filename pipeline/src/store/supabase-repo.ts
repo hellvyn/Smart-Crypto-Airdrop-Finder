@@ -8,6 +8,7 @@ import type {
   NewSignal,
   RiskAssessment,
   RiskLevel,
+  SignalKind,
   SignalSource,
   Status,
   StatusEvidence,
@@ -15,7 +16,7 @@ import type {
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { RaisePage } from "../enrich/alphadrops-raises.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
-import { FACT_FIELDS, curatedChange, publicFailReason } from "./repo.js";
+import { FACT_FIELDS, curatedChange, endedScoringSince, publicFailReason } from "./repo.js";
 import type {
   ExtractionStatus,
   NewAiAnalysis,
@@ -453,6 +454,35 @@ export class SupabaseRepo implements PipelineRepo {
 
   async listProjectsForScoring(activeSinceDays: number, now: Date): Promise<ProjectForScoring[]> {
     const cutoff = new Date(now.getTime() - activeSinceDays * DAY_MS).toISOString();
+    const active = await this.scoringProjects("listProjectsForScoring", { lastSeenSince: cutoff });
+    // Ended projects outside the window: candidates are those with a passing curation that ended within the window,
+    // kept only when their latest curation is still such a one (a later failed curation freezes the project).
+    const endedSince = endedScoringSince(now);
+    const candidates = await this.fetchAll<{ project_id: string }>("listProjectsForScoring.endedCandidates", (from, to) =>
+      this.db
+        .from("curations")
+        .select("project_id")
+        .eq("passed", true)
+        .gte("ended_on", endedSince)
+        .order("seq")
+        .range(from, to),
+    );
+    const activeIds = new Set(active.map((p) => p.id));
+    const endedIds: string[] = [];
+    for (const id of new Set(candidates.map((c) => c.project_id))) {
+      if (activeIds.has(id)) continue;
+      const latest = await this.latestCuration(id);
+      if (latest?.passed && latest.endedOn !== null && latest.endedOn >= endedSince) endedIds.push(id);
+    }
+    if (endedIds.length === 0) return active;
+    return [...active, ...(await this.scoringProjects("listProjectsForScoring.ended", { endedIds }))];
+  }
+
+  /** `ProjectForScoring` rows of the projects last seen since a time, or of the given ended projects. */
+  private async scoringProjects(
+    op: string,
+    filter: { lastSeenSince: string } | { endedIds: string[] },
+  ): Promise<ProjectForScoring[]> {
     type ScoringDb = ProjectDb & {
       tasks: { description: string; cadence: string }[];
       deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[];
@@ -464,24 +494,38 @@ export class SupabaseRepo implements PipelineRepo {
         documents: { source_key: string; source_kind: SourceKind } | null;
       }[];
       lookalike: { name: string; official_domains: string[] } | null;
+      project_signals: {
+        kind: SignalKind;
+        value: Record<string, unknown>;
+        source: SignalSource;
+        verified: boolean;
+        observed_at: string;
+      }[];
     };
-    const rows = await this.fetchAll<ScoringDb>("listProjectsForScoring", (from, to) =>
-      this.db
+    const rows = await this.fetchAll<ScoringDb>(op, (from, to) => {
+      const query = this.db
         .from("projects")
         .select(
           `${PROJECT_COLUMNS}, tasks(description, cadence), deadlines(kind, date, precision), links(url, kind), ` +
-            "evidence(field, value, quote, documents(source_key, source_kind)), lookalike:lookalike_of(name, official_domains)",
-        )
-        .gte("last_seen", cutoff)
-        .order("id")
-        // Steps grouped by document, in step order; same as MemoryRepo.
-        .order("document_id", { referencedTable: "tasks" })
-        .order("position", { referencedTable: "tasks" })
-        // Evidence in insertion order, so sourceAsks and facts match MemoryRepo.
-        .order("seq", { referencedTable: "evidence" })
-        .range(from, to)
-        .returns<ScoringDb[]>(),
-    );
+            "evidence(field, value, quote, documents(source_key, source_kind)), lookalike:lookalike_of(name, official_domains), " +
+            "project_signals(kind, value, source, verified, observed_at)",
+        );
+      const filtered =
+        "lastSeenSince" in filter
+          ? query.gte("last_seen", filter.lastSeenSince)
+          : query.eq("status", "ended").in("id", filter.endedIds);
+      return (
+        filtered
+          .order("id")
+          // Steps grouped by document, in step order; same as MemoryRepo.
+          .order("document_id", { referencedTable: "tasks" })
+          .order("position", { referencedTable: "tasks" })
+          // Evidence in insertion order, so sourceAsks and facts match MemoryRepo.
+          .order("seq", { referencedTable: "evidence" })
+          .range(from, to)
+          .returns<ScoringDb[]>()
+      );
+    });
     return rows.map((r) => ({
       ...toProject(r),
       tasks: r.tasks.map((t) => t.description),
@@ -497,6 +541,13 @@ export class SupabaseRepo implements PipelineRepo {
       lookalikeOfName: r.lookalike?.name ?? null,
       lookalikeOfDomains: r.lookalike?.official_domains ?? [],
       sourceAsks: r.evidence.filter((e) => e.field === "dangerous_ask").map((e) => ({ code: e.value, quote: e.quote })),
+      signals: r.project_signals.map((s) => ({
+        kind: s.kind,
+        value: s.value,
+        source: s.source,
+        verified: s.verified,
+        observedAt: new Date(s.observed_at),
+      })),
     }));
   }
 

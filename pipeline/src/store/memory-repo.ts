@@ -12,7 +12,7 @@ import type {
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { RaisePage } from "../enrich/alphadrops-raises.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
-import { FACT_FIELDS, curatedChange, publicFailReason } from "./repo.js";
+import { FACT_FIELDS, curatedChange, endedScoringSince, publicFailReason } from "./repo.js";
 import type {
   ExtractionStatus,
   NewAiAnalysis,
@@ -291,9 +291,14 @@ export class MemoryRepo implements PipelineRepo {
 
   async listProjectsForScoring(activeSinceDays: number, now: Date): Promise<ProjectForScoring[]> {
     const cutoff = now.getTime() - activeSinceDays * DAY_MS;
+    const endedSince = endedScoringSince(now);
     const result: ProjectForScoring[] = [];
     for (const p of this.projects.values()) {
-      if (p.lastSeen.getTime() < cutoff) continue;
+      if (p.lastSeen.getTime() < cutoff) {
+        const latest = p.status === "ended" ? await this.latestCuration(p.id) : null;
+        const endedOn = latest?.passed ? latest.endedOn : null;
+        if (endedOn === null || endedOn < endedSince) continue;
+      }
       const sourceKeys = new Set<string>();
       const sourceKinds = new Set<SourceKind>();
       for (const e of this.evidence) {
@@ -327,6 +332,15 @@ export class MemoryRepo implements PipelineRepo {
         sourceAsks: this.evidence
           .filter((e) => e.projectId === p.id && e.field === "dangerous_ask")
           .map((e) => ({ code: e.value, quote: e.quote })),
+        signals: this.signals
+          .filter((s) => s.projectId === p.id)
+          .map(({ kind, value, source, verified, observedAt }) => ({
+            kind,
+            value: structuredClone(value),
+            source,
+            verified,
+            observedAt,
+          })),
       });
     }
     return result;

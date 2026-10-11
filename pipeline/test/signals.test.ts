@@ -40,6 +40,7 @@ function project(overrides: Partial<ProjectForScoring> = {}): ProjectForScoring 
     lookalikeOfName: null,
     lookalikeOfDomains: [],
     sourceAsks: [],
+    signals: [],
     ...overrides,
   };
 }

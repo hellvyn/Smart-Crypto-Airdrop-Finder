@@ -74,6 +74,7 @@ function project(id: string, name: string, officialDomains: string[]): ProjectFo
     lookalikeOfName: null,
     lookalikeOfDomains: [],
     sourceAsks: [],
+    signals: [],
   };
 }
 

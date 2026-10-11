@@ -16,6 +16,7 @@ import type { ProjectInput } from "./steps/merge.js";
 import { purgeOldText } from "./steps/purge.js";
 import { scoreProjects } from "./steps/score.js";
 import { refreshSignals } from "./steps/signals.js";
+import type { SignalCoverage } from "./steps/signals.js";
 import { emptyStats } from "./stats.js";
 import type { DailyStats } from "./stats.js";
 import type { Fact, PipelineRepo, StoredDocument } from "./store/repo.js";
@@ -183,6 +184,8 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     }
   });
 
+  // Which signal sources each project had checked this run; a project missing here had none checked.
+  let coverage = new Map<string, SignalCoverage>();
   await stage(STEP.signals, undefined, async () => {
     // A failed VC page only leaves that VC "not checked"; refreshPortfolios does not throw for one VC.
     const vc = await refreshPortfolios(deps, config.vcs, now);
@@ -202,7 +205,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
           stats,
         )
       : null;
-    await refreshSignals(deps, config, now, stats, { protocols: collected.protocols, vc, raises }, projects);
+    coverage = await refreshSignals(deps, config, now, stats, { protocols: collected.protocols, vc, raises }, projects);
   });
   const analyzers = deps.analyzers ?? ANALYZERS;
   await stage(STEP.analyze, undefined, async () => {
@@ -211,7 +214,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     await runAnalyses({ ...deps, analyzers }, config, projects, stats);
   });
 
-  await stage(STEP.score, undefined, () => scoreProjects(deps, config, now, stats));
+  await stage(STEP.score, undefined, () => scoreProjects(deps, config, now, stats, coverage));
   await stage(STEP.purge, undefined, () => purgeOldText(repo, config.textRetentionDays, now, stats));
 
   if (failure.failed) {

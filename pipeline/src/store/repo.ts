@@ -120,6 +120,13 @@ export interface ProjectForScoring extends ProjectRow {
   lookalikeOfDomains: string[];
   /** `dangerous_ask` evidence (value = ask code, quote = source sentence), in insertion order. */
   sourceAsks: { code: string; quote: string }[];
+  /** Stored `project_signals` rows, each with when it was last checked; in no particular order. */
+  signals: StoredSignal[];
+}
+
+/** One stored `project_signals` row. */
+export interface StoredSignal extends NewSignal {
+  observedAt: Date;
 }
 
 export interface NewEvidence {
@@ -169,6 +176,17 @@ export function curatedChange(
   return { oldValue: previousPassed === null ? null : String(previousPassed), newValue: String(passed) };
 }
 
+/**
+ * Days after `ended_on` that a project whose latest curation passed is still scored (curation spec §5.3: the claim
+ * period is when fake claim sites appear); after that its last result is frozen.
+ */
+export const ENDED_SCORING_DAYS = 90;
+
+/** The earliest `ended_on` (`YYYY-MM-DD`) still scored on the UTC day of `now`. */
+export function endedScoringSince(now: Date): string {
+  return new Date(now.getTime() - ENDED_SCORING_DAYS * 86_400_000).toISOString().slice(0, 10);
+}
+
 export interface PipelineRepo {
   getDocumentHash(url: string): Promise<string | null>;
   /** Insert or update by URL. A changed hash resets the extraction status to "pending"; the same hash keeps it. */
@@ -212,7 +230,11 @@ export interface PipelineRepo {
     projectId: string,
     links: { url: string; kind: string; referralStripped: boolean }[],
   ): Promise<void>;
-  /** Projects with `lastSeen` within `activeSinceDays` of `now`. */
+  /**
+   * Projects with `lastSeen` within `activeSinceDays` of `now`, and the `ended` projects whose latest curation passed
+   * with an `ended_on` at most `ENDED_SCORING_DAYS` before the UTC day of `now` (curation spec §5.3), however long ago
+   * they were last seen.
+   */
   listProjectsForScoring(activeSinceDays: number, now: Date): Promise<ProjectForScoring[]>;
   latestRiskLevel(projectId: string): Promise<RiskLevel | null>;
   /** Appends a history row. A level change (or the first assessment) also writes a `project_changes` row. */

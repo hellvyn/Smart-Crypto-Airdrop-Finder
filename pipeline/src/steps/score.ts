@@ -1,6 +1,6 @@
 import pLimit from "p-limit";
-import { aiFlagsFromAnalyses, assessRisk, expireStatus, registrableDomain } from "@saf/core";
-import type { RiskInput } from "@saf/core";
+import { aiFlagsFromAnalyses, analystSchema, assessRisk, curate, expireStatus, registrableDomain, worth } from "@saf/core";
+import type { CurationRecord, NewSignal, RiskAssessment, RiskInput, SignalSource, Status, WorthInput } from "@saf/core";
 import type { Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
 import { firstCertificateAgeDays } from "../enrich/crtsh.js";
@@ -11,12 +11,31 @@ import type { DailyStats } from "../stats.js";
 import type { PipelineRepo, ProjectForScoring } from "../store/repo.js";
 import { LINK_KINDS } from "./merge.js";
 import type { LinkKind } from "./merge.js";
+import type { SignalCoverage } from "./signals.js";
 
 /** Maximum parallel enrichment requests (RDAP and crt.sh domain age, DefiLlama hacks). */
 const ENRICH_CONCURRENCY = 4;
 /** GoPlus rate-limits hard, so it has its own limiter and runs one request at a time. */
 const GOPLUS_CONCURRENCY = 1;
 const MINUTE_MS = 60_000;
+const DAY_MS = 86_400_000;
+/** A stored signal last checked longer ago than this (kept through a source outage) counts as not checked. */
+const SIGNAL_MAX_AGE_MS = 14 * DAY_MS;
+/** Coverage of a project the `signals` stage did not store signals for this run. */
+const NOT_CHECKED: SignalCoverage = { defillama: false, vc: false, alphadrops_raises: false };
+/** The coverage entry of each source whose signals can be kept through an outage (curation spec §5.2, §9). */
+const COVERAGE_OF: Partial<Record<SignalSource, keyof SignalCoverage>> = {
+  defillama: "defillama",
+  vc_portfolio: "vc",
+  alphadrops: "alphadrops_raises",
+};
+/**
+ * The verdict of a stored Analyst result. Only the verdict is checked: post-processing may leave no points, which the
+ * answer schema (at least one point) would refuse.
+ */
+const STORED_VERDICT = analystSchema.pick({ verdict: true });
+/** `capital_required` fact values, least demanding first. */
+const CAPITAL_LEVELS = ["none", "low", "high"] as const;
 
 function linkDomains(project: ProjectForScoring): RiskInput["linkDomains"] {
   const seen = new Set<string>();
@@ -34,20 +53,124 @@ function linkDomains(project: ProjectForScoring): RiskInput["linkDomains"] {
 }
 
 /**
- * Scores every project seen within `scoreActiveSinceDays`. Enrichment is fetched once per registrable
- * domain per run (the job is daily, so this replaces a longer-lived cache), and hacks once per run.
+ * The project's signals checked within the last 14 days, and the run's coverage with every source that had an older
+ * signal set to "not checked": an older signal was kept through an outage and is given to neither `curate()` nor
+ * `worth()`.
+ */
+function currentSignals(
+  project: ProjectForScoring,
+  runCoverage: SignalCoverage,
+  now: Date,
+): { signals: NewSignal[]; coverage: SignalCoverage } {
+  const coverage = { ...runCoverage };
+  const signals: NewSignal[] = [];
+  for (const s of project.signals) {
+    if (now.getTime() - s.observedAt.getTime() > SIGNAL_MAX_AGE_MS) {
+      const key = COVERAGE_OF[s.source];
+      if (key !== undefined) coverage[key] = false;
+      continue;
+    }
+    signals.push({ kind: s.kind, value: s.value, source: s.source, verified: s.verified });
+  }
+  return { signals, coverage };
+}
+
+/** The most demanding `capital_required` fact among the project's sources; `unknown` when none states one. */
+function capitalRequired(project: ProjectForScoring): WorthInput["capitalRequired"] {
+  let index = -1;
+  for (const fact of project.facts) {
+    if (fact.field === "capital_required") {
+      index = Math.max(index, (CAPITAL_LEVELS as readonly string[]).indexOf(fact.value));
+    }
+  }
+  return CAPITAL_LEVELS[index] ?? "unknown";
+}
+
+/** A `tge` deadline with an exact or approximate date before `today`; month/quarter precision never counts. */
+function tgePassed(project: ProjectForScoring, today: string): boolean {
+  return project.deadlines.some(
+    (d) => d.kind === "tge" && d.date !== null && (d.precision === "exact" || d.precision === "approximate") && d.date < today,
+  );
+}
+
+/**
+ * The project's curation (curation spec §5.3, §6.2-6.3): `curate()` on the assessment just made, and `worth()`, which
+ * is computed for a failing project too (for its detail page). The AI can only lower either. An `ended` project's end
+ * date is the deadline that expired it, else the one its latest curation carries, else `today`.
+ */
+async function curation(
+  repo: PipelineRepo,
+  project: ProjectForScoring,
+  state: { status: Status; expiredOn: string | null; today: string; now: Date },
+  assessment: RiskAssessment,
+  aiFlags: RiskInput["aiFlags"],
+  runCoverage: SignalCoverage,
+): Promise<CurationRecord> {
+  const { status, today } = state;
+  const ended = status === "ended";
+  const { signals, coverage } = currentSignals(project, runCoverage, state.now);
+  const analyst = STORED_VERDICT.safeParse((await repo.latestAiAnalysis(project.id, "analyst"))?.result);
+  const curated = curate({
+    status,
+    riskLevel: assessment.level,
+    checks: assessment.checks,
+    lookalikeOf: project.lookalikeOf,
+    hasOfficialDomain: project.officialDomains.length > 0,
+    signals,
+    passedBeforeEnd: ended ? await repo.passedBeforeEnd(project.id) : false,
+    // Stored scam analyses are post-processed: each flag left has a quote that passed quoteInSource. No analysis: [].
+    aiScamPatterns: (aiFlags?.scam ?? []).filter((f) => f.quote.trim() !== "").map((f) => f.pattern),
+  });
+  const worthResult = worth({
+    signals,
+    tgePassed: tgePassed(project, today),
+    sourceCount: project.sourceCount,
+    capitalRequired: capitalRequired(project),
+    taskCount: project.tasks.length,
+    aiVerdict: analyst.success ? analyst.data.verdict : null,
+  });
+  return {
+    passed: curated.passed,
+    worthLevel: worthResult.level,
+    tab: curated.passed ? curated.tab : null,
+    statusAt: status,
+    endedOn: ended ? (state.expiredOn ?? (await repo.latestCuration(project.id))?.endedOn ?? today) : null,
+    reasons: [...curated.reasons, ...worthResult.reasons],
+    coverage: { ...coverage },
+  };
+}
+
+function countCuration(stats: DailyStats, c: CurationRecord): void {
+  stats.curation_checked += 1;
+  if (c.passed) {
+    stats.curation_passed += 1;
+    if (c.tab === "live_now") stats.curation_passed_live_now += 1;
+    else if (c.tab === "early_bets") stats.curation_passed_early_bets += 1;
+    else if (c.tab === "ended") stats.curation_passed_ended += 1;
+  } else if (c.reasons.some((r) => r.kind === "fail" && r.code === "insufficient_checks")) {
+    stats.curation_hidden_insufficient_checks += 1;
+  }
+}
+
+/**
+ * Scores every project `listProjectsForScoring` returns (seen within `scoreActiveSinceDays`, or ended after passing
+ * curation at most 90 days ago): expiry, risk assessment, then curation (`curations`). Enrichment is fetched once per
+ * registrable domain per run (the job is daily, so this replaces a longer-lived cache), and hacks once per run.
  * Domain age comes from RDAP, and from the first crt.sh certificate when RDAP has no answer.
  * GoPlus stops starting requests after `goplusBudgetMinutes` (by `deps.now()`, from the start of this step) or after
  * `goplusMaxConsecutiveFailures` domains in a row without an answer; the domains not asked count as not run.
  * The latest `scam` and `contradictions` analyses (from the `analyze` stage, earlier in the same run) go into
- * `RiskInput.aiFlags`; they can only add reasons and raise the level.
- * One project failing to save, or whose analyses cannot be read, counts as `score_failed` and does not stop the others.
+ * `RiskInput.aiFlags`; they can only add reasons and raise the level. Curation takes the signals the `signals` stage
+ * stored and its `coverage` (by project id; a project missing from it had no source checked this run).
+ * One project failing to save, whose analyses cannot be read, or whose curation throws, counts as `score_failed` and
+ * does not stop the others.
  */
 export async function scoreProjects(
   deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void>; now: () => Date },
   config: PipelineConfig,
   now: Date,
   stats: DailyStats,
+  coverage: ReadonlyMap<string, SignalCoverage> = new Map(),
 ): Promise<void> {
   const { repo, http } = deps;
   const sleep = deps.sleep ?? defaultSleep;
@@ -113,7 +236,7 @@ export async function scoreProjects(
     const projectDomains = enrichDomains(projectLinks);
     try {
       // A passed claim/campaign_end with nothing ahead ends the project; the status change is logged by updateProject.
-      const { status, expired } = expireStatus(project.status, project.deadlines, today);
+      const { status, expired, basis } = expireStatus(project.status, project.deadlines, today);
       if (expired) await repo.updateProject(project.id, { status }, now);
       // A failed read throws (score_failed, previous assessment kept): assessing without the AI flags would drop them.
       const [scam, contradictions] = await Promise.all([
@@ -143,8 +266,14 @@ export async function scoreProjects(
         hackCount: hacks ? countHacks(hacks, project.name) : null,
         aiFlags: aiFlagsFromAnalyses(scam?.result ?? null, contradictions?.result ?? null),
       };
-      await repo.saveRiskAssessment(project.id, assessRisk(input), now);
+      const assessment = assessRisk(input);
+      await repo.saveRiskAssessment(project.id, assessment, now);
       stats.assessed += 1;
+      const state = { status, expiredOn: basis?.date ?? null, today, now };
+      const runCoverage = coverage.get(project.id) ?? NOT_CHECKED;
+      const record = await curation(repo, project, state, assessment, input.aiFlags, runCoverage);
+      await repo.saveCuration(project.id, record, now);
+      countCuration(stats, record);
     } catch {
       stats.score_failed += 1;
     }
