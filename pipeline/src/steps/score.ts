@@ -133,6 +133,7 @@ async function curation(
   return {
     passed: curated.passed,
     worthLevel: worthResult.level,
+    worthPoints: worthResult.points,
     tab: curated.passed ? curated.tab : null,
     statusAt: status,
     endedOn: ended ? (state.expiredOn ?? (await repo.latestCuration(project.id))?.endedOn ?? today) : null,

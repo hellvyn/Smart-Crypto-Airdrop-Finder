@@ -153,3 +153,41 @@ The owner reviews all of the new labels anyway (plan prerequisite). These are th
   Chain", Extended's Starknet vs the header's Arbitrum/Ethereum). Chain is not a gate.
 - `aio_acepyr` token `ACEPYR` and `aio_wick` token `WICK`: the text names the ticker of a token that does not exist
   yet; `token: null` would also be defensible.
+
+## Quality gate tools (spec sections 12 and 13: G1 to G3, G7 to G13)
+
+These scripts read the **production** database, so they take `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from the
+environment only (exit code 2 when either is missing). They never print keys, emails, wallet addresses or user ids, and
+write only to git-ignored paths. Run them after at least one daily run with the curation code (Plan 5), and for G9
+after 3 such runs.
+
+| Gate | Tool | Command |
+|---|---|---|
+| G1, G2, G3, G9 | `quality-report.ts` | `pnpm --filter pipeline exec tsx eval/quality-report.ts` |
+| G7, G8 | `scam-set/run.ts` (see `scam-set/README.md`) | `NODE_USE_ENV_PROXY=1 pnpm --filter pipeline exec tsx eval/scam-set/run.ts` |
+| G10 | `worth-review.ts` | `pnpm --filter pipeline exec tsx eval/worth-review.ts` |
+| G11, G13 | `ai-samples.ts` | `pnpm --filter pipeline exec tsx eval/ai-samples.ts` |
+
+Set the two variables on the same command line as above, e.g. `SUPABASE_URL=<production url> SUPABASE_SERVICE_ROLE_KEY=<service role key> pnpm ...`.
+
+- `quality-report.ts` computes G1, G2, G3 and G9 from the last 3 finished `pipeline_runs` and from the latest curation
+  and risk assessment of each project, and prints the table of all gates with the targets of spec sections 12 and 13.
+  The other gates show as "manual" with the tool that measures them. Exit code 0 (a report, not a CI gate); a gate it
+  cannot measure (fewer than 3 runs, no curations, no project with a domain) is shown as FAIL, never as met.
+  - G1 is `projects_with_official_domain / assessed` averaged over the runs. `pipeline_runs.stats` does not split the
+    scored projects by status, so the denominator is every scored project, not only live/announced ones.
+  - G2 is the weaker of `domain_age_ran` and `phishing_list_ran` over `projects_with_official_domain` (the other two key
+    checks need no network call).
+  - G3 counts passing curations outside the `ended` tab whose latest assessment did not run all four key checks
+    (`dangerous_asks`, `lookalike`, `domain_age`, `phishing_list`). Ended projects are exempt (decision #40).
+  - G9 is the mean `curation_passed_live_now` of the 3 runs.
+- `worth-review.ts` prints the top 20 passing projects per tab (`live_now`, `early_bets`, `ended`): name, worth level,
+  point total and the worth reasons. The owner marks the entries whose order makes no sense; the final weights and the reasons are
+  then recorded by hand in spec section 6.3. The point total is `curations.worth_points` (migration 0012, written by the
+  score step from `worth().points`; "poin n/a" for a curation stored before it existed, until the next daily run
+  rewrites it). The order is worth level, then newest `last_seen` (the list view also uses signal strength and deadline
+  as tie-breakers).
+- `ai-samples.ts` writes the 20 newest `analyst` analyses (one per project) to `eval/cases/ai-samples.md` (git-ignored: it
+  holds source quotes): verdict, points with quotes and source URL, the model that answered, and the forbidden style
+  phrases found, with a line for the owner's rating. It prints only the count and the path. G11 needs at least 80% of 20
+  or more samples rated sensible; G13 is the owner's rating of the Indonesian.

@@ -322,8 +322,8 @@ async function main(): Promise<void> {
   assert.equal(await repo.latestAiAnalysis(p.id, "scam"), null);
 
   // curations
-  const passing = { passed: true, worthLevel: "medium" as const, tab: "live_now" as const, statusAt: "live" as const, endedOn: null, reasons: [], coverage: { defillama: true } };
-  const failing = { ...passing, passed: false, worthLevel: null, tab: null, reasons: [
+  const passing = { passed: true, worthLevel: "medium" as const, worthPoints: 2, tab: "live_now" as const, statusAt: "live" as const, endedOn: null, reasons: [], coverage: { defillama: true } };
+  const failing = { ...passing, passed: false, worthLevel: null, worthPoints: null, tab: null, reasons: [
     { code: "official_domain", message: "Domain resmi tercatat", kind: "pass" as const },
     { code: "insufficient_checks", message: "Cek kunci belum lengkap", kind: "fail" as const },
   ] };
@@ -386,7 +386,7 @@ async function main(): Promise<void> {
     const publicCuration = await anon.from("curations").select("passed, tab, public_fail_reason").eq("project_id", p.id);
     assert.equal(publicCuration.error, null);
     assert.equal(publicCuration.data?.length, 3);
-    for (const column of ["worth_level", "reasons", "coverage", "*"]) {
+    for (const column of ["worth_level", "worth_points", "reasons", "coverage", "*"]) {
       const res = await anon.from("curations").select(column).eq("project_id", p.id);
       assert.ok(res.error !== null && (res.data ?? []).length === 0, `anon must not read curations.${column}`);
     }

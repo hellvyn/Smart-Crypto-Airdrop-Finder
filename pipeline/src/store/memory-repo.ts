@@ -501,6 +501,7 @@ export class MemoryRepo implements PipelineRepo {
       projectId,
       passed: c.passed,
       worthLevel: c.worthLevel,
+      worthPoints: c.worthPoints,
       tab: c.tab,
       statusAt: c.statusAt,
       endedOn: c.endedOn,

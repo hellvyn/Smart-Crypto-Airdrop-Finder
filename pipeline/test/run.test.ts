@@ -2373,6 +2373,8 @@ describe("runDaily curation", () => {
       endedOn: null,
       // No potential signal and capital unknown; the Analyst's "pantau" is still counted.
       worthLevel: "insufficient_data",
+      // No token yet (+2), Analyst "pantau" (-1).
+      worthPoints: 1,
       coverage: { defillama: true, vc: false, alphadrops_raises: false },
       publicFailReason: null,
       computedAt: NOW,
@@ -2380,7 +2382,7 @@ describe("runDaily curation", () => {
     expect(codes(await latestCurationOf(repo, "deepbook"))).toEqual(["passed", "no_token_yet", "capital_unknown", "ai_pantau"]);
     expect((await latestCurationOf(repo, "ink"))?.tab).toBe("early_bets");
     // TVL $25M (+1), no token yet (+2), Analyst "pantau" (-1): medium.
-    expect(await latestCurationOf(repo, "hyperdrivelend")).toMatchObject({ passed: true, tab: "early_bets", worthLevel: "medium" });
+    expect(await latestCurationOf(repo, "hyperdrivelend")).toMatchObject({ passed: true, tab: "early_bets", worthLevel: "medium", worthPoints: 2 });
     expect(codes(await latestCurationOf(repo, "hyperdrivelend"))).toEqual([
       "passed",
       "tvl_high",
@@ -2435,6 +2437,7 @@ describe("runDaily curation", () => {
       "ai_pantau",
     ]);
     expect(curation?.worthLevel).toBe("low");
+    expect(curation?.worthPoints).toBe(-2);
   });
 
   it("hides a project without an official domain, still with a worth level, and counts it", async () => {
@@ -2449,7 +2452,7 @@ describe("runDaily curation", () => {
     const stats = await runDaily(deps, config);
 
     const curation = await latestCurationOf(repo, "nodomain");
-    expect(curation).toMatchObject({ passed: false, tab: null, statusAt: "live", worthLevel: "insufficient_data" });
+    expect(curation).toMatchObject({ passed: false, tab: null, statusAt: "live", worthLevel: "insufficient_data", worthPoints: 1 });
     expect(codes(curation)).toContain("insufficient_checks");
     expect(curation?.publicFailReason).not.toBeNull();
     expect(stats).toMatchObject({ curation_checked: 4, curation_passed: 3, curation_hidden_insufficient_checks: 1 });

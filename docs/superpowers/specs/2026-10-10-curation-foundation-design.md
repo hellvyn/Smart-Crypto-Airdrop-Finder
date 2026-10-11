@@ -142,6 +142,7 @@ Riwayat, pola sama dengan `risk_assessments`: "terbaru" = `computed_at` terbesar
 | `status_at` | status project (setelah `expireStatus`) saat kurasi dihitung; dasar aturan "pernah lolos sebelum berakhir" (§6.2) |
 | `ended_on` | tanggal berakhir (date, null kalau belum berakhir): tanggal deadline dasar `expireStatus` kalau ada, kalau gak ada tanggal pertama status tercatat `ended` (dibawa dari curation sebelumnya) |
 | `worth_level` | `high`, `medium`, `low`, `insufficient_data` |
+| `worth_points` | integer: total poin `worth()` di balik `worth_level` (migrasi 0012); khusus member seperti `worth_level`; null untuk baris lama |
 | `reasons` | jsonb: alasan lolos/gagal + alasan worth (kode + pesan, seperti `RiskReason`) |
 | `coverage` | jsonb: sinyal mana yang dicek vs belum (mis. portfolio VC gagal diambil) |
 | `computed_at`, `seq` | seperti `risk_assessments` |
@@ -467,6 +468,21 @@ Temuan untuk Plan 5: (1) GoPlus menjawab HTTP 200 dengan `code 4029 "too many re
 cocok untuk nama 4 huruf yang menempel dengan kata lain dalam satu label (Jito, Lido, Ondo, Safe, Pyth); (3) domain
 foundation/klaim milik project harus masuk daftar domain resmi, kalau tidak aturan lookalike menyembunyikan project
 legit. Detail: `pipeline/eval/scam-set/README.md`.
+
+**Hasil set uji scam dengan `curate()` (2026-10-11; Task P5.T10).** Set yang sama (60 scam, 45 legit), `curate()`
+dijalankan dengan sinyal `curated_source` di setiap kasus (sinyal legit terlemah), jadi yang diukur aturan risiko dan
+cek kunci saja. Lingkungan sama seperti di atas: crt.sh diblokir dan umur domain hanya terjawab untuk 3/60 scam dan
+1/49 legit.
+
+| Gerbang | Hasil (dengan `curate()`) | Catatan |
+|---|---|---|
+| G7 scam yang lolos kurasi | 0 dari 60 | Semua 60 juga ada di daftar phishing, jadi hampir melingkar; nama project di domain membuat lookalike optimistis (`brandOf` mencocokkan substring). 0 scam yang tertahan *hanya* karena cek kunci gak jalan |
+| G8 legit yang tersembunyi | 44 dari 45 (97,8%), **belum bisa dinilai** | 44 kasus tersembunyi karena `insufficient_checks` (umur domain gak terjawab), bukan karena penilaian aturan. Yang disembunyikan aturan lain: 2 dari 45 (4,4%), dua kasus `lookalike_domain` yang sama dengan hasil risk-only. Ulangi di lingkungan yang RDAP/crt.sh-nya menjawab sebelum angka ini dipakai |
+
+Alat ukur gerbang lain sudah ada (`pipeline/eval/quality-report.ts` untuk G1, G2, G3, G9; `worth-review.ts` untuk G10;
+`ai-samples.ts` untuk G11 dan G13; G12 belum punya alat). Angka G1 sampai G3 dan G9 sampai G13 **belum diukur terhadap
+data produksi**: itu butuh satu run harian dengan kode Plan 5 dan kunci service role produksi. Perintahnya ada di
+`pipeline/eval/README.md` ("Quality gate tools").
 
 **Eval LLM diperluas (Task P4.T6; `pipeline/eval/`).** Penilaian G4–G6 sekarang ada di kode: status ≥ 90% dari kasus
 berstatus (G4), tanggal + jenis deadline cocok ≥ 90% (G5), URL halusinasi 0 (G6), dan domain resmi (registrable domain

@@ -2,8 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pLimit from "p-limit";
-import { assessRisk } from "@saf/core";
-import type { RiskLevel } from "@saf/core";
+import { assessRisk, curate } from "@saf/core";
+import type { CurateResult, RiskAssessment, RiskInput, RiskLevel } from "@saf/core";
 import { firstCertificateAgeDays } from "../../src/enrich/crtsh.js";
 import { checkPhishingSite } from "../../src/enrich/goplus.js";
 import { domainAgeDays } from "../../src/enrich/rdap.js";
@@ -50,6 +50,64 @@ export function summarize(results: readonly Result[]): Summary {
       total: results.filter((r) => r.kind === "legit").length,
       hidden: count("legit", ["high", "critical"]),
       insufficientData: count("legit", ["insufficient_data"]),
+    },
+  };
+}
+
+/** One case after `curate()`: `failCodes` are the codes of its `fail` reasons (empty when it passed). */
+export interface CuratedResult {
+  kind: "scam" | "legit";
+  passed: boolean;
+  failCodes: string[];
+}
+
+export interface CurationSummary {
+  /** G7: `passed` is the number of scams on the curated list. `stoppedOnlyByMissingChecks`: failed on `insufficient_checks` and nothing else, so held back by a check that did not run, not by detection. */
+  scam: { total: number; passed: number; stoppedOnlyByMissingChecks: number };
+  /**
+   * G8: `hidden` legit cases are not on the list. `hiddenWithMissingChecks` have `insufficient_checks` among their
+   * reasons (a check did not run: data, not judgement); `hiddenByOtherRules` have some other failed rule (risk,
+   * lookalike, ...). A case can be in both.
+   */
+  legit: { total: number; hidden: number; hiddenWithMissingChecks: number; hiddenByOtherRules: number };
+}
+
+/**
+ * `curate()` (curation spec 6.2) on a case the risk engine has assessed. Everything else is held neutral like in
+ * `toRiskInput`: status `live`, no lookalike project, no AI scam flag. Every case gets one legit signal,
+ * `curated_source`, the weakest the rules accept and the one a listing on a source site would give a scam as well (a
+ * VC, TVL or CoinGecko signal needs a matching domain, which a scam does not have). So the signal rule never stops a
+ * scam here, and G7 measures the risk and key-check rules alone. A scam has a known official domain only when its
+ * brand is in `legit.json`.
+ */
+export function curateAssessed(input: RiskInput, assessment: RiskAssessment): CurateResult {
+  return curate({
+    status: "live",
+    riskLevel: assessment.level,
+    checks: assessment.checks,
+    lookalikeOf: null,
+    hasOfficialDomain: input.project.officialDomains.length > 0,
+    signals: [{ kind: "curated_source", value: {}, source: "airdrops_io", verified: false }],
+    passedBeforeEnd: false,
+    aiScamPatterns: [],
+  });
+}
+
+export function summarizeCuration(results: readonly CuratedResult[]): CurationSummary {
+  const of = (kind: CuratedResult["kind"]): CuratedResult[] => results.filter((r) => r.kind === kind);
+  const scams = of("scam");
+  const legit = of("legit");
+  return {
+    scam: {
+      total: scams.length,
+      passed: scams.filter((r) => r.passed).length,
+      stoppedOnlyByMissingChecks: scams.filter((r) => !r.passed && r.failCodes.length === 1 && r.failCodes[0] === "insufficient_checks").length,
+    },
+    legit: {
+      total: legit.length,
+      hidden: legit.filter((r) => !r.passed).length,
+      hiddenWithMissingChecks: legit.filter((r) => !r.passed && r.failCodes.includes("insufficient_checks")).length,
+      hiddenByOtherRules: legit.filter((r) => !r.passed && r.failCodes.some((code) => code !== "insufficient_checks")).length,
     },
   };
 }
@@ -116,7 +174,9 @@ async function run(): Promise<void> {
     });
     const assessment = assessRisk(input);
     const codes = [...new Set(assessment.reasons.filter((r) => r.severity !== "info").map((r) => r.code))];
-    return { c, level: assessment.level, codes, levelWithoutPhishing: withoutPhishing.level };
+    const curated = curateAssessed(input, assessment);
+    const failCodes = curated.reasons.filter((r) => r.kind === "fail").map((r) => r.code);
+    return { c, level: assessment.level, codes, levelWithoutPhishing: withoutPhishing.level, passed: curated.passed, failCodes };
   });
 
   const all = summarize(assessed.map((a) => ({ kind: a.c.kind, level: a.level })));
@@ -134,6 +194,13 @@ async function run(): Promise<void> {
   console.log("\nLegit that the engine would hide (high or critical):");
   for (const a of assessed.filter((x) => x.c.kind === "legit" && (x.level === "high" || x.level === "critical"))) {
     console.log(`  ${a.level.padEnd(8)} ${caseLabel(a.c)}  [${a.codes.join(", ")}]`);
+  }
+
+  console.log("\nScam that passed curation (G7):");
+  for (const a of assessed.filter((x) => x.c.kind === "scam" && x.passed)) console.log(`  ${caseLabel(a.c)}`);
+  console.log("\nLegit that curation hides (G8):");
+  for (const a of assessed.filter((x) => x.c.kind === "legit" && !x.passed)) {
+    console.log(`  ${caseLabel(a.c)}  [${a.failCodes.join(", ")}]`);
   }
 
   console.log("\nReasons found (number of cases that have each)");
@@ -158,6 +225,17 @@ async function run(): Promise<void> {
       `; insufficient_data ${noGoplus.scam.insufficientData}; legit hidden ${noGoplus.legit.hidden}/${noGoplus.legit.total}`,
   );
 
+  const curation = summarizeCuration(assessed.map((a) => ({ kind: a.c.kind, passed: a.passed, failCodes: a.failCodes })));
+  console.log("\nCuration (curate() with a curated_source signal on every case)");
+  console.log(
+    `  G7 scam passed curation: ${curation.scam.passed}/${curation.scam.total} (target 0 of at least 30)` +
+      `; stopped only by a key check that did not run: ${curation.scam.stoppedOnlyByMissingChecks}`,
+  );
+  console.log(
+    `  G8 legit hidden:         ${curation.legit.hidden}/${curation.legit.total} (${pct(curation.legit.hidden, curation.legit.total)}, target <= 20%)` +
+      `; a key check did not run: ${curation.legit.hiddenWithMissingChecks}; another rule failed: ${curation.legit.hiddenByOtherRules}`,
+  );
+
   const coverage = (kind: EvalCase["kind"]): string => {
     const own = [...new Set(cases.filter((c) => c.kind === kind).flatMap(caseDomains))];
     const ran = (map: Record<string, unknown>): string => `${own.filter((d) => map[d] != null).length}/${own.length}`;
@@ -168,6 +246,12 @@ async function run(): Promise<void> {
   console.log(`  legit: ${coverage("legit")}`);
   console.log(`  domain age taken from crt.sh: ${fromCrtsh.size}`);
   console.log(`  GoPlus failed on the first try (before the runner's own retries): ${goplusFirstTryFailed.size}/${domains.length}`);
+
+  console.log("\nRead G7 and G8 with these limits (see eval/scam-set/README.md)");
+  console.log("  - Scam domains come from public phishing lists and GoPlus reads similar lists, so the phishing catch is close to circular.");
+  console.log("  - Every scam names a project of legit.json, which is also what the lookalike check looks for, and brandOf matches by substring: the lookalike catch is optimistic.");
+  console.log("  - Where the domain age lookup got no answer (RDAP rate limits, unsupported TLDs, crt.sh blocked), curation fails the case on insufficient_checks. That inflates both the scam catch and the legit hiding.");
+  console.log("  - G8 also counts only the legit domains written in legit.json from memory, with neutral inputs (no signals, two sources, an official social account).");
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]) {

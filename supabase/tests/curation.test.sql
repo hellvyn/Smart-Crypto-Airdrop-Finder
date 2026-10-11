@@ -8,7 +8,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(68);
+select plan(69);
 
 -- Rows visible to the current role. A refused read (no privilege, 42501) is what PostgREST answers with an error and
 -- no data, so it counts as zero rows, the same as rows filtered out by RLS.
@@ -70,8 +70,8 @@ select col_is_null('public', 'tasks', 'text_id', 'tasks.text_id is nullable');
 -- 4. curations columns (P5.T13 appends coingecko_listed later in this same migration).
 select columns_are('public', 'curations',
   array['id', 'project_id', 'passed', 'worth_level', 'tab', 'status_at', 'ended_on', 'reasons', 'coverage',
-        'public_fail_reason', 'computed_at', 'seq'],
-  'curations has the spec §4.2 columns plus public_fail_reason (#55)');
+        'public_fail_reason', 'computed_at', 'seq', 'worth_points'],
+  'curations has the spec §4.2 columns plus public_fail_reason (#55) and worth_points (0012)');
 
 -- 4a. claim_pages: the text of a claim portal page as last fetched (#56), one row per url.
 select columns_are('public', 'claim_pages', array['url', 'text', 'fetched_at'], 'claim_pages caches url, text, fetched_at');
@@ -200,6 +200,7 @@ select lives_ok(
   $$ select id, project_id, passed, tab, status_at, ended_on, public_fail_reason, computed_at, seq from curations $$,
   'anon can select every public curations column');
 select throws_ok($$ select worth_level from curations $$, '42501', null, 'anon cannot select curations.worth_level');
+select throws_ok($$ select worth_points from curations $$, '42501', null, 'anon cannot select curations.worth_points');
 select throws_ok($$ select reasons from curations $$, '42501', null, 'anon cannot select curations.reasons');
 select throws_ok($$ select coverage from curations $$, '42501', null, 'anon cannot select curations.coverage');
 select results_eq(
