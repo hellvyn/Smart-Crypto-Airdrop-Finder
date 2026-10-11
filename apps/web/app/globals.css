@@ -135,6 +135,11 @@ main a:not([class]):hover {
   white-space: nowrap;
 }
 
+/* "IQ" takes the parachute's orange; the rest of the name stays ink. */
+.brand-iq {
+  color: var(--accent);
+}
+
 .brand-name {
   grid-column: 2;
   justify-self: center;

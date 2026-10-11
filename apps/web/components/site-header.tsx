@@ -23,7 +23,10 @@ export async function SiteHeader() {
             <span className="brand-mark" aria-hidden="true">
               <BrandMark />
             </span>
-            <span className="brand-name">{header.brand}</span>
+            <span className="brand-name">
+              {header.brand.replace(/IQ$/, "")}
+              <span className="brand-iq">IQ</span>
+            </span>
             <span className="brand-beta">{header.beta}</span>
           </Link>
         </div>
