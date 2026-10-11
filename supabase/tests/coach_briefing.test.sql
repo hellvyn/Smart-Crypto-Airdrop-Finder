@@ -8,7 +8,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(123);
+select plan(124);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS).
 -- A: ca.., B: cb.. (the other member), C: default timezone, D: Pacific/Kiritimati, E: Pacific/Pago_Pago,
@@ -637,18 +637,28 @@ reset role;
 select is((select replied from coach_usage where id = (select id from l_ids)), false,
   'a failed message stays uncounted after its thread is deleted');
 
--- K: 20 messages past their 2 minutes without a reply (none count); marking one makes it count again for good.
+-- K: 20 messages past their 2 minutes without a reply (none count). A lapsed message cannot be marked (it would count
+-- again); a fresh message that is marked keeps counting for good after its 2 minutes.
 select pg_temp.seed('c3000000-0000-4000-8000-000000000001', 'c3200000-0000-4000-8000-0000000000f3', 20, now() - interval '3 minutes', false);
 create temp table k_ids as select id from coach_usage where user_id = 'c3000000-0000-4000-8000-000000000001' limit 1;
-grant all on k_ids to authenticated;
+create temp table k_fresh (id uuid);
+grant all on k_ids, k_fresh to authenticated;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"c3000000-0000-4000-8000-000000000001","role":"authenticated"}';
-select lives_ok(format($$ select coach_mark_used(%L) $$, (select id from k_ids)), 'K marks their own message');
-select lives_ok(format($$ select coach_mark_used(%L) $$, (select id from k_ids)), 'marking is idempotent');
+select throws_ok(format($$ select coach_mark_used(%L) $$, (select id from k_ids)), 'P0001', 'expired',
+  'marking a message whose 2 minutes ran out raises expired');
+insert into k_fresh select coach_begin('c3200000-0000-4000-8000-0000000000f3', 'chat', 'baru');
+select lives_ok(format($$ select coach_mark_used(%L) $$, (select id from k_fresh)), 'K marks their own fresh message');
+select lives_ok(format($$ select coach_mark_used(%L) $$, (select id from k_fresh)), 'marking is idempotent');
 select throws_ok(format($$ select coach_mark_used(%L) $$, (select id from m_ids where n = 1)), 'P0001', 'message',
   'a member cannot mark another member''s message');
 select throws_ok($$ select coach_mark_used('00000000-0000-4000-8000-000000000000') $$, 'P0001', 'message',
   'marking a message that does not exist raises message');
+reset role;
+update coach_usage set created_at = now() - interval '3 minutes' where id = (select id from k_fresh);
+update coach_messages set created_at = now() - interval '3 minutes' where id = (select id from k_fresh);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c3000000-0000-4000-8000-000000000001","role":"authenticated"}';
 select is(pg_temp.begin_n('c3200000-0000-4000-8000-0000000000f3', 19), 19,
   'with one old marked message counted, 19 more fit in the day');
 select throws_ok(

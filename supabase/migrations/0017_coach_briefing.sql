@@ -340,7 +340,9 @@ grant execute on function public.coach_finish(uuid, text, text, integer, integer
 -- The web calls this when the model's first text arrives, before forwarding any of it: from then on the message counts
 -- for good, whatever happens next (the member aborts, the model stops at max_tokens, the reply is too long for
 -- coach_finish, the route times out). Only sets coach_usage.replied; idempotent. P0001 'message' for a message that is
--- not the caller's user message (or has no ledger row).
+-- not the caller's user message (or has no ledger row). P0001 'expired' for a message whose 2 minutes ran out unmarked:
+-- it has stopped counting, and marking it now would bring it back into the day's count (re-review 2), so the web must
+-- not forward the answer. Only rows that still count can be marked, so this cannot race coach_begin's count.
 create function public.coach_mark_used(p_user_message_id uuid) returns void
   language plpgsql
   security definer
@@ -353,8 +355,13 @@ begin
     raise exception 'not authenticated' using errcode = '42501';
   end if;
   update public.coach_usage set replied = true
-    where id = p_user_message_id and user_id = v_uid and kind = 'message';
+    where id = p_user_message_id and user_id = v_uid and kind = 'message'
+      and (replied or created_at > now() - interval '2 minutes');
   if not found then
+    if exists (select 1 from public.coach_usage u
+               where u.id = p_user_message_id and u.user_id = v_uid and u.kind = 'message') then
+      raise exception 'expired' using errcode = 'P0001';
+    end if;
     raise exception 'message' using errcode = 'P0001';
   end if;
 end;
