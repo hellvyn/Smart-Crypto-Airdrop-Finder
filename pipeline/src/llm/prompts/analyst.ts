@@ -13,6 +13,15 @@ export const ANALYST_PROMPT_VERSION = "analyst-2026-10-10.1";
  */
 export const MAX_ANALYST_SOURCE_CHARS = 24_000;
 
+/** The writing style rules (curation spec §16) every analysis prompt ends with. */
+export const STYLE_RULES = `Gaya tulisan (untuk semua teks Bahasa Indonesia, bukan untuk "quote"):
+- Nada santai tapi sopan, pakai "kamu" (bukan "Anda", bukan "lo/gue"). Bahasa sehari-hari yang wajar seperti "udah", "gak".
+- Campur kalimat pendek yang tegas dengan kalimat yang lebih panjang. Jangan semua kalimat sama panjang.
+- Istilah crypto Inggris yang umum boleh dipakai (worth it, claim, step, effort, early, DYOR, cross-check), tapi kalimatnya tetap kalimat Indonesia.
+- Jangan pakai tanda em dash (—). Pakai koma atau titik.
+- Hindari pola tiga serangkai dan kalimat "bukan X, tapi Y".
+- Jangan pakai kata atau frasa ini: ${FORBIDDEN_PHRASES.map((p) => `"${p}"`).join(", ")}.`;
+
 const SYSTEM = `Kamu analis farming airdrop untuk member AirdropIQ. Tugasmu menilai satu project: layak digarap atau gak, berapa effort-nya, dan apa saja step-nya dalam Bahasa Indonesia.
 Jawab HANYA dengan satu objek JSON, tanpa markdown, tanpa komentar.
 Skema:
@@ -30,13 +39,7 @@ Aturan:
 - effort.minutes_per_day: perkiraan menit per hari untuk menjalankan step-nya, null kalau gak bisa diperkirakan. effort.capital_usd_min: modal minimum dalam USD cuma kalau sumber menyebut angkanya (USDC/USDT dihitung 1:1), selain itu null. Jangan menebak dan jangan mengonversi dari token lain. effort.note: satu atau dua kalimat soal modal, gas, dan waktu.
 - steps_id: terjemahan atau ringkasan Bahasa Indonesia dari tiap step di bagian STEP, satu entri per step, dengan urutan dan cadence yang sama. Kalau STEP kosong, isi [].
 - Jangan mengarang angka, nama, atau klaim yang gak ada di sumber.
-Gaya tulisan (untuk semua teks Bahasa Indonesia, bukan untuk "quote"):
-- Nada santai tapi sopan, pakai "kamu" (bukan "Anda", bukan "lo/gue"). Bahasa sehari-hari yang wajar seperti "udah", "gak".
-- Campur kalimat pendek yang tegas dengan kalimat yang lebih panjang. Jangan semua kalimat sama panjang.
-- Istilah crypto Inggris yang umum boleh dipakai (worth it, claim, step, effort, early, DYOR, cross-check), tapi kalimatnya tetap kalimat Indonesia.
-- Jangan pakai tanda em dash (—). Pakai koma atau titik.
-- Hindari pola tiga serangkai dan kalimat "bukan X, tapi Y".
-- Jangan pakai kata atau frasa ini: ${FORBIDDEN_PHRASES.map((p) => `"${p}"`).join(", ")}.`;
+${STYLE_RULES}`;
 
 /** How many code points of each source fit in `cap`: shortest first, each up to an even share of what is left. */
 function sourceShares(lengths: number[], cap: number): number[] {
@@ -51,7 +54,8 @@ function sourceShares(lengths: number[], cap: number): number[] {
   return shares;
 }
 
-function stepLines(project: ProjectForScoring): string {
+/** The project's steps, numbered in step order with their cadence. */
+export function stepLines(project: ProjectForScoring): string {
   if (project.steps.length === 0) return "(tidak ada)";
   return project.steps.map((s, i) => `${i + 1}. [${s.cadence}] ${s.text}`).join("\n");
 }
@@ -61,7 +65,8 @@ function factLines(project: ProjectForScoring): string {
   return project.facts.map((f) => `- ${f.field}: ${f.value}${f.quote === "" ? "" : ` (kutipan: "${f.quote}")`}`).join("\n");
 }
 
-function sourceBlocks(sources: SourceText[]): string {
+/** The sources as `--- SUMBER n: url ---` blocks, cut to `MAX_ANALYST_SOURCE_CHARS` in all (see `sourceShares`). */
+export function sourceBlocks(sources: SourceText[]): string {
   const chars = sources.map((s) => [...s.text]);
   const shares = sourceShares(
     chars.map((c) => c.length),
@@ -102,9 +107,14 @@ export const analystAnalyzer: Analyzer<AnalystAnswer, AnalystAnswer> = {
   buildMessages: buildAnalystMessages,
   schema: analystSchema,
   postProcess: postProcessAnalyst,
-  indonesianTexts: (value) => [...value.points.map((p) => p.text), value.effort.note, ...value.steps_id.map((s) => s.text)],
+  indonesianTexts: (result) => [...result.points.map((p) => p.text), result.effort.note, ...result.steps_id.map((s) => s.text)],
+  /**
+   * Writes the translations only when they line up with the project's steps: same count and the same cadence at
+   * every position. A model that merged one step and split another must not put a translation on the wrong task.
+   */
   async saveDerived(repo: PipelineRepo, project: ProjectForScoring, result: AnalystAnswer): Promise<void> {
-    if (result.steps_id.length === 0) return;
+    if (result.steps_id.length === 0 || result.steps_id.length !== project.steps.length) return;
+    if (result.steps_id.some((s, i) => s.cadence !== project.steps[i]?.cadence)) return;
     await repo.saveStepTranslations(
       project.id,
       result.steps_id.map((s) => s.text),

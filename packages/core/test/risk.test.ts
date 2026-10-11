@@ -185,6 +185,7 @@ const ALL_CHECKS: CheckId[] = [
   "contract_verified",
   "hack_history",
   "corroboration",
+  "ai_review",
 ];
 
 function input(overrides: Partial<RiskInput> = {}): RiskInput {
@@ -215,7 +216,7 @@ function input(overrides: Partial<RiskInput> = {}): RiskInput {
 
 describe("assessRisk", () => {
   it("is low when everything is clean", () => {
-    const a = assessRisk(input());
+    const a = assessRisk(input({ aiFlags: { scam: [], contradictions: 0 } }));
     expect(a.level).toBe("low");
     expect(a.reasons).toEqual([]);
     expect(a.points).toBe(0);

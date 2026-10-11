@@ -1,5 +1,5 @@
 import pLimit from "p-limit";
-import { assessRisk, expireStatus, registrableDomain } from "@saf/core";
+import { aiFlagsFromAnalyses, assessRisk, expireStatus, registrableDomain } from "@saf/core";
 import type { RiskInput } from "@saf/core";
 import type { Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
@@ -39,7 +39,9 @@ function linkDomains(project: ProjectForScoring): RiskInput["linkDomains"] {
  * Domain age comes from RDAP, and from the first crt.sh certificate when RDAP has no answer.
  * GoPlus stops starting requests after `goplusBudgetMinutes` (by `deps.now()`, from the start of this step) or after
  * `goplusMaxConsecutiveFailures` domains in a row without an answer; the domains not asked count as not run.
- * One project failing to save counts as `score_failed` and does not stop the others.
+ * The latest `scam` and `contradictions` analyses (from the `analyze` stage, earlier in the same run) go into
+ * `RiskInput.aiFlags`; they can only add reasons and raise the level.
+ * One project failing to save, or whose analyses cannot be read, counts as `score_failed` and does not stop the others.
  */
 export async function scoreProjects(
   deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void>; now: () => Date },
@@ -113,6 +115,11 @@ export async function scoreProjects(
       // A passed claim/campaign_end with nothing ahead ends the project; the status change is logged by updateProject.
       const { status, expired } = expireStatus(project.status, project.deadlines, today);
       if (expired) await repo.updateProject(project.id, { status }, now);
+      // A failed read throws (score_failed, previous assessment kept): assessing without the AI flags would drop them.
+      const [scam, contradictions] = await Promise.all([
+        repo.latestAiAnalysis(project.id, "scam"),
+        repo.latestAiAnalysis(project.id, "contradictions"),
+      ]);
       const input: RiskInput = {
         project: {
           name: project.name,
@@ -134,6 +141,7 @@ export async function scoreProjects(
         token: null,
         contractVerified: null,
         hackCount: hacks ? countHacks(hacks, project.name) : null,
+        aiFlags: aiFlagsFromAnalyses(scam?.result ?? null, contradictions?.result ?? null),
       };
       await repo.saveRiskAssessment(project.id, assessRisk(input), now);
       stats.assessed += 1;

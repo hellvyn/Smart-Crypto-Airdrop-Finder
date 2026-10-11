@@ -7,6 +7,8 @@ import type { PipelineConfig } from "../config.js";
 import { createCircuitBreaker } from "../llm/circuit-breaker.js";
 import type { ChatMessage } from "../llm/nvidia.js";
 import { analystAnalyzer } from "../llm/prompts/analyst.js";
+import { contradictionsAnalyzer } from "../llm/prompts/contradictions.js";
+import { scamAnalyzer } from "../llm/prompts/scam.js";
 import { callStructured } from "../llm/structured.js";
 import type { ChatFn } from "../llm/structured.js";
 import type { DailyStats } from "../stats.js";
@@ -40,10 +42,11 @@ export interface Analyzer<T = unknown, R = unknown> {
   /** Turns a schema-valid answer into the stored `ai_analyses.result` (e.g. drops points whose quote is not in `sources`). */
   postProcess(value: T, sources: SourceText[]): R;
   /**
-   * The Indonesian prose of an answer (never its quotes). A new analysis whose prose uses a forbidden phrase counts
-   * once in `ai_style_violations`; it is stored all the same.
+   * The Indonesian prose of a stored result (never its quotes). A new analysis whose stored prose uses a forbidden
+   * phrase counts once in `ai_style_violations`; it is stored all the same. Prose that `postProcess` dropped is never
+   * shown, so it does not count.
    */
-  indonesianTexts?(value: T): string[];
+  indonesianTexts?(result: R): string[];
   /**
    * Writes what other tables take from a new result (e.g. the Analyst's step translations in `tasks.text_id`). Runs
    * before the analysis is stored, so when it throws the previous analysis stays the latest and the next run retries.
@@ -52,7 +55,7 @@ export interface Analyzer<T = unknown, R = unknown> {
 }
 
 /** The analyses each run makes, in this order per project. */
-export const ANALYZERS: Analyzer[] = [analystAnalyzer];
+export const ANALYZERS: Analyzer[] = [analystAnalyzer, scamAnalyzer, contradictionsAnalyzer];
 
 export interface AnalyzeDeps {
   repo: PipelineRepo;
@@ -99,7 +102,7 @@ export function analysisInputHash(project: ProjectForScoring, sourceTexts: strin
  * - Models are tried as in extraction (`callStructured`), with one circuit breaker for the whole stage. When every
  *   model fails, or the analysis throws, it counts as `ai_analyses_failed`, is reported through `warn` (project id
  *   and kind), and the previous analysis stays the latest. No failure stops the other analyses.
- * - Style: a new analysis whose `indonesianTexts` use a forbidden phrase counts in `ai_style_violations`.
+ * - Style: a new analysis whose stored `indonesianTexts` use a forbidden phrase counts in `ai_style_violations`.
  */
 export async function runAnalyses(
   deps: AnalyzeDeps,
@@ -161,7 +164,7 @@ export async function runAnalyses(
       createdAt: deps.now(),
     });
     stats.ai_analyses_run += 1;
-    const prose = analyzer.indonesianTexts?.(outcome.value) ?? [];
+    const prose = analyzer.indonesianTexts?.(result) ?? [];
     if (prose.some((text) => forbiddenPhrases(text).length > 0)) stats.ai_style_violations += 1;
   };
 

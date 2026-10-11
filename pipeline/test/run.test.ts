@@ -205,6 +205,13 @@ const ANALYST_REPLY = {
   steps_id: [],
 };
 
+/** The answer to an analysis prompt of the default analyze stage, by the answer schema its system message names. */
+function analysisReply(system: string): unknown {
+  if (system.includes('{"flags"')) return { flags: [] };
+  if (system.includes('{"items"')) return { items: [] };
+  return ANALYST_REPLY;
+}
+
 interface FakeChat {
   chat: ChatFn;
   calls: string[];
@@ -213,7 +220,7 @@ interface FakeChat {
 
 /**
  * Answers an extraction prompt by the document URL in it; unknown URLs (or `fail`) get HTTP 500. Records the URL of
- * each extraction call. An AI Analyst prompt gets `ANALYST_REPLY` and is not recorded.
+ * each extraction call. An analysis prompt gets `analysisReply` and is not recorded.
  */
 function fakeChat(replies: Record<string, unknown> = REPLIES, fail: Set<string> = new Set()): FakeChat {
   let inFlight = 0;
@@ -223,7 +230,8 @@ function fakeChat(replies: Record<string, unknown> = REPLIES, fail: Set<string> 
     chat: async (_model, messages) => {
       const url = /^Source: (\S+)/.exec(messages[1]?.content ?? "")?.[1] ?? "";
       if (url === "") {
-        return { content: JSON.stringify(ANALYST_REPLY), finishReason: "stop", latencyMs: 1, httpStatus: 200, servedModel: null };
+        const reply = analysisReply(messages[0]?.content ?? "");
+        return { content: JSON.stringify(reply), finishReason: "stop", latencyMs: 1, httpStatus: 200, servedModel: null };
       }
       fake.calls.push(url);
       inFlight++;
@@ -470,11 +478,10 @@ describe("runDaily", () => {
     const repo = new MemoryRepo();
     const list = repo.listProjectsForScoring.bind(repo);
     let calls = 0;
-    // The signals stage lists projects first and succeeds; every later listing fails: the analyze stage's (the AI
-    // Analyst runs by default) and the score stage's.
+    // The signals (1st) and analyze (2nd) stages list projects and succeed; only the score stage's listing fails.
     repo.listProjectsForScoring = async (days, now) => {
       calls += 1;
-      if (calls > 1) throw new Error("db down");
+      if (calls === 3) throw new Error("db down");
       return list(days, now);
     };
     let purgeCalls = 0;
@@ -488,9 +495,9 @@ describe("runDaily", () => {
     expect(purgeCalls).toBe(1);
     expect(repo.runs).toHaveLength(1);
     expect(repo.runs[0]?.stats.run_error).toBe(1);
-    // failed_step names the first failing stage: analyze (9) now lists projects before score (5) does.
-    expect(repo.runs[0]?.stats.failed_step).toBe(9);
-    // Scoring failed at stage level too: nothing was assessed.
+    expect(calls).toBe(3);
+    expect(repo.runs[0]?.stats.failed_step).toBe(5);
+    // Scoring failed at stage level: nothing was assessed.
     expect(repo.runs[0]?.stats.assessed).toBe(0);
     expect(repo.runs[0]?.stats.docs_collected).toBe(5);
     expect(repo.runs[0]?.stats.projects_created).toBe(3);
@@ -1680,11 +1687,11 @@ describe("runDailyJob LLM providers", () => {
       const url = String(input);
       const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
       const source = /^Source: (\S+)/.exec(body.messages[1]?.content ?? "")?.[1] ?? "";
-      // AI Analyst prompts (the default analyze stage) have no Source line.
+      // Analysis prompts (the default analyze stage) have no Source line.
       const analysis = source === "";
       requests.push({ url, auth: (init?.headers as Record<string, string>)["Authorization"], analysis });
       if (url.startsWith("https://llm.test/")) return sse("gpt-oss:120b", "not json");
-      if (analysis) return sse("glm-served", JSON.stringify(ANALYST_REPLY));
+      if (analysis) return sse("glm-served", JSON.stringify(analysisReply(body.messages[0]?.content ?? "")));
       const reply = REPLIES[source];
       if (reply === undefined) return new Response("unknown", { status: 500 });
       return sse("glm-served", JSON.stringify(reply));
@@ -1721,11 +1728,12 @@ describe("runDailyJob LLM providers", () => {
     expect(stats.extract_ok).toBe(4);
     expect(stats.llm_models_tripped).toBe(0);
     expect(lines.join("\n")).not.toContain("test-key");
-    // The Analyst of each of the 3 projects follows the same chain: freellm auto, then NVIDIA.
+    // The 3 analyses (Analyst, Scam Analyst, contradictions) of each of the 3 projects follow the same chain:
+    // freellm auto, then NVIDIA.
     const analysis = requests.filter((r) => r.analysis);
-    expect(analysis.filter((r) => r.url.startsWith("https://llm.test/"))).toHaveLength(3);
-    expect(analysis.filter((r) => !r.url.startsWith("https://llm.test/"))).toHaveLength(3);
-    expect(stats.ai_analyses_run).toBe(3);
+    expect(analysis.filter((r) => r.url.startsWith("https://llm.test/"))).toHaveLength(9);
+    expect(analysis.filter((r) => !r.url.startsWith("https://llm.test/"))).toHaveLength(9);
+    expect(stats.ai_analyses_run).toBe(9);
   });
 });
 
@@ -2141,16 +2149,125 @@ describe("runDaily AI analyses", () => {
     expect(runExitCode(stats)).toBe(0);
   });
 
-  it("runs the AI Analyst on every project by default", async () => {
+  it("runs the AI Analyst, the Scam Analyst and contradiction detection on every project by default", async () => {
     const { repo, deps, config, warnings } = setup();
 
     const stats = await runDaily(deps, config);
 
-    expect(stats.ai_analyses_run).toBe(3);
-    expect(repo.aiAnalyses.map((a) => [a.kind, a.promptVersion])).toEqual(Array(3).fill(["analyst", "analyst-2026-10-10.1"]));
+    expect(stats.ai_analyses_run).toBe(9);
+    const kinds = repo.aiAnalyses.map((a) => [a.kind, a.promptVersion]);
+    expect(kinds.filter(([kind]) => kind === "analyst")).toEqual(Array(3).fill(["analyst", "analyst-2026-10-10.1"]));
+    expect(kinds.filter(([kind]) => kind === "scam")).toEqual(Array(3).fill(["scam", "scam-2026-10-11.1"]));
+    expect(kinds.filter(([kind]) => kind === "contradictions")).toEqual(
+      Array(3).fill(["contradictions", "contradictions-2026-10-11.1"]),
+    );
     // ANALYST_REPLY quotes nothing: its point is dropped and the verdict stays "pantau".
     expect(repo.aiAnalyses[0]?.result).toMatchObject({ verdict: "pantau", confidence: "rendah", points: [] });
     expect(warnings).toEqual([]);
+  });
+
+  describe("AI flags in the risk assessment", () => {
+    const FASTDROP_TEXT = "Fastdrop airdrop is live. Total allocation is 5% of supply. Only 2 hours left, DM @fastdrop_admin to verify your wallet. Allocation: 3% of supply.";
+    function fastdropSetup(answers: { scam?: unknown; contradictions?: unknown }) {
+      const pages = basePages();
+      pages[TG] = telegramWith(tgMessage(108, "2026-10-08T08:00:00+00:00", FASTDROP_TEXT));
+      const replies = {
+        ...REPLIES,
+        "https://t.me/airdrops_io/108": { is_airdrop_content: true, projects: [project({ name: "Fastdrop", status: "live" })] },
+      };
+      const base = fakeChat(replies);
+      const chat: FakeChat = {
+        ...base,
+        chat: async (model, messages) => {
+          const system = messages[0]?.content ?? "";
+          const forFastdrop = (messages[1]?.content ?? "").includes("PROJECT: Fastdrop");
+          const answer = system.includes('{"flags"') ? answers.scam : system.includes('{"items"') ? answers.contradictions : undefined;
+          if (!forFastdrop || answer === undefined) return base.chat(model, messages);
+          return { content: JSON.stringify(answer), finishReason: "stop", latencyMs: 1, httpStatus: 200, servedModel: null };
+        },
+      };
+      return setup({ pages, chat });
+    }
+
+    it("raises the risk in the same run for a quoted Scam Analyst flag, without the quote in the public reason", async () => {
+      const { repo, deps, config } = fastdropSetup({
+        scam: {
+          flags: [
+            { pattern: "fake_support", quote: "DM @fastdrop_admin to verify your wallet", explanation: "Admin minta di-DM." },
+            { pattern: "payment_request", quote: "Send 1 ETH to claim", explanation: "Kutipan karangan." },
+          ],
+        },
+      });
+
+      await runDaily(deps, config);
+
+      const risk = await latestRisk(repo, "fastdrop");
+      const ai = risk?.reasons.filter((r) => r.source === "ai") ?? [];
+      // The made-up payment_request quote is dropped, so only the medium fake_support reason is left.
+      expect(ai.map((r) => [r.code, r.severity])).toEqual([["ai_scam_pattern", "medium"]]);
+      expect(ai[0]?.message).not.toContain("@fastdrop_admin");
+      expect(risk?.checks.find((c) => c.id === "ai_review")?.ran).toBe(true);
+    });
+
+    it("raises the risk to high for a quoted secret request", async () => {
+      const { repo, deps, config } = fastdropSetup({
+        scam: { flags: [{ pattern: "secret_request", quote: "verify your wallet", explanation: "Ujungnya minta seed phrase." }] },
+      });
+
+      await runDaily(deps, config);
+
+      expect((await latestRisk(repo, "fastdrop"))?.level).toBe("high");
+    });
+
+    it("adds an ai_contradiction reason for a quoted contradiction", async () => {
+      const contradiction = {
+        topic: "Alokasi",
+        quote_a: "Total allocation is 5% of supply.",
+        url_a: "https://t.me/airdrops_io/108",
+        quote_b: "Allocation: 3% of supply.",
+        url_b: "https://t.me/airdrops_io/108",
+        explanation: "Dua angka alokasi.",
+      };
+      const { repo, deps, config } = fastdropSetup({ contradictions: { items: [contradiction] } });
+
+      await runDaily(deps, config);
+
+      const risk = await latestRisk(repo, "fastdrop");
+      expect(risk?.reasons.filter((r) => r.source === "ai").map((r) => [r.code, r.severity])).toEqual([["ai_contradiction", "medium"]]);
+    });
+
+    it("leaves every rule-based level and reason as they are when the AI finds nothing", async () => {
+      const withoutAi = setup();
+      await runDaily({ ...withoutAi.deps, analyzers: [] }, withoutAi.config);
+      const withAi = setup();
+
+      await runDaily(withAi.deps, withAi.config);
+
+      const summary = (repo: MemoryRepo) =>
+        repo.riskAssessments.map((r) => ({
+          level: r.level,
+          points: r.points,
+          reasons: r.reasons,
+          checks: r.checks.filter((c) => c.id !== "ai_review"),
+        }));
+      expect(summary(withAi.repo)).toEqual(summary(withoutAi.repo));
+      expect(withAi.repo.riskAssessments.map((r) => r.checks.find((c) => c.id === "ai_review")?.ran)).toEqual([true, true, true]);
+      expect(withoutAi.repo.riskAssessments.map((r) => r.checks.find((c) => c.id === "ai_review")?.ran)).toEqual([false, false, false]);
+    });
+
+    it("counts a project whose AI analyses cannot be read as score_failed instead of assessing it without them", async () => {
+      const repo = new MemoryRepo();
+      repo.latestAiAnalysis = async () => {
+        throw new Error("db down");
+      };
+      const { deps, config } = setup({ repo });
+
+      const stats = await runDaily({ ...deps, analyzers: [] }, config);
+
+      expect(stats.score_failed).toBe(3);
+      expect(stats.assessed).toBe(0);
+      expect(repo.riskAssessments).toEqual([]);
+    });
   });
 
   it("reports a failing analyze stage as failed_step 9 and still scores", async () => {
