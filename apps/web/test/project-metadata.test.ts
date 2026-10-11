@@ -45,8 +45,17 @@ describe("project page metadata", () => {
   });
 
   it.each([["live_now"], ["early_bets"], ["ended"]] as const)("stays indexable when the project passed in %s", async (tab) => {
-    getProjectDetail.mockResolvedValue({ curation: curation({ tab, endedOn: tab === "ended" ? "2025-01-15" : null }) });
-    expect((await meta()).robots).toBeUndefined();
+    getProjectDetail.mockResolvedValue({
+      slug: "polymarket",
+      name: "Polymarket",
+      chains: ["polygon"],
+      curation: curation({ tab, endedOn: tab === "ended" ? "2025-01-15" : null }),
+    });
+    const m = await meta();
+    expect(m.robots).toBeUndefined();
+    expect(m.title).toBe("Polymarket · AirdropIQ");
+    expect(m.alternates?.canonical).toBe("/projects/polymarket");
+    expect(String(m.description)).toContain("Polymarket");
   });
 
   it("adds nothing for an unknown slug (the page itself answers 404)", async () => {
@@ -55,7 +64,7 @@ describe("project page metadata", () => {
   });
 
   it("reads the project as a visitor or a member by the session, like the page", async () => {
-    getProjectDetail.mockResolvedValue({ curation: curation({}) });
+    getProjectDetail.mockResolvedValue({ slug: "s", name: "S", chains: [], curation: curation({}) });
     await meta();
     expect(getProjectDetail.mock.calls[0]![2]).toMatchObject({ member: false });
     getUser.mockResolvedValue({ id: "u" });

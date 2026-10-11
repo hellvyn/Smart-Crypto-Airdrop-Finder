@@ -8,7 +8,7 @@ import { signedInLoginTarget } from "@/lib/routes";
 import { safeNextPath } from "@/lib/safe-next";
 import { logIn } from "../actions";
 
-export const metadata = { title: pageTitle(auth.title) };
+export const metadata = { title: pageTitle(auth.title), robots: { index: false } };
 
 export default async function LoginPage({
   searchParams,

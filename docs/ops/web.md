@@ -307,3 +307,12 @@ throttle's RPC fails the login still goes through (fail open).
 3. Supabase Dashboard, Authentication, Attack Protection: enable captcha, provider Turnstile, paste the secret key.
    Until step 3 Supabase ignores the token; if step 3 comes before step 2, every login fails (no token sent).
 The secret key never goes into this repo or the web env, only into the Supabase dashboard.
+
+## SEO basics (2026-10-11)
+
+- The canonical address comes from `lib/site-url.ts`: Vercel's `VERCEL_PROJECT_PRODUCTION_URL`, falling back to
+  `smart-airdrop-finder.vercel.app`. When a permanent domain exists, add it to the Vercel project as the production
+  domain; nothing in the code changes.
+- `/robots.txt` and `/sitemap.xml` are generated (`app/robots.ts`, `app/sitemap.ts`). The sitemap lists the public pages
+  and every project on `public_list`; the signed-in app, `/login` and `/api` are disallowed and marked noindex.
+- Project pages carry their own title, description, canonical link and share card.

@@ -12,7 +12,7 @@ import { WatchButton } from "@/components/WatchButton";
 import { getUser } from "@/lib/auth";
 import { isCoachCandidate } from "@/lib/coach";
 import { isFarming } from "@/lib/farming";
-import { detail } from "@/lib/copy";
+import { detail, pageTitle, projectSeoDescription } from "@/lib/copy";
 import { getLastSuccessfulRunAt, getProjectDetail } from "@/lib/queries";
 import { LIST_PATH } from "@/lib/routes";
 import { createServerClient } from "@/lib/supabase/server";
@@ -35,8 +35,17 @@ const loadProject = cache(async (slug: string, member: boolean) =>
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const project = await loadProject(slug, (await getUser()) !== null);
-  if (!project || notCuratedReason(project.curation) === null) return {};
-  return { robots: { index: false } };
+  if (!project) return {};
+  if (notCuratedReason(project.curation) !== null) return { robots: { index: false } };
+  const description = projectSeoDescription(project.name, project.chains);
+  const path = `/projects/${encodeURIComponent(project.slug)}`;
+  return {
+    title: pageTitle(project.name),
+    description,
+    alternates: { canonical: path },
+    openGraph: { type: "article", title: pageTitle(project.name), description, url: path },
+    twitter: { card: "summary", title: pageTitle(project.name), description },
+  };
 }
 
 export default async function ProjectPage({ params }: { params: Promise<{ slug: string }> }) {

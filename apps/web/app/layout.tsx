@@ -3,6 +3,7 @@ import { Barlow, Barlow_Condensed } from "next/font/google";
 import type { ReactNode } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { site } from "@/lib/copy";
+import { siteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 const barlow = Barlow({
@@ -20,8 +21,12 @@ const barlowCondensed = Barlow_Condensed({
 });
 
 export const metadata: Metadata = {
+  metadataBase: siteUrl(),
   title: site.title,
-  description: site.description,
+  description: site.longDescription,
+  applicationName: site.title,
+  openGraph: { type: "website", siteName: site.title, locale: "id_ID", title: site.title, description: site.longDescription },
+  twitter: { card: "summary", title: site.title, description: site.longDescription },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
