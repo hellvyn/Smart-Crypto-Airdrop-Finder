@@ -497,6 +497,8 @@ export const garapan = {
       "Zona waktu di akun kamu gak dikenal, jadi hari ini gak bisa dihitung. Ganti zona waktunya di halaman Akun, terus centang lagi.",
     result_not_ended: "Hasil baru bisa diisi setelah project-nya ended.",
     invalid_amount: "Jumlah token harus angka di atas 0. Desimal pakai titik atau koma, tanpa pemisah ribuan.",
+    ambiguous_amount:
+      "Angka itu bisa dibaca dua cara. Tulis jumlah token tanpa pemisah ribuan, misalnya 1250. Titik atau koma cuma buat desimal, misalnya 1.25.",
     invalid_claim_date: "Tanggal claim wajib diisi, dan gak boleh lewat dari hari ini.",
   },
   nextDeadline: (kind: string, date: string, precision: string) => `Deadline terdekat: ${kind} ${date} (${precision})`,

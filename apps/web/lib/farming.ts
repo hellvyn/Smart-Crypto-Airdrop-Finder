@@ -44,6 +44,7 @@ export type FarmingErrorCode =
   | "invalid_timezone"
   | "result_not_ended"
   | "invalid_amount"
+  | "ambiguous_amount"
   | "invalid_claim_date";
 
 export const FARMING_ERROR_MESSAGES: Record<FarmingErrorCode, string> = copy.errors;
@@ -326,13 +327,15 @@ export async function refreshFromSource(db: SupabaseClient, projectId: string): 
  * - a task archived, or a project stopped, in another tab (22023), or a task gone with its deleted project (42501
  *   "task not found"; requireUser() already ruled out a missing user): FarmingError "task_inactive";
  * - a profile time zone Postgres does not know (its own 22023 "time zone ... not recognized"): "invalid_timezone".
+ * Any other 42501 (a missing grant, an RLS refusal) is thrown as a plain error.
  */
 export async function setCheck(db: SupabaseClient, taskId: string, done: boolean): Promise<boolean> {
   await requireUser();
   requireUuid(taskId, "task");
   const { data, error } = await db.rpc("toggle_farming_check", { p_task_id: taskId, p_done: done });
   if (error?.code === "22023" && /time zone/i.test(error.message)) throw new FarmingError("invalid_timezone");
-  if (error?.code === "22023" || error?.code === "42501") throw new FarmingError("task_inactive");
+  if (error?.code === "22023") throw new FarmingError("task_inactive");
+  if (error?.code === "42501" && /task not found/i.test(error.message)) throw new FarmingError("task_inactive");
   throwIf(error, "update the check");
   return data === true;
 }
@@ -491,6 +494,11 @@ export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<Fa
 const MAX_AMOUNT = 1e15;
 /** A plain decimal: digits, optionally one "." (a "," is read as "."). No sign, exponent or thousands separator. */
 const AMOUNT = /^\d+(\.\d+)?$/;
+/**
+ * Groups of 3 digits after a separator, like "1.250", "1,250" or "12.345.678": a thousands-separated number in id-ID
+ * or en-US, or a decimal. Neither reading is safe to guess, so it is refused. A leading 0 ("0.250") is a decimal.
+ */
+const THOUSANDS = /^[1-9]\d{0,2}([.,]\d{3})+$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** What the member enters: an amount and a claim date, or "Gak dapet" (`noReward`, which ignores both). */
@@ -552,7 +560,8 @@ async function memberToday(db: SupabaseClient, userId: string, now: Date): Promi
  * Saves the member's result for a project that ended and that they farm or farmed. The amount must be a number above
  * 0 (at most 1e15) and the claim date a real day no later than the member's today. usd_at_claim is amount x the
  * token's price on the claim day, or null when no price is found (the tokens are saved anyway). Refusals the member can
- * fix are FarmingErrors: "invalid_amount", "invalid_claim_date", "result_not_ended", "not_farming".
+ * fix are FarmingErrors: "invalid_amount", "ambiguous_amount" (thousands separators, see THOUSANDS),
+ * "invalid_claim_date", "result_not_ended", "not_farming".
  * Not an upsert: the key columns have no update grant, so the existing row is updated, else a new one inserted.
  */
 export async function saveResult(db: SupabaseClient, projectId: string, input: ResultInput, now: Date): Promise<void> {
@@ -561,7 +570,9 @@ export async function saveResult(db: SupabaseClient, projectId: string, input: R
   let amount: string | null = null;
   let claimedOn: string | null = null;
   if (!input.noReward) {
-    amount = typeof input.amount === "string" ? input.amount.trim().replace(",", ".") : "";
+    const typed = typeof input.amount === "string" ? input.amount.trim() : "";
+    if (THOUSANDS.test(typed)) throw new FarmingError("ambiguous_amount");
+    amount = typed.replace(",", ".");
     if (!AMOUNT.test(amount) || !(Number(amount) > 0) || Number(amount) > MAX_AMOUNT) throw new FarmingError("invalid_amount");
     claimedOn = typeof input.claimedOn === "string" ? input.claimedOn.trim() : "";
     if (!isCalendarDay(claimedOn)) throw new FarmingError("invalid_claim_date");

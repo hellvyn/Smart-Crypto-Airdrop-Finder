@@ -109,10 +109,15 @@ export async function submitCheck(formData: FormData): Promise<void> {
   finish(await attempt((db) => setCheck(db, taskId, done === "1")), formData);
 }
 
-/** Records the member's airdrop result for an ended project ("Hasil garapan", #51). */
+/**
+ * Records the member's airdrop result for an ended project ("Hasil garapan", #51). A server action is a public
+ * endpoint, so the flags are checked to be booleans before use ("false" is truthy); shareAnonymous may be left out.
+ */
 export async function submitResult(projectId: string, input: ResultInput): Promise<Outcome> {
   await requireUser();
   if (!isUuid(projectId)) throw new Error("Invalid projectId");
+  if (typeof input?.noReward !== "boolean") throw new Error("Invalid noReward");
+  if (input.shareAnonymous !== undefined && typeof input.shareAnonymous !== "boolean") throw new Error("Invalid shareAnonymous");
   return attempt((db) => saveResult(db, projectId, input, new Date()));
 }
 

@@ -44,6 +44,7 @@ import {
   setCheck,
   startFarming,
   stopFarming,
+  type ResultInput,
 } from "../lib/farming";
 
 const USER = { id: "11111111-1111-4111-8111-111111111111" };
@@ -409,6 +410,15 @@ describe("stopFarming, archiveTask, isFarming, setCheck", () => {
   it("setCheck reports a task gone with its deleted project (42501 task not found) as task_inactive", async () => {
     const { db } = fakeDb(() => fail("42501", "task not found"));
     await expect(setCheck(db, TID, true)).rejects.toMatchObject({ name: "FarmingError", code: "task_inactive" });
+  });
+
+  // G5 I3.4: only toggle_farming_check's own "task not found" is a gone task; any other 42501 (a missing grant, an
+  // RLS refusal) is a real error, never shown as "Task itu udah diarsipkan".
+  it("setCheck throws any other 42501 as a plain error, not task_inactive", async () => {
+    const { db } = fakeDb(() => fail("42501", "permission denied for function toggle_farming_check"));
+    const error = await setCheck(db, TID, true).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(FarmingError);
   });
 
   it("setCheck reports a profile time zone Postgres does not know (22023) as invalid_timezone, not task_inactive", async () => {
@@ -896,6 +906,48 @@ describe("airdrop results (Hasil garapan, #51)", () => {
         claimed_on: "2026-10-07",
         usd_at_claim: 400,
       });
+    });
+
+    // G5 I3.5: "1.250" could be 1250 tokens (id-ID thousands) or 1.25; neither guess is safe, so the member is asked
+    // to write it without separators.
+    it("refuses an amount with thousands separators as ambiguous, before the database", async () => {
+      const { db, recs } = resultDb();
+      serverDb = db;
+      for (const amount of ["1.250", "1,250", "12.345.678", "1,250,000", "999.999"]) {
+        expect(await submitResult(PID, { ...input, amount })).toEqual({ ok: false, error: "ambiguous_amount" });
+      }
+      expect(recs).toHaveLength(0);
+      expect(FARMING_ERROR_MESSAGES.ambiguous_amount).toMatch(/tanpa pemisah ribuan/);
+    });
+
+    it("still accepts a plain decimal that is not a thousands group", async () => {
+      fetchMock.mockImplementation(async () => llama(0.32));
+      for (const amount of ["1.25", "1250", "0.250", "1234.567", "12,5"]) {
+        serverDb = resultDb().db;
+        expect(await submitResult(PID, { ...input, amount })).toEqual({ ok: true });
+      }
+    });
+
+    // G5 I3.8: a server action is a public endpoint; a non-boolean flag ("false" is truthy) must not be used as one.
+    it("refuses a noReward or shareAnonymous that is not a boolean, before the database", async () => {
+      const { db, recs } = resultDb();
+      serverDb = db;
+      for (const bad of [
+        { ...input, noReward: "false" },
+        { ...input, noReward: 1 },
+        { ...input, noReward: undefined },
+        { ...input, shareAnonymous: "true" },
+        { ...input, shareAnonymous: null },
+      ]) {
+        await expect(submitResult(PID, bad as unknown as ResultInput)).rejects.toThrow(/invalid/i);
+      }
+      expect(recs).toHaveLength(0);
+    });
+
+    it("accepts a result without shareAnonymous (the current choice is kept)", async () => {
+      fetchMock.mockImplementation(async () => llama(0.32));
+      serverDb = resultDb().db;
+      expect(await submitResult(PID, { ...input, shareAnonymous: undefined })).toEqual({ ok: true });
     });
 
     it("accepts a decimal comma and rounds the USD value to cents", async () => {

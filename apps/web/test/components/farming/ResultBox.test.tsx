@@ -134,6 +134,17 @@ describe("ResultBox", () => {
     expect((screen.getByLabelText("Tanggal claim") as HTMLInputElement).value).toBe("2026-10-07");
   });
 
+  // G5 I3.6: String(1e-8) is "1e-8", which the amount check refuses, so "Simpan" would fail on an unchanged form.
+  it.each([
+    [1e-8, "0.00000001"],
+    [1.5e-7, "0.00000015"],
+    [12.5, "12.5"],
+  ])("Ubah fills a saved amount of %s as the plain decimal %s, never in exponent notation", (amount, shown) => {
+    box({ result: result({ amount }) });
+    fireEvent.click(screen.getByText("Ubah"));
+    expect((screen.getByLabelText("Jumlah token") as HTMLInputElement).value).toBe(shown);
+  });
+
   it("credits the price data next to a USD value, and only when one is shown", () => {
     box({ result: result() });
     const note = screen.getByText(/^Data harga:/);

@@ -51,6 +51,9 @@ export default defineConfig({
         NEXT_PUBLIC_SITE_URL: baseURL,
         // The web server must never see the service role key; it is for the test harness only.
         SUPABASE_SERVICE_ROLE_KEY: "",
+        // A developer's real CoinGecko key in the shell must not make the tests call CoinGecko: without a key the
+        // prices come from the local stub below.
+        COINGECKO_API_KEY: "",
         // lib/prices.ts accepts this override only for a loopback address.
         PRICES_API_BASE: PRICES_STUB,
       },

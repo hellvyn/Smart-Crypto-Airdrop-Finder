@@ -3,7 +3,7 @@ import { ExternalLink } from "@/components/ExternalLink";
 import { Button } from "@/components/ui";
 import { garapan as copy } from "@/lib/copy";
 import type { FarmingResult, MemberAverage } from "@/lib/farming";
-import { formatShortDay, formatTokens, formatUsd } from "./format";
+import { formatShortDay, formatTokens, formatUsd, plainAmount } from "./format";
 
 const r = copy.result;
 
@@ -50,7 +50,7 @@ function ResultForm({ projectId, today, result }: { projectId: string; today: st
               inputMode="decimal"
               placeholder={r.amountPlaceholder}
               required
-              defaultValue={result?.amount != null ? String(result.amount) : undefined}
+              defaultValue={result?.amount != null ? plainAmount(result.amount) : undefined}
             />
           </label>
           <label>
