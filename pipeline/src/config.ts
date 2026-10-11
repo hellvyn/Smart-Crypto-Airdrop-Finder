@@ -18,7 +18,8 @@ export interface PipelineConfig {
    * `intermediaryHosts` (exact host match) are never a project's domain: the collector drops a website link that
    * ends there, and extraction and merge refuse them as official URLs and domains (`isNonProjectHost`).
    * The `signals` stage then reads `llms-full.txt` and at most `maxRaisePages` raise pages (`reported_backer`, #41),
-   * also `delayMs` apart. `maxRequestsPerRun` caps every AlphaDrops request of a run together: the raise part only
+   * also `delayMs` apart: never-cached pages first, then the oldest. 6 per run is about 42 per week at one run a
+   * day (spec §15.1: at most 40 per week). `maxRequestsPerRun` caps every AlphaDrops request of a run together: the raise part only
    * gets what the collector left. `enabled: false` sends no AlphaDrops request at all.
    */
   alphadrops: {
@@ -156,7 +157,7 @@ export const defaultConfig: PipelineConfig = {
     maxDetails: 80,
     delayMs: 1500,
     intermediaryHosts: ["s.kaito.ai", "linktr.ee", "galxe.com", "app.galxe.com", "zealy.io", "layer3.xyz", "bit.ly", "t.co"],
-    maxRaisePages: 40,
+    maxRaisePages: 6,
     maxRequestsPerRun: 120,
   },
   models: MODELS,

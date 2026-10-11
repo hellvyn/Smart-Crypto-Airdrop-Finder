@@ -115,8 +115,8 @@ round_date, source_url}`, source `alphadrops`, **always `verified = false`**) fr
 2. A project with an official domain whose normalized name equals an entry's name gets that entry's page
    `/raises/<slug>`. The name **only chooses which page to read**.
 3. A page cached in `alphadrops_raises` (service role only) at most 7 days ago is used as it is. Other pages are
-   fetched: never-cached pages first, then the oldest, at most `maxRaisePages` (40) per run. A fetched page with at
-   least one round replaces the cache.
+   fetched: never-cached pages first, then the oldest, at most `maxRaisePages` per run: 6 per run (~42 per week, spec
+   §15.1). A fetched page with at least one round replaces the cache.
 4. The rounds of a page become signals only when the registrable domain of the page's "Official Website" link equals
    one of the project's official domains (`domainMatches`). A scam using the name of a project in the fundraising list
    gets nothing: its domain differs. `amount_usd` is the total of the page's disclosed rounds (worth +1 at $5M or more,
@@ -130,16 +130,16 @@ reached, failed, or stale and not refreshed), the project's earlier `reported_ba
 fetching for the run.
 
 **Request budget.** All AlphaDrops requests of a run share `maxRequestsPerRun` (120): the collector's listing and
-detail pages come first (at most 1 + 80 = 81), and the raise part gets what is left (at most `llms-full.txt` + 38
-pages on a day with 80 detail pages; 40 pages when fewer detail pages were fetched). Every AlphaDrops request goes out
+detail pages come first (at most 1 + 80 = 81), and the raise part gets what is left: `llms-full.txt` + at most 6
+pages = 7 requests, so the 120-request cap is never reached (81 + 7 = 88 at most). Every AlphaDrops request goes out
 with the same User-Agent and a 1.5 s pause (`delayMs`) before it.
 
 **Job time.** Measured on 2026-10-11 from the development container (apex `alphadrops.net`): `llms-full.txt`
 (94 KB) answered in 0.5 s, raise pages (about 130 KB, rendered on request) in about 2.5 s. So a raise page costs about
-4 s with its pause, and the raise part at most about 2 s + 38 x 4 s = 2.6 minutes on top of the collector's 2 to 3
-minutes. Most days fetch far fewer pages: each page is fetched again only after 7 days. A broken connection or 429
+4 s with its pause, and the raise part at most about 2 s + 6 x 4 s = 26 seconds on top of the collector's 2 to 3
+minutes. Most days fetch fewer pages: each page is fetched again only after 7 days. A broken connection or 429
 stops the part at once (worst case one 20 s timeout). There is no time budget for an AlphaDrops that answers every
-request slowly: at the 20 s timeout per request that would be 39 x 21.5 s = 14 minutes for the raise part. If runs
+request slowly: at the 20 s timeout per request that would be 7 x 21.5 s = 2.5 minutes for the raise part. If runs
 come close to the job limit (`finished_at` - `started_at` in `pipeline_runs`), lower `maxRaisePages`.
 
 ### Daftar VC (VC portfolio cross-check)
