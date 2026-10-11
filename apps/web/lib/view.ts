@@ -10,6 +10,7 @@ import type {
   Tab,
   WorthLevel,
 } from "@saf/core";
+import { labels } from "./copy";
 
 export type { Tab, WorthLevel } from "@saf/core";
 
@@ -104,9 +105,11 @@ const USD = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 });
 
 /** Row tag of the capital sub-filter (#52): "Gratis", "Butuh $1.000+", "Butuh $" or "Modal belum jelas". */
 export function capitalLabel(capital: Capital, minUsd: number | null): string {
-  if (capital === "free") return "Gratis";
-  if (capital === "unknown") return "Modal belum jelas";
-  return minUsd !== null && Number.isFinite(minUsd) && minUsd > 0 ? `Butuh $${USD.format(minUsd)}+` : "Butuh $";
+  if (capital === "free") return labels.capital.free;
+  if (capital === "unknown") return labels.capital.unknown;
+  return minUsd !== null && Number.isFinite(minUsd) && minUsd > 0
+    ? labels.capital.depositMin(USD.format(minUsd))
+    : labels.capital.deposit;
 }
 
 /** The audience's time zone (WIB). The pipeline runs at 06.00 WIB, which is still the previous day in UTC. */
@@ -130,12 +133,12 @@ function checkDate(d: Date, now: Date): string {
  * re-checked) "Last check {tanggal}".
  */
 export function checkedLabel(checkedAt: Date, now: Date, frozen: boolean): string {
-  if (frozen) return `Last check ${checkDate(checkedAt, now)}`;
-  if (now.getTime() - checkedAt.getTime() > CHECK_STALE_AFTER_MS) return `Belum dicek lagi sejak ${checkDate(checkedAt, now)}`;
+  if (frozen) return labels.checked.frozen(checkDate(checkedAt, now));
+  if (now.getTime() - checkedAt.getTime() > CHECK_STALE_AFTER_MS) return labels.checked.staleSince(checkDate(checkedAt, now));
   const days = Math.round((Date.parse(zoneDay.format(now)) - Date.parse(zoneDay.format(checkedAt))) / DAY_MS);
-  if (days <= 0) return "Dicek hari ini";
-  if (days === 1) return "Dicek kemarin";
-  return `Dicek ${days} hari lalu`;
+  if (days <= 0) return labels.checked.today;
+  if (days === 1) return labels.checked.yesterday;
+  return labels.checked.daysAgo(days);
 }
 
 export const STATUSES: readonly Status[] = ["live", "announced", "speculative", "ended", "unknown"];
@@ -149,53 +152,22 @@ export function isStale(lastRunAt: Date | null, now: Date): boolean {
   return now.getTime() - lastRunAt.getTime() > STALE_AFTER_MS;
 }
 
-const STATUS_LABELS: Record<Status, string> = {
-  live: "Live",
-  announced: "Announced",
-  speculative: "Speculative",
-  ended: "Ended",
-  unknown: "Unconfirmed",
-};
-
+/** An unknown status reads "Belum pasti". */
 export function statusLabel(s: Status): string {
-  return STATUS_LABELS[s] ?? "Unconfirmed";
+  return labels.status[s] ?? labels.status.unknown;
 }
-
-const RISK_LABELS: Record<RiskLevel, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  critical: "Critical",
-  insufficient_data: "Insufficient data",
-};
 
 /** Risk is shown as a level only, never as a number and never as "safe". */
 export function riskLabel(l: RiskLevel | null): string {
-  return l === null ? "Not assessed" : (RISK_LABELS[l] ?? "Not assessed");
+  return l === null ? labels.notAssessed : (labels.risk[l] ?? labels.notAssessed);
 }
-
-const DEADLINE_KIND_LABELS: Record<string, string> = {
-  claim: "Claim",
-  snapshot: "Snapshot",
-  campaign_end: "Campaign end",
-  withdraw_funds: "Withdraw funds",
-  tge: "TGE",
-  other: "Other",
-};
 
 export function deadlineKindLabel(kind: string): string {
-  return DEADLINE_KIND_LABELS[kind] ?? kind.replaceAll("_", " ");
+  return labels.deadlineKind[kind] ?? kind.replaceAll("_", " ");
 }
 
-const PRECISION_LABELS: Record<string, string> = {
-  exact: "exact date",
-  approximate: "approximate date",
-  month: "month only",
-  quarter: "quarter only",
-};
-
 export function precisionLabel(precision: string): string {
-  return PRECISION_LABELS[precision] ?? precision;
+  return labels.precision[precision] ?? precision;
 }
 
 /** Only exact and approximate dates count as a deadline for sorting, "next deadline" and notifications. */
@@ -208,36 +180,27 @@ function time(value: string): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
-const CHECK_LABELS: Record<string, string> = {
-  dangerous_asks: "dangerous-ask scan",
-  phishing_list: "phishing list",
-  domain_age: "domain age",
-  lookalike: "lookalike domain",
-  token_security: "token security",
-  contract_verified: "contract verification",
-  hack_history: "hack history",
-  corroboration: "source corroboration",
-};
+/** Every risk check the pipeline runs (`CheckId` of @saf/core, `ai_review` included), in display order. */
+const CHECK_IDS = Object.keys(labels.checks);
 
-const TOTAL_CHECKS = Object.keys(CHECK_LABELS).length;
-
-/** "4/8 checks ran; domain age, phishing list unavailable". A check that did not run is never counted as passed. */
+/**
+ * "7/9 security check jalan. Belum bisa dicek: Umur domain, Review AI." A check that did not run is never counted as
+ * passed, and a check missing from the row counts as not run.
+ */
 export function coverageLine(checks: RiskCheck[]): string {
-  const total = Math.max(checks.length, TOTAL_CHECKS);
+  const total = Math.max(checks.length, CHECK_IDS.length);
   const ran = checks.filter((c) => c.ran).length;
-  const missing = Object.keys(CHECK_LABELS).filter((id) => !checks.some((c) => c.id === id && c.ran));
-  const base = `${ran}/${total} checks ran`;
-  return missing.length > 0 ? `${base}; ${missing.map((id) => CHECK_LABELS[id]).join(", ")} unavailable` : base;
+  const missing = CHECK_IDS.filter((id) => !checks.some((c) => c.id === id && c.ran));
+  return labels.coverage(ran, total, missing.map((id) => labels.checks[id]!));
 }
 
-const EVIDENCE_FIELD_LABELS: Record<string, string> = {
-  status: "Status",
-  defillama_listing: "DefiLlama listing",
-  dangerous_ask: "Dangerous ask",
-};
-
 export function evidenceFieldLabel(field: string): string {
-  return EVIDENCE_FIELD_LABELS[field] ?? field.replaceAll("_", " ");
+  return labels.evidenceField[field] ?? field.replaceAll("_", " ");
+}
+
+/** "Tingkat tinggi" for a risk reason's severity; an unknown severity is shown as stored. */
+export function severityLabel(severity: string): string {
+  return labels.severity[severity] ?? severity;
 }
 
 /** The URL normalised, if (and only if) it is http(s). Anything else must be shown as plain text, never linked. */

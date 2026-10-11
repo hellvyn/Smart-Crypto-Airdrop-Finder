@@ -1,6 +1,7 @@
 import { ExternalLink } from "./ExternalLink";
 import { RiskLine } from "./RiskLine";
 import { StatusBadge } from "./StatusBadge";
+import { detail as copy } from "@/lib/copy";
 import {
   coverageLine,
   deadlineKindLabel,
@@ -8,17 +9,11 @@ import {
   formatDay,
   precisionLabel,
   safeHttpUrl,
+  severityLabel,
   type ProjectDetail,
 } from "@/lib/view";
 
 type Evidence = ProjectDetail["evidence"][number];
-
-const SEVERITY_LABELS: Record<string, string> = {
-  critical: "Critical",
-  high: "High",
-  medium: "Medium",
-  info: "Info",
-};
 
 function hostOf(url: string): string {
   const safe = safeHttpUrl(url);
@@ -40,8 +35,8 @@ function EvidenceItem({ e }: { e: Evidence }) {
 }
 
 export function ProjectDetailView({ project }: { project: ProjectDetail }) {
-  // A claim URL that is not http(s) is not linkable: RiskLine hides the "Official checker" label, and the URL is
-  // listed as plain text under Links instead.
+  // A claim URL that is not http(s) is not linkable: RiskLine hides the official checker label, and the URL is
+  // listed as plain text under Link instead.
   const otherLinks = project.links.filter((l) => l.kind !== "claim");
   const unsafeClaimLinks = project.links.filter((l) => l.kind === "claim" && safeHttpUrl(l.url) === null);
   const conflictEvidence = project.conflict ? project.evidence.filter((e) => e.field === "status") : [];
@@ -60,38 +55,38 @@ export function ProjectDetailView({ project }: { project: ProjectDetail }) {
       </p>
 
       <p className="muted">
-        {project.chains.length > 0 ? `Chains: ${project.chains.join(", ")}` : "Chain unknown"}
+        {project.chains.length > 0 ? copy.chains(project.chains) : copy.chainUnknown}
       </p>
 
       <section aria-labelledby="risk-heading">
-        <h2 id="risk-heading">Risk</h2>
+        <h2 id="risk-heading">{copy.riskHeading}</h2>
         {project.risk ? (
           <>
             <p className="muted">{coverageLine(project.risk.checks)}</p>
             {project.risk.reasons.length > 0 ? (
-              <ul aria-label="Risk reasons">
+              <ul aria-label={copy.riskReasons}>
                 {project.risk.reasons.map((r, i) => (
                   <li key={`${r.code}-${i}`}>
-                    <strong>{SEVERITY_LABELS[r.severity] ?? r.severity} severity</strong>: <span>{r.message}</span>{" "}
+                    <strong>{severityLabel(r.severity)}</strong>: <span>{r.message}</span>{" "}
                     <span className="muted">({r.source})</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="muted">No risk reasons were recorded.</p>
+              <p className="muted">{copy.noReasons}</p>
             )}
-            <p className="muted">Assessed {formatDay(project.risk.computedAt)}</p>
+            <p className="muted">{copy.assessed(formatDay(project.risk.computedAt))}</p>
           </>
         ) : (
-          <p className="muted">This project has not been assessed yet.</p>
+          <p className="muted">{copy.notAssessed}</p>
         )}
       </section>
 
       {project.conflict ? (
         <section aria-labelledby="conflict-heading" className="banner banner-conflict">
-          <h2 id="conflict-heading">Conflicting sources</h2>
-          <p>Sources disagree about this airdrop&apos;s status. Treat it as unconfirmed.</p>
-          <ul aria-label="Conflicting status quotes">
+          <h2 id="conflict-heading">{copy.conflictHeading}</h2>
+          <p>{copy.conflictText}</p>
+          <ul aria-label={copy.conflictQuotes}>
             {conflictEvidence.map((e, i) => (
               <EvidenceItem key={`${e.sourceUrl}-${i}`} e={e} />
             ))}
@@ -100,24 +95,24 @@ export function ProjectDetailView({ project }: { project: ProjectDetail }) {
       ) : null}
 
       <section aria-labelledby="deadlines-heading">
-        <h2 id="deadlines-heading">Deadlines</h2>
+        <h2 id="deadlines-heading">{copy.deadlinesHeading}</h2>
         {project.deadlines.length > 0 ? (
           <ul>
             {project.deadlines.map((d, i) => (
               <li key={i}>
                 <strong>{deadlineKindLabel(d.kind)}</strong>:{" "}
-                {d.date ? `${formatDay(d.date)} (${precisionLabel(d.precision)})` : `date unknown (${precisionLabel(d.precision)})`}
+                {`${d.date ? formatDay(d.date) : copy.dateUnknown} (${precisionLabel(d.precision)})`}
                 {d.text ? <span className="muted"> · {d.text}</span> : null}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="muted">No deadlines found.</p>
+          <p className="muted">{copy.noDeadlines}</p>
         )}
       </section>
 
       <section aria-labelledby="tasks-heading">
-        <h2 id="tasks-heading">Tasks</h2>
+        <h2 id="tasks-heading">{copy.tasksHeading}</h2>
         {project.tasks.length > 0 ? (
           <ul>
             {project.tasks.map((t, i) => (
@@ -125,12 +120,12 @@ export function ProjectDetailView({ project }: { project: ProjectDetail }) {
             ))}
           </ul>
         ) : (
-          <p className="muted">No tasks found.</p>
+          <p className="muted">{copy.noTasks}</p>
         )}
       </section>
 
       <section aria-labelledby="links-heading">
-        <h2 id="links-heading">Links</h2>
+        <h2 id="links-heading">{copy.linksHeading}</h2>
         {otherLinks.length + unsafeClaimLinks.length > 0 ? (
           <ul>
             {[...otherLinks, ...unsafeClaimLinks].map((l) => (
@@ -141,20 +136,20 @@ export function ProjectDetailView({ project }: { project: ProjectDetail }) {
             ))}
           </ul>
         ) : (
-          <p className="muted">No other links found.</p>
+          <p className="muted">{copy.noLinks}</p>
         )}
       </section>
 
       <section aria-labelledby="evidence-heading">
-        <h2 id="evidence-heading">Evidence</h2>
+        <h2 id="evidence-heading">{copy.evidenceHeading}</h2>
         {otherEvidence.length > 0 ? (
-          <ul aria-label="Evidence">
+          <ul aria-label={copy.evidenceHeading}>
             {otherEvidence.map((e, i) => (
               <EvidenceItem key={`${e.sourceUrl}-${e.field}-${i}`} e={e} />
             ))}
           </ul>
         ) : (
-          <p className="muted">{project.conflict ? "See the conflicting quotes above." : "No evidence recorded."}</p>
+          <p className="muted">{project.conflict ? copy.seeConflict : copy.noEvidence}</p>
         )}
       </section>
     </article>

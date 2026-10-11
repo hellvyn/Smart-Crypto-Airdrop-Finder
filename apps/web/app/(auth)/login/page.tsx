@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { getUser } from "@/lib/auth";
+import { auth, pageTitle } from "@/lib/copy";
 import { signedInLoginTarget } from "@/lib/routes";
 import { safeNextPath } from "@/lib/safe-next";
 import { logIn } from "../actions";
 
-export const metadata = { title: "Log in · Smart Airdrop Finder" };
+export const metadata = { title: pageTitle(auth.title) };
 
 export default async function LoginPage({
   searchParams,
@@ -19,19 +20,19 @@ export default async function LoginPage({
   const next = safeNextPath(rawNext);
   return (
     <>
-      <h1>Log in</h1>
-      <AuthForm action={logIn} submitLabel="Log in">
+      <h1>{auth.heading}</h1>
+      <AuthForm action={logIn} submitLabel={auth.submit}>
         <input type="hidden" name="next" value={next} />
         <label>
-          Email
+          {auth.email}
           <input type="email" name="email" autoComplete="email" required />
         </label>
         <label>
-          Password
+          {auth.password}
           <input type="password" name="password" autoComplete="current-password" required />
         </label>
       </AuthForm>
-      <p className="muted">Belum punya akses? Hubungi admin.</p>
+      <p className="muted">{auth.noAccess}</p>
     </>
   );
 }

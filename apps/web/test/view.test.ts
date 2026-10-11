@@ -3,6 +3,8 @@ import {
   capitalLabel,
   checkedLabel,
   coverageLine,
+  deadlineKindLabel,
+  evidenceFieldLabel,
   parseCapital,
   parseTab,
   PAGE_SIZE,
@@ -15,6 +17,7 @@ import {
   pickLastSuccessfulRun,
   pickLatestRisk,
   pickNextDeadline,
+  precisionLabel,
   riskLabel,
   safeHttpUrl,
   statusLabel,
@@ -30,25 +33,46 @@ describe("isStale", () => {
 });
 
 describe("labels", () => {
-  it("shows unknown status as Unconfirmed", () => expect(statusLabel("unknown")).toBe("Unconfirmed"));
+  it("shows unknown status as Belum pasti", () => expect(statusLabel("unknown")).toBe("Belum pasti"));
   it("labels the other statuses", () => {
     expect(statusLabel("live")).toBe("Live");
-    expect(statusLabel("announced")).toBe("Announced");
-    expect(statusLabel("speculative")).toBe("Speculative");
+    expect(statusLabel("announced")).toBe("Diumumkan");
+    expect(statusLabel("speculative")).toBe("Spekulatif");
     expect(statusLabel("ended")).toBe("Ended");
   });
   it("labels risk levels without numbers", () => {
-    expect(riskLabel(null)).toBe("Not assessed");
-    expect(riskLabel("insufficient_data")).toBe("Insufficient data");
-    expect(riskLabel("low")).toBe("Low");
-    expect(riskLabel("medium")).toBe("Medium");
-    expect(riskLabel("high")).toBe("High");
-    expect(riskLabel("critical")).toBe("Critical");
+    expect(riskLabel(null)).toBe("Belum dinilai");
+    expect(riskLabel("insufficient_data")).toBe("Data belum cukup");
+    expect(riskLabel("low")).toBe("Rendah");
+    expect(riskLabel("medium")).toBe("Sedang");
+    expect(riskLabel("high")).toBe("Tinggi");
+    expect(riskLabel("critical")).toBe("Kritis");
   });
   it("never produces a SAFE label", () => {
     for (const l of [null, "low", "medium", "high", "critical", "insufficient_data"] as const) {
-      expect(riskLabel(l)).not.toMatch(/safe/i);
+      expect(riskLabel(l)).not.toMatch(/safe|\baman\b/i);
     }
+  });
+  it("labels deadline kinds, keeping an unknown kind readable", () => {
+    expect(deadlineKindLabel("claim")).toBe("Claim");
+    expect(deadlineKindLabel("snapshot")).toBe("Snapshot");
+    expect(deadlineKindLabel("campaign_end")).toBe("Akhir campaign");
+    expect(deadlineKindLabel("withdraw_funds")).toBe("Tarik dana");
+    expect(deadlineKindLabel("tge")).toBe("TGE");
+    expect(deadlineKindLabel("other")).toBe("Lainnya");
+    expect(deadlineKindLabel("mystery_kind")).toBe("mystery kind");
+  });
+  it("labels date precision", () => {
+    expect(precisionLabel("exact")).toBe("tanggal tepat");
+    expect(precisionLabel("approximate")).toBe("tanggal perkiraan");
+    expect(precisionLabel("month")).toBe("bulannya aja");
+    expect(precisionLabel("quarter")).toBe("kuartalnya aja");
+  });
+  it("labels evidence fields", () => {
+    expect(evidenceFieldLabel("status")).toBe("Status");
+    expect(evidenceFieldLabel("defillama_listing")).toBe("Listing DefiLlama");
+    expect(evidenceFieldLabel("dangerous_ask")).toBe("Permintaan berbahaya");
+    expect(evidenceFieldLabel("some_field")).toBe("some field");
   });
 });
 
@@ -106,10 +130,37 @@ describe("pickLastSuccessfulRun", () => {
 });
 
 describe("coverageLine", () => {
-  it("counts ran checks and names the unavailable ones", () => {
-    const ids = ["dangerous_asks","phishing_list","domain_age","lookalike","token_security","contract_verified","hack_history","corroboration"] as const;
-    const line = coverageLine(ids.map((id, i) => ({ id, ran: i !== 2 })));
-    expect(line).toBe("7/8 checks ran; domain age unavailable");
+  const ids = [
+    "dangerous_asks",
+    "phishing_list",
+    "domain_age",
+    "lookalike",
+    "token_security",
+    "contract_verified",
+    "hack_history",
+    "corroboration",
+    "ai_review",
+  ] as const;
+
+  it("counts ran checks and names the ones that did not run, the AI review included", () => {
+    const line = coverageLine(ids.map((id, i) => ({ id, ran: i !== 2 && id !== "ai_review" })));
+    expect(line).toBe("7/9 security check jalan. Belum bisa dicek: Umur domain, Review AI.");
+  });
+
+  it("counts a missing AI review row as not run", () => {
+    const line = coverageLine(ids.filter((id) => id !== "ai_review").map((id) => ({ id, ran: true })));
+    expect(line).toBe("8/9 security check jalan. Belum bisa dicek: Review AI.");
+  });
+
+  it("names every check by its Indonesian label", () => {
+    expect(coverageLine([])).toBe(
+      "0/9 security check jalan. Belum bisa dicek: Minta seed phrase / bayar dulu, Database phishing, Umur domain, " +
+        "Domain tiruan, Risiko kontrak token, Kontrak verified, Riwayat hack, Cross-check antar source, Review AI.",
+    );
+  });
+
+  it("says nothing more when every check ran", () => {
+    expect(coverageLine(ids.map((id) => ({ id, ran: true })))).toBe("9/9 security check jalan");
   });
 });
 

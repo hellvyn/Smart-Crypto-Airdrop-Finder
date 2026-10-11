@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { pageTitle, settings as copy } from "@/lib/copy";
 import {
   CONFIRMATION_ERROR_MESSAGE,
   DELETE_CONFIRMATION,
@@ -10,7 +11,7 @@ import {
 import { createServerClient } from "@/lib/supabase/server";
 import { submitDeleteAccount, submitUpdateSettings } from "./actions";
 
-export const metadata = { title: "Settings · Smart Airdrop Finder" };
+export const metadata = { title: pageTitle(copy.title) };
 
 const first = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
 
@@ -26,10 +27,10 @@ export default async function SettingsPage({
   const settings = await getSettings(db);
   return (
     <>
-      <h1>Settings</h1>
+      <h1>{copy.heading}</h1>
       <form action={submitUpdateSettings} className="auth-form">
         <label>
-          Time zone
+          {copy.timezone}
           <select name="timezone" defaultValue={settings.timezone}>
             {timezoneOptions(settings.timezone).map((tz) => (
               <option key={tz} value={tz}>
@@ -45,21 +46,18 @@ export default async function SettingsPage({
         ) : null}
         {first(params.saved) === "1" ? (
           <p role="status" className="form-message">
-            Settings saved.
+            {copy.saved}
           </p>
         ) : null}
-        <button type="submit">Save settings</button>
+        <button type="submit">{copy.save}</button>
       </form>
 
       <section aria-labelledby="delete-account">
-        <h2 id="delete-account">Delete account</h2>
-        <p>
-          This permanently deletes your account and everything tied to it: your profile and settings, your watchlist,
-          your saved wallets and their cached wallet activity checks. It cannot be undone.
-        </p>
+        <h2 id="delete-account">{copy.deleteHeading}</h2>
+        <p>{copy.deleteText}</p>
         <form action={submitDeleteAccount} className="auth-form">
           <label>
-            Type {DELETE_CONFIRMATION} to confirm
+            {copy.confirmLabel(DELETE_CONFIRMATION)}
             <input type="text" name="confirmation" autoComplete="off" spellCheck={false} required />
           </label>
           {error === "confirmation" ? (
@@ -67,7 +65,7 @@ export default async function SettingsPage({
               {CONFIRMATION_ERROR_MESSAGE}
             </p>
           ) : null}
-          <button type="submit">Delete my account</button>
+          <button type="submit">{copy.deleteButton}</button>
         </form>
       </section>
     </>

@@ -1,8 +1,9 @@
 import type { HeatmapCell } from "@saf/core";
+import { garapan as copy } from "@/lib/copy";
 import { formatDay, formatMonth, isoWeekday } from "./dates";
 
 /** Row labels, Monday to Sunday; every other row is left blank like the mockup. */
-const DAY_LABELS = ["Sen", "", "Rab", "", "Jum", "", "Min"];
+const DAY_LABELS = copy.dayLabels;
 /** A month label needs about three columns; one closer to the next label is dropped. */
 const MIN_LABEL_GAP = 3;
 
@@ -31,7 +32,7 @@ function monthLabels(weeks: Slot[][]): (string | null)[] {
 }
 
 function cellText(cell: HeatmapCell): string {
-  return cell.upcoming ? `${formatDay(cell.day)}: belum lewat` : `${formatDay(cell.day)}: ${cell.done}/${cell.total} daily task`;
+  return cell.upcoming ? copy.cellUpcoming(formatDay(cell.day)) : copy.cellDone(formatDay(cell.day), cell.done, cell.total);
 }
 
 function cellClass(cell: HeatmapCell, today: string | undefined): string {

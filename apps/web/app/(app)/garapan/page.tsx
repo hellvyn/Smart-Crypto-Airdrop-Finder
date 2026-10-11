@@ -1,17 +1,18 @@
 import { FarmingCard, dailyProgress } from "@/components/farming/FarmingCard";
 import { requireUser } from "@/lib/auth";
+import { garapan as copy, pageTitle } from "@/lib/copy";
 import { FARMING_ERROR_MESSAGES, getFarmingBoard, isFarmingErrorCode } from "@/lib/farming";
 import { createServerClient } from "@/lib/supabase/server";
 
-export const metadata = { title: "Garapan saya · AirdropIQ" };
+export const metadata = { title: pageTitle(copy.title) };
 
 const LEGEND: { className: string; text: string }[] = [
-  { className: "heat-cell heat-level-none", text: "gak ada daily task" },
-  { className: "heat-cell heat-level-0", text: "0%" },
-  { className: "heat-cell heat-level-1", text: "1–49%" },
-  { className: "heat-cell heat-level-2", text: "50–99%" },
-  { className: "heat-cell heat-level-3", text: "100%" },
-  { className: "heat-cell heat-upcoming", text: "belum lewat" },
+  { className: "heat-cell heat-level-none", text: copy.legend.none },
+  { className: "heat-cell heat-level-0", text: copy.legend.zero },
+  { className: "heat-cell heat-level-1", text: copy.legend.low },
+  { className: "heat-cell heat-level-2", text: copy.legend.high },
+  { className: "heat-cell heat-level-3", text: copy.legend.full },
+  { className: "heat-cell heat-upcoming", text: copy.legend.upcoming },
 ];
 
 /**
@@ -31,18 +32,18 @@ export default async function GarapanPage({ searchParams }: { searchParams: Prom
   return (
     <div className="garapan">
       <div className="garapan-head">
-        <h1 className="ui-display garapan-title">Garapan saya</h1>
+        <h1 className="ui-display garapan-title">{copy.heading}</h1>
         {cards.length > 0 ? (
           <div className="garapan-summary" data-testid="garapan-summary">
             <div className="garapan-stat">
               <span className="garapan-stat-number">{cards.length}</span>{" "}
-              <span className="garapan-stat-label">project digarap</span>
+              <span className="garapan-stat-label">{copy.projects}</span>
             </div>
             <div className="garapan-stat">
               <span className="garapan-stat-number" data-tone="pass">
                 {today.done}/{today.total}
               </span>{" "}
-              <span className="garapan-stat-label">daily task hari ini</span>
+              <span className="garapan-stat-label">{copy.dailyToday}</span>
             </div>
           </div>
         ) : null}
@@ -53,10 +54,10 @@ export default async function GarapanPage({ searchParams }: { searchParams: Prom
         </p>
       ) : null}
       {cards.length === 0 ? (
-        <p className="garapan-empty">Kamu belum menggarap project apa pun. Buka sebuah airdrop dan klik Mulai garap.</p>
+        <p className="garapan-empty">{copy.empty}</p>
       ) : (
         <>
-          <ul className="heat-legend" aria-label="Arti warna heatmap">
+          <ul className="heat-legend" aria-label={copy.legendLabel}>
             {LEGEND.map((item) => (
               <li key={item.text}>
                 <span className={item.className} aria-hidden="true" />

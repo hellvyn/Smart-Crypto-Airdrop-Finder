@@ -19,6 +19,7 @@ import {
   type TrackerTask,
 } from "@saf/core";
 import { requireUser } from "./auth";
+import { garapan as copy } from "./copy";
 import { isValidTimezone } from "./settings";
 import { isUuid } from "./uuid";
 
@@ -34,13 +35,7 @@ const PAGE_SIZE = 1000;
 /** Why a farming request was refused; anything else is thrown as a plain Error. */
 export type FarmingErrorCode = "project_limit" | "task_limit" | "invalid_task" | "not_farming" | "task_inactive";
 
-export const FARMING_ERROR_MESSAGES: Record<FarmingErrorCode, string> = {
-  project_limit: "Kamu udah garap 50 project. Berhentiin salah satu dulu sebelum mulai yang baru.",
-  task_limit: "Satu project maksimal 30 task aktif. Arsipkan task yang udah gak kamu pakai dulu.",
-  invalid_task: "Teks task wajib diisi, maksimal 200 karakter.",
-  not_farming: "Kamu lagi gak garap project ini.",
-  task_inactive: "Task itu udah diarsipkan, atau project-nya udah berhenti kamu garap. Checklist di bawah udah yang terbaru.",
-};
+export const FARMING_ERROR_MESSAGES: Record<FarmingErrorCode, string> = copy.errors;
 
 export function isFarmingErrorCode(v: unknown): v is FarmingErrorCode {
   return typeof v === "string" && Object.prototype.hasOwnProperty.call(FARMING_ERROR_MESSAGES, v);

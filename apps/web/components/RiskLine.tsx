@@ -1,11 +1,12 @@
 import type { RiskLevel } from "@saf/core";
 import { ExternalLink } from "./ExternalLink";
 import { RiskBadge } from "./RiskBadge";
+import { detail } from "@/lib/copy";
 import { safeHttpUrl } from "@/lib/view";
 
 /**
  * The risk badge with the project's official checker links beside it (spec §7). Only http(s) claim URLs are shown,
- * always labelled "Official checker (unverified)"; a non-linkable claim URL hides the label entirely.
+ * always labelled "Checker official (belum verified)"; a non-linkable claim URL hides the label entirely.
  */
 export function RiskLine({
   level,
@@ -23,7 +24,7 @@ export function RiskLine({
       {claimLinks.map((l) => (
         <span key={l.url} className="claim-link">
           <ExternalLink href={l.url} title={new URL(safeHttpUrl(l.url)!).hostname}>
-            Official checker (unverified)
+            {detail.officialChecker}
           </ExternalLink>
         </span>
       ))}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { list } from "@/lib/copy";
 import { LIST_PATH } from "@/lib/routes";
 import { listQueryString, type ListFilters } from "@/lib/view";
 
@@ -7,7 +8,7 @@ function href(f: ListFilters, page: number): string {
   return qs ? `${LIST_PATH}?${qs}` : LIST_PATH;
 }
 
-/** Prev/Next links that keep the active filters. `total` is the number of matching projects across all pages. */
+/** Previous/next links that keep the active filters. `total` is the number of matching projects across all pages. */
 export function Pagination({
   page,
   pageSize,
@@ -24,16 +25,16 @@ export function Pagination({
   const from = (page - 1) * pageSize + 1;
   const to = Math.min(total, page * pageSize);
   return (
-    <nav aria-label="Pagination" className="pagination">
+    <nav aria-label={list.pagination.label} className="pagination">
       {page > 1 ? (
         <Link href={href(filters, Math.min(page - 1, lastPage))} rel="prev">
-          Previous
+          {list.pagination.previous}
         </Link>
       ) : null}
-      <span className="muted">{total === 0 || from > total ? `Page ${page} of ${lastPage}` : `${from}-${to} of ${total}`}</span>
+      <span className="muted">{total === 0 || from > total ? list.pagination.pageOf(page, lastPage) : list.pagination.range(from, to, total)}</span>
       {page < lastPage ? (
         <Link href={href(filters, page + 1)} rel="next">
-          Next
+          {list.pagination.next}
         </Link>
       ) : null}
     </nav>

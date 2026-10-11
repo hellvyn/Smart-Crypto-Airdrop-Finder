@@ -8,11 +8,10 @@ import {
   submitStopFarming,
 } from "@/app/(app)/garapan/actions";
 import { Button, Stamp } from "@/components/ui";
+import { garapan as copy } from "@/lib/copy";
 import type { FarmingCard as FarmingCardData, FarmingTask } from "@/lib/farming";
 import { formatDay } from "./dates";
 import { Heatmap } from "./Heatmap";
-
-const END_LABELS = { snapshot: "snapshot", campaign_end: "akhir campaign", ended: "ended" } as const;
 
 /** Daily tasks of the card ticked today, out of all its active daily tasks. */
 export function dailyProgress(card: FarmingCardData): { done: number; total: number } {
@@ -23,16 +22,16 @@ export function dailyProgress(card: FarmingCardData): { done: number; total: num
 
 function countdown(card: FarmingCardData): string | null {
   const { range, daysLeft } = card;
-  if (range.endKind === "ended") return `Ended ${formatDay(range.end)}`;
+  if (range.endKind === "ended") return copy.endedOn(formatDay(range.end));
   if (daysLeft === null || range.endKind === null) return null;
-  return `Sisa ${daysLeft} hari sampai ${END_LABELS[range.endKind]}`;
+  return copy.daysLeft(daysLeft, copy.endKind[range.endKind]);
 }
 
 /** The span the heatmap covers, naming its end only when that end is the deadline or the ended day itself. */
 function rangeLabel(card: FarmingCardData): string {
   const { start, end, endKind, endsOn } = card.range;
-  const span = `${formatDay(start)} sampai ${formatDay(end)}`;
-  return endKind === null || endsOn !== end ? span : `${span} (${END_LABELS[endKind]})`;
+  const span = copy.range(formatDay(start), formatDay(end));
+  return endKind === null || endsOn !== end ? span : copy.rangeWithEnd(span, copy.endKind[endKind]);
 }
 
 /** The task's box for today: the form always sends the wanted state, so a double submit cannot undo itself. */
@@ -56,8 +55,8 @@ function ArchiveButton({ task }: { task: FarmingTask }) {
   return (
     <form action={submitArchiveTask}>
       <input type="hidden" name="taskId" value={task.id} />
-      <button type="submit" className="farm-archive" aria-label={`Arsipkan task: ${task.text}`}>
-        Arsipkan
+      <button type="submit" className="farm-archive" aria-label={copy.archiveLabel(task.text)}>
+        {copy.archive}
       </button>
     </form>
   );
@@ -87,7 +86,7 @@ function Checklist({ card }: { card: FarmingCardData }) {
   return (
     <>
       {main.length > 0 ? (
-        <Group id={ids("main")} title="Task utama" aside={`${card.mainProgress.done}/${card.mainProgress.total} selesai`}>
+        <Group id={ids("main")} title={copy.mainTasks} aside={copy.mainProgress(card.mainProgress.done, card.mainProgress.total)}>
           <ul className="farm-tasks">
             {main.map((task) => (
               <li key={task.id} className="farm-task">
@@ -98,7 +97,7 @@ function Checklist({ card }: { card: FarmingCardData }) {
           </ul>
         </Group>
       ) : null}
-      <Group id={ids("today")} title="Hari ini" aside={daily.length > 0 ? `${today.done} dari ${today.total} task hari ini` : undefined}>
+      <Group id={ids("today")} title={copy.today} aside={daily.length > 0 ? copy.todayProgress(today.done, today.total) : undefined}>
         {daily.length > 0 ? (
           <ul className="farm-tasks">
             {daily.map((task) => (
@@ -109,11 +108,11 @@ function Checklist({ card }: { card: FarmingCardData }) {
             ))}
           </ul>
         ) : (
-          <p className="farm-note">Belum ada daily task. Tambah task sendiri.</p>
+          <p className="farm-note">{copy.noDaily}</p>
         )}
       </Group>
       {weekly.length > 0 ? (
-        <Group id={ids("weekly")} title="Weekly">
+        <Group id={ids("weekly")} title={copy.weekly}>
           <ul className="farm-tasks">
             {weekly.map((task) => {
               const doneThisWeek = card.weeklyDone[task.id] === true;
@@ -127,7 +126,7 @@ function Checklist({ card }: { card: FarmingCardData }) {
                     <span className="farm-task-text farm-task-plain">{task.text}</span>
                   )}
                   <span className="farm-weekly-status" data-done={doneThisWeek}>
-                    {doneThisWeek ? "Minggu ini udah" : "Belum minggu ini"}
+                    {doneThisWeek ? copy.weeklyDone : copy.weeklyOpen}
                   </span>
                   <ArchiveButton task={task} />
                 </li>
@@ -137,30 +136,30 @@ function Checklist({ card }: { card: FarmingCardData }) {
         </Group>
       ) : null}
       <details className="farm-add">
-        <summary>+ Tambah task sendiri</summary>
+        <summary>{copy.addSummary}</summary>
         <form action={submitAddTask} className="farm-add-form">
           <input type="hidden" name="projectId" value={card.projectId} />
           <label>
-            Task
+            {copy.taskLabel}
             <input name="text" required maxLength={200} />
           </label>
           <label>
-            Seberapa sering
+            {copy.cadenceLabel}
             <select name="cadence" defaultValue="daily">
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="once">Sekali</option>
+              <option value="daily">{copy.cadence.daily}</option>
+              <option value="weekly">{copy.cadence.weekly}</option>
+              <option value="once">{copy.cadence.once}</option>
             </select>
           </label>
           <Button variant="secondary" type="submit">
-            Tambah task
+            {copy.addButton}
           </Button>
         </form>
       </details>
       <form action={submitRefresh}>
         <input type="hidden" name="projectId" value={card.projectId} />
         <button type="submit" className="farm-refresh">
-          Ambil ulang step dari source
+          {copy.refresh}
         </button>
       </form>
     </>
@@ -180,7 +179,7 @@ export function FarmingCard({ card }: { card: FarmingCardData }) {
     <article className="farm-card" aria-labelledby={titleId}>
       <div className="farm-head">
         <div className="farm-title">
-          {ended ? <Stamp top="ENDED" bottom="" tone="ended" size="sm" rotate={-4} /> : null}
+          {ended ? <Stamp top={copy.endedStamp} bottom="" tone="ended" size="sm" rotate={-4} /> : null}
           <h2 id={titleId} className="ui-display farm-name">
             <Link href={`/projects/${card.slug}`}>{card.name}</Link>
           </h2>
@@ -191,29 +190,29 @@ export function FarmingCard({ card }: { card: FarmingCardData }) {
               {due}
             </span>
           ) : null}
-          <span className="farm-streak">Streak: {card.streak} hari</span>
+          <span className="farm-streak">{copy.streak(card.streak)}</span>
         </div>
       </div>
       <div className="farm-body">
         <div className="farm-checklist">
           {ended ? (
-            <p className="farm-note">Campaign udah ended. Checklist dikunci, riwayat garapanmu tetap tersimpan di sini.</p>
+            <p className="farm-note">{copy.endedNote}</p>
           ) : (
             <Checklist card={card} />
           )}
           <form action={submitStopFarming}>
             <input type="hidden" name="projectId" value={card.projectId} />
             <button type="submit" className="farm-stop">
-              Berhenti garap
+              {copy.stop}
             </button>
           </form>
         </div>
         <div className="farm-progress">
           <div className="farm-group-head">
-            <h3 className="ui-display farm-group-title">Progres</h3>
+            <h3 className="ui-display farm-group-title">{copy.progress}</h3>
             <span className="farm-range">{rangeLabel(card)}</span>
           </div>
-          <Heatmap cells={card.heatmap} label={`Progres ${card.name}`} today={card.today} />
+          <Heatmap cells={card.heatmap} label={copy.progressLabel(card.name)} today={card.today} />
         </div>
       </div>
     </article>

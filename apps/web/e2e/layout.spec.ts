@@ -13,7 +13,7 @@ async function signIn(page: Page, tag: string): Promise<void> {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Login", exact: true }).click();
   await expect(page).toHaveURL(/\/watchlist$/);
 }
 
@@ -53,6 +53,36 @@ test("a signed-in user sees account links in the header instead of Login", async
   const header = page.getByRole("banner");
   await expect(header.getByRole("link", { name: "Watchlist" })).toBeVisible();
   await expect(header.getByRole("link", { name: "Login" })).toHaveCount(0);
+});
+
+test("every page has an Indonesian AirdropIQ tab title", async ({ page }) => {
+  for (const [path, title] of [
+    ["/", "AirdropIQ"],
+    ["/airdrops", "Daftar airdrop · AirdropIQ"],
+    ["/login", "Login · AirdropIQ"],
+  ]) {
+    await page.goto(path!);
+    await expect(page, path).toHaveTitle(title!);
+  }
+  await signIn(page, "titles");
+  for (const [path, title] of [
+    ["/watchlist", "Watchlist · AirdropIQ"],
+    ["/wallets", "Wallet · AirdropIQ"],
+    ["/settings", "Akun · AirdropIQ"],
+    ["/garapan", "Garapan saya · AirdropIQ"],
+  ]) {
+    await page.goto(path!);
+    await expect(page, path).toHaveTitle(title!);
+  }
+});
+
+test("the signed-in header is Indonesian", async ({ page }) => {
+  await signIn(page, "header-id");
+  const header = page.getByRole("banner");
+  await expect(header.getByRole("link", { name: "Wallet", exact: true })).toHaveAttribute("href", "/wallets");
+  await expect(header.getByRole("link", { name: "Akun", exact: true })).toHaveAttribute("href", "/settings");
+  await expect(header.getByRole("button", { name: "Logout", exact: true })).toBeVisible();
+  await expect(header.getByText(/Wallets|Settings|Sign out/)).toHaveCount(0);
 });
 
 test.describe("360px phone", () => {

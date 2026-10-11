@@ -2,6 +2,7 @@ import { PlanComparison } from "@/components/landing/PlanComparison";
 import { TodayCheck } from "@/components/landing/TodayCheck";
 import { TrackRecord } from "@/components/landing/TrackRecord";
 import { Button, Stamp } from "@/components/ui";
+import { landing as copy } from "@/lib/copy";
 import { LIST_PATH } from "@/lib/routes";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -20,7 +21,7 @@ export default async function LandingPage({ searchParams }: { searchParams: Prom
       {accountDeleted ? (
         <div className="landing-wrap">
           <p role="status" className="landing-notice">
-            Akun kamu udah dihapus.
+            {copy.deleted}
           </p>
         </div>
       ) : null}
@@ -28,17 +29,14 @@ export default async function LandingPage({ searchParams }: { searchParams: Prom
       <section className="landing-section landing-hero">
         <div className="landing-wrap landing-hero-grid">
           <div className="landing-hero-copy">
-            <h1 className="ui-display landing-h1">Airdrop yang worth it digarap, udah kami cek duluan.</h1>
-            <p className="landing-lead">
-              Kami udah terlalu sering lihat orang kena link claim palsu di grup Telegram. Makanya aturannya simpel.
-              Airdrop yang gak lolos 4 security check gak bakal tampil di sini, se-hype apa pun.
-            </p>
+            <h1 className="ui-display landing-h1">{copy.heroTitle}</h1>
+            <p className="landing-lead">{copy.heroLead}</p>
             <div className="landing-actions">
               <Button variant="primary" href={LIST_PATH}>
-                Lihat airdrop
+                {copy.seeAirdrops}
               </Button>
               <Button variant="secondary" href="#cara">
-                Kenapa AirdropIQ
+                {copy.why}
               </Button>
             </div>
           </div>
@@ -50,19 +48,14 @@ export default async function LandingPage({ searchParams }: { searchParams: Prom
       <section id="cara" className="landing-section">
         <div className="landing-wrap landing-cara">
           <div className="landing-cara-head">
-            <span className="landing-badge">Re-check tiap pagi, 06.00 WIB</span>
-            <h2 className="ui-display landing-h2 landing-h2-big">Tiap hari semua airdrop kami cek ulang dari nol.</h2>
-            <Stamp top="LOLOS" bottom="4/4 CEK" note="ATAU GAK TAMPIL" tone="pass" size="lg" rotate={-8} />
+            <span className="landing-badge">{copy.recheckBadge}</span>
+            <h2 className="ui-display landing-h2 landing-h2-big">{copy.whyTitle}</h2>
+            <Stamp top={copy.stampTop} bottom={copy.stampBottom} note={copy.stampNote} tone="pass" size="lg" rotate={-8} />
           </div>
           <div className="landing-cara-body">
-            <p>
-              Jujur aja, kebanyakan web airdrop cuma copas announcement. Kami gak. Source-nya kami baca sendiri, link
-              claim-nya kami cek, baru setelah itu airdrop-nya boleh masuk list.
-            </p>
-            <p>
-              Badge verified cuma kami pasang kalau datanya cocok. Project ngaku di-backing VC gede tapi buktinya gak
-              ada? Kami tulis apa adanya: masih klaim.
-            </p>
+            {copy.whyBody.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
           </div>
         </div>
       </section>
@@ -74,8 +67,8 @@ export default async function LandingPage({ searchParams }: { searchParams: Prom
 
       <footer className="landing-footer">
         <div className="landing-wrap landing-footer-row">
-          <span>© 2026 AirdropIQ</span>
-          <span>Not financial advice. Tetap DYOR sebelum connect wallet.</span>
+          <span>{copy.copyright}</span>
+          <span>{copy.footer}</span>
         </div>
       </footer>
     </div>

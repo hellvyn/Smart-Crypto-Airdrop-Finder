@@ -1,6 +1,7 @@
 import { Pagination } from "@/components/Pagination";
 import { ProjectRow } from "@/components/ProjectRow";
 import { StaleBanner } from "@/components/StaleBanner";
+import { list, pageTitle } from "@/lib/copy";
 import { getLastSuccessfulRunAt, listChains, listProjects } from "@/lib/queries";
 import { LIST_PATH } from "@/lib/routes";
 import { createServerClient } from "@/lib/supabase/server";
@@ -16,6 +17,8 @@ import {
 } from "@/lib/view";
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+export const metadata = { title: pageTitle(list.title) };
 
 function many(v: string | string[] | undefined): string[] {
   return v === undefined ? [] : Array.isArray(v) ? v : [v];
@@ -38,15 +41,13 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <h1>Airdrops</h1>
+      <h1>{list.heading}</h1>
       <StaleBanner lastRunAt={lastRunAt} now={now} />
-      <p className="muted">
-        Last updated: {lastRunAt ? formatDateTime(lastRunAt) : "never"}. {total} {total === 1 ? "airdrop" : "airdrops"}. Nearest deadline first, then most recently seen.
-      </p>
+      <p className="muted">{list.meta(lastRunAt ? formatDateTime(lastRunAt) : null, total)}</p>
 
-      <form method="get" action={LIST_PATH} className="filters" aria-label="Filters">
+      <form method="get" action={LIST_PATH} className="filters" aria-label={list.filtersLabel}>
         <fieldset>
-          <legend>Status</legend>
+          <legend>{list.statusLegend}</legend>
           {STATUSES.map((s) => (
             <label key={s}>
               <input type="checkbox" name="status" value={s} defaultChecked={filters.status?.includes(s)} /> {statusLabel(s)}
@@ -54,7 +55,7 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
           ))}
         </fieldset>
         <fieldset>
-          <legend>Risk level</legend>
+          <legend>{list.riskLegend}</legend>
           {RISK_LEVELS.map((r) => (
             <label key={r}>
               <input type="checkbox" name="risk" value={r} defaultChecked={filters.risk?.includes(r)} /> {riskLabel(r)}
@@ -62,11 +63,11 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
           ))}
         </fieldset>
         <label>
-          Chain
+          {list.chainLabel}
           <select name="chain" defaultValue={selectedChain ?? ""}>
-            <option value="">All chains</option>
+            <option value="">{list.allChains}</option>
             {selectedChain && !chains.includes(selectedChain) ? (
-              <option value={selectedChain}>{selectedChain} (no matches)</option>
+              <option value={selectedChain}>{list.noMatches(selectedChain)}</option>
             ) : null}
             {chains.map((c) => (
               <option key={c} value={c}>
@@ -75,12 +76,12 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
             ))}
           </select>
         </label>
-        <button type="submit">Apply filters</button>
-        {hasFilters ? <a href={LIST_PATH}>Clear filters</a> : null}
+        <button type="submit">{list.apply}</button>
+        {hasFilters ? <a href={LIST_PATH}>{list.clear}</a> : null}
       </form>
 
       {items.length === 0 ? (
-        <p>{page > 1 ? "No airdrops on this page." : hasFilters ? "No airdrops match these filters." : "No airdrops yet."}</p>
+        <p>{page > 1 ? list.emptyPage : hasFilters ? list.emptyFiltered : list.empty}</p>
       ) : (
         <div className="project-list">
           {items.map((item) => (

@@ -4,6 +4,7 @@
 import { isEvmAddress } from "@saf/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireUser } from "./auth";
+import { wallets as copy } from "./copy";
 import { isUuid } from "./uuid";
 
 export const MAX_LABEL_LENGTH = 64;
@@ -17,10 +18,10 @@ export type AddWalletError = "invalid_address" | "duplicate" | "invalid_label" |
 export type AddWalletResult = { ok: true } | { ok: false; error: AddWalletError };
 
 export const WALLET_ERROR_MESSAGES: Record<AddWalletError, string> = {
-  invalid_address: "That doesn't look like an EVM address (0x + 40 hex characters).",
-  duplicate: "You already added this wallet.",
-  limit_reached: `You can add up to ${MAX_WALLETS} wallets.`,
-  invalid_label: `Label must be ${MAX_LABEL_LENGTH} characters or fewer.`,
+  invalid_address: copy.errors.invalidAddress,
+  duplicate: copy.errors.duplicate,
+  limit_reached: copy.errors.limitReached(MAX_WALLETS),
+  invalid_label: copy.errors.labelTooLong(MAX_LABEL_LENGTH),
 };
 
 export function isAddWalletError(v: unknown): v is AddWalletError {

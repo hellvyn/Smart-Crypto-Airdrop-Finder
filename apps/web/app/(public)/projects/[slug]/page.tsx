@@ -7,6 +7,7 @@ import { WalletActivitySection } from "@/components/WalletActivitySection";
 import { WatchButton } from "@/components/WatchButton";
 import { getUser } from "@/lib/auth";
 import { isFarming } from "@/lib/farming";
+import { detail } from "@/lib/copy";
 import { getLastSuccessfulRunAt, getProjectDetail } from "@/lib/queries";
 import { LIST_PATH } from "@/lib/routes";
 import { createServerClient } from "@/lib/supabase/server";
@@ -28,7 +29,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
   return (
     <>
       <p>
-        <Link href={LIST_PATH}>&larr; All airdrops</Link>
+        <Link href={LIST_PATH}>{detail.back}</Link>
       </p>
       <StaleBanner lastRunAt={lastRunAt} now={new Date()} />
       <div className="project-actions">

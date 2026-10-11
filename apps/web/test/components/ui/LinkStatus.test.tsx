@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { LinkStatus } from "@/components/ui";
+import { LinkStatus, type LinkStatusValue } from "@/components/ui";
 
 afterEach(cleanup);
 
@@ -31,6 +31,12 @@ describe("LinkStatus", () => {
   it("marks an unchecked link", () => {
     render(<LinkStatus status="unchecked" url="https://nebula.example" />);
     expect(screen.getByText("Belum dicek")).toBeTruthy();
+  });
+
+  it("treats a status outside the four known values as Belum dicek instead of crashing", () => {
+    const { container } = render(<LinkStatus status={"suspended" as LinkStatusValue} url="https://nebula.example/app" />);
+    expect(container.querySelector(".ui-tag")?.textContent).toBe("Belum dicek");
+    expect(screen.getByRole("link").getAttribute("rel")).toBe("noopener noreferrer nofollow");
   });
 
   it("never makes an anchor out of a non-http URL", () => {

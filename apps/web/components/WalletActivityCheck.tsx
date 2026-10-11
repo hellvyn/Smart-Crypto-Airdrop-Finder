@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { WalletActivityView } from "./WalletActivity";
 import { WalletActivity } from "./WalletActivity";
 import { parseSummary } from "@/lib/activity-summary";
+import { walletActivity as copy } from "@/lib/copy";
 
 // Longer than the server ever needs: the provider calls run in two sequential rounds (counters, then both transaction
 // lists in parallel), each capped at 10 s, plus the database round trips.
@@ -32,7 +33,7 @@ async function check(walletId: string, chain: string): Promise<WalletActivityVie
   return { kind: "unavailable" };
 }
 
-/** "Check wallet activity on <Chain>" for one wallet; posts to the API and shows the outcome. */
+/** "Cek aktivitas wallet di <Chain>" for one wallet; posts to the API and shows the outcome. */
 export function WalletActivityCheck({
   walletId,
   walletName,
@@ -55,8 +56,8 @@ export function WalletActivityCheck({
 
   return (
     <div className="wallet-check" data-testid="wallet-check">
-      <button type="button" onClick={onClick} disabled={pending} aria-label={`Check wallet activity on ${chainLabel} for ${walletName}`}>
-        {pending ? "Checking…" : `Check wallet activity on ${chainLabel}`}
+      <button type="button" onClick={onClick} disabled={pending} aria-label={copy.checkFor(chainLabel, walletName)}>
+        {pending ? copy.checking : copy.check(chainLabel)}
       </button>{" "}
       <code>{walletName}</code>
       <div aria-live="polite">{result ? <WalletActivity result={result} chainLabel={chainLabel} /> : null}</div>

@@ -3,6 +3,7 @@
 // column-level UPDATE grant (timezone) as the other barriers.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireUser } from "./auth";
+import { settings as copy } from "./copy";
 
 export interface Settings {
   timezone: string;
@@ -11,7 +12,7 @@ export interface Settings {
 export type SettingsError = "invalid_timezone";
 
 export const SETTINGS_ERROR_MESSAGES: Record<SettingsError, string> = {
-  invalid_timezone: "Unknown time zone.",
+  invalid_timezone: copy.errors.invalidTimezone,
 };
 
 export function isSettingsError(v: unknown): v is SettingsError {
@@ -20,7 +21,7 @@ export function isSettingsError(v: unknown): v is SettingsError {
 
 /** What the user must type, exactly, to confirm deleting their account. */
 export const DELETE_CONFIRMATION = "DELETE";
-export const CONFIRMATION_ERROR_MESSAGE = "Type DELETE to confirm.";
+export const CONFIRMATION_ERROR_MESSAGE = copy.confirmError(DELETE_CONFIRMATION);
 
 const DEFAULTS: Settings = { timezone: "UTC" };
 

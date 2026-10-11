@@ -11,7 +11,7 @@ test.afterAll(async () => {
 async function logIn(page: Page, email: string, password: string): Promise<void> {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Login", exact: true }).click();
 }
 
 /** The form's error message (Next.js also renders an empty role=alert route announcer outside <main>). */
@@ -21,7 +21,7 @@ function formError(page: Page) {
 
 async function expectSignedInAs(page: Page, email: string): Promise<void> {
   await expect(page.getByTestId("user-email")).toHaveText(email);
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Logout", exact: true })).toBeVisible();
 }
 
 test("opening /watchlist signed out redirects to /login, and back after logging in", async ({ page }) => {
@@ -34,7 +34,7 @@ test("opening /watchlist signed out redirects to /login, and back after logging 
 
   await logIn(page, email, PASSWORD);
   await expect(page).toHaveURL(/\/watchlist$/);
-  await expect(page.getByRole("heading", { name: "Your watchlist" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Watchlist kamu" })).toBeVisible();
   await expectSignedInAs(page, email);
 });
 
@@ -62,16 +62,16 @@ test("a session that ends mid-way sends the next account page or form post to /l
 
   // The session cookies disappear while the page is open (expired refresh token, signed out elsewhere).
   await context.clearCookies();
-  await page.getByRole("button", { name: "Save settings" }).click();
+  await page.getByRole("button", { name: "Simpan pengaturan" }).click();
   await expect(page).toHaveURL(/\/login\?next=%2Fsettings$/);
-  await expect(page.getByRole("button", { name: "Log in" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Login", exact: true })).toBeVisible();
 
   await logIn(page, email, PASSWORD);
   await expect(page).toHaveURL(/\/settings$/);
   await context.clearCookies();
-  await page.getByRole("banner").getByRole("link", { name: "Wallets" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "Wallet", exact: true }).click();
   await expect(page).toHaveURL(/\/login\?next=%2Fwallets$/);
-  await expect(page.getByRole("button", { name: "Log in" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Login", exact: true })).toBeVisible();
 });
 
 test("the anon key reads no rows of the user tables over REST", async () => {
@@ -103,25 +103,28 @@ test("an off-site next parameter is ignored after login", async ({ page }) => {
   await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/watchlist$/);
 });
 
-test("wrong credentials show the error as-is, then logging in and out works", async ({ page }) => {
+test("wrong credentials show the Indonesian error, then logging in and out works", async ({ page }) => {
   const email = uniqueEmail("logout");
   await createConfirmedUser(email, PASSWORD);
 
   await page.goto("/login");
   await logIn(page, email, "wrong-password-9");
-  await expect(formError(page)).toHaveText("Invalid login credentials");
+  await expect(formError(page)).toHaveText("Email atau password salah.");
+  await expect(page.getByText(email)).toHaveCount(0);
 
   await logIn(page, email, PASSWORD);
   await expect(page).toHaveURL(/\/watchlist$/);
   await expectSignedInAs(page, email);
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("button", { name: "Logout", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByTestId("user-email")).toHaveCount(0);
 });
 
 test("the login page has no signup or forgot-password link, and tells visitors to ask the admin", async ({ page }) => {
   await page.goto("/login");
+  await expect(page).toHaveTitle("Login · AirdropIQ");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Login");
   await expect(page.getByText("Belum punya akses? Hubungi admin.")).toBeVisible();
   await expect(page.locator("main a[href*='signup']")).toHaveCount(0);
   await expect(page.locator("main a[href*='reset-password']")).toHaveCount(0);
@@ -142,6 +145,7 @@ for (const path of [
   test(`${path} is gone (404)`, async ({ page }) => {
     const response = await page.goto(path);
     expect(response?.status()).toBe(404);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Halaman gak ketemu");
   });
 }
 

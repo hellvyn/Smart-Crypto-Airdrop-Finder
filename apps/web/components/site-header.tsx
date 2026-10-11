@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { signOut } from "@/app/(auth)/actions";
 import { getUser } from "@/lib/auth";
+import { header } from "@/lib/copy";
 import { LIST_PATH } from "@/lib/routes";
 import { Button, HazardBar } from "@/components/ui";
 
@@ -16,23 +17,23 @@ export async function SiteHeader() {
       <header className="site-header">
         <Link href="/" className="brand">
           <span className="brand-mark" aria-hidden="true">
-            IQ
+            {header.brandMark}
           </span>
-          <span className="brand-name">AirdropIQ</span>
+          <span className="brand-name">{header.brand}</span>
         </Link>
         {user ? (
-          <nav className="site-nav site-nav-member" aria-label="Menu utama">
-            <Link href={LIST_PATH}>Airdrop</Link>
-            <Link href="/garapan">Garapan saya</Link>
-            <Link href="/watchlist">Watchlist</Link>
-            <Link href="/wallets">Wallets</Link>
-            <Link href="/settings">Settings</Link>
+          <nav className="site-nav site-nav-member" aria-label={header.navLabel}>
+            <Link href={LIST_PATH}>{header.airdrops}</Link>
+            <Link href="/garapan">{header.garapan}</Link>
+            <Link href="/watchlist">{header.watchlist}</Link>
+            <Link href="/wallets">{header.wallets}</Link>
+            <Link href="/settings">{header.account}</Link>
           </nav>
         ) : (
-          <nav className="site-nav site-nav-visitor" aria-label="Menu utama">
-            <Link href={LIST_PATH}>Airdrop</Link>
-            <Link href="/#cara">Kenapa AirdropIQ</Link>
-            <Link href="/#jejak">Track record</Link>
+          <nav className="site-nav site-nav-visitor" aria-label={header.navLabel}>
+            <Link href={LIST_PATH}>{header.airdrops}</Link>
+            <Link href="/#cara">{header.why}</Link>
+            <Link href="/#jejak">{header.trackRecord}</Link>
           </nav>
         )}
         <div className="site-actions">
@@ -43,13 +44,13 @@ export async function SiteHeader() {
               </span>
               <form action={signOut}>
                 <Button variant="secondary" type="submit">
-                  Sign out
+                  {header.logout}
                 </Button>
               </form>
             </>
           ) : (
             <Button variant="dark" href="/login">
-              Login
+              {header.login}
             </Button>
           )}
         </div>

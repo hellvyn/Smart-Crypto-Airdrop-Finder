@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Barlow, Barlow_Condensed } from "next/font/google";
 import type { ReactNode } from "react";
 import { SiteHeader } from "@/components/site-header";
+import { site } from "@/lib/copy";
 import "./globals.css";
 
 const barlow = Barlow({
@@ -19,8 +20,8 @@ const barlowCondensed = Barlow_Condensed({
 });
 
 export const metadata: Metadata = {
-  title: "AirdropIQ",
-  description: "Airdrop yang udah dicek, lengkap dengan source-nya.",
+  title: site.title,
+  description: site.description,
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -23,7 +23,7 @@ async function signIn(page: Page, tag: string): Promise<string> {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Login", exact: true }).click();
   await expect(page).toHaveURL(/\/watchlist$/);
   return email;
 }
@@ -48,7 +48,7 @@ const todayCell = (card: Locator) => card.locator(".heat-today");
 test("a visitor sees no Mulai garap on the project page, and /garapan needs an account", async ({ page }) => {
   await page.goto(`/projects/${seed.main.slug}`);
   // The page did render its actions row (the visitor's watch link), but farming is for signed-in members only.
-  await expect(page.getByRole("link", { name: "Sign in to watch" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Login buat pakai watchlist" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Mulai garap" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Mulai garap" })).toHaveCount(0);
   await page.goto("/garapan");

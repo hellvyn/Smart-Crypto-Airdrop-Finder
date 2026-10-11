@@ -20,9 +20,10 @@ const renderCheck = () => render(<WalletActivityCheck walletId={WID} walletName=
 const button = () => screen.getByRole("button") as HTMLButtonElement;
 
 describe("WalletActivityCheck", () => {
-  it("offers 'Check wallet activity on Ethereum' and shows nothing before the click", () => {
+  it("offers 'Cek aktivitas wallet di Ethereum' and shows nothing before the click", () => {
     renderCheck();
-    expect(button().textContent).toBe("Check wallet activity on Ethereum");
+    expect(button().textContent).toBe("Cek aktivitas wallet di Ethereum");
+    expect(button().getAttribute("aria-label")).toBe("Cek aktivitas wallet di Ethereum untuk Main");
     expect(screen.queryByRole("alert")).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -33,7 +34,7 @@ describe("WalletActivityCheck", () => {
     renderCheck();
     fireEvent.click(button());
     await waitFor(() => expect(button().disabled).toBe(true));
-    expect(button().textContent).toBe("Checking…");
+    expect(button().textContent).toBe("Lagi dicek…");
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/wallet-activity");
@@ -59,7 +60,7 @@ describe("WalletActivityCheck", () => {
         200,
       ),
     );
-    expect(await screen.findByText("Wallet activity on Ethereum: 142 transactions, first 2021-03-05, last 2026-09-30, active 12 months")).toBeTruthy();
+    expect(await screen.findByText("Aktivitas wallet di Ethereum: 142 transaksi, pertama 2021-03-05, terakhir 2026-09-30, aktif 12 bulan")).toBeTruthy();
     expect(button().disabled).toBe(false);
   });
 
@@ -67,37 +68,37 @@ describe("WalletActivityCheck", () => {
     fetchMock.mockResolvedValue(reply(JSON.stringify({ error: "unauthorized" }), 401));
     renderCheck();
     fireEvent.click(button());
-    expect(await screen.findByText("Sign in to check wallet activity.")).toBeTruthy();
+    expect(await screen.findByText("Login dulu buat cek aktivitas wallet.")).toBeTruthy();
   });
 
   it("a non-JSON 500 is 'unavailable', never zero activity", async () => {
     fetchMock.mockResolvedValue(reply("<html>Internal Server Error</html>", 500));
     const { container } = renderCheck();
     fireEvent.click(button());
-    expect(await screen.findByText("Data unavailable, try again later.")).toBeTruthy();
-    expect(container.textContent).not.toMatch(/No activity/);
+    expect(await screen.findByText("Data lagi gak tersedia. Coba lagi nanti.")).toBeTruthy();
+    expect(container.textContent).not.toMatch(/Gak ada aktivitas/);
   });
 
   it("a malformed 200 is 'unavailable'", async () => {
     fetchMock.mockResolvedValue(reply(JSON.stringify({ kind: "ok", summary: { txCount: "lots" } }), 200));
     renderCheck();
     fireEvent.click(button());
-    expect(await screen.findByText("Data unavailable, try again later.")).toBeTruthy();
+    expect(await screen.findByText("Data lagi gak tersedia. Coba lagi nanti.")).toBeTruthy();
   });
 
   it("an aborted or failed request is 'unavailable'", async () => {
     fetchMock.mockRejectedValue(new DOMException("The operation timed out.", "TimeoutError"));
     renderCheck();
     fireEvent.click(button());
-    expect(await screen.findByText("Data unavailable, try again later.")).toBeTruthy();
+    expect(await screen.findByText("Data lagi gak tersedia. Coba lagi nanti.")).toBeTruthy();
     expect(button().disabled).toBe(false);
   });
 
   it.each([
-    [429, "rate_limited", "You've reached 10 checks per hour. Try again later."],
-    [503, "unavailable", "Data unavailable, try again later."],
-    [404, "not_owner", "That wallet isn't in your list."],
-    [422, "chain_not_supported", "Chain not supported yet."],
+    [429, "rate_limited", "Kamu udah cek 10 kali dalam sejam. Coba lagi nanti."],
+    [503, "unavailable", "Data lagi gak tersedia. Coba lagi nanti."],
+    [404, "not_owner", "Wallet itu gak ada di list kamu."],
+    [422, "chain_not_supported", "Chain ini belum didukung."],
   ])("maps %i to its copy", async (status, kind, text) => {
     fetchMock.mockResolvedValue(reply(JSON.stringify({ kind }), status));
     renderCheck();

@@ -43,9 +43,9 @@ describe("WalletActivitySection", () => {
 
   it("prompts a signed-in user without wallets to add one, on a supported chain", () => {
     render(<WalletActivitySection project={project()} wallets={[]} />);
-    const link = screen.getByRole("link", { name: "Add a wallet to check wallet activity" });
+    const link = screen.getByRole("link", { name: "Tambah wallet buat cek aktivitas wallet" });
     expect(link.getAttribute("href")).toBe("/wallets");
-    expect(screen.queryByRole("button", { name: /Check wallet activity/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Cek aktivitas wallet/ })).toBeNull();
   });
 
   it("shows no prompt without wallets when the chain is unsupported or unknown", () => {
@@ -56,22 +56,22 @@ describe("WalletActivitySection", () => {
     expect(b.container.textContent).toBe("");
   });
 
-  it("says Chain not supported yet for a wallet owner on an unsupported chain", () => {
+  it("says Chain ini belum didukung for a wallet owner on an unsupported chain", () => {
     render(<WalletActivitySection project={project({ chains: ["Sui"] })} wallets={[WALLET]} />);
-    expect(screen.getByText("Chain not supported yet.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Check wallet activity/ })).toBeNull();
+    expect(screen.getByText("Chain ini belum didukung.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Cek aktivitas wallet/ })).toBeNull();
   });
 
   it("repeats the risk badge and the official checker link next to the wallet checks", () => {
     render(<WalletActivitySection project={project()} wallets={[WALLET]} />);
-    const section = screen.getByRole("region", { name: "Wallet activity" });
+    const section = screen.getByRole("region", { name: "Aktivitas wallet" });
     const line = within(section).getByTestId("wallet-risk-line");
     expect(within(line).getByTestId("risk-badge").getAttribute("data-level")).toBe("high");
-    const link = within(line).getByRole("link", { name: /Official checker \(unverified\)/ });
+    const link = within(line).getByRole("link", { name: "Checker official (belum verified)" });
     expect(link.getAttribute("href")).toBe("https://claim.demo.example/check");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer nofollow");
-    expect(within(section).getByRole("button", { name: "Check wallet activity on Ethereum for Main" })).toBeTruthy();
-    expect(section.textContent?.toLowerCase()).not.toMatch(/eligible|safe/);
+    expect(within(section).getByRole("button", { name: "Cek aktivitas wallet di Ethereum untuk Main" })).toBeTruthy();
+    expect(section.textContent?.toLowerCase()).not.toMatch(/eligible|safe|\baman\b/);
   });
 
   it("shows the risk badge alone when there is no linkable claim URL", () => {
@@ -85,19 +85,19 @@ describe("WalletActivitySection", () => {
 describe("SiteHeader", () => {
   beforeEach(() => getUser.mockReset());
 
-  it("links to Wallets for a signed-in user", async () => {
+  it("links to Wallet for a signed-in user", async () => {
     getUser.mockResolvedValue({ id: "u1", email: "someone@example.test" });
     render(await SiteHeader());
-    const link = screen.getByRole("link", { name: "Wallets" });
+    const link = screen.getByRole("link", { name: "Wallet" });
     expect(link.getAttribute("href")).toBe("/wallets");
     expect(screen.getByRole("link", { name: "Watchlist" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Settings" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Akun" })).toBeTruthy();
   });
 
-  it("has no Wallets link when signed out", async () => {
+  it("has no Wallet link when signed out", async () => {
     getUser.mockResolvedValue(null);
     render(await SiteHeader());
-    expect(screen.queryByRole("link", { name: "Wallets" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Wallet" })).toBeNull();
     expect(screen.getByRole("link", { name: "Login" })).toBeTruthy();
   });
 });

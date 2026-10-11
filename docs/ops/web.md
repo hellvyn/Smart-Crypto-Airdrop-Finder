@@ -9,14 +9,14 @@ password-reset emails) are superseded by it.
 
 ## 1. Environment
 
-The web app holds three settings, none of them secret (see `apps/web/.env.example`). They are inlined at build
-time, so set them before `build`:
+The web app reads two settings, none of them secret (see `apps/web/.env.example`). They are inlined at build
+time, so set them before `build`. The third, `NEXT_PUBLIC_SITE_URL`, is only for the e2e tests:
 
 | Variable | Value |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | project URL (`https://<ref>.supabase.co`; locally `http://127.0.0.1:54321`) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the project's anon (public) key |
-| `NEXT_PUBLIC_SITE_URL` | public base URL of the web app (locally `http://127.0.0.1:3000`). No email or auth redirect link is built from it any more |
+| `NEXT_PUBLIC_SITE_URL` | base URL of the web app (locally `http://127.0.0.1:3000`). The app no longer reads it: only the Playwright config and CI set it, to the e2e server's address |
 
 The service role key never goes into the web app, its env or the browser. Row Level Security protects user data;
 the anon key is meant to be public.
@@ -77,9 +77,10 @@ Dashboard.
 
 1. **Sign In / Providers:** turn off **Allow new users to sign up**. Without this, anyone can still create an
    account through the Auth API with the public anon key, even though the web app has no signup page.
-2. **Sign In / Providers > Email:** turn off **Secure password change**. It needs a reauthentication email,
-   and the project sends none. Members cannot change their own password (owner decision #60), so nothing in the app
-   needs it; it stays off so the owner can set passwords in the Dashboard without a reauthentication step.
+2. **Sign In / Providers > Email:** turn off **Secure password change**. It is off because reauthentication needs
+   an email, which this project cannot send, and because the app has no password change at all (owner decision #60).
+   Decision #60 is UI-only: a member could still change their own password through the Supabase Auth API with their
+   own session. That is an accepted risk.
 3. Leave **Confirm email** as it is: users are created confirmed (below), so it never has to deliver anything.
    No custom SMTP and no email templates are needed; remove any that were set up for the old flow.
 
@@ -111,9 +112,13 @@ users.
 
 ## 5. Deploy
 
-Order matters: the web app expects the database objects of every migration, so the database goes first.
+Order matters: signup is shut before anything else, and the web app expects the database objects of every migration,
+so the database goes before the web build.
 
-1. **Migrations.** Apply `supabase/migrations/0001` through `0007` to the hosted project before deploying the web app:
+1. **Signup off (Supabase Dashboard, before anything else).** Authentication > Sign In / Providers: turn off
+   **Allow new users to sign up**. Until this is off, anyone can create an account through the Auth API with the
+   public anon key.
+2. **Migrations.** Apply `supabase/migrations/0001` through `0007` to the hosted project before deploying the web app:
 
    ```
    npx -y supabase@2.120.0 link --project-ref <ref>
@@ -121,20 +126,20 @@ Order matters: the web app expects the database objects of every migration, so t
    ```
 
    `0004_wallet_rate_limit.sql` adds `claim_wallet_check()`, which the wallet activity API calls on every cache
-   miss; a web build without it answers every uncached check with "Data unavailable, try again later.".
+   miss; a web build without it answers every uncached check with "Data lagi gak tersedia. Coba lagi nanti.".
    `0007_manual_membership.sql` removes what only the email flow used (`notification_log`, `unsubscribe_digest()` and the
    `profiles` columns for the email preferences and the unsubscribe token). Existing user data stays. The previous
    web build still reads those columns, so deploy the new build right after applying it. See
    `docs/ops/pipeline.md` section 1 for aligning the production migration history before the first `db push`.
-2. **Build-time env.** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_SITE_URL` (the
-   public `https://` URL of the web app) are inlined by `next build`: set them in the host's build environment, and
-   rebuild after changing any of them. No other secret belongs in the web app (never the service role key).
-3. **Build and start.** `pnpm --filter web build`, then `pnpm --filter web start` (plain `next start`; the host's
+3. **Build-time env.** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are inlined by `next build`:
+   set them in the host's build environment, and rebuild after changing either of them. `NEXT_PUBLIC_SITE_URL` is
+   not needed for a deploy. No other secret belongs in the web app (never the service role key).
+4. **Build and start.** `pnpm --filter web build`, then `pnpm --filter web start` (plain `next start`; the host's
    `PORT` or `-- --port <n>` picks the port). Hosts that build Next.js themselves need the `--webpack` build script
    (see section 2).
-4. **Supabase Auth (dashboard), before announcing the site** (details in section 4): **Allow new users to sign up**
-   off, **Secure password change** off. Then add the first member with Auto Confirm User.
-5. **Check.** Every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`,
+5. **Supabase Auth (dashboard), before announcing the site** (details in section 4): check that **Allow new users to
+   sign up** is still off, and turn off **Secure password change**. Then add the first member with Auto Confirm User.
+6. **Check.** Every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`,
    `Referrer-Policy: strict-origin-when-cross-origin` and `X-Content-Type-Options: nosniff` (`apps/web/next.config.ts`);
    a host or proxy in front must not strip them. Then, signed out: `/` and `/airdrops` open and `/watchlist`
    redirects to `/login`. Log in as the member you added, add a wallet and run one wallet check.
