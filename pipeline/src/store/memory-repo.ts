@@ -53,6 +53,7 @@ interface TaskRow {
   description: string;
   position: number;
   cadence: Step["cadence"];
+  textId: string | null;
 }
 
 interface LinkRow {
@@ -251,8 +252,28 @@ export class MemoryRepo implements PipelineRepo {
   async replaceTasks(projectId: string, documentId: string, steps: Step[]): Promise<void> {
     removeWhere(this.tasks, (t) => t.projectId === projectId && t.documentId === documentId);
     steps.forEach((step, position) =>
-      this.tasks.push({ projectId, documentId, description: step.text, position, cadence: step.cadence }),
+      this.tasks.push({ projectId, documentId, description: step.text, position, cadence: step.cadence, textId: null }),
     );
+  }
+
+  /** The project's tasks in step order (document id, position). */
+  private projectTasks(projectId: string): TaskRow[] {
+    return this.tasks
+      .filter((t) => t.projectId === projectId)
+      .sort((a, b) => compareText(a.documentId, b.documentId) || a.position - b.position);
+  }
+
+  async saveStepTranslations(projectId: string, texts: string[]): Promise<void> {
+    const tasks = this.projectTasks(projectId);
+    if (tasks.length !== texts.length) return;
+    tasks.forEach((t, i) => {
+      t.textId = texts[i] ?? null;
+    });
+  }
+
+  /** `text_id` of the project's tasks in step order (test helper). */
+  stepTextIds(projectId: string): (string | null)[] {
+    return this.projectTasks(projectId).map((t) => t.textId);
   }
 
   async upsertLinks(
@@ -283,10 +304,7 @@ export class MemoryRepo implements PipelineRepo {
       }
       const other = p.lookalikeOf === null ? undefined : this.projects.get(p.lookalikeOf);
       // Order: document_id, position (same as SupabaseRepo).
-      const steps = this.tasks
-        .filter((t) => t.projectId === p.id)
-        .sort((a, b) => compareText(a.documentId, b.documentId) || a.position - b.position)
-        .map((t) => ({ text: t.description, cadence: t.cadence }));
+      const steps = this.projectTasks(p.id).map((t) => ({ text: t.description, cadence: t.cadence }));
       result.push({
         ...cloneProject(p),
         tasks: steps.map((s) => s.text),

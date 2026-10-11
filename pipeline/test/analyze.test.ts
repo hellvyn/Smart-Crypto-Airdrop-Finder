@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { AiKind } from "@saf/core";
 import type { CollectedDocument } from "../src/collectors/types.js";
@@ -97,8 +97,14 @@ async function projects(repo: MemoryRepo): Promise<ProjectForScoring[]> {
   return (await repo.listProjectsForScoring(10_000, NOW)).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Warnings of the analyze stage, collected instead of printed. */
+let warnings: string[] = [];
+beforeEach(() => {
+  warnings = [];
+});
+
 function deps(repo: MemoryRepo, chat: ChatFn, now: () => Date = () => NOW, extra: object = {}) {
-  return { repo, chat, sleep: async () => {}, now, ...extra };
+  return { repo, chat, sleep: async () => {}, now, warn: (line: string) => warnings.push(line), ...extra };
 }
 
 async function analyze(
@@ -125,6 +131,7 @@ const counters = (s: ReturnType<typeof emptyStats>) => ({
 
 describe("analysisInputHash", () => {
   const base = {
+    name: "Ink",
     status: "live",
     steps: [
       { text: "Bridge to Ink", cadence: "once" },
@@ -145,6 +152,7 @@ describe("analysisInputHash", () => {
   });
 
   it.each([
+    ["the name", { name: "Ink Chain" }, texts],
     ["the status", { status: "ended" }, texts],
     ["a step", { steps: [{ text: "Bridge to Ink", cadence: "once" }] }, texts],
     ["a step's cadence", { steps: [{ text: "Bridge to Ink", cadence: "weekly" }, { text: "Swap daily", cadence: "daily" }] }, texts],
@@ -371,5 +379,105 @@ describe("runAnalyses", () => {
     // Only the scam analysis saw the changed claim page.
     expect(counters(second)).toEqual({ run: 1, cached: 1, failed: 0, deferred: 0 });
     expect(repo.aiAnalyses.map((a) => a.kind)).toEqual(["analyst", "scam", "scam"]);
+  });
+  it("warns with the project id and kind, but no source text, when every model fails", async () => {
+    const repo = new MemoryRepo();
+    await seed(repo, ["Ink"]);
+    const [project] = await projects(repo);
+
+    await analyze(repo, fakeChat(() => SERVER_ERROR).chat);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(project?.id);
+    expect(warnings[0]).toContain("analyst");
+    expect(warnings[0]).not.toContain("Bridge daily");
+  });
+
+  it("warns with the project id and kind when an analysis throws", async () => {
+    const repo = new MemoryRepo();
+    await seed(repo, ["Ink"]);
+    const [project] = await projects(repo);
+    const throwing = analyzer({
+      kind: "scam",
+      postProcess: () => {
+        throw new Error("Ink airdrop is live. Bridge daily.");
+      },
+    });
+
+    await analyze(repo, fakeChat().chat, { analyzers: [throwing] });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(project?.id);
+    expect(warnings[0]).toContain("scam");
+    expect(warnings[0]).not.toContain("Bridge daily");
+  });
+
+  it("warns nothing when every analysis succeeds or is cached", async () => {
+    const repo = new MemoryRepo();
+    await seed(repo, ["Ink"]);
+    await analyze(repo, fakeChat().chat);
+    await analyze(repo, fakeChat().chat);
+
+    expect(warnings).toEqual([]);
+  });
+
+  it("counts each new analysis whose Indonesian text uses a forbidden phrase in ai_style_violations", async () => {
+    const repo = new MemoryRepo();
+    await seed(repo, ["Alpha", "Beta", "Gamma"]);
+    const { chat } = fakeChat((_model, messages) =>
+      ok({ summary: (messages[1]?.content ?? "").startsWith("Gamma") ? "Bridge dulu, gampang." : "Selain itu, ini krusial." }),
+    );
+    const styled = analyzer({ indonesianTexts: (value) => [value.summary] });
+
+    const stats = await analyze(repo, chat, { analyzers: [styled] });
+    const cached = await analyze(repo, chat, { analyzers: [styled] });
+
+    expect(stats.ai_style_violations).toBe(2);
+    expect(cached.ai_style_violations).toBe(0);
+    // Style never blocks storing an analysis.
+    expect(repo.aiAnalyses).toHaveLength(3);
+  });
+
+  it("writes an analyzer's derived data from the post-processed result before storing the analysis", async () => {
+    const repo = new MemoryRepo();
+    await seed(repo, ["Ink"]);
+    const order: string[] = [];
+    const save = repo.saveAiAnalysis.bind(repo);
+    repo.saveAiAnalysis = async (a) => {
+      order.push("analysis");
+      return save(a);
+    };
+    const derived: unknown[] = [];
+    const deriving = analyzer({
+      saveDerived: async (_repo, project, result) => {
+        order.push("derived");
+        derived.push([project.name, result]);
+      },
+    });
+
+    await analyze(repo, fakeChat().chat, { analyzers: [deriving] });
+
+    expect(order).toEqual(["derived", "analysis"]);
+    expect(derived).toEqual([["Ink", { summary: "Ringkasan", source_urls: ["https://src.test/ink"] }]]);
+  });
+
+  it("keeps the previous analysis latest when writing its derived data fails, so the next run tries again", async () => {
+    const repo = new MemoryRepo();
+    await seed(repo, ["Ink"]);
+    let fail = true;
+    const deriving = analyzer({
+      saveDerived: async () => {
+        if (fail) throw new Error("db down");
+      },
+    });
+
+    const first = await analyze(repo, fakeChat().chat, { analyzers: [deriving] });
+    fail = false;
+    const second = await analyze(repo, fakeChat().chat, { analyzers: [deriving] });
+
+    expect(counters(first)).toEqual({ run: 0, cached: 0, failed: 1, deferred: 0 });
+    expect(warnings).toHaveLength(1);
+    expect(counters(second)).toEqual({ run: 1, cached: 0, failed: 0, deferred: 0 });
+    expect(repo.aiAnalyses).toHaveLength(1);
   });
 });

@@ -133,13 +133,13 @@ async function requireActive(db: SupabaseClient, userId: string, projectId: stri
 
 /**
  * The project's steps as the source gives them (once, daily and weekly), grouped by document in step order, with
- * texts clipped and case-insensitive duplicates dropped (first one wins). The text is `tasks.description` until
- * Plan 5 adds the translated `text_id`.
+ * texts clipped and case-insensitive duplicates dropped (first one wins). The text is the Indonesian `text_id` the
+ * AI Analyst wrote, or `tasks.description` while a step has none (blank counts as none).
  */
 async function sourceSteps(db: SupabaseClient, projectId: string): Promise<{ text: string; cadence: Cadence }[]> {
   const { data, error } = await db
     .from("tasks")
-    .select("description, cadence")
+    .select("description, text_id, cadence")
     .eq("project_id", projectId)
     .in("cadence", [...CADENCES])
     .order("document_id")
@@ -147,8 +147,9 @@ async function sourceSteps(db: SupabaseClient, projectId: string): Promise<{ tex
   throwIf(error, "read the source steps");
   const seen = new Set<string>();
   const steps: { text: string; cadence: Cadence }[] = [];
-  for (const row of (data ?? []) as { description: unknown; cadence: unknown }[]) {
-    const text = clip(String(row.description ?? ""));
+  for (const row of (data ?? []) as { description: unknown; text_id: unknown; cadence: unknown }[]) {
+    const translated = typeof row.text_id === "string" ? row.text_id.trim() : "";
+    const text = clip(translated !== "" ? translated : String(row.description ?? ""));
     const cadence = row.cadence as Cadence;
     if (text === "" || !CADENCES.includes(cadence) || seen.has(textKey(text))) continue;
     seen.add(textKey(text));

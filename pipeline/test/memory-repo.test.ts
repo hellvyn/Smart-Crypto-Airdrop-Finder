@@ -326,6 +326,56 @@ describe("MemoryRepo projects", () => {
     expect(scored?.tasks).toEqual(["Check in", "Bridge", "Vote"]);
   });
 
+  it("stores Indonesian step texts on the project's tasks in step order when the counts match", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const other = await repo.createProject(project({ slug: "blast", name: "Blast", nameKey: "blast" }), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    const d2 = await repo.upsertDocument(doc({ url: "https://x.test/2" }), "2");
+    // Step order is (document id, position), whatever the order the documents were stored in.
+    const [first, second] = [d1, d2].sort((a, b) => (a.id < b.id ? -1 : 1));
+    await repo.replaceTasks(p.id, second!.id, [{ text: "Stake", cadence: "weekly" }]);
+    await repo.replaceTasks(p.id, first!.id, [
+      { text: "Bridge", cadence: "once" },
+      { text: "Swap", cadence: "daily" },
+    ]);
+    await repo.replaceTasks(other.id, first!.id, [{ text: "Deposit", cadence: "once" }]);
+    expect(repo.stepTextIds(p.id)).toEqual([null, null, null]);
+
+    await repo.saveStepTranslations(p.id, ["Bridge dulu", "Swap tiap hari", "Stake tiap minggu"]);
+
+    expect(repo.stepTextIds(p.id)).toEqual(["Bridge dulu", "Swap tiap hari", "Stake tiap minggu"]);
+    expect(repo.stepTextIds(other.id)).toEqual([null]);
+  });
+
+  it("leaves step texts alone when the number of translations differs from the project's tasks", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    await repo.replaceTasks(p.id, d1.id, [
+      { text: "Bridge", cadence: "once" },
+      { text: "Swap", cadence: "daily" },
+    ]);
+    await repo.saveStepTranslations(p.id, ["Bridge dulu", "Swap tiap hari"]);
+
+    await repo.saveStepTranslations(p.id, ["Bridge dulu"]);
+    await repo.saveStepTranslations(p.id, ["Bridge", "Swap", "Stake"]);
+
+    expect(repo.stepTextIds(p.id)).toEqual(["Bridge dulu", "Swap tiap hari"]);
+  });
+
+  it("drops the step texts of a document whose steps are replaced", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    await repo.replaceTasks(p.id, d1.id, [{ text: "Bridge", cadence: "once" }]);
+    await repo.saveStepTranslations(p.id, ["Bridge dulu"]);
+
+    await repo.replaceTasks(p.id, d1.id, [{ text: "Bridge", cadence: "once" }]);
+
+    expect(repo.stepTextIds(p.id)).toEqual([null]);
+  });
+
   it("returns v3 fact evidence as facts in insertion order, without status or ask evidence", async () => {
     const repo = new MemoryRepo();
     const p = await repo.createProject(project(), T0);

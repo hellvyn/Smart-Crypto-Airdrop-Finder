@@ -397,6 +397,28 @@ export class SupabaseRepo implements PipelineRepo {
     );
   }
 
+  async saveStepTranslations(projectId: string, texts: string[]): Promise<void> {
+    const rows =
+      check(
+        "saveStepTranslations.select",
+        await this.db
+          .from("tasks")
+          .select("id")
+          .eq("project_id", projectId)
+          // Step order, the same as listProjectsForScoring.
+          .order("document_id")
+          .order("position")
+          .returns<{ id: string }[]>(),
+      ) ?? [];
+    if (rows.length !== texts.length) return;
+    for (const [i, row] of rows.entries()) {
+      check(
+        "saveStepTranslations.update",
+        await this.db.from("tasks").update({ text_id: texts[i] }).eq("id", row.id).eq("project_id", projectId),
+      );
+    }
+  }
+
   async upsertLinks(
     projectId: string,
     links: { url: string; kind: string; referralStripped: boolean }[],

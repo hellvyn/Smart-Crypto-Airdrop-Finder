@@ -191,8 +191,17 @@ export interface PipelineRepo {
   listStatusEvidence(projectId: string): Promise<StatusEvidence[]>;
   /** Replaces the deadlines this document contributed to the project. */
   replaceDeadlines(projectId: string, documentId: string, ds: ExtractedDeadline[]): Promise<void>;
-  /** Replaces the steps (`tasks` rows) this document contributed to the project; `position` = index in `steps`. */
+  /**
+   * Replaces the steps (`tasks` rows) this document contributed to the project; `position` = index in `steps`. The
+   * new rows have no `text_id` (their translation comes with the next Analyst analysis).
+   */
   replaceTasks(projectId: string, documentId: string, steps: Step[]): Promise<void>;
+  /**
+   * Stores the Indonesian text of each of the project's steps (`tasks.text_id`, #45): `texts[i]` goes to the i-th
+   * task in step order (document id, then position; the order of `ProjectForScoring.steps`). Writes nothing when
+   * `texts` and the project's tasks differ in number.
+   */
+  saveStepTranslations(projectId: string, texts: string[]): Promise<void>;
   upsertLinks(
     projectId: string,
     links: { url: string; kind: string; referralStripped: boolean }[],
