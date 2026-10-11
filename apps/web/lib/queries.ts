@@ -4,19 +4,29 @@ import type { RiskCheck, RiskLevel, RiskReason, Severity, Status } from "@saf/co
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   RISK_LEVELS,
+  SIGNAL_KINDS,
   STATUSES,
-  pickLastSuccessfulRun,
+  WORTH_LEVELS,
+  pickLastSuccessfulRunWithStats,
   pickLatestRisk,
   PAGE_SIZE,
   parseChain,
+  parseTab,
   pickNextDeadline,
   utcToday,
+  type Capital,
+  type CapitalFilter,
+  type CuratedFilters,
+  type CuratedItem,
+  type CuratedSignal,
   type ListFilters,
   type ProjectDetail,
   type ProjectListItem,
+  type Tab,
+  type WorthLevel,
 } from "./view";
 
-export type { ListFilters, ProjectDetail, ProjectListItem } from "./view";
+export type { CuratedFilters, CuratedItem, ListFilters, ProjectDetail, ProjectListItem } from "./view";
 
 const SEVERITIES: readonly string[] = ["critical", "high", "medium", "info"];
 const DEADLINE_KINDS: readonly string[] = ["claim", "snapshot", "campaign_end", "withdraw_funds", "tge", "other"];
@@ -79,6 +89,7 @@ export const LIST_COLUMNS =
 interface Filterable {
   in(column: string, values: string[]): Filterable;
   contains(column: string, value: string): Filterable;
+  eq(column: string, value: string): Filterable;
 }
 
 function applyFilters<T>(query: T, f: ListFilters): T {
@@ -129,6 +140,120 @@ export async function listProjects(db: SupabaseClient, f: ListFilters = {}, page
     total: count ?? 0,
     page,
     pageSize: PAGE_SIZE,
+  };
+}
+
+// ---- Curated list (Plan 6; curation spec §4.5, §7.1, §15.5) ----
+
+export interface CuratedPage {
+  items: CuratedItem[];
+  /** Projects matching the tab and every filter (the capital one included), across all pages. */
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Per "Modal:" option: projects in the same tab after the other filters, before the capital filter (#52). */
+  capitalCounts: { all: number; free: number; deposit: number };
+}
+
+const CURATED_COLUMNS = `${LIST_COLUMNS}, tab, ended_on, checked_at, signals, claim_open_checked, capital, capital_min_usd`;
+const CAPITALS: readonly Capital[] = ["free", "deposit", "unknown"];
+
+function asSignals(v: unknown): CuratedSignal[] {
+  if (!Array.isArray(v)) return [];
+  const out: CuratedSignal[] = [];
+  for (const s of v) {
+    if (!isRecord(s) || !(SIGNAL_KINDS as readonly unknown[]).includes(s.kind) || !isRecord(s.value)) continue;
+    out.push({
+      kind: s.kind as CuratedSignal["kind"],
+      value: s.value,
+      verified: s.verified === true,
+      source: String(s.source),
+      observedAt: String(s.observed_at),
+    });
+  }
+  return out;
+}
+
+function asNumber(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : Number.NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+/** A `public_list` / `curated_list` row. `worthLevel` is read only for members. */
+export function toCuratedItem(row: Record<string, unknown>, member: boolean): CuratedItem {
+  return {
+    ...toListItem(row),
+    tab: parseTab(typeof row.tab === "string" ? row.tab : undefined),
+    endedOn: typeof row.ended_on === "string" ? row.ended_on : null,
+    checkedAt: String(row.checked_at),
+    signals: asSignals(row.signals),
+    claimOpenChecked: row.claim_open_checked === true,
+    capital: CAPITALS.includes(row.capital as Capital) ? (row.capital as Capital) : "unknown",
+    capitalMinUsd: asNumber(row.capital_min_usd),
+    worthLevel: member && WORTH_LEVELS.includes(row.worth_level as WorthLevel) ? (row.worth_level as WorthLevel) : null,
+  };
+}
+
+/**
+ * One page of the curated list (spec §7.1). Visitors read `public_list` (no worth anywhere: the `worth` filter is
+ * ignored and the order is "Baru dicek": newest check, then name). Members read `curated_list`, ordered "Paling worth
+ * it": worth (high first), strongest signal (VC, TVL, CoinGecko, curated source), nearest deadline, newest last_seen.
+ * The ended tab is "Baru ended" for both: newest ended date, then name, with no age limit (#40). Filters, order and
+ * paging run in SQL; ties end on id so pages never overlap.
+ */
+export async function listCurated(
+  db: SupabaseClient,
+  tab: Tab,
+  f: CuratedFilters,
+  page: number,
+  member: boolean,
+): Promise<CuratedPage> {
+  const view = member ? "curated_list" : "public_list";
+  const filtered = <T>(query: T): T => {
+    let q = applyFilters(query, f) as unknown as Filterable;
+    q = q.eq("tab", tab);
+    if (member && f.worth && f.worth.length > 0) q = q.in("worth_level", f.worth);
+    return q as unknown as T;
+  };
+  const count = async (capital: CapitalFilter): Promise<number> => {
+    let q = filtered(db.from(view).select("id", { count: "exact", head: true }));
+    if (capital !== "all") q = q.eq("capital", capital);
+    const { error, count: n } = await q;
+    throwIf(error, "curated projects");
+    return n ?? 0;
+  };
+
+  const capital = f.capital ?? "all";
+  let q = filtered(db.from(view).select(member ? `${CURATED_COLUMNS}, worth_level` : CURATED_COLUMNS));
+  if (capital !== "all") q = q.eq("capital", capital);
+  if (tab === "ended") {
+    q = q.order("ended_on", { ascending: false, nullsFirst: false }).order("name", { ascending: true });
+  } else if (member) {
+    q = q
+      .order("worth_rank", { ascending: true, nullsFirst: false })
+      .order("signal_rank", { ascending: true, nullsFirst: false })
+      .order("next_deadline_date", { ascending: true, nullsFirst: false })
+      .order("last_seen", { ascending: false });
+  } else {
+    q = q.order("checked_at", { ascending: false }).order("name", { ascending: true });
+  }
+  const from = (page - 1) * PAGE_SIZE;
+  const [result, all, free, deposit] = await Promise.all([
+    q.order("id", { ascending: true }).range(from, from + PAGE_SIZE - 1),
+    count("all"),
+    count("free"),
+    count("deposit"),
+  ]);
+  const capitalCounts = { all, free, deposit };
+  // PGRST103: the page is past the end; the counts still give the real total so the page can link back.
+  if (result.error?.code !== "PGRST103") throwIf(result.error, "curated projects");
+  const rows = result.error ? [] : ((result.data ?? []) as unknown as Record<string, unknown>[]);
+  return {
+    items: rows.map((row) => toCuratedItem(row, member)),
+    total: capitalCounts[capital],
+    page,
+    pageSize: PAGE_SIZE,
+    capitalCounts,
   };
 }
 
@@ -227,9 +352,9 @@ export async function getProjectDetail(db: SupabaseClient, slug: string, now: Da
   };
 }
 
-/** Finish time of the latest successful pipeline run (finished, with no `run_error` key in its stats), or null.
+/** The latest successful pipeline run (finished, with no `run_error` key in its stats): finish time and stats.
  * SQL drops rows without the key; the JS check also drops a key present with a null value. */
-export async function getLastSuccessfulRunAt(db: SupabaseClient): Promise<Date | null> {
+async function getLastSuccessfulRun(db: SupabaseClient): Promise<{ at: Date; stats: Record<string, unknown> } | null> {
   const { data, error } = await db
     .from("pipeline_runs")
     .select("finished_at, stats")
@@ -238,7 +363,54 @@ export async function getLastSuccessfulRunAt(db: SupabaseClient): Promise<Date |
     .order("finished_at", { ascending: false })
     .limit(10);
   throwIf(error, "pipeline runs");
-  return pickLastSuccessfulRun(
+  return pickLastSuccessfulRunWithStats(
     (data ?? []).map((r) => ({ finishedAt: (r.finished_at as string | null) ?? null, stats: r.stats as unknown })),
   );
+}
+
+/** Finish time of the latest successful pipeline run, or null. */
+export async function getLastSuccessfulRunAt(db: SupabaseClient): Promise<Date | null> {
+  return (await getLastSuccessfulRun(db))?.at ?? null;
+}
+
+/** The stats counters, when every one of them is a whole number from 0 up; null otherwise. */
+function counters<K extends string>(stats: Record<string, unknown>, keys: readonly K[]): Record<K, number> | null {
+  const out = {} as Record<K, number>;
+  for (const key of keys) {
+    const v = stats[key];
+    if (typeof v !== "number" || !Number.isInteger(v) || v < 0) return null;
+    out[key] = v;
+  }
+  return out;
+}
+
+/** The track record is shown only from this population on (#43). */
+const TRACK_RECORD_MIN_TOTAL = 10;
+
+/**
+ * "Track record kami" (#43) from the latest successful run. `listed` and `noToken` need not add up to `total`: a
+ * project that turned risky after passing counts in `total` and `riskRaised` even before it ends. Null while the
+ * population is below 10, or when the run has no track record numbers.
+ */
+export async function getTrackRecord(
+  db: SupabaseClient,
+): Promise<{ total: number; listed: number; noToken: number; riskRaised: number } | null> {
+  const run = await getLastSuccessfulRun(db);
+  const n = run
+    ? counters(run.stats, ["track_record_total", "track_record_listed", "track_record_no_token", "track_record_risk_raised"])
+    : null;
+  if (!n || n.track_record_total < TRACK_RECORD_MIN_TOTAL) return null;
+  return {
+    total: n.track_record_total,
+    listed: n.track_record_listed,
+    noToken: n.track_record_no_token,
+    riskRaised: n.track_record_risk_raised,
+  };
+}
+
+/** "Update hari ini": projects curation checked and passed in the latest successful run, and when it finished. */
+export async function getRunSummary(db: SupabaseClient): Promise<{ checked: number; passed: number; at: Date } | null> {
+  const run = await getLastSuccessfulRun(db);
+  const n = run ? counters(run.stats, ["curation_checked", "curation_passed"]) : null;
+  return run && n ? { checked: n.curation_checked, passed: n.curation_passed, at: run.at } : null;
 }

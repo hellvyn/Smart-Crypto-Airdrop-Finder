@@ -366,7 +366,8 @@ function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
 
 /**
  * One card per project the member is farming now, oldest start first. Days are the member's local dates in
- * profiles.timezone (UTC when unset). `endedOn` is not known yet (curations come with Plan 5), so it is null.
+ * profiles.timezone (UTC when unset). A project that ended stops its heatmap window on `ended_on` of its latest
+ * curation (#40; the `latest_curations` view, one row per project).
  */
 export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<FarmingCard[]> {
   const user = await requireUser();
@@ -391,7 +392,7 @@ export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<Fa
   const today = localDay(now, timeZone);
   const ids = projects.map((p) => p.project_id);
 
-  const [tasks, checks, deadlines] = await Promise.all([
+  const [tasks, checks, deadlines, curations] = await Promise.all([
     fetchAll<TaskRow>("load the farming tasks", (from, to) =>
       db
         .from("farming_tasks")
@@ -414,7 +415,16 @@ export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<Fa
     fetchAll<DeadlineRow>("load the deadlines", (from, to) =>
       db.from("deadlines").select("project_id, kind, date, precision").in("project_id", ids).order("id").range(from, to),
     ),
+    // At most one row per project, and a member farms at most 50 projects: no paging needed.
+    db.from("latest_curations").select("project_id, ended_on").in("project_id", ids),
   ]);
+  throwIf(curations.error, "load the curations");
+  const endedOnOf = new Map(
+    ((curations.data ?? []) as { project_id: string; ended_on: unknown }[]).map((c) => [
+      c.project_id,
+      typeof c.ended_on === "string" ? c.ended_on : null,
+    ]),
+  );
 
   const tasksByProject = groupBy(tasks, (t) => t.project_id);
   const projectOfTask = new Map(tasks.map((t) => [t.id, t.project_id]));
@@ -435,7 +445,7 @@ export async function getFarmingBoard(db: SupabaseClient, now: Date): Promise<Fa
     const trackerChecks: TrackerCheck[] = (checksByProject.get(p.project_id) ?? []).map((c) => ({ taskId: c.task_id, day: c.day }));
     const projectDeadlines = deadlinesByProject.get(p.project_id) ?? [];
 
-    const range = heatmapRange(dayOf(p.started_at), projectDeadlines, today, null);
+    const range = heatmapRange(dayOf(p.started_at), projectDeadlines, today, endedOnOf.get(p.project_id) ?? null);
     const heatmap = buildHeatmap(trackerTasks, trackerChecks, range, today);
     const active = rows
       .filter((t) => t.archived_at === null)

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  capitalLabel,
+  checkedLabel,
   coverageLine,
+  parseCapital,
+  parseTab,
   PAGE_SIZE,
   isStale,
   listQueryString,
@@ -153,5 +157,70 @@ describe("chain filter parsing", () => {
       risk: ["high"],
       chain: undefined,
     });
+  });
+});
+
+describe("parseTab", () => {
+  it("accepts the three tabs and falls back to live_now", () => {
+    expect(parseTab("live_now")).toBe("live_now");
+    expect(parseTab("early_bets")).toBe("early_bets");
+    expect(parseTab("ended")).toBe("ended");
+    expect(parseTab("x")).toBe("live_now");
+    expect(parseTab("ENDED")).toBe("live_now");
+    expect(parseTab("")).toBe("live_now");
+    expect(parseTab(undefined)).toBe("live_now");
+  });
+});
+
+describe("parseCapital", () => {
+  it("accepts all, free and deposit and falls back to all", () => {
+    expect(parseCapital("free")).toBe("free");
+    expect(parseCapital("deposit")).toBe("deposit");
+    expect(parseCapital("all")).toBe("all");
+    expect(parseCapital("x")).toBe("all");
+    expect(parseCapital("unknown")).toBe("all");
+    expect(parseCapital(undefined)).toBe("all");
+  });
+});
+
+describe("capitalLabel", () => {
+  it.each([
+    ["deposit", 1000, "Butuh $1.000+"],
+    ["deposit", 50, "Butuh $50+"],
+    ["deposit", 1234.6, "Butuh $1.235+"],
+    ["deposit", 2500000, "Butuh $2.500.000+"],
+    ["deposit", null, "Butuh $"],
+    ["deposit", 0, "Butuh $"],
+    ["deposit", Number.NaN, "Butuh $"],
+    ["free", null, "Gratis"],
+    ["free", 100, "Gratis"],
+    ["unknown", null, "Modal belum jelas"],
+    ["unknown", 100, "Modal belum jelas"],
+  ] as const)("capitalLabel(%s, %s)", (capital, minUsd, want) => {
+    expect(capitalLabel(capital, minUsd)).toBe(want);
+  });
+});
+
+describe("checkedLabel", () => {
+  // 2026-10-10T12:00Z is 19:00 WIB on 10 October. The pipeline runs at 23:00 UTC, which is 06:00 WIB the next day.
+  const now = new Date("2026-10-10T12:00:00Z");
+  it.each([
+    ["this morning's 06:00 WIB run (the previous day in UTC)", "2026-10-09T23:00:00Z", "Dicek hari ini"],
+    ["a minute ago", "2026-10-10T11:59:00Z", "Dicek hari ini"],
+    ["a clock slightly ahead", "2026-10-10T12:05:00Z", "Dicek hari ini"],
+    ["yesterday in WIB", "2026-10-09T05:00:00Z", "Dicek kemarin"],
+    ["two WIB days ago, 44 hours", "2026-10-08T16:00:00Z", "Dicek 2 hari lalu"],
+    ["exactly 48 hours", "2026-10-08T12:00:00Z", "Dicek 2 hari lalu"],
+    ["just over 48 hours", "2026-10-08T11:59:00Z", "Belum dicek lagi sejak 8 Okt"],
+    ["three days ago", "2026-10-07T12:00:00Z", "Belum dicek lagi sejak 7 Okt"],
+    ["last year", "2025-12-30T12:00:00Z", "Belum dicek lagi sejak 30 Des 2025"],
+  ])("%s", (_, at, want) => {
+    expect(checkedLabel(new Date(at), now, false)).toBe(want);
+  });
+
+  it("shows a frozen project's last check as a date, however old", () => {
+    expect(checkedLabel(new Date("2026-09-28T03:00:00Z"), now, true)).toBe("Last check 28 Sep");
+    expect(checkedLabel(new Date("2026-10-10T11:00:00Z"), now, true)).toBe("Last check 10 Okt");
+    expect(checkedLabel(new Date("2025-06-01T03:00:00Z"), now, true)).toBe("Last check 1 Jun 2025");
   });
 });

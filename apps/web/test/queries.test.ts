@@ -1,6 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
-import { getLastSuccessfulRunAt, getProjectDetail, listChains, listProjects } from "../lib/queries";
+import {
+  getLastSuccessfulRunAt,
+  getProjectDetail,
+  getRunSummary,
+  getTrackRecord,
+  listChains,
+  listCurated,
+  listProjects,
+} from "../lib/queries";
 import { PAGE_SIZE } from "../lib/view";
 
 type Call = [method: string, ...args: unknown[]];
@@ -234,5 +242,257 @@ describe("getProjectDetail evidence query", () => {
   it("returns null for an unknown slug", async () => {
     const { db } = fakeDb(() => ({ data: null, error: null }));
     expect(await getProjectDetail(db, "nope")).toBeNull();
+  });
+});
+
+const curatedRow = (over: Record<string, unknown> = {}) => ({
+  ...viewRow(),
+  tab: "live_now",
+  ended_on: null,
+  checked_at: "2026-10-10T23:00:00+00:00",
+  signals: [
+    { kind: "vc_backer", value: { investor: "Paradigm", tier: 1 }, verified: true, source: "vc_portfolio", observed_at: "2026-10-10T23:00:00+00:00" },
+    { kind: "claimed_backer", value: { investor: "a16z" }, verified: false, source: "llm_text", observed_at: "2026-10-09T23:00:00+00:00" },
+  ],
+  claim_open_checked: true,
+  capital: "deposit",
+  capital_min_usd: 1000,
+  ...over,
+});
+
+/** A fake for listCurated: head-count queries answer from `counts` by their capital filter, the page query with `rows`. */
+function curatedDb(rows: unknown[] | Result, counts = { all: 7, free: 3, deposit: 2 }) {
+  return fakeDb((rec) => {
+    const head = rec.calls.some((c) => c[0] === "select" && (c[2] as { head?: boolean } | undefined)?.head === true);
+    if (!head) return Array.isArray(rows) ? { data: rows, error: null } : rows;
+    const capital = rec.calls.find((c) => c[0] === "eq" && c[1] === "capital")?.[2] as "free" | "deposit" | undefined;
+    return { data: null, error: null, count: counts[capital ?? "all"] };
+  });
+}
+
+const pageQuery = (recs: Recorded[]) => recs.find((r) => !r.calls.some((c) => c[0] === "select" && (c[2] as { head?: boolean } | undefined)?.head))!;
+const countQueries = (recs: Recorded[]) => recs.filter((r) => r !== pageQuery(recs));
+const orders = (rec: Recorded) => rec.calls.filter((c) => c[0] === "order");
+
+describe("listCurated", () => {
+  it("gives visitors public_list in the tab, newest check first, without any worth column, filter or order", async () => {
+    const { db, recs } = curatedDb([curatedRow()]);
+    const page = await listCurated(db, "live_now", { worth: ["high"] }, 1, false);
+    expect(recs.map((r) => r.table)).toEqual(Array(4).fill("public_list"));
+    const q = pageQuery(recs);
+    expect(q.calls).toContainEqual(["eq", "tab", "live_now"]);
+    expect(orders(q)).toEqual([
+      ["order", "checked_at", { ascending: false }],
+      ["order", "name", { ascending: true }],
+      ["order", "id", { ascending: true }],
+    ]);
+    expect(q.calls).toContainEqual(["range", 0, PAGE_SIZE - 1]);
+    expect(JSON.stringify(recs.flatMap((r) => r.calls))).not.toMatch(/worth/);
+    expect(page.items[0]!.worthLevel).toBeNull();
+  });
+
+  it("maps a row to a list item with tab, check time, signals, claim badge and capital", async () => {
+    const { db } = curatedDb([curatedRow({ worth_level: "high" })]);
+    const { items } = await listCurated(db, "live_now", {}, 1, false);
+    expect(items[0]).toEqual({
+      slug: "demo",
+      name: "Demo",
+      status: "live",
+      riskLevel: "high",
+      chains: ["Ethereum"],
+      nextDeadline: { date: "2026-11-01", kind: "claim", precision: "exact" },
+      lastSeen: "2026-10-09T00:00:00Z",
+      tab: "live_now",
+      endedOn: null,
+      checkedAt: "2026-10-10T23:00:00+00:00",
+      signals: [
+        { kind: "vc_backer", value: { investor: "Paradigm", tier: 1 }, verified: true, source: "vc_portfolio", observedAt: "2026-10-10T23:00:00+00:00" },
+        { kind: "claimed_backer", value: { investor: "a16z" }, verified: false, source: "llm_text", observedAt: "2026-10-09T23:00:00+00:00" },
+      ],
+      claimOpenChecked: true,
+      capital: "deposit",
+      capitalMinUsd: 1000,
+      // A visitor never gets a worth level, even if a row carried one.
+      worthLevel: null,
+    });
+  });
+
+  it("drops malformed signals and reads odd capital values defensively", async () => {
+    const { db } = curatedDb([
+      curatedRow({
+        signals: [
+          null,
+          { kind: "rumour", value: {}, verified: true, source: "x", observed_at: "2026-10-10T00:00:00Z" },
+          { kind: "tvl", value: "45M", verified: true, source: "defillama", observed_at: "2026-10-10T00:00:00Z" },
+          { kind: "tvl", value: { tvl_usd: 45e6 }, verified: "yes", source: "defillama", observed_at: "2026-10-10T00:00:00Z" },
+        ],
+        capital: "lots",
+        capital_min_usd: "1500",
+        claim_open_checked: null,
+        tab: "weird",
+        ended_on: "2026-09-28",
+      }),
+      curatedRow({ signals: null, capital_min_usd: null }),
+    ]);
+    const { items } = await listCurated(db, "live_now", {}, 1, false);
+    expect(items[0]).toMatchObject({
+      signals: [{ kind: "tvl", value: { tvl_usd: 45e6 }, verified: false, source: "defillama", observedAt: "2026-10-10T00:00:00Z" }],
+      capital: "unknown",
+      capitalMinUsd: 1500,
+      claimOpenChecked: false,
+      tab: "live_now",
+      endedOn: "2026-09-28",
+    });
+    expect(items[1]).toMatchObject({ signals: [], capitalMinUsd: null });
+  });
+
+  it("gives members curated_list ordered by worth, strongest signal, nearest deadline, newest last_seen", async () => {
+    const { db, recs } = curatedDb([curatedRow({ worth_level: "medium" }), curatedRow({ slug: "b", worth_level: "nope" })]);
+    const page = await listCurated(db, "early_bets", { worth: ["high", "medium"] }, 2, true);
+    expect(recs.map((r) => r.table)).toEqual(Array(4).fill("curated_list"));
+    const q = pageQuery(recs);
+    expect(q.calls).toContainEqual(["select", expect.stringContaining("worth_level")]);
+    expect(q.calls).toContainEqual(["eq", "tab", "early_bets"]);
+    expect(q.calls).toContainEqual(["in", "worth_level", ["high", "medium"]]);
+    expect(orders(q)).toEqual([
+      ["order", "worth_rank", { ascending: true, nullsFirst: false }],
+      ["order", "signal_rank", { ascending: true, nullsFirst: false }],
+      ["order", "next_deadline_date", { ascending: true, nullsFirst: false }],
+      ["order", "last_seen", { ascending: false }],
+      ["order", "id", { ascending: true }],
+    ]);
+    expect(q.calls).toContainEqual(["range", PAGE_SIZE, 2 * PAGE_SIZE - 1]);
+    // The database order is kept, and an unknown worth level reads as none.
+    expect(page.items.map((i) => [i.slug, i.worthLevel])).toEqual([["demo", "medium"], ["b", null]]);
+  });
+
+  it("orders the ended tab by ended date, newest first, then name, for members and visitors alike", async () => {
+    for (const member of [true, false]) {
+      const { db, recs } = curatedDb([]);
+      await listCurated(db, "ended", {}, 1, member);
+      const q = pageQuery(recs);
+      expect(q.calls).toContainEqual(["eq", "tab", "ended"]);
+      expect(orders(q), `member ${member}`).toEqual([
+        ["order", "ended_on", { ascending: false, nullsFirst: false }],
+        ["order", "name", { ascending: true }],
+        ["order", "id", { ascending: true }],
+      ]);
+      // No age limit on ended projects (#40).
+      expect(q.calls.map((c) => c[0])).not.toContain("gte");
+    }
+  });
+
+  it("filters by capital and counts each capital option in the same tab after the other filters", async () => {
+    const { db, recs } = curatedDb([curatedRow()]);
+    const page = await listCurated(db, "live_now", { status: ["live"], risk: ["low"], chain: "Base", capital: "free" }, 1, false);
+    expect(pageQuery(recs).calls).toContainEqual(["eq", "capital", "free"]);
+    const counts = countQueries(recs);
+    expect(counts).toHaveLength(3);
+    for (const rec of counts) {
+      expect(rec.calls).toContainEqual(["select", "id", { count: "exact", head: true }]);
+      expect(rec.calls).toContainEqual(["eq", "tab", "live_now"]);
+      expect(rec.calls).toContainEqual(["in", "status", ["live"]]);
+      expect(rec.calls).toContainEqual(["in", "latest_risk_level", ["low"]]);
+      expect(rec.calls).toContainEqual(["contains", "chains_lower", '{"base"}']);
+    }
+    expect(counts.map((r) => r.calls.find((c) => c[0] === "eq" && c[1] === "capital")?.[2] ?? "all").sort()).toEqual([
+      "all",
+      "deposit",
+      "free",
+    ]);
+    expect(page).toMatchObject({ capitalCounts: { all: 7, free: 3, deposit: 2 }, total: 3, page: 1, pageSize: PAGE_SIZE });
+  });
+
+  it("applies no capital filter for all, and the total is every project in the tab", async () => {
+    const { db, recs } = curatedDb([curatedRow()]);
+    const page = await listCurated(db, "live_now", { capital: "all" }, 1, false);
+    expect(pageQuery(recs).calls.some((c) => c[0] === "eq" && c[1] === "capital")).toBe(false);
+    expect(page.total).toBe(7);
+  });
+
+  it("counts members' worth filter in the capital counts too", async () => {
+    const { db, recs } = curatedDb([]);
+    await listCurated(db, "live_now", { worth: ["low"], capital: "deposit" }, 1, true);
+    for (const rec of countQueries(recs)) expect(rec.calls).toContainEqual(["in", "worth_level", ["low"]]);
+  });
+
+  it("returns an empty page with the real total when the page is past the end", async () => {
+    const { db } = curatedDb({ data: null, error: { message: "Requested range not satisfiable", code: "PGRST103" } });
+    const page = await listCurated(db, "live_now", { capital: "deposit" }, 9, false);
+    expect(page).toMatchObject({ items: [], total: 2, page: 9, capitalCounts: { all: 7, free: 3, deposit: 2 } });
+  });
+
+  it("throws on other errors, from the page or from a count", async () => {
+    await expect(listCurated(curatedDb({ data: null, error: { message: "boom" } }).db, "live_now", {}, 1, false)).rejects.toThrow(/boom/);
+    const { db } = fakeDb((rec) =>
+      rec.calls.some((c) => c[0] === "select" && (c[2] as { head?: boolean } | undefined)?.head)
+        ? { data: null, error: { message: "permission denied for view curated_list" } }
+        : { data: [], error: null },
+    );
+    await expect(listCurated(db, "live_now", {}, 1, true)).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("getTrackRecord", () => {
+  const run = (stats: Record<string, unknown>) => fakeDb([{ data: [{ finished_at: "2026-10-10T23:30:00Z", stats }], error: null }]);
+  const stats = (total: number) => ({
+    track_record_total: total,
+    track_record_listed: 5,
+    track_record_no_token: 3,
+    track_record_risk_raised: 4,
+  });
+
+  it("reads the numbers of the latest successful run", async () => {
+    const { db, recs } = run(stats(12));
+    expect(await getTrackRecord(db)).toEqual({ total: 12, listed: 5, noToken: 3, riskRaised: 4 });
+    expect(recs[0]!.table).toBe("pipeline_runs");
+    expect(recs[0]!.calls).toContainEqual(["is", "stats->>run_error", null]);
+    expect(recs[0]!.calls).toContainEqual(["order", "finished_at", { ascending: false }]);
+  });
+
+  it("is shown from a population of 10", async () => {
+    expect(await getTrackRecord(run(stats(10)).db)).toEqual({ total: 10, listed: 5, noToken: 3, riskRaised: 4 });
+  });
+
+  it("is null below a population of 10", async () => {
+    expect(await getTrackRecord(run(stats(9)).db)).toBeNull();
+  });
+
+  it("takes the latest run without run_error", async () => {
+    const { db } = fakeDb([
+      {
+        data: [
+          { finished_at: "2026-10-11T23:30:00Z", stats: { ...stats(50), run_error: "boom" } },
+          { finished_at: "2026-10-10T23:30:00Z", stats: stats(11) },
+        ],
+        error: null,
+      },
+    ]);
+    expect((await getTrackRecord(db))?.total).toBe(11);
+  });
+
+  it("is null without a successful run or when the run has no track record numbers", async () => {
+    expect(await getTrackRecord(fakeDb([{ data: [], error: null }]).db)).toBeNull();
+    expect(await getTrackRecord(run({ docs: 3 }).db)).toBeNull();
+    expect(await getTrackRecord(run({ ...stats(12), track_record_listed: "5" }).db)).toBeNull();
+  });
+});
+
+describe("getRunSummary", () => {
+  it("reads checked and passed of the latest successful run, with its finish time", async () => {
+    const { db } = fakeDb([
+      {
+        data: [{ finished_at: "2026-10-10T23:30:00Z", stats: { curation_checked: 96, curation_passed: 12, curation_passed_live_now: 8 } }],
+        error: null,
+      },
+    ]);
+    expect(await getRunSummary(db)).toEqual({ checked: 96, passed: 12, at: new Date("2026-10-10T23:30:00Z") });
+  });
+
+  it("is null without a successful run or without curation numbers", async () => {
+    expect(await getRunSummary(fakeDb([{ data: [], error: null }]).db)).toBeNull();
+    expect(
+      await getRunSummary(fakeDb([{ data: [{ finished_at: "2026-10-10T23:30:00Z", stats: { docs: 1 } }], error: null }]).db),
+    ).toBeNull();
   });
 });

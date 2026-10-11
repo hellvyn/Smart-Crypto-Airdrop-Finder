@@ -465,9 +465,11 @@ describe("getFarmingBoard", () => {
     { project_id: PID, started_at: START, projects: { name: "Demo", slug: "demo" } },
     { project_id: PID2, started_at: "2026-10-10T18:00:00+00:00", projects: { name: "Other", slug: "other" } },
   ];
-  const board = (timezone: string | null, checks = CHECKS) =>
+  const board = (timezone: string | null, checks = CHECKS, latestCurations: unknown[] = []) =>
     fakeDb((rec) => {
       switch (rec.table) {
+        case "latest_curations":
+          return ok(latestCurations);
         case "profiles":
           return ok(timezone === null ? null : { timezone });
         case "farming_projects":
@@ -547,6 +549,34 @@ describe("getFarmingBoard", () => {
       streak: 2,
     });
     expect(demo!.heatmap.find((c) => c.day === "2026-10-22")).toEqual({ day: "2026-10-22", level: 3, done: 2, total: 2, upcoming: false });
+  });
+
+  it("ends the range on the date the project ended, from its latest curation", async () => {
+    const latest = [
+      { project_id: PID, ended_on: "2026-10-09" },
+      { project_id: PID2, ended_on: null },
+    ];
+    const { db, recs } = board("Asia/Jakarta", CHECKS, latest);
+    const [demo, other] = await getFarmingBoard(db, NOW);
+    const curations = recs.find((r) => r.table === "latest_curations")!;
+    expect(curations.calls).toContainEqual(["select", "project_id, ended_on"]);
+    expect(curations.calls).toContainEqual(["in", "project_id", [PID, PID2]]);
+    // Ended before the snapshot of 2026-10-20: the window stops at the end date.
+    expect(demo!.range).toEqual({ start: "2026-10-06", end: "2026-10-09", endKind: "ended", endsOn: "2026-10-09" });
+    expect(demo!.daysLeft).toBeNull();
+    expect(demo!.heatmap.at(-1)!.day).toBe("2026-10-09");
+    // A project that has not ended keeps its usual window.
+    expect(other!.range).toEqual({ start: "2026-10-11", end: "2027-10-10", endKind: null, endsOn: null });
+  });
+
+  it("fails rather than drop the end date when the curations cannot be read", async () => {
+    const { db } = fakeDb((rec) => {
+      if (rec.table === "latest_curations") return fail("42501", "permission denied for view latest_curations");
+      if (rec.table === "profiles") return ok({ timezone: "UTC" });
+      if (rec.table === "farming_projects") return ok(FARMING);
+      return ok([]);
+    });
+    await expect(getFarmingBoard(db, NOW)).rejects.toThrow(/permission denied/);
   });
 
   it("uses UTC days when the profile has no time zone or one this runtime does not know", async () => {

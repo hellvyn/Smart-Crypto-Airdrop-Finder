@@ -5,8 +5,13 @@ import type {
   RiskCheck,
   RiskLevel,
   RiskReason,
+  SignalKind,
   Status,
+  Tab,
+  WorthLevel,
 } from "@saf/core";
+
+export type { Tab, WorthLevel } from "@saf/core";
 
 export interface ProjectListItem {
   slug: string;
@@ -34,6 +39,103 @@ export interface ListFilters {
   status?: Status[];
   risk?: RiskLevel[];
   chain?: string;
+}
+
+/** Capital a project needs, from the `capital_required` facts of its sources (#52). */
+export type Capital = "free" | "deposit" | "unknown";
+/** The "Modal:" sub-filter of the list (#52). */
+export type CapitalFilter = "all" | "free" | "deposit";
+
+export interface CuratedFilters extends ListFilters {
+  /** Member-only: ignored for visitors. */
+  worth?: WorthLevel[];
+  capital?: CapitalFilter;
+}
+
+/** One signal of a curated project, as curation used it (signals older than 14 days are left out by the view). */
+export interface CuratedSignal {
+  kind: SignalKind;
+  value: Record<string, unknown>;
+  /** Only a verified signal may get a "verified" badge; claimed and reported backers never are. */
+  verified: boolean;
+  source: string;
+  observedAt: string;
+}
+
+/** A row of the curated list (`public_list` for visitors, `curated_list` for members). */
+export interface CuratedItem extends ProjectListItem {
+  tab: Tab;
+  /** `YYYY-MM-DD`, set when the project ended (#40). */
+  endedOn: string | null;
+  /** `computed_at` of the latest curation (#44). */
+  checkedAt: string;
+  signals: CuratedSignal[];
+  /** An open claim deadline and every claim link checked as official (#42). */
+  claimOpenChecked: boolean;
+  capital: Capital;
+  capitalMinUsd: number | null;
+  /** Member-only; always null for visitors. */
+  worthLevel: WorthLevel | null;
+}
+
+export const TABS: readonly Tab[] = ["live_now", "early_bets", "ended"];
+export const WORTH_LEVELS: readonly WorthLevel[] = ["high", "medium", "low", "insufficient_data"];
+export const SIGNAL_KINDS: readonly SignalKind[] = [
+  "vc_backer",
+  "tvl",
+  "coingecko_listed",
+  "curated_source",
+  "claimed_backer",
+  "reported_backer",
+];
+const CAPITAL_FILTERS: readonly CapitalFilter[] = ["all", "free", "deposit"];
+
+/** `?tab=`: one of the three tabs, "Live sekarang" for anything else. */
+export function parseTab(v: string | undefined): Tab {
+  return (TABS as readonly string[]).includes(v ?? "") ? (v as Tab) : "live_now";
+}
+
+/** `?modal=`: all, free or deposit; "Semua" for anything else. */
+export function parseCapital(v: string | undefined): CapitalFilter {
+  return (CAPITAL_FILTERS as readonly string[]).includes(v ?? "") ? (v as CapitalFilter) : "all";
+}
+
+const USD = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 });
+
+/** Row tag of the capital sub-filter (#52): "Gratis", "Butuh $1.000+", "Butuh $" or "Modal belum jelas". */
+export function capitalLabel(capital: Capital, minUsd: number | null): string {
+  if (capital === "free") return "Gratis";
+  if (capital === "unknown") return "Modal belum jelas";
+  return minUsd !== null && Number.isFinite(minUsd) && minUsd > 0 ? `Butuh $${USD.format(minUsd)}+` : "Butuh $";
+}
+
+/** The audience's time zone (WIB). The pipeline runs at 06.00 WIB, which is still the previous day in UTC. */
+const CHECK_ZONE = "Asia/Jakarta";
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** "Dicek ..." turns into a warning past this age (#44). */
+const CHECK_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
+
+const zoneDay = new Intl.DateTimeFormat("en-CA", { timeZone: CHECK_ZONE, year: "numeric", month: "2-digit", day: "2-digit" });
+const shortDate = new Intl.DateTimeFormat("id-ID", { timeZone: CHECK_ZONE, day: "numeric", month: "short" });
+const longDate = new Intl.DateTimeFormat("id-ID", { timeZone: CHECK_ZONE, day: "numeric", month: "short", year: "numeric" });
+
+/** "7 Okt", or "30 Des 2025" when the year is not the current one (WIB). */
+function checkDate(d: Date, now: Date): string {
+  return zoneDay.format(d).slice(0, 4) === zoneDay.format(now).slice(0, 4) ? shortDate.format(d) : longDate.format(d);
+}
+
+/**
+ * "Dicek ..." of a curated project (#44), by calendar day in WIB: "Dicek hari ini", "Dicek kemarin",
+ * "Dicek {n} hari lalu"; more than 48 hours ago "Belum dicek lagi sejak {tanggal}"; a frozen ended project (no longer
+ * re-checked) "Last check {tanggal}".
+ */
+export function checkedLabel(checkedAt: Date, now: Date, frozen: boolean): string {
+  if (frozen) return `Last check ${checkDate(checkedAt, now)}`;
+  if (now.getTime() - checkedAt.getTime() > CHECK_STALE_AFTER_MS) return `Belum dicek lagi sejak ${checkDate(checkedAt, now)}`;
+  const days = Math.round((Date.parse(zoneDay.format(now)) - Date.parse(zoneDay.format(checkedAt))) / DAY_MS);
+  if (days <= 0) return "Dicek hari ini";
+  if (days === 1) return "Dicek kemarin";
+  return `Dicek ${days} hari lalu`;
 }
 
 export const STATUSES: readonly Status[] = ["live", "announced", "speculative", "ended", "unknown"];
@@ -192,20 +294,27 @@ export function pickNextDeadline(
   return best;
 }
 
-/** Finish time of the latest run that finished without a `run_error` in its stats. */
-export function pickLastSuccessfulRun(
+/** The latest run that finished without a `run_error` in its stats: its finish time and stats. */
+export function pickLastSuccessfulRunWithStats(
   runs: { finishedAt: string | null; stats: unknown }[],
-): Date | null {
-  let best: Date | null = null;
+): { at: Date; stats: Record<string, unknown> } | null {
+  let best: { at: Date; stats: Record<string, unknown> } | null = null;
   for (const r of runs) {
     if (!r.finishedAt) continue;
     const stats = r.stats;
     if (stats && typeof stats === "object" && "run_error" in stats) continue;
     const d = new Date(r.finishedAt);
     if (Number.isNaN(d.getTime())) continue;
-    if (!best || d > best) best = d;
+    if (!best || d > best.at) {
+      best = { at: d, stats: stats && typeof stats === "object" && !Array.isArray(stats) ? (stats as Record<string, unknown>) : {} };
+    }
   }
   return best;
+}
+
+/** Finish time of the latest run that finished without a `run_error` in its stats. */
+export function pickLastSuccessfulRun(runs: { finishedAt: string | null; stats: unknown }[]): Date | null {
+  return pickLastSuccessfulRunWithStats(runs)?.at ?? null;
 }
 
 // ---- Paging ----
