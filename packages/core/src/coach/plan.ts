@@ -15,14 +15,14 @@ const reasonSchema = z.object({
   /** Indonesian, in the model's own words. Judged by `groundedAgainst`. */
   text: z.string().min(1).max(400),
   /** Exact words of the candidate's points or steps. Judged by `quoteInSource`. */
-  quote: z.string().min(1).max(600),
+  quote: z.string().min(8).max(600),
 });
 
 const recommendationSchema = z.object({
   project_id: z.string().min(1),
   reasons: z.array(reasonSchema).min(1).max(3),
   minutes_per_day: z.number().int().min(1).max(240),
-  /** One line on the capital this project needs for this member. */
+  /** One line on the capital this project needs for this member. Replaced by `serverCapitalNote` when not grounded. */
   capital_note: z.string().min(1).max(300),
 });
 
@@ -64,11 +64,11 @@ function contextOf(candidate: Candidate, profile: CoachProfile): string {
  * Keeps of `answer` what is safe to show `profile`'s member. A recommendation is dropped when:
  * - its `project_id` is not one of `candidates` (this member's list, not any listed project), or repeats an earlier one;
  * - none of its reasons survives: a reason goes when its quote is not found by `quoteInSource` in that candidate's
- *   points or steps, or when its text fails `groundedAgainst` the candidate's context;
- * - its capital note fails `groundedAgainst` the same context.
- * Em dashes in the texts become commas (`cleanStyle`; quotes stay verbatim). The plan is then cut to 5 and, if its
- * `minutes_per_day` add up to more than the profile's budget, shortened from the end until they fit. `dropped` counts
- * the recommendations that did not make it, whatever the reason.
+ *   points or steps, or when its text fails `groundedAgainst` the candidate's context.
+ * A capital note that fails `groundedAgainst` does not drop the item: it is replaced by `serverCapitalNote`, written from
+ * the candidate's own capital tag. Em dashes in the texts become commas (`cleanStyle`; quotes stay verbatim). The plan
+ * is then cut to 5, and the minute budget keeps recommendations in order, skipping any that would take the total past
+ * the profile's `minutes_per_day`. `dropped` counts the recommendations that did not make it, whatever the reason.
  */
 export function validatePlan(
   answer: CoachPlanAnswer,
@@ -87,20 +87,35 @@ export function validatePlan(
     const reasons = rec.reasons
       .filter((r) => sources.some((source) => quoteInSource(r.quote, source)) && groundedAgainst(r.text, context))
       .map((r) => ({ text: cleanStyle(r.text), quote: r.quote }));
-    if (reasons.length === 0 || !groundedAgainst(rec.capital_note, context)) continue;
+    if (reasons.length === 0) continue;
     seen.add(rec.project_id);
     kept.push({
       project_id: rec.project_id,
       reasons,
       minutes_per_day: rec.minutes_per_day,
-      capital_note: cleanStyle(rec.capital_note),
+      capital_note: groundedAgainst(rec.capital_note, context)
+        ? cleanStyle(rec.capital_note)
+        : serverCapitalNote(candidate),
     });
   }
 
-  const recommendations = kept.slice(0, MAX_RECOMMENDATIONS);
-  let minutes = recommendations.reduce((sum, r) => sum + r.minutes_per_day, 0);
-  while (recommendations.length > 0 && minutes > profile.minutes_per_day) {
-    minutes -= recommendations.pop()!.minutes_per_day;
+  const recommendations: ValidPlanItem[] = [];
+  let minutes = 0;
+  for (const rec of kept.slice(0, MAX_RECOMMENDATIONS)) {
+    if (minutes + rec.minutes_per_day > profile.minutes_per_day) continue;
+    minutes += rec.minutes_per_day;
+    recommendations.push(rec);
   }
   return { recommendations, dropped: answer.recommendations.length - recommendations.length };
+}
+
+/** The capital note the server writes from `candidate`'s capital tag, used when the model's note is not grounded. */
+export function serverCapitalNote(candidate: Candidate): string {
+  if (candidate.capital === "free") return "Gratis, mungkin tetap butuh sedikit gas kalau di mainnet.";
+  if (candidate.capital === "deposit") {
+    return candidate.capitalMinUsd === null
+      ? "Butuh deposit, minimumnya belum disebut."
+      : `Butuh deposit minimal $${candidate.capitalMinUsd}.`;
+  }
+  return "Modal belum jelas, cek sumbernya.";
 }

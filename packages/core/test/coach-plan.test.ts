@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candidate } from "../src/coach/candidates.js";
-import { coachPlanAnswerSchema, validatePlan, type CoachPlanAnswer } from "../src/coach/plan.js";
+import { coachPlanAnswerSchema, serverCapitalNote, validatePlan, type CoachPlanAnswer } from "../src/coach/plan.js";
 import { coachProfileSchema, type CoachProfile } from "../src/coach/profile.js";
 
 function cand(id: string, over: Partial<Candidate> = {}): Candidate {
@@ -60,12 +60,14 @@ describe("coachPlanAnswerSchema", () => {
     expect(coachPlanAnswerSchema.safeParse(answer(rec("a"), rec("b"), rec("c"), rec("d"), rec("e"), rec("f"))).success).toBe(false);
   });
   it("needs 1 to 3 reasons, each with text and quote", () => {
-    const r = { text: "x", quote: "y" };
+    const r = { text: "x", quote: "y".repeat(8) };
     const with_ = (reasons: unknown[]) => ({ recommendations: [rec("a"), rec("b"), { ...rec("c"), reasons }] });
     expect(coachPlanAnswerSchema.safeParse(with_([])).success).toBe(false);
     expect(coachPlanAnswerSchema.safeParse(with_([r, r, r])).success).toBe(true);
     expect(coachPlanAnswerSchema.safeParse(with_([r, r, r, r])).success).toBe(false);
     expect(coachPlanAnswerSchema.safeParse(with_([{ text: "x" }])).success).toBe(false);
+    // A quote shorter than 8 characters would match almost any source text, so it grounds nothing.
+    expect(coachPlanAnswerSchema.safeParse(with_([{ text: "x", quote: "y".repeat(7) }])).success).toBe(false);
   });
   it("needs minutes_per_day as an integer from 1 to 240", () => {
     const with_ = (m: number) => ({ recommendations: [rec("a"), rec("b"), rec("c", { minutes_per_day: m })] });
@@ -142,10 +144,19 @@ describe("validatePlan", () => {
     expect(validatePlan(answer(ok), [c], profile()).recommendations).toHaveLength(1);
   });
 
-  it("drops a recommendation whose capital note holds a link", () => {
+  it("replaces a capital note that holds a link with the server's note from the capital tag", () => {
     const out = validatePlan(answer(rec("a", { capital_note: "Cek evil-site.xyz dulu." }), rec("b")), pool, profile());
-    expect(out.recommendations.map((r) => r.project_id)).toEqual(["b"]);
-    expect(out.dropped).toBe(1);
+    expect(out.recommendations.map((r) => r.project_id)).toEqual(["a", "b"]);
+    expect(out.recommendations[0]!.capital_note).toBe(serverCapitalNote(pool.find((c) => c.id === "a")!));
+    expect(JSON.stringify(out.recommendations)).not.toContain("evil-site");
+    expect(out.dropped).toBe(0);
+  });
+
+  it("writes the server capital note from each capital tag", () => {
+    const a = pool.find((c) => c.id === "a")!;
+    expect(serverCapitalNote({ ...a, capital: "free", capitalMinUsd: null })).toBe("Gratis, mungkin tetap butuh sedikit gas kalau di mainnet.");
+    expect(serverCapitalNote({ ...a, capital: "deposit", capitalMinUsd: 50 })).toBe("Butuh deposit minimal $50.");
+    expect(serverCapitalNote({ ...a, capital: "unknown", capitalMinUsd: null })).toBe("Modal belum jelas, cek sumbernya.");
   });
 
   it("replaces em dashes in reason text and capital note", () => {
@@ -163,12 +174,18 @@ describe("validatePlan", () => {
     expect(out.dropped).toBe(1);
   });
 
-  it("trims the plan from the end to the minute budget", () => {
+  it("keeps the order and skips any recommendation that would go past the minute budget", () => {
     const plan = answer(rec("a", { minutes_per_day: 15 }), rec("b", { minutes_per_day: 10 }), rec("c", { minutes_per_day: 10 }), rec("d", { minutes_per_day: 5 }));
     const out = validatePlan(plan, pool, profile({ minutes_per_day: 30 }));
-    expect(out.recommendations.map((r) => r.project_id)).toEqual(["a", "b"]);
+    expect(out.recommendations.map((r) => r.project_id)).toEqual(["a", "b", "d"]);
     expect(out.recommendations.reduce((s, r) => s + r.minutes_per_day, 0)).toBeLessThanOrEqual(30);
-    expect(out.dropped).toBe(2);
+    expect(out.dropped).toBe(1);
+  });
+
+  it("does not empty the plan when the first recommendation alone is over the budget", () => {
+    const plan = answer(rec("a", { minutes_per_day: 60 }), rec("b", { minutes_per_day: 10 }), rec("c", { minutes_per_day: 10 }));
+    const out = validatePlan(plan, pool, profile({ minutes_per_day: 30 }));
+    expect(out.recommendations.map((r) => r.project_id)).toEqual(["b", "c"]);
   });
 
   it("keeps a plan that is exactly on the budget", () => {

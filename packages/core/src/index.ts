@@ -65,6 +65,6 @@ export { COACH_CAPITAL_BANDS, COACH_GOALS, COACH_LEVELS, COACH_MINUTES, coachPro
 export type { CoachProfile } from "./coach/profile.js";
 export { MAX_CANDIDATES, selectCandidates } from "./coach/candidates.js";
 export type { Candidate } from "./coach/candidates.js";
-export { MAX_RECOMMENDATIONS, coachPlanAnswerSchema, validatePlan } from "./coach/plan.js";
+export { MAX_RECOMMENDATIONS, coachPlanAnswerSchema, serverCapitalNote, validatePlan } from "./coach/plan.js";
 export type { CoachPlanAnswer, ValidPlanItem } from "./coach/plan.js";
 export { BANNED_LINE_PREFIX, LANGKAH_NOL, buildCoachSystemPrompt } from "./coach/prompt.js";

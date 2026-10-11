@@ -20,7 +20,19 @@ export const coachProfileSchema = z
     wallet_count: z.number().int().min(1).max(10).nullable().default(null),
     minutes_per_day: z.union([z.literal(15), z.literal(30), z.literal(60), z.literal(120)]),
     goal: z.enum(COACH_GOALS),
-    chains: z.array(z.string().min(1).max(40)).max(10).default([]),
+    // Chain names only: letters, digits, spaces, dots and dashes, and no run of 25+ letters/digits (an address or a
+    // key pasted into the field never reaches the prompt).
+    chains: z
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(40)
+          .regex(/^[\p{L}\p{N} .-]+$/u)
+          .refine((chain) => !/[\p{L}\p{N}]{25,}/u.test(chain), "not a chain name"),
+      )
+      .max(10)
+      .default([]),
   })
   .superRefine((profile, ctx) => {
     if (profile.has_wallet && profile.wallet_count === null) {

@@ -48,12 +48,14 @@ const PEMULA = [
   "Member ini Pemula.",
   "- Pakai kalimat pendek, satu ide per kalimat.",
   "- Jelaskan setiap istilah crypto pada saat pertama dipakai, memakai GLOSARIUM.",
-  "- Awali rencana dengan pengingat keamanan: seed phrase dan private key tidak pernah dibagi ke siapa pun, connect wallet cuma di situs resmi, dan jangan menyetujui transaksi yang tidak kamu mengerti.",
+  "- Di chat, ingatkan keamanan saat relevan: seed phrase dan private key tidak pernah dibagi ke siapa pun, connect wallet cuma di situs resmi, dan jangan menyetujui transaksi yang tidak kamu mengerti.",
+  "- Di rencana JSON, jangan tulis pengingat itu. Aplikasi sudah menampilkannya di atas rencana.",
 ].join("\n");
 
 const NO_WALLET = [
   "Member ini belum punya wallet.",
-  `Awali jawabanmu dengan kalimat ini: "${LANGKAH_NOL}". Lalu jelaskan wallet dan seed phrase memakai GLOSARIUM.`,
+  `Di chat, awali jawaban pertamamu dengan kalimat ini: "${LANGKAH_NOL}". Lalu jelaskan wallet dan seed phrase memakai GLOSARIUM.`,
+  "Di rencana JSON, jangan tulis kalimat itu. Aplikasi sudah menampilkannya di atas rencana.",
 ].join("\n");
 
 const SYBIL = "Member punya lebih dari 3 wallet. Ingatkan bahwa memakai banyak wallet berisiko dianggap sybil dan dicoret dari airdrop.";
