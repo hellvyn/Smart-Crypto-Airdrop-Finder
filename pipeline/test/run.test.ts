@@ -2793,4 +2793,93 @@ describe("runDaily curation", () => {
     expect(repo.curations).toHaveLength(2);
     expect(stats.run_error).toBeUndefined();
   });
+
+  describe("track record (#43)", () => {
+    const LLAMA_DEEPBOOK = {
+      name: "DeepBook", slug: "deepbook", url: "https://deepbook.tech", chains: ["Sui"], tvl: 3e7, change_7d: 1, category: "Dexs", gecko_id: "deepbook", symbol: "DEEP",
+    };
+    /** basePages with DefiLlama listing DeepBook with a CoinGecko id (its token trades). */
+    const listedPages = () => {
+      const pages = basePages();
+      pages[PROTOCOLS] = { status: 200, body: JSON.stringify([...PROTOCOL_LIST, LLAMA_DEEPBOOK]) };
+      return pages;
+    };
+    const trackRecordOf = (stats: Record<string, number>) => ({
+      total: stats.track_record_total,
+      listed: stats.track_record_listed,
+      noToken: stats.track_record_no_token,
+      riskRaised: stats.track_record_risk_raised,
+    });
+
+    it("stores with each curation whether the token traded, and null when DefiLlama was not checked", async () => {
+      const { repo, deps, config } = setup({ pages: listedPages() });
+      await runDaily(deps, config);
+      expect((await latestCurationOf(repo, "deepbook"))?.coingeckoListed).toBe(true);
+      expect((await latestCurationOf(repo, "ink"))?.coingeckoListed).toBe(false);
+
+      // DefiLlama down 15 days later: the stored listing is too old to use, and nothing was checked.
+      const outage = basePages();
+      outage[PROTOCOLS] = { status: 503, body: "" };
+      await runDaily({ ...deps, http: fakeHttp(outage), now: () => new Date(NOW.getTime() + 15 * DAY) }, config);
+      expect((await latestCurationOf(repo, "deepbook"))?.coingeckoListed).toBeNull();
+      expect((await latestCurationOf(repo, "ink"))?.coingeckoListed).toBeNull();
+    });
+
+    it("counts a project that passed before its token traded once it is in the ended tab", async () => {
+      const { deps, config } = setup({ chat: fakeChat(deepbookClaimUntil("2026-10-12")) });
+
+      const live = await runDaily(deps, config);
+      expect(trackRecordOf(live)).toEqual({ total: 0, listed: 0, noToken: 0, riskRaised: 0 });
+
+      const ended = await runDaily({ ...deps, now: () => at("2026-10-15") }, config);
+      expect(trackRecordOf(ended)).toEqual({ total: 1, listed: 0, noToken: 1, riskRaised: 0 });
+    });
+
+    it("counts a token that started trading after the first pass as listed", async () => {
+      const { deps, config } = setup({ chat: fakeChat(deepbookClaimUntil("2026-10-12")) });
+      await runDaily(deps, config);
+
+      const stats = await runDaily({ ...deps, http: fakeHttp(listedPages()), now: () => at("2026-10-15") }, config);
+
+      expect(trackRecordOf(stats)).toEqual({ total: 1, listed: 1, noToken: 0, riskRaised: 0 });
+    });
+
+    it("leaves out a project whose token already traded when it first passed", async () => {
+      const { repo, deps, config } = setup({ pages: listedPages(), chat: fakeChat(deepbookClaimUntil("2026-10-12")) });
+      await runDaily(deps, config);
+
+      const stats = await runDaily({ ...deps, now: () => at("2026-10-15") }, config);
+
+      expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: true, tab: "ended" });
+      expect(trackRecordOf(stats)).toEqual({ total: 0, listed: 0, noToken: 0, riskRaised: 0 });
+    });
+
+    it("counts a project that turned high risk after it passed, then ended in the list", async () => {
+      const { repo, deps, config, http } = setup({ chat: fakeChat(deepbookClaimUntil("2026-10-12")) });
+      await runDaily(deps, config);
+      await runDaily({ ...deps, http: phishingFor(http, "deepbook.tech"), now: () => at("2026-10-11") }, config);
+      expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: false, statusAt: "live" });
+      await runDaily({ ...deps, now: () => at("2026-10-12") }, config);
+
+      const stats = await runDaily({ ...deps, now: () => at("2026-10-15") }, config);
+
+      expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: true, tab: "ended" });
+      expect(trackRecordOf(stats)).toEqual({ total: 1, listed: 0, noToken: 1, riskRaised: 1 });
+    });
+
+    it("keeps counting an ended project after it is no longer scored", async () => {
+      const { repo, deps, config } = setup({ chat: fakeChat(deepbookClaimUntil("2026-10-12")) });
+      await runDaily(deps, config);
+      await runDaily({ ...deps, now: () => at("2026-10-15") }, config);
+
+      // 91 days after it ended: DeepBook is frozen, and with DefiLlama listing nothing no project is scored on this run.
+      const pages = basePages();
+      pages[PROTOCOLS] = { status: 200, body: "[]" };
+      const stats = await runDaily({ ...deps, http: fakeHttp(pages), now: () => at("2027-01-11") }, config);
+
+      expect(stats.curation_checked).toBe(0);
+      expect((await latestCurationOf(repo, "deepbook"))?.computedAt).toEqual(at("2026-10-15"));
+      expect(trackRecordOf(stats)).toEqual({ total: 1, listed: 0, noToken: 1, riskRaised: 0 });
+    });
+  });
 });

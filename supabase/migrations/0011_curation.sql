@@ -2,7 +2,8 @@
 -- service role (bypasses RLS). What the web roles may read is locked in the database, not only in the UI, because the
 -- anon key is public (spec §15.5, #45):
 --   anon + authenticated: project_signals, link_checks, tasks.text_id, ai_analyses of kind 'contradictions';
---   anon:                 only the non-worth columns of curations (worth_level, reasons, coverage are member-only);
+--   anon:                 only the non-worth columns of curations (worth_level, worth_points, reasons, coverage are
+--                         member-only);
 --   authenticated:        every curations column and every ai_analyses kind ('analyst' and 'scam' are member-only, #54);
 --   nobody:               vc_portfolios, alphadrops_raises, claim_pages (service role only).
 
@@ -81,6 +82,10 @@ create table curations (
   project_id uuid not null references projects (id) on delete cascade,
   passed boolean not null,
   worth_level text check (worth_level in ('high', 'medium', 'low', 'insufficient_data')),
+  -- The point total behind curations.worth_level, so the owner's worth review (gate G10) can show why a project ranks
+  -- where it does. Null on rows stored before this column existed. Member-only like worth_level: not in anon's
+  -- column-level grant below.
+  worth_points integer,
   -- Null when the project did not pass.
   tab text check (tab in ('live_now', 'early_bets', 'ended')),
   -- Project status (after expireStatus) when the curation was computed; basis of "passed before it ended" (#40).
@@ -90,8 +95,12 @@ create table curations (
   coverage jsonb not null default '{}',
   -- Message of the first `fail` reason, null when passed (#55): the public reason a project is not listed.
   public_fail_reason text,
+  -- The project had a verified coingecko_listed signal on this run (its token traded); null when that is unknown
+  -- (DefiLlama not checked and no listing known). Read from the first passing curation for the track record (#43).
+  coingecko_listed boolean,
   computed_at timestamptz not null,
-  seq bigint generated always as identity
+  seq bigint generated always as identity,
+  check (passed or tab is null)
 );
 create index curations_project_computed_idx on curations (project_id, computed_at desc);
 
@@ -120,9 +129,11 @@ create policy "public read" on project_signals for select to anon, authenticated
 create policy "public read" on link_checks for select to anon, authenticated using (true);
 
 -- curations: members read every column; anon reads the non-worth columns only. A column-level REVOKE does not take
--- away a table-level grant, so anon gets no table-level SELECT at all (revoked above), only these columns.
+-- away a table-level grant, so anon gets no table-level SELECT at all (revoked above), only these columns: a column
+-- added later is not readable by anon unless it is listed here. coingecko_listed is public like the CoinGecko badge
+-- and the track record it feeds (#43, §15.5).
 grant select on curations to authenticated;
-grant select (id, project_id, passed, tab, status_at, ended_on, public_fail_reason, computed_at, seq)
+grant select (id, project_id, passed, tab, status_at, ended_on, public_fail_reason, coingecko_listed, computed_at, seq)
   on curations to anon;
 create policy "public read" on curations for select to anon, authenticated using (true);
 

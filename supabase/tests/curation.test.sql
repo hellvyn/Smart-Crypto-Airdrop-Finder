@@ -2,13 +2,13 @@
 -- raises, claim link checks, the claim page cache, AI analyses, curation history, tasks.text_id and the `curated`
 -- project change.
 -- Public vs member is locked in the database (#45, #54, #55): anon reads signals, link checks, the non-worth curation
--- columns and `contradictions` analyses only; authenticated reads every curation column and every analysis kind;
+-- columns (with coingecko_listed, the track record input of #43) and `contradictions` analyses only; authenticated reads every curation column and every analysis kind;
 -- vc_portfolios, alphadrops_raises and claim_pages are service role only; the web roles write nothing.
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(69);
+select plan(73);
 
 -- Rows visible to the current role. A refused read (no privilege, 42501) is what PostgREST answers with an error and
 -- no data, so it counts as zero rows, the same as rows filtered out by RLS.
@@ -43,12 +43,13 @@ insert into ai_analyses (project_id, kind, input_hash, result, model, prompt_ver
   ('c0000000-0000-4000-8000-0000000000b1', 'analyst', 'h1', '{"verdict": "garap"}', 'm', 'analyst-1'),
   ('c0000000-0000-4000-8000-0000000000b1', 'scam', 'h1', '{"patterns": []}', 'm', 'scam-1'),
   ('c0000000-0000-4000-8000-0000000000b1', 'contradictions', 'h1', '{"items": []}', 'm', 'contradictions-1');
-insert into curations (project_id, passed, worth_level, tab, status_at, ended_on, reasons, coverage, public_fail_reason, computed_at) values
+insert into curations (project_id, passed, worth_level, tab, status_at, ended_on, reasons, coverage, public_fail_reason,
+                       coingecko_listed, computed_at) values
   ('c0000000-0000-4000-8000-0000000000b1', true, 'high', 'live_now', 'live', null,
-   '[{"code": "tvl_high", "message": "TVL di atas $100 juta", "kind": "worth"}]', '{"defillama": true}', null, now()),
+   '[{"code": "tvl_high", "message": "TVL di atas $100 juta", "kind": "worth"}]', '{"defillama": true}', null, true, now()),
   ('c0000000-0000-4000-8000-0000000000b2', false, null, null, 'live', null,
    '[{"code": "insufficient_checks", "message": "Cek kunci belum lengkap", "kind": "fail"}]', '{}',
-   'Cek kunci belum lengkap', now());
+   'Cek kunci belum lengkap', null, now());
 
 -- ---------- shape ----------
 -- 1. RLS on every new table.
@@ -67,14 +68,16 @@ select results_eq(
 select col_type_is('public', 'tasks', 'text_id', 'text', 'tasks.text_id is text');
 select col_is_null('public', 'tasks', 'text_id', 'tasks.text_id is nullable');
 
--- 4. curations columns (P5.T13 appends coingecko_listed later in this same migration).
+-- 4. curations columns.
 select columns_are('public', 'curations',
   array['id', 'project_id', 'passed', 'worth_level', 'tab', 'status_at', 'ended_on', 'reasons', 'coverage',
-        'public_fail_reason', 'computed_at', 'seq', 'worth_points'],
-  'curations has the spec §4.2 columns plus public_fail_reason (#55) and worth_points (0012)');
-
+        'public_fail_reason', 'computed_at', 'seq', 'worth_points', 'coingecko_listed'],
+  'curations has the spec §4.2 columns plus public_fail_reason (#55), worth_points and coingecko_listed (#43)');
 -- 4a. claim_pages: the text of a claim portal page as last fetched (#56), one row per url.
 select columns_are('public', 'claim_pages', array['url', 'text', 'fetched_at'], 'claim_pages caches url, text, fetched_at');
+-- 4b-4c. coingecko_listed: null when it is not known whether the token traded on that run.
+select col_type_is('public', 'curations', 'coingecko_listed', 'boolean', 'curations.coingecko_listed is boolean');
+select col_is_null('public', 'curations', 'coingecko_listed', 'curations.coingecko_listed is nullable');
 
 -- 5. Defaults of curations.reasons and coverage.
 insert into curations (project_id, passed, status_at, computed_at) values
@@ -137,6 +140,11 @@ select throws_ok(
   $$ insert into curations (project_id, passed, status_at, computed_at) values
        ('c0000000-0000-4000-8000-0000000000b2', true, 'expired', now()) $$,
   '23514', null, 'an unknown status_at violates the check constraint');
+-- 16a. Only a passing curation has a tab.
+select throws_ok(
+  $$ insert into curations (project_id, passed, tab, status_at, computed_at) values
+       ('c0000000-0000-4000-8000-0000000000b2', false, 'live_now', 'live', now()) $$,
+  '23514', null, 'a failed curation with a tab violates the check constraint');
 
 -- ---------- checks: other tables ----------
 -- 17-20.
@@ -181,10 +189,10 @@ select results_eq(
      from information_schema.column_privileges
      where table_schema = 'public' and table_name = 'curations' and grantee = 'anon'
      order by 1, 2 $$,
-  $$ values ('computed_at'::text, 'SELECT'::text), ('ended_on', 'SELECT'), ('id', 'SELECT'), ('passed', 'SELECT'),
-            ('project_id', 'SELECT'), ('public_fail_reason', 'SELECT'), ('seq', 'SELECT'), ('status_at', 'SELECT'),
-            ('tab', 'SELECT') $$,
-  'anon may select exactly id, project_id, passed, tab, status_at, ended_on, public_fail_reason, computed_at, seq');
+  $$ values ('coingecko_listed'::text, 'SELECT'::text), ('computed_at', 'SELECT'), ('ended_on', 'SELECT'), ('id', 'SELECT'),
+            ('passed', 'SELECT'), ('project_id', 'SELECT'), ('public_fail_reason', 'SELECT'), ('seq', 'SELECT'),
+            ('status_at', 'SELECT'), ('tab', 'SELECT') $$,
+  'anon may select exactly id, project_id, passed, tab, status_at, ended_on, public_fail_reason, coingecko_listed, computed_at, seq');
 
 -- ---------- anon ----------
 set local role anon;
@@ -197,8 +205,16 @@ select results_eq(
   $$ values (true, 'live_now'::text, null::text), (false, null::text, 'Cek kunci belum lengkap'::text) $$,
   'anon reads passed, tab and public_fail_reason of curations');
 select lives_ok(
-  $$ select id, project_id, passed, tab, status_at, ended_on, public_fail_reason, computed_at, seq from curations $$,
+  $$ select id, project_id, passed, tab, status_at, ended_on, public_fail_reason, coingecko_listed, computed_at, seq
+     from curations $$,
   'anon can select every public curations column');
+select results_eq(
+  $$ select coingecko_listed from curations
+     where project_id in ('c0000000-0000-4000-8000-0000000000b1', 'c0000000-0000-4000-8000-0000000000b2')
+       and computed_at > now() - interval '1 hour'
+     order by passed desc $$,
+  $$ values (true), (null::boolean) $$,
+  'anon reads coingecko_listed of curations (track record input, #43)');
 select throws_ok($$ select worth_level from curations $$, '42501', null, 'anon cannot select curations.worth_level');
 select throws_ok($$ select worth_points from curations $$, '42501', null, 'anon cannot select curations.worth_points');
 select throws_ok($$ select reasons from curations $$, '42501', null, 'anon cannot select curations.reasons');

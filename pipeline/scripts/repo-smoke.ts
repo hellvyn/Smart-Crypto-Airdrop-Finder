@@ -191,7 +191,7 @@ async function main(): Promise<void> {
 
   // risk
   assert.equal(await repo.latestRiskLevel(p.id), null);
-  const assessment = (level: "low" | "high") => ({ level, points: 1, reasons: [], checks: [] });
+  const assessment = (level: "low" | "high" | "critical") => ({ level, points: 1, reasons: [], checks: [] });
   await repo.saveRiskAssessment(p.id, assessment("low"), new Date(T0.getTime() + 1000));
   await repo.saveRiskAssessment(p.id, assessment("low"), new Date(T0.getTime() + 2000));
   await repo.saveRiskAssessment(p.id, assessment("high"), new Date(T0.getTime() + 3000));
@@ -322,7 +322,7 @@ async function main(): Promise<void> {
   assert.equal(await repo.latestAiAnalysis(p.id, "scam"), null);
 
   // curations
-  const passing = { passed: true, worthLevel: "medium" as const, worthPoints: 2, tab: "live_now" as const, statusAt: "live" as const, endedOn: null, reasons: [], coverage: { defillama: true } };
+  const passing = { passed: true, worthLevel: "medium" as const, worthPoints: 2, tab: "live_now" as const, statusAt: "live" as const, endedOn: null, reasons: [], coverage: { defillama: true }, coingeckoListed: false };
   const failing = { ...passing, passed: false, worthLevel: null, worthPoints: null, tab: null, reasons: [
     { code: "official_domain", message: "Domain resmi tercatat", kind: "pass" as const },
     { code: "insufficient_checks", message: "Cek kunci belum lengkap", kind: "fail" as const },
@@ -342,6 +342,26 @@ async function main(): Promise<void> {
   const failReasons = await admin.from("curations").select("public_fail_reason").eq("project_id", p.id).order("seq");
   assert.equal(failReasons.error, null);
   assert.deepEqual((failReasons.data ?? []).map((r) => r.public_fail_reason), [null, null, "Cek kunci belum lengkap"]);
+
+  // track record history (#43), on the twin: first pass (earlier insert wins a tie), latest tab, listing now, and only
+  // a high/critical risk after the first pass counts.
+  const at = (s: number) => new Date(T0.getTime() + s * 1000);
+  const historyOf = async (id: string) => (await repo.listCurationHistoryForTrackRecord()).find((h) => h.projectId === id);
+  await repo.saveCuration(twin.id, failing, at(20));
+  assert.equal(await historyOf(twin.id), undefined);
+  await repo.saveRiskAssessment(twin.id, assessment("critical"), at(21));
+  await repo.saveCuration(twin.id, { ...passing, coingeckoListed: null }, at(21));
+  await repo.saveCuration(twin.id, { ...passing, coingeckoListed: true }, at(21));
+  assert.deepEqual(await historyOf(twin.id), {
+    projectId: twin.id, firstPassAt: at(21).toISOString(), listedAtFirstPass: null, tab: "live_now", coingeckoListed: false, riskRaisedAfterPass: false,
+  });
+  await repo.saveRiskAssessment(twin.id, assessment("high"), at(22));
+  await repo.saveRiskAssessment(twin.id, assessment("low"), at(23));
+  await repo.saveCuration(twin.id, { ...passing, statusAt: "ended", tab: "ended", endedOn: "2026-10-05" }, at(23));
+  await repo.replaceSignals(twin.id, [{ kind: "coingecko_listed", value: { gecko_id: "smoke" }, source: "defillama", verified: true }], at(23));
+  assert.deepEqual(await historyOf(twin.id), {
+    projectId: twin.id, firstPassAt: at(21).toISOString(), listedAtFirstPass: null, tab: "ended", coingeckoListed: true, riskRaisedAfterPass: true,
+  });
 
   // runs
   const runId = await repo.startRun(T0);

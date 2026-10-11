@@ -43,6 +43,8 @@ export type {
 } from "./curate/types.js";
 export { curate, STRONG_SCAM_PATTERNS } from "./curate/curate.js";
 export { worth } from "./curate/worth.js";
+export { trackRecord } from "./curate/track-record.js";
+export type { TrackRecord, TrackRecordProject } from "./curate/track-record.js";
 export { analystSchema, postProcessAnalyst } from "./curate/analyst.js";
 export type { AnalystAnswer, AnalystVerdict } from "./curate/analyst.js";
 export { FORBIDDEN_PHRASES, forbiddenPhrases, replaceEmDash } from "./curate/ai-style.js";
