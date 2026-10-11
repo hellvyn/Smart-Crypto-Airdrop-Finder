@@ -467,3 +467,18 @@ Ruling: T4 wires `getRunSummary` and `getTrackRecord` into the landing — P7.T4
   - The combined release script was first tested on a local mirror (0001–0006 + 0008 + 0009): it applied cleanly and pgTAP passed 453/453.
   - PR hellvyn/Smart-Airdrop-Finder#3 merged right after 0013 (merge commit cdf43f3); the production deploy follows from main.
   - `daily.yml` dispatched once on main.
+- List cards with logos (owner request 2026-10-11): complete (commits 3e23e16, 30b56af, 8c08297, 6848600, 7b95fb0 fix round 1; review opus with a security focus, re-review sonnet).
+  - Data and pipeline:
+    - 0016: `project_logos` (raster mime + magic bytes + ≤64 KB checked in SQL, public read) and `project_logo_attempts` (service-role only). `logo_source` is added to `public_list`/`curated_list` (0012 body verbatim; `curated_list` lists its columns explicitly).
+    - A pipeline `logos` stage picks from DefiLlama icons, then X avatar via unavatar.io (≤20 per run), then favicon (clean official domain only), then a letter tile. Listed projects go first, a failed attempt waits 7 days, and a reached cap falls through to favicon.
+  - Web:
+    - `/logo/[id]` serves cookie-less with nosniff and a sandbox CSP.
+    - Cards are 3/2/1 columns.
+    - The landing shows "Segera" on Morning briefing and Farming Coach.
+  - Also merged: the duplicate claimed-backer row fix (e42b4cf).
+  - Gates: core 536, pipeline 810, web 738 · pgTAP 502 · e2e 105/105.
+- List cards: minor (deferred):
+  - A storage failure records no failed attempt.
+  - A thrown `stored`-attempt write double-counts `logos_failed`.
+  - The DNS/private-IP gap was judged acceptable (TLS + raster-only + ephemeral runner).
+- List cards: OPEN owner decision: unavatar's free plan asks for a followable link, while the cards show plain text "Logo: unavatar.io".
