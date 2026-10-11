@@ -26,6 +26,7 @@ afterEach(cleanup);
 
 function item(over: Partial<CuratedItem> = {}): CuratedItem {
   return {
+    id: "5b3c1a2e-0000-4000-8000-0000000000aa",
     slug: "demo",
     name: "Demo Protocol",
     status: "live",
@@ -42,6 +43,7 @@ function item(over: Partial<CuratedItem> = {}): CuratedItem {
     capitalMinUsd: null,
     keyChecksRan: 4,
     worthLevel: null,
+    logoSource: null,
     ...over,
   };
 }
@@ -165,7 +167,7 @@ describe("/airdrops", () => {
     expect(getChangeFeed.mock.calls[0]![1]).toBe("u1");
     const section = screen.getByRole("region", { name: "Perubahan sejak kunjungan terakhir" });
     expect(within(section).getByText("Udah ended")).toBeTruthy();
-    const firstRow = screen.getAllByTestId("project-row")[0]!;
+    const firstRow = screen.getAllByTestId("project-card")[0]!;
     expect(section.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -174,5 +176,25 @@ describe("/airdrops", () => {
     await page();
     expect(getChangeFeed).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("region", { name: "Perubahan sejak kunjungan terakhir" })).toBeNull();
+  });
+});
+
+describe("AirdropsPage cards", () => {
+  it("lays the list out as a grid of cards, one per project, in the order of the query", async () => {
+    listCurated.mockResolvedValue(
+      curatedPage([
+        item({ slug: "a", name: "Alpha", logoSource: "defillama" }),
+        item({ slug: "b", name: "Beta", id: "5b3c1a2e-0000-4000-8000-0000000000bb" }),
+        item({ slug: "c", name: "Gamma", logoSource: "x_avatar", id: "5b3c1a2e-0000-4000-8000-0000000000cc" }),
+      ]),
+    );
+    await page();
+    const grid = screen.getByTestId("project-cards");
+    const cards = within(grid).getAllByTestId("project-card");
+    expect(cards.map((c) => c.getAttribute("data-slug"))).toEqual(["a", "b", "c"]);
+    expect(within(cards[0]!).getByRole("img", { name: "Logo Alpha" }).getAttribute("src")).toBe("/logo/5b3c1a2e-0000-4000-8000-0000000000aa");
+    expect(within(cards[1]!).getByTestId("logo-fallback").textContent).toBe("B");
+    expect(within(cards[2]!).getByTestId("logo-credit").textContent).toBe("Logo: unavatar.io");
+    expect(screen.queryByTestId("project-row")).toBeNull();
   });
 });

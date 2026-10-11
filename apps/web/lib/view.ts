@@ -142,8 +142,14 @@ export interface CuratedSignal {
   observedAt: string;
 }
 
+/** Where a project's logo came from (`project_logos.source`, 0016). */
+export type LogoSource = "defillama" | "x_avatar" | "favicon";
+export const LOGO_SOURCES: readonly LogoSource[] = ["defillama", "x_avatar", "favicon"];
+
 /** A row of the curated list (`public_list` for visitors, `curated_list` for members). */
 export interface CuratedItem extends ProjectListItem {
+  /** projects.id: the card's logo is served from `/logo/{id}`. */
+  id: string;
   tab: Tab;
   /** `YYYY-MM-DD`, set when the project ended (#40). */
   endedOn: string | null;
@@ -158,6 +164,8 @@ export interface CuratedItem extends ProjectListItem {
   keyChecksRan: number;
   /** Member-only; always null for visitors. */
   worthLevel: WorthLevel | null;
+  /** The stored logo's source, null without one (the card then shows a letter tile). */
+  logoSource: LogoSource | null;
 }
 
 export const TABS: readonly Tab[] = ["live_now", "early_bets", "ended"];
@@ -467,4 +475,30 @@ export function parseCuratedFilters(sp: SearchParams, member: boolean): CuratedF
 export function rawChainParam(sp: SearchParams): string | undefined {
   const raw = many(sp.chain)[0]?.trim().toLowerCase();
   return raw || undefined;
+}
+
+/** Colours of the letter tile (design C tokens; white text on each is at least 4.5:1). */
+export type LogoTone = "ink" | "pass" | "ended" | "caution" | "accent" | "ink-2";
+const LOGO_TONES: readonly LogoTone[] = ["ink", "pass", "ended", "caution", "accent", "ink-2"];
+
+/**
+ * The letter tile of a project without a logo: the first letter or digit of its name, upper case (the first character
+ * when there is none, "?" for an empty name).
+ */
+export function logoLetter(name: string): string {
+  const chars = [...name.trim()];
+  const first = chars.find((c) => /[\p{L}\p{N}]/u.test(c)) ?? chars[0] ?? "?";
+  return first.toLocaleUpperCase("id-ID");
+}
+
+/** The tile colour of a slug: the sum of its UTF-16 code units, modulo the number of tones. Same slug, same colour. */
+export function logoTone(slug: string): LogoTone {
+  let sum = 0;
+  for (let i = 0; i < slug.length; i++) sum += slug.charCodeAt(i);
+  return LOGO_TONES[sum % LOGO_TONES.length]!;
+}
+
+/** Where the web serves a project's stored logo (app/logo/[projectId]/route.ts). */
+export function logoPath(projectId: string): string {
+  return `/logo/${encodeURIComponent(projectId)}`;
 }

@@ -444,6 +444,7 @@ describe("listCurated", () => {
     const { db } = curatedDb([curatedRow({ worth_level: "high" })]);
     const { items } = await listCurated(db, "live_now", {}, 1, false);
     expect(items[0]).toEqual({
+      id: "p1",
       slug: "demo",
       name: "Demo",
       status: "live",
@@ -464,7 +465,31 @@ describe("listCurated", () => {
       keyChecksRan: 4,
       // A visitor never gets a worth level, even if a row carried one.
       worthLevel: null,
+      logoSource: null,
     });
+  });
+
+  it("selects logo_source and keeps it only for a known source on a project with a valid id", async () => {
+    const uuid = "5b3c1a2e-0000-4000-8000-0000000000aa";
+    const { db, recs } = curatedDb([
+      curatedRow({ id: uuid, logo_source: "defillama" }),
+      curatedRow({ id: uuid, logo_source: "x_avatar" }),
+      curatedRow({ id: uuid, logo_source: "favicon" }),
+      curatedRow({ id: uuid, logo_source: null }),
+      curatedRow({ id: uuid, logo_source: "svg" }),
+      curatedRow({ id: "../../etc", logo_source: "favicon" }),
+    ]);
+    const { items } = await listCurated(db, "live_now", {}, 1, false);
+    expect(String(pageQuery(recs).calls.find((c) => c[0] === "select")?.[1])).toMatch(/\blogo_source\b/);
+    expect(items.map((i) => i.logoSource)).toEqual(["defillama", "x_avatar", "favicon", null, null, null]);
+    expect(items[0]!.id).toBe(uuid);
+  });
+
+  it("selects logo_source for members too", async () => {
+    const { db, recs } = curatedDb([curatedRow({ id: "5b3c1a2e-0000-4000-8000-0000000000aa", logo_source: "favicon", worth_level: "low" })]);
+    const { items } = await listCurated(db, "live_now", {}, 1, true);
+    expect(String(pageQuery(recs).calls.find((c) => c[0] === "select")?.[1])).toMatch(/\blogo_source\b/);
+    expect(items[0]).toMatchObject({ logoSource: "favicon", worthLevel: "low" });
   });
 
   it("selects key_checks_ran and reads a missing or out-of-range count as a number from 0 to 4", async () => {

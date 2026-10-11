@@ -182,6 +182,9 @@ export const list = {
   chainUnknown: "Chain belum diketahui",
   noDeadline: "Belum ada deadline yang jelas",
   claimOpen: "Claim open · link dicek",
+  /** The card's logo (owner request 2026-10-11): alt text, and the credit the unavatar.io free plan asks for. */
+  logoAlt: (name: string) => `Logo ${name}`,
+  logoCredit: "Logo: unavatar.io",
   /** Signal badges of a row (#41). Only a verified signal gets "✓"; AlphaDrops backers are what AlphaDrops reports. */
   signals: {
     vc: (investor: string) => `VC: ${investor} ✓`,

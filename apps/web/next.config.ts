@@ -11,7 +11,12 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   async headers() {
-    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+    return [
+      { source: "/:path*", headers: SECURITY_HEADERS },
+      // A logo (app/logo/[projectId]/route.ts) is bytes from a third party: nothing in it may run or load anything.
+      // Listed last, so its CSP replaces the one above (the other headers above still apply).
+      { source: "/logo/:projectId", headers: [{ key: "Content-Security-Policy", value: "default-src 'none'; sandbox" }] },
+    ];
   },
   // @saf/core is consumed from TypeScript source (its package exports point at src/index.ts).
   transpilePackages: ["@saf/core"],
