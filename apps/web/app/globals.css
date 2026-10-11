@@ -442,6 +442,12 @@ button:disabled {
   font-weight: 700;
 }
 
+.changes-subhead {
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+}
+
 .list-tabs {
   display: flex;
   flex-wrap: wrap;

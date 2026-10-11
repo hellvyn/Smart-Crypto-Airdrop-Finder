@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import {
+  getChangeFeed,
   getChangesSeenAt,
   getLastSuccessfulRunAt,
   getProjectDetail,
@@ -686,10 +687,17 @@ describe("listChangesSince", () => {
   const respond = (over: Partial<Record<string, Result>> = {}) => (rec: Recorded): Result =>
     over[rec.table] ??
     ({
-      watchlist: { data: [{ project_id: "p1" }, { project_id: "p2" }], error: null },
+      watchlist: {
+        data: [
+          { project_id: "p1", project: { status: "live" } },
+          { project_id: "p2", project: { status: "ended" } },
+        ],
+        error: null,
+      },
       project_changes: {
         data: [
           { project_id: "p1", field: "curated", old_value: "true", new_value: "false", changed_at: "2026-10-09T23:00:00+00:00", seq: 7, project },
+          { project_id: "p2", field: "curated", old_value: "true", new_value: "false", changed_at: "2026-10-09T23:00:00+00:00", seq: 8, project: { slug: "two", name: "Two" } },
         ],
         error: null,
       },
@@ -700,11 +708,13 @@ describe("listChangesSince", () => {
     } as Record<string, Result>)[rec.table]!;
   const rec = (recs: Recorded[], table: string) => recs.find((r) => r.table === table)!;
 
-  it("reads only the watched projects' changes recorded after `since`, and their deadlines in the next 48 hours", async () => {
+  it("reads only this member's watched projects, their changes recorded after `since` and their deadlines in the next 48 hours", async () => {
     const { db, recs } = fakeDb(respond());
-    const items = await listChangesSince(db, new Date("2026-10-09T08:00:00Z"), now);
+    const feed = await listChangesSince(db, "u1", new Date("2026-10-09T08:00:00Z"), now);
 
-    expect(rec(recs, "watchlist").calls).toContainEqual(["select", "project_id"]);
+    const watchlist = rec(recs, "watchlist").calls;
+    expect(watchlist).toContainEqual(["select", "project_id, project:projects(status)"]);
+    expect(watchlist).toContainEqual(["eq", "user_id", "u1"]);
     const changes = rec(recs, "project_changes").calls;
     expect(changes).toContainEqual(["select", expect.stringContaining("project:projects(slug, name)")]);
     expect(changes).toContainEqual(["in", "project_id", ["p1", "p2"]]);
@@ -718,20 +728,22 @@ describe("listChangesSince", () => {
     expect(deadlines).toContainEqual(["gte", "date", "2026-10-10"]);
     expect(deadlines).toContainEqual(["lte", "date", "2026-10-12"]);
 
-    // The 2026-10-11 claim came within 48 hours on 2026-10-09T00:00Z, before `since`: not shown again.
-    expect(items).toEqual([{ kind: "curated_out", project, at: "2026-10-09T23:00:00+00:00" }]);
+    // p2 is ended now, so its curated flip is not "Keluar dari list". The deadline is shown whatever `since` is.
+    expect(feed).toEqual({
+      changes: [{ kind: "curated_out", project, at: "2026-10-09T23:00:00+00:00" }],
+      deadlines: [{ project, deadlineKind: "claim", date: "2026-10-11", approximate: false }],
+    });
   });
 
-  it("without a `since`, reads the changes recorded in the last 7 days and every deadline in the window", async () => {
+  it("without a `since`, reads the changes recorded in the last 7 days", async () => {
     const { db, recs } = fakeDb(respond());
-    const items = await listChangesSince(db, null, now);
+    await listChangesSince(db, "u1", null, now);
     expect(rec(recs, "project_changes").calls).toContainEqual(["gt", "recorded_at", "2026-10-03T12:00:00.000Z"]);
-    expect(items.map((i) => i.kind)).toEqual(["curated_out", "deadline"]);
   });
 
-  it("with no watched project, reads nothing else and returns no items", async () => {
+  it("with no watched project, reads nothing else and returns an empty feed", async () => {
     const { db, recs } = fakeDb(respond({ watchlist: { data: [], error: null } }));
-    expect(await listChangesSince(db, null, now)).toEqual([]);
+    expect(await listChangesSince(db, "u1", null, now)).toEqual({ changes: [], deadlines: [] });
     expect(recs.map((r) => r.table)).toEqual(["watchlist"]);
   });
 
@@ -742,14 +754,51 @@ describe("listChangesSince", () => {
           data: [{ project_id: "p9", field: "curated", old_value: "true", new_value: "false", changed_at: "2026-10-09T23:00:00Z", seq: 1, project: null }],
           error: null,
         },
-        deadlines: { data: [], error: null },
+        deadlines: { data: [{ project_id: "p9", kind: "claim", date: "2026-10-11", precision: "exact", project: null }], error: null },
       }),
     );
-    expect(await listChangesSince(db, null, now)).toEqual([]);
+    expect(await listChangesSince(db, "u1", null, now)).toEqual({ changes: [], deadlines: [] });
   });
 
   it.each(["watchlist", "project_changes", "deadlines"])("throws when reading %s fails", async (table) => {
     const { db } = fakeDb(respond({ [table]: { data: null, error: { message: "boom" } } }));
-    await expect(listChangesSince(db, null, now)).rejects.toThrow("boom");
+    await expect(listChangesSince(db, "u1", null, now)).rejects.toThrow("boom");
   });
+});
+
+describe("getChangeFeed", () => {
+  const now = new Date("2026-10-10T12:00:00Z");
+
+  it("reads changes_seen_at, then the feed since then", async () => {
+    const { db, recs } = fakeDb((r) =>
+      r.table === "profiles"
+        ? { data: { changes_seen_at: "2026-10-09T08:00:00+00:00" }, error: null }
+        : r.table === "watchlist"
+          ? { data: [{ project_id: "p1", project: { status: "live" } }], error: null }
+          : { data: [], error: null },
+    );
+    expect(await getChangeFeed(db, "u1", now)).toEqual({ changes: [], deadlines: [] });
+    expect(recs.find((r) => r.table === "profiles")!.calls).toContainEqual(["eq", "user_id", "u1"]);
+    expect(recs.find((r) => r.table === "project_changes")!.calls).toContainEqual([
+      "gt",
+      "recorded_at",
+      "2026-10-09T08:00:00.000Z",
+    ]);
+  });
+
+  it.each(["profiles", "watchlist", "project_changes"])(
+    "degrades to an empty feed when reading %s fails, so the page still renders",
+    async (table) => {
+      const { db } = fakeDb((r) =>
+        r.table === table
+          ? { data: null, error: { message: "boom" } }
+          : r.table === "profiles"
+            ? { data: { changes_seen_at: null }, error: null }
+            : r.table === "watchlist"
+              ? { data: [{ project_id: "p1", project: { status: "live" } }], error: null }
+              : { data: [], error: null },
+      );
+      expect(await getChangeFeed(db, "u1", now)).toEqual({ changes: [], deadlines: [] });
+    },
+  );
 });

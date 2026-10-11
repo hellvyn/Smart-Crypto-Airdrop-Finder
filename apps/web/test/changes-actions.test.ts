@@ -9,7 +9,7 @@ vi.mock("@/lib/auth", () => ({ requireUser: () => requireUser() }));
 vi.mock("@/lib/supabase/server", () => ({ createServerClient: async () => serverDb }));
 vi.mock("next/cache", () => ({ revalidatePath: (p: string) => revalidatePath(p) }));
 
-import { markChangesSeen } from "../app/(public)/airdrops/actions";
+import { markChangesSeen } from "../app/(app)/changes/actions";
 
 const USER = { id: "11111111-1111-4111-8111-111111111111" };
 
@@ -46,14 +46,14 @@ beforeEach(() => {
 });
 
 describe("markChangesSeen", () => {
-  it("updates only changes_seen_at, only on the signed-in member's own profile", async () => {
+  it("touches only changes_seen_at, only on the signed-in member's own profile, and sends no time of its own", async () => {
     const { db, recs } = fakeDb({ data: [{ user_id: USER.id }], error: null });
     serverDb = db;
     await markChangesSeen();
     expect(recs).toHaveLength(1);
     expect(recs[0]!.table).toBe("profiles");
-    const update = recs[0]!.calls.find((c) => c[0] === "update")!;
-    expect(Object.keys(update[1] as object)).toEqual(["changes_seen_at"]);
+    // null: the trigger of 0014 stamps the database's now() on any write of the column (proved in pgTAP).
+    expect(recs[0]!.calls).toContainEqual(["update", { changes_seen_at: null }]);
     expect(recs[0]!.calls).toContainEqual(["eq", "user_id", USER.id]);
   });
 

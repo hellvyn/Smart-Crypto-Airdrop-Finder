@@ -5,14 +5,14 @@ import { ProjectRow } from "@/components/ProjectRow";
 import { StaleBanner } from "@/components/StaleBanner";
 import { TabBar } from "@/components/ui";
 import { getUser } from "@/lib/auth";
+import { EMPTY_CHANGE_FEED } from "@/lib/changes";
 import { landing, list, pageTitle, ui } from "@/lib/copy";
 import {
-  getChangesSeenAt,
+  getChangeFeed,
   getLastSuccessfulRunAt,
   getRunSummary,
   getTrackRecord,
   listChains,
-  listChangesSince,
   listCurated,
 } from "@/lib/queries";
 import { LIST_PATH } from "@/lib/routes";
@@ -65,7 +65,7 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
     getRunSummary(db),
     getTrackRecord(db),
     listChains(db),
-    user ? getChangesSeenAt(db, user.id).then((since) => listChangesSince(db, since, now)) : [],
+    user ? getChangeFeed(db, user.id, now) : EMPTY_CHANGE_FEED,
   ]);
   const { items, total, pageSize, capitalCounts } = curated;
   // An invalid chain value applies no filter but is still shown, as text only, in the form.
@@ -78,7 +78,7 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <StaleBanner lastRunAt={lastRunAt} now={now} />
-      <ChangesSinceLastVisit items={changes} />
+      <ChangesSinceLastVisit feed={changes} />
       <section className="list-summary" aria-labelledby="list-summary-title">
         <h1 id="list-summary-title" className="ui-display list-summary-title">
           {list.summary.title}

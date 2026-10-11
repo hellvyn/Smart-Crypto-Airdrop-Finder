@@ -7,7 +7,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(30);
+select plan(32);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS).
 -- user A: c5000000-...-00000000000a, user B: c5000000-...-00000000000b.
@@ -65,6 +65,11 @@ select results_eq(
      where polrelid = 'public.project_changes'::regclass $$,
   $$ values ('r'::text, array['authenticated']::text[]) $$,
   'the policy is for select, to authenticated only');
+-- 8b. auth.uid() is wrapped in a sub-select, so it is evaluated once per statement, not once per row.
+select is(
+  (select pg_get_expr(polqual, polrelid) like '%w.user_id = ( SELECT auth.uid() AS uid)%' from pg_policy
+   where polrelid = 'public.project_changes'::regclass),
+  true, 'the policy compares the watchlist owner with (select auth.uid())');
 -- 9. profiles: authenticated may update timezone and changes_seen_at, nothing else; anon has nothing.
 select results_eq(
   $$ select c, has_column_privilege('authenticated', 'public.profiles', c, 'UPDATE')
@@ -172,6 +177,20 @@ update profiles set timezone = 'Asia/Jakarta' where user_id = 'c5000000-0000-400
 select is(
   (select timezone from profiles where user_id = 'c5000000-0000-4000-8000-00000000000b'), 'Asia/Jakarta',
   'an update of another column works as before');
+
+-- 31. A timezone-only update by the member leaves changes_seen_at as it was. The known past value is written with
+-- the trigger off (as the superuser), since every write of the column is stamped.
+alter table profiles disable trigger profiles_changes_seen_at;
+update profiles set changes_seen_at = '2026-01-02T03:04:05Z' where user_id = 'c5000000-0000-4000-8000-00000000000a';
+alter table profiles enable trigger profiles_changes_seen_at;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c5000000-0000-4000-8000-00000000000a","role":"authenticated"}';
+update profiles set timezone = 'Europe/Berlin';
+reset role;
+select results_eq(
+  $$ select timezone, changes_seen_at from profiles where user_id = 'c5000000-0000-4000-8000-00000000000a' $$,
+  $$ values ('Europe/Berlin'::text, '2026-01-02T03:04:05Z'::timestamptz) $$,
+  'a timezone-only update changes the timezone and keeps changes_seen_at');
 
 select * from finish();
 rollback;

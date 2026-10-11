@@ -389,7 +389,11 @@ export const wallets = {
 /** "Perubahan sejak kunjungan terakhir" on /airdrops and the watchlist (Plan 6 Task 7). */
 export const changes = {
   heading: "Perubahan sejak kunjungan terakhir",
+  /** Accessible name of the list of changes; the near deadlines are their own group. */
+  changesLabel: "Perubahan",
+  deadlinesHeading: "Deadline dekat",
   markSeen: "Tandai sudah dibaca",
+  markSeenPending: "Lagi ditandai...",
   curatedIn: "Masuk list",
   curatedOut: "Keluar dari list",
   /** A run that brought many projects into the list for the first time, as one line. */

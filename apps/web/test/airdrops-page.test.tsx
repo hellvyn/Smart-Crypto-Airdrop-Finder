@@ -7,8 +7,7 @@ const getUser = vi.fn();
 const listCurated = vi.fn();
 const getRunSummary = vi.fn();
 const getTrackRecord = vi.fn();
-const getChangesSeenAt = vi.fn();
-const listChangesSince = vi.fn();
+const getChangeFeed = vi.fn();
 vi.mock("@/lib/auth", () => ({ getUser: () => getUser() }));
 vi.mock("@/lib/supabase/server", () => ({ createServerClient: async () => ({}) }));
 vi.mock("@/lib/queries", () => ({
@@ -17,10 +16,9 @@ vi.mock("@/lib/queries", () => ({
   getLastSuccessfulRunAt: async () => new Date(),
   getRunSummary: (...args: unknown[]) => getRunSummary(...args),
   getTrackRecord: (...args: unknown[]) => getTrackRecord(...args),
-  getChangesSeenAt: (...args: unknown[]) => getChangesSeenAt(...args),
-  listChangesSince: (...args: unknown[]) => listChangesSince(...args),
+  getChangeFeed: (...args: unknown[]) => getChangeFeed(...args),
 }));
-vi.mock("@/app/(public)/airdrops/actions", () => ({ markChangesSeen: vi.fn() }));
+vi.mock("@/app/(app)/changes/actions", () => ({ markChangesSeen: vi.fn() }));
 
 import AirdropsPage from "@/app/(public)/airdrops/page";
 
@@ -61,8 +59,7 @@ beforeEach(() => {
   listCurated.mockReset().mockResolvedValue(curatedPage([item()]));
   getRunSummary.mockReset().mockResolvedValue({ checked: 4, passed: 3, at: new Date() });
   getTrackRecord.mockReset().mockResolvedValue(null);
-  getChangesSeenAt.mockReset().mockResolvedValue(null);
-  listChangesSince.mockReset().mockResolvedValue([]);
+  getChangeFeed.mockReset().mockResolvedValue({ changes: [], deadlines: [] });
 });
 
 const page = async (sp: Record<string, string | string[]> = {}) =>
@@ -154,29 +151,28 @@ describe("/airdrops", () => {
 
   it("never reads changes for a visitor, and shows no changes section", async () => {
     await page();
-    expect(getChangesSeenAt).not.toHaveBeenCalled();
-    expect(listChangesSince).not.toHaveBeenCalled();
+    expect(getChangeFeed).not.toHaveBeenCalled();
     expect(screen.queryByRole("region", { name: "Perubahan sejak kunjungan terakhir" })).toBeNull();
   });
 
-  it("shows a member the changes since they last marked them seen, above the list", async () => {
-    const seen = new Date("2026-10-09T08:00:00Z");
+  it("shows a member the feed of their watched projects, above the list", async () => {
     getUser.mockResolvedValue({ id: "u1" });
-    getChangesSeenAt.mockResolvedValue(seen);
-    listChangesSince.mockResolvedValue([{ kind: "ended", project: { slug: "gone", name: "Gone Protocol" }, at: "2026-10-09T23:00:00Z" }]);
+    getChangeFeed.mockResolvedValue({
+      changes: [{ kind: "ended", project: { slug: "gone", name: "Gone Protocol" }, at: "2026-10-09T23:00:00Z" }],
+      deadlines: [],
+    });
     await page();
-    expect(getChangesSeenAt.mock.calls[0]![1]).toBe("u1");
-    expect(listChangesSince.mock.calls[0]![1]).toBe(seen);
+    expect(getChangeFeed.mock.calls[0]![1]).toBe("u1");
     const section = screen.getByRole("region", { name: "Perubahan sejak kunjungan terakhir" });
     expect(within(section).getByText("Udah ended")).toBeTruthy();
     const firstRow = screen.getAllByTestId("project-row")[0]!;
     expect(section.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("hides the changes section for a member with nothing new", async () => {
+  it("hides the changes section for a member with nothing new and no near deadline", async () => {
     getUser.mockResolvedValue({ id: "u1" });
     await page();
-    expect(listChangesSince).toHaveBeenCalledTimes(1);
+    expect(getChangeFeed).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("region", { name: "Perubahan sejak kunjungan terakhir" })).toBeNull();
   });
 });

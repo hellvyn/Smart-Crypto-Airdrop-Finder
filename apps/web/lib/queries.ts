@@ -7,8 +7,9 @@ import { cache } from "react";
 import {
   CHANGE_DEADLINE_KINDS,
   DEADLINE_WINDOW_MS,
-  buildChangeItems,
-  type ChangeItem,
+  EMPTY_CHANGE_FEED,
+  buildChangeFeed,
+  type ChangeFeed,
   type ChangeProject,
 } from "./changes";
 import { claimOpenChecked, isCheckedKind, isFlagged } from "./detail";
@@ -597,14 +598,24 @@ function asChangeProject(v: unknown): ChangeProject | null {
 
 /**
  * The signed-in member's feed: `project_changes` of the projects on their watchlist recorded after `since` (the last 7
- * days without one), plus their claim / snapshot / campaign-end deadlines in the next 48 hours (exact or approximate).
- * The watchlist read and the `project_changes` policy (0014) both keep it to the member's own watched projects.
+ * days without one), plus their claim / snapshot / campaign-end deadlines in the next 48 hours (exact or approximate,
+ * shown whatever `since` is). The watchlist is read with the member's own id, and RLS ("own watchlist read", and the
+ * `project_changes` policy of 0014) keeps both reads to the member's own watched projects as a second barrier.
  */
-export async function listChangesSince(db: SupabaseClient, since: Date | null, now: Date): Promise<ChangeItem[]> {
-  const watched = await db.from("watchlist").select("project_id");
+export async function listChangesSince(
+  db: SupabaseClient,
+  userId: string,
+  since: Date | null,
+  now: Date,
+): Promise<ChangeFeed> {
+  const watched = await db.from("watchlist").select("project_id, project:projects(status)").eq("user_id", userId);
   throwIf(watched.error, "watchlist");
-  const ids = ((watched.data ?? []) as Record<string, unknown>[]).map((r) => String(r.project_id));
-  if (ids.length === 0) return [];
+  const watchedRows = (watched.data ?? []) as unknown as Record<string, unknown>[];
+  const ids = watchedRows.map((r) => String(r.project_id));
+  if (ids.length === 0) return EMPTY_CHANGE_FEED;
+  const endedNow = new Set(
+    watchedRows.filter((r) => isRecord(r.project) && r.project.status === "ended").map((r) => String(r.project_id)),
+  );
 
   const after = since ?? new Date(now.getTime() - CHANGES_DEFAULT_WINDOW_MS);
   const [changes, deadlines] = await Promise.all([
@@ -652,5 +663,17 @@ export async function listChangesSince(db: SupabaseClient, since: Date | null, n
         }]
       : [];
   });
-  return buildChangeItems(changeRows, deadlineRows, since, now);
+  return buildChangeFeed(changeRows, deadlineRows, endedNow, now);
+}
+
+/**
+ * The feed for a page: `changes_seen_at`, then `listChangesSince`. Any failure gives an empty feed, so the page still
+ * renders without the panel (nothing is logged: the error could carry the member's data).
+ */
+export async function getChangeFeed(db: SupabaseClient, userId: string, now: Date): Promise<ChangeFeed> {
+  try {
+    return await listChangesSince(db, userId, await getChangesSeenAt(db, userId), now);
+  } catch {
+    return EMPTY_CHANGE_FEED;
+  }
 }

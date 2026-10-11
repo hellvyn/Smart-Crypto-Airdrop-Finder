@@ -2,7 +2,7 @@ import { ChangesSinceLastVisit } from "@/components/ChangesSinceLastVisit";
 import { ProjectRow } from "@/components/ProjectRow";
 import { requireUser } from "@/lib/auth";
 import { pageTitle, watchlist as copy } from "@/lib/copy";
-import { getChangesSeenAt, listChangesSince } from "@/lib/queries";
+import { getChangeFeed } from "@/lib/queries";
 import { createServerClient } from "@/lib/supabase/server";
 import { getWatchlist } from "@/lib/watchlist";
 
@@ -14,12 +14,12 @@ export default async function WatchlistPage() {
   const now = new Date();
   const [items, changes] = await Promise.all([
     getWatchlist(db),
-    getChangesSeenAt(db, user.id).then((since) => listChangesSince(db, since, now)),
+    getChangeFeed(db, user.id, now),
   ]);
   return (
     <>
       <h1>{copy.heading}</h1>
-      <ChangesSinceLastVisit items={changes} />
+      <ChangesSinceLastVisit feed={changes} />
       {items.length === 0 ? (
         <p>{copy.empty}</p>
       ) : (

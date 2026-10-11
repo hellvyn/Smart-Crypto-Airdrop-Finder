@@ -116,33 +116,60 @@ async function recordRun(
   if (error) throw error;
 }
 
+/** Adds an exact claim deadline `days` from today (UTC) to a seeded project; returns its id-ID date ("11 Okt 2026"). */
+async function addClaimDeadline(slug: string, days: number): Promise<string> {
+  const db = adminClient();
+  const { data: p, error: pe } = await db.from("projects").select("id").eq("slug", slug).single();
+  if (pe) throw pe;
+  const { data: doc, error: de } = await db.from("deadlines").select("document_id").eq("project_id", p.id).limit(1).single();
+  if (de) throw de;
+  const date = new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+  const { error } = await db
+    .from("deadlines")
+    .insert({ project_id: p.id, document_id: doc.document_id, kind: "claim", date, precision: "exact", text: "e2e near claim" });
+  if (error) throw error;
+  return new Intl.DateTimeFormat("id-ID", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(
+    new Date(`${date}T00:00:00Z`),
+  );
+}
+
 async function watch(page: Page, slug: string): Promise<void> {
   await page.goto(`/projects/${slug}`);
   await watchButton(page).click();
   await expect(unwatchButton(page)).toBeVisible();
 }
 
-test("a watched project leaving the list shows 'Keluar dari list' until 'Tandai sudah dibaca'", async ({ page }) => {
+test("a watched project leaving the list shows 'Keluar dari list' until 'Tandai sudah dibaca'; a near deadline stays", async ({
+  page,
+}) => {
   await signedInUser(page, "wl-changes-out");
   await watch(page, seed.main.slug);
   await recordRun(seed.main.slug, [{ field: "curated", old_value: "true", new_value: "false" }]);
+  const nearDeadline = `Deadline claim dalam 48 jam (${await addClaimDeadline(seed.main.slug, 1)})`;
 
   await page.goto("/watchlist");
   const onWatchlist = changesSection(page);
   await expect(onWatchlist.getByText("Keluar dari list")).toBeVisible();
-  await expect(onWatchlist.getByRole("link", { name: seed.main.name })).toHaveAttribute(
+  const changeItem = onWatchlist.getByRole("listitem").filter({ hasText: "Keluar dari list" });
+  await expect(changeItem.getByRole("link", { name: seed.main.name })).toHaveAttribute(
     "href",
     `/projects/${seed.main.slug}`,
   );
 
+  await expect(onWatchlist.getByText(nearDeadline)).toBeVisible();
+
   await page.goto("/airdrops");
   await expect(changesSection(page).getByText("Keluar dari list")).toBeVisible();
   await changesSection(page).getByRole("button", { name: "Tandai sudah dibaca" }).click();
-  await expect(changesSection(page)).toHaveCount(0);
+  // The change is gone; the near deadline is a reminder and stays (with nothing left to mark seen).
+  await expect(changesSection(page).getByText("Keluar dari list")).toHaveCount(0);
+  await expect(changesSection(page).getByText(nearDeadline)).toBeVisible();
+  await expect(changesSection(page).getByRole("button", { name: "Tandai sudah dibaca" })).toHaveCount(0);
 
   await page.goto("/watchlist");
   await expect(rowFor(page, seed.main.slug)).toBeVisible();
-  await expect(changesSection(page)).toHaveCount(0);
+  await expect(changesSection(page).getByText("Keluar dari list")).toHaveCount(0);
+  await expect(changesSection(page).getByText(nearDeadline)).toBeVisible();
 });
 
 test("a watched project that ended shows 'Udah ended', not 'Keluar dari list', even if it left the list in that run", async ({
@@ -158,6 +185,12 @@ test("a watched project that ended shows 'Udah ended', not 'Keluar dari list', e
   await page.goto("/watchlist");
   await expect(changesSection(page).getByText("Udah ended")).toBeVisible();
   await expect(changesSection(page).getByText("Keluar dari list")).toHaveCount(0);
+
+  // No near deadline on this project: marking the changes seen empties the panel, so it is hidden.
+  await changesSection(page).getByRole("button", { name: "Tandai sudah dibaca" }).click();
+  await expect(changesSection(page)).toHaveCount(0);
+  await page.goto("/watchlist");
+  await expect(changesSection(page)).toHaveCount(0);
 });
 
 test("a member who does not watch the project never sees its changes", async ({ page }) => {
