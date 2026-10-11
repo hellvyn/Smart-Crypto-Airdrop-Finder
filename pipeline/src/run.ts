@@ -52,7 +52,18 @@ export interface PipelineDeps {
  * runs after `score` (it needs that run's phishing answers) and before `purge`, and `briefing` (11) runs after `score`
  * (it reads the changes and curations that run wrote) and before `logos`.
  */
-const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6, signals: 8, analyze: 9, logos: 10, briefing: 11 } as const;
+const STEP = {
+  collect: 1,
+  extract: 2,
+  speculative: 4,
+  score: 5,
+  purge: 6,
+  signals: 8,
+  analyze: 9,
+  logos: 10,
+  briefing: 11,
+  analyze_listed: 12,
+} as const;
 
 type ExtractedProject = ExtractionResult["projects"][number];
 
@@ -223,22 +234,56 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     coverage = await refreshSignals(deps, config, now, stats, { protocols: collected.protocols, vc, raises }, projects);
   });
   const analyzers = deps.analyzers ?? ANALYZERS;
+  let claimPages = new Map<string, SourceText[]>();
+  // The projects the analyze stage already treated as listed (uncapped); analyze_listed takes only the others.
+  let analyzedAsListed = new Set<string>();
   await stage("analyze", undefined, async () => {
     if (analyzers.length === 0) return;
-    // Listed projects first: the per-run cap must not go to projects members never see.
+    // Listed projects first and past the per-run cap: members see them, so their AI section must not stay empty.
     const all = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
-    const projects = listedFirst(all, await repo.listListedProjects(all.map((p) => p.id)));
+    const listedIds = await repo.listListedProjects(all.map((p) => p.id));
+    analyzedAsListed = new Set(listedIds);
+    const projects = listedFirst(all, listedIds);
     // Claim portal pages are read here, before the scam analyst, so it sees them in this run (#56).
-    const claimPages = analyzers.some((a) => a.kind === "scam")
-      ? await readClaimPages({ repo, fetchUntrusted: deps.fetchUntrusted }, projects, now, stats)
-      : new Map<string, SourceText[]>();
-    await runAnalyses({ ...deps, analyzers, extraSources: claimPageSources(claimPages) }, config, projects, stats);
+    if (analyzers.some((a) => a.kind === "scam")) {
+      claimPages = await readClaimPages({ repo, fetchUntrusted: deps.fetchUntrusted }, projects, now, stats);
+    }
+    await runAnalyses(
+      { ...deps, analyzers, extraSources: claimPageSources(claimPages), uncapped: new Set(listedIds) },
+      config,
+      projects,
+      stats,
+    );
   });
 
   // A failed `score` leaves no phishing answer, so the logos stage then asks no favicon.
   const phishing = await stage("score", new Map<string, boolean | null>(), () =>
     scoreProjects(deps, config, now, stats, coverage),
   );
+  // Projects this run put on the list get their AI analyses now, not the next day (an unchanged input reuses the
+  // stored analysis without a call, so projects already analysed cost only reads).
+  await stage("analyze_listed", undefined, async () => {
+    if (analyzers.length === 0) return;
+    const all = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
+    const listed = new Set(await repo.listListedProjects(all.map((p) => p.id)));
+    const newlyListed = all.filter((p) => listed.has(p.id) && !analyzedAsListed.has(p.id));
+    if (newlyListed.length === 0) return;
+    // Counted apart and then merged: the analyze stage already counted each of these analyses once (deferred, failed
+    // or cached), so only the ones that now ran are added, and they leave the deferred count. A model failure here is
+    // not counted again. (If one that failed there runs here, deferred goes down instead of failed: a rare,
+    // count-only inaccuracy.)
+    const catchUp = emptyStats();
+    await runAnalyses(
+      { ...deps, analyzers, extraSources: claimPageSources(claimPages), uncapped: listed },
+      { ...config, analyzeBudgetMinutes: config.analyzeListedBudgetMinutes },
+      newlyListed,
+      catchUp,
+    );
+    stats.ai_analyses_run += catchUp.ai_analyses_run;
+    stats.ai_style_violations += catchUp.ai_style_violations;
+    stats.ai_analyses_deferred = Math.max(0, stats.ai_analyses_deferred - catchUp.ai_analyses_run);
+    stats.ai_models_tripped = Math.max(stats.ai_models_tripped, catchUp.ai_models_tripped);
+  });
   await stage("briefing", undefined, () => runBriefing(deps, config, stats));
   await stage("logos", undefined, async () => {
     const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);

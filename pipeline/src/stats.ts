@@ -152,6 +152,7 @@ export interface DailyStats extends RunStats {
   stage_seconds_analyze: number;
   stage_seconds_score: number;
   stage_seconds_briefing: number;
+  stage_seconds_analyze_listed: number;
   stage_seconds_logos: number;
   stage_seconds_purge: number;
 }
@@ -233,6 +234,7 @@ export function emptyStats(): DailyStats {
     stage_seconds_analyze: 0,
     stage_seconds_score: 0,
     stage_seconds_briefing: 0,
+    stage_seconds_analyze_listed: 0,
     stage_seconds_logos: 0,
     stage_seconds_purge: 0,
   };

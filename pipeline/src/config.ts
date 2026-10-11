@@ -73,6 +73,11 @@ export interface PipelineConfig {
    * `ai_analyses_deferred`) and run on a later day; an unchanged input reuses the stored analysis without a call.
    */
   analyzeBudgetMinutes: number;
+  /**
+   * Budget of `analyze_listed`, the catch-up after scoring for projects this run put on the list: they get their AI
+   * analyses in the same run instead of the next day.
+   */
+  analyzeListedBudgetMinutes: number;
   maxAnalysesPerRun: number;
   scoreActiveSinceDays: number;
   textRetentionDays: number;
@@ -163,6 +168,7 @@ export const defaultConfig: PipelineConfig = {
   rdapBudgetMinutes: 6,
   crtshBudgetMinutes: 3,
   analyzeBudgetMinutes: 10,
+  analyzeListedBudgetMinutes: 5,
   maxAnalysesPerRun: 60,
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,

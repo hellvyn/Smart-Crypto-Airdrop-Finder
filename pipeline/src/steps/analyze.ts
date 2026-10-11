@@ -70,6 +70,11 @@ export interface AnalyzeDeps {
    * the project's own source texts. They go into that analyzer's prompt and input hash only.
    */
   extraSources?: (project: ProjectForScoring, kind: AiKind) => Promise<SourceText[]>;
+  /**
+   * Projects whose analyses `maxAnalysesPerRun` does not limit: the listed ones, which members see and which must not
+   * show an empty AI section. The time budget (`analyzeBudgetMinutes`) still applies to them.
+   */
+  uncapped?: ReadonlySet<string>;
   /** Where a failed analysis is reported (project id and kind only, never source text); defaults to console.warn. */
   warn?: (line: string) => void;
 }
@@ -156,7 +161,7 @@ export async function runAnalyses(
       stats.ai_analyses_cached += 1;
       return;
     }
-    if (budgetSpent() || started >= config.maxAnalysesPerRun) {
+    if (budgetSpent() || (started >= config.maxAnalysesPerRun && deps.uncapped?.has(project.id) !== true)) {
       stats.ai_analyses_deferred += 1;
       return;
     }

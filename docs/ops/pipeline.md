@@ -351,8 +351,9 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `purged` | documents whose text passed the 90-day retention and was blanked |
 | `briefing_items` / `briefing_ai` | items in the briefing saved this run (0 when there were no facts) / 1 when the model wrote it, 0 for the version without the AI |
 | `coach_threads_purged` / `coach_usage_purged` | coach threads older than 30 days / quota ledger rows older than 2 days deleted this run |
-| `stage_seconds_collect` / `_extract` / `_speculative` / `_signals` / `_analyze` / `_score` / `_briefing` / `_logos` / `_purge` | seconds each stage took (one decimal), also when it failed; flat keys because the stats are numbers only |
-| `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 8 signals, 9 analyze, 5 score, 11 briefing, 10 logos, 6 purge, in run order); the other stages still ran |
+| `stage_seconds_collect` / `_extract` / `_speculative` / `_signals` / `_analyze` / `_score` / `_analyze_listed` / `_briefing` / `_logos` / `_purge` | seconds each stage took (one decimal), also when it failed; flat keys because the stats are numbers only |
+| `ai_analyses_*` (listed projects) | listed projects are analysed first and are never held back by `maxAnalysesPerRun` (only by the 10-minute budget); projects a run newly puts on the list get theirs in `analyze_listed` right after scoring (5-minute budget), so a listed project never waits a day for its AI section |
+| `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 8 signals, 9 analyze, 5 score, 12 analyze_listed, 11 briefing, 10 logos, 6 purge, in run order); the other stages still ran |
 
 Exit code (shown as the workflow status): **failed** when `run_error`, `source_failed`, `ingest_failed`,
 `merge_failed` or `score_failed` is above 0, or when the Supabase settings are missing (`{"config_error":1}`). Everything is

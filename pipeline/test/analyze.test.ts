@@ -702,3 +702,21 @@ describe("listedFirst", () => {
     expect(listedFirst(ps, []).map((p) => p.id)).toEqual(["a", "b", "c", "d", "e"]);
   });
 });
+
+describe("runAnalyses, listed projects", () => {
+  it("analyzes a project in uncapped even when the per-run cap is reached", async () => {
+    const repo = new MemoryRepo();
+    await seed(repo, ["Alpha", "Beta"]);
+    const ps = await projects(repo);
+    const { chat } = fakeChat();
+    const stats = emptyStats();
+    await runAnalyses(
+      { ...deps(repo, chat), analyzers: [analyzer()], uncapped: new Set([ps[1]!.id]) },
+      { ...CONFIG, maxAnalysesPerRun: 0 },
+      ps,
+      stats,
+    );
+    expect(repo.aiAnalyses.map((a) => a.projectId)).toEqual([ps[1]!.id]);
+    expect(stats.ai_analyses_deferred).toBe(1);
+  });
+});

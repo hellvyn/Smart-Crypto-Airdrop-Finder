@@ -557,7 +557,7 @@ describe("runDaily", () => {
     const list = repo.listProjectsForScoring.bind(repo);
     let calls = 0;
     // The signals (1st) and analyze (2nd) stages list projects and succeed; only the score stage's listing fails. The
-    // logos stage lists them again after it (4th, and succeeds).
+    // analyze_listed (4th) and logos (5th) stages list them again after it, and succeed.
     repo.listProjectsForScoring = async (days, now) => {
       calls += 1;
       if (calls === 3) throw new Error("db down");
@@ -574,7 +574,7 @@ describe("runDaily", () => {
     expect(purgeCalls).toBe(1);
     expect(repo.runs).toHaveLength(1);
     expect(repo.runs[0]?.stats.run_error).toBe(1);
-    expect(calls).toBe(4);
+    expect(calls).toBe(5);
     expect(repo.runs[0]?.stats.failed_step).toBe(5);
     // Scoring failed at stage level: nothing was assessed.
     expect(repo.runs[0]?.stats.assessed).toBe(0);
@@ -2906,6 +2906,19 @@ describe("runDaily AI analyses", () => {
     expect(repo.aiAnalyses.map((a) => [a.model, a.servedModel])).toEqual(
       Array(3).fill(["anthropic:claude-sonnet-5-5", "gpt-oss:120b"]),
     );
+  });
+
+  it("analyzes every listed project in the run, past the per-run cap, including projects listed by this run", async () => {
+    const repo = new MemoryRepo();
+    const { deps, config } = setup({ repo, chat: withAnalysis(answer).chat });
+
+    const stats = await runDaily({ ...deps, analyzers: [summaryAnalyzer] }, { ...config, maxAnalysesPerRun: 0 });
+
+    const all = await repo.listProjectsForScoring(config.scoreActiveSinceDays, deps.now());
+    const listed = await repo.listListedProjects(all.map((p) => p.id));
+    expect(listed.length).toBeGreaterThan(0);
+    for (const id of listed) expect(repo.aiAnalyses.some((a) => a.projectId === id)).toBe(true);
+    expect(stats.stage_seconds_analyze_listed).toBeGreaterThanOrEqual(0);
   });
 
   it("asks Claude first for every analysis and never for an extraction", async () => {
