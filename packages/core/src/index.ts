@@ -57,7 +57,7 @@ export {
   scamSchema,
 } from "./curate/ai-flags.js";
 export type { ContradictionsAnswer, ScamAnswer } from "./curate/ai-flags.js";
-export { BANNED_WORDS, cleanStyle, findBanned } from "./style.js";
+export { BANNED_WORDS, cleanStyle, findBanned, plainChatText } from "./style.js";
 export { GLOSSARY } from "./coach/glossary.js";
 export type { GlossaryEntry } from "./coach/glossary.js";
 export { groundedAgainst, looksLikeSecret, redactSensitive } from "./coach/guard.js";

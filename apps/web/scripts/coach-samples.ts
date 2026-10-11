@@ -177,7 +177,7 @@ async function runPlan(def: SampleCaseDef, ctx: RunContext): Promise<SampleResul
   });
   const latencyMs = elapsed(clock);
   if (!outcome.ok) {
-    return { ...result, called: true, ok: false, latencyMs, shown: coach.errors.unavailable, note: outcome.stopped ? "chain stopped" : "every model failed" };
+    return { ...result, called: true, ok: false, latencyMs, shown: coach.errors.unavailable, note: `${outcome.stopped ? "chain stopped" : "every model failed"}: ${outcome.attempts.map((a) => `${a.model} ${a.error ?? "ok"} ${a.latencyMs}ms`).join("; ")}` };
   }
 
   const { recommendations, dropped } = validatePlan(outcome.value, candidates, profile);

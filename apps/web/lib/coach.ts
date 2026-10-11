@@ -7,6 +7,7 @@ import {
   LANGKAH_NOL,
   buildCoachSystemPrompt,
   cleanStyle,
+  plainChatText,
   coachProfileSchema,
   redactSensitive,
   selectCandidates,
@@ -43,6 +44,8 @@ export const CHAT_FIRST_TEXT_TIMEOUT_MS = 20_000;
 export const CHAT_DEADLINE_MS = 50_000;
 /** The plan call must be over before the platform's 60 s function limit (the routes export `maxDuration = 60`). */
 export const PLAN_BUDGET_MS = 50_000;
+/** The most one model may take inside the plan budget (`chatWithDeadline`). */
+export const PLAN_ATTEMPT_MS = 22_000;
 
 const QUOTA_RESET_OFFSET_MS = 7 * 3_600_000; // WIB = UTC+7, no DST
 const DAY_MS = 86_400_000;
@@ -472,14 +475,17 @@ export function coachLlm(env: Record<string, string | undefined> = process.env):
 }
 
 /** `chat` that gives up (like a network failure, status 0) once `deadline` (ms since epoch) has passed. */
-export function chatWithDeadline(chat: ChatFn, deadline: number): ChatFn {
+export function chatWithDeadline(chat: ChatFn, deadline: number, perAttemptMs = PLAN_ATTEMPT_MS): ChatFn {
   const failed = { content: "", finishReason: null, latencyMs: 0, httpStatus: 0, servedModel: null };
   return async (model, messages) => {
     const left = deadline - Date.now();
     if (left <= 0) return failed;
+    // One slow model (a 502 after 30 s has been seen on the free router) must not use up the whole budget: each attempt
+    // gets at most `perAttemptMs`, so the next model in the chain still has time.
+    const wait = Math.min(left, perAttemptMs);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<typeof failed>((resolve) => {
-      timer = setTimeout(() => resolve(failed), left);
+      timer = setTimeout(() => resolve({ ...failed, latencyMs: wait }), wait);
     });
     try {
       return await Promise.race([chat(model, messages), timeout]);
@@ -514,7 +520,7 @@ export function createStreamSanitizer(context: string): {
   let held = "";
   let redactions = 0;
   const clean = (text: string): string => {
-    const result = redactSensitive(cleanStyle(text), context);
+    const result = redactSensitive(plainChatText(cleanStyle(text)), context);
     redactions += result.redactions;
     return result.text;
   };

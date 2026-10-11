@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { redactSensitive } from "@saf/core";
 import {
   DAILY_QUOTA,
   MAX_REPLY_CHARS,
   candidateContext,
+  chatWithDeadline,
   coachErrorFrom,
   createStreamSanitizer,
   getCoachProfile,
@@ -13,6 +14,7 @@ import {
   saveCoachProfile,
   wibDayStart,
 } from "../lib/coach";
+import type { ChatFn } from "@saf/llm";
 import { P1, P2, P3, PROFILE, candidate, candidateTables, fakeCoachDb } from "./coach-fakes";
 
 const NOW = new Date("2026-10-11T05:00:00Z");
@@ -346,5 +348,41 @@ describe("isCoachCandidate", () => {
     expect(await isCoachCandidate(fakeCoachDb({ tables: tables({ coach_profiles: [] }) }).db, USER, P1, NOW)).toBe(false);
     const failing = fakeCoachDb({ tables: tables(), tableErrors: { curated_list: { message: "down" } } });
     expect(await isCoachCandidate(failing.db, USER, P1, NOW)).toBe(false);
+  });
+});
+
+describe("chatWithDeadline", () => {
+  it("gives one attempt at most perAttemptMs, so the next model still has time", async () => {
+    vi.useFakeTimers();
+    try {
+      const never: ChatFn = () => new Promise(() => {});
+      const chat = chatWithDeadline(never, Date.now() + 50_000, 22_000);
+      const pending = chat({ provider: "freellm", id: "auto", extraBody: {} }, []);
+      await vi.advanceTimersByTimeAsync(22_000);
+      expect(await pending).toMatchObject({ httpStatus: 0, content: "", latencyMs: 22_000 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never waits past the overall deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const never: ChatFn = () => new Promise(() => {});
+      const chat = chatWithDeadline(never, Date.now() + 5_000, 22_000);
+      const pending = chat({ provider: "freellm", id: "auto", extraBody: {} }, []);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await pending).toMatchObject({ latencyMs: 5_000 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("createStreamSanitizer, plain text", () => {
+  it("sends chat text without markdown or JSON plan lines", () => {
+    const s = createStreamSanitizer("");
+    const out = s.push("TGE itu **Token Generation Event**.\n{\n  \"tasks\": [\n") + s.push("  ],\n}\nSelesai.\n") + s.flush();
+    expect(out).toBe("TGE itu Token Generation Event.\nSelesai.\n");
   });
 });

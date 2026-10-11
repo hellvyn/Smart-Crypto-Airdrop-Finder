@@ -43,6 +43,29 @@ export function findBanned(text: string): string[] {
  * Replaces each em dash (with the spaces around it) by ", ", the punctuation the style rules allow instead.
  * Same rule as `replaceEmDash` in curate/ai-style.ts; one of the two should absorb the other.
  */
+/**
+ * Chat text as the plain text the page shows (spec §7: "teks biasa, tanpa markdown"): markdown emphasis, code ticks and
+ * heading marks are removed (their words stay), a "* " bullet becomes "- ", and lines that are JSON structure (a lone
+ * brace or bracket, or a `"key":` line) are dropped, so a model that answers a chat with markdown or a JSON plan still
+ * reads as normal text. Works line by line, so it is safe on any slice that ends at a line or sentence end.
+ */
+export function plainChatText(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !/^\s*[{}[\]],?\s*$/.test(line) && !/^\s*"[^"\n]*"\s*:/.test(line))
+    .map((line) =>
+      line
+        .replace(/^(\s{0,3})#{1,6}\s+/, "$1")
+        .replace(/^(\s*)\*\s+/, "$1- ")
+        .replace(/\*\*(.+?)\*\*/g, "$1")
+        .replace(/__(.+?)__/g, "$1")
+        .replace(/(^|[^\p{L}\p{N}*])\*(?!\s)([^*\n]+?)\*(?![\p{L}\p{N}])/gu, "$1$2")
+        .replace(/\*\*/g, "")
+        .replace(/`+/g, ""),
+    )
+    .join("\n");
+}
+
 export function cleanStyle(text: string): string {
   return text.replace(/\s*—\s*/g, ", ");
 }
