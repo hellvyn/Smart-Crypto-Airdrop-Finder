@@ -271,3 +271,6 @@ Ruling: AlphaDrops is capped at 120 requests per run — two caps that were neve
 - G3: parked: `createdDay`/`archivedDay`/start are recomputed in the current timezone, so a timezone change can shift boundary days by one. Ruling: accept for now — checks themselves keep their stored day (Review Focus 1 holds for checked days) — costs an off-by-one at a boundary after a timezone change. The trigger existence oracle stays parked (earlier ruling).
 - G3: declined by the reviewer and accepted by the controller: delete grants on `farming_projects`/`farming_tasks` (plan-mandated, own data, the UI never deletes); stopped days show 0% instead of grey (product choice); concurrent refresh duplicates (archivable).
 - G3 complete. Tests at the merge: core 203, pipeline 369, web 350 unit · typecheck ok · pgTAP 218 · e2e 74/74.
+
+## Progress (Plan 5)
+- G4-4a started: P5.T1 ∥ P5.T2 from 0c7f28d
