@@ -848,3 +848,36 @@ describe("MemoryRepo VC portfolios and AI analyses", () => {
     expect(await repo.latestAiAnalysis(p.id, "analyst")).toMatchObject({ inputHash: "h3", servedModel: "gpt-oss:120b" });
   });
 });
+
+describe("MemoryRepo link checks and claim pages", () => {
+  it("keeps one link check per URL, a later save replacing it, and lists only the asked URLs", async () => {
+    const repo = new MemoryRepo();
+    const later = new Date(T0.getTime() + 86_400_000);
+    await repo.saveLinkCheck("https://claim.ink.xyz/", "unchecked", T0);
+    await repo.saveLinkCheck("https://ink-claim.io/", "different_domain", T0);
+    await repo.saveLinkCheck("https://claim.ink.xyz/", "official", later);
+
+    expect(await repo.listLinkChecks(["https://ink-claim.io/", "https://claim.ink.xyz/", "https://never.io/"])).toEqual([
+      { url: "https://claim.ink.xyz/", status: "official", checkedAt: later },
+      { url: "https://ink-claim.io/", status: "different_domain", checkedAt: T0 },
+    ]);
+    expect(await repo.listLinkChecks(["https://ink-claim.io/"])).toEqual([
+      { url: "https://ink-claim.io/", status: "different_domain", checkedAt: T0 },
+    ]);
+    expect(await repo.listLinkChecks([])).toEqual([]);
+  });
+
+  it("caches one claim page text per URL, a later save replacing it", async () => {
+    const repo = new MemoryRepo();
+    const later = new Date(T0.getTime() + 8 * 86_400_000);
+    await repo.saveClaimPage("https://claim.ink.xyz/", "Claim your INK", T0);
+    await repo.saveClaimPage("https://app.ink.xyz/", "", T0);
+    await repo.saveClaimPage("https://claim.ink.xyz/", "Claim closed", later);
+
+    expect(await repo.listClaimPages(["https://claim.ink.xyz/", "https://app.ink.xyz/", "https://never.io/"])).toEqual([
+      { url: "https://app.ink.xyz/", text: "", fetchedAt: T0 },
+      { url: "https://claim.ink.xyz/", text: "Claim closed", fetchedAt: later },
+    ]);
+    expect(await repo.listClaimPages([])).toEqual([]);
+  });
+});

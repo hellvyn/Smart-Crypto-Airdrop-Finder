@@ -3,6 +3,7 @@ import type {
   AiKind,
   CurationRecord,
   ExtractedDeadline,
+  LinkCheckStatus,
   NewSignal,
   RiskAssessment,
   RiskLevel,
@@ -14,7 +15,9 @@ import type { RaisePage } from "../enrich/alphadrops-raises.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 import { FACT_FIELDS, curatedChange, endedScoringSince, publicFailReason } from "./repo.js";
 import type {
+  ClaimPage,
   ExtractionStatus,
+  LinkCheck,
   NewAiAnalysis,
   NewEvidence,
   NewProject,
@@ -120,6 +123,8 @@ export class MemoryRepo implements PipelineRepo {
   private readonly links: LinkRow[] = [];
   private readonly vcPortfolios: VcPortfolioRow[] = [];
   private readonly alphaRaises = new Map<string, RaisePage & { fetchedAt: Date }>();
+  readonly linkChecks = new Map<string, LinkCheck>();
+  readonly claimPages = new Map<string, ClaimPage>();
 
   /** Snapshot of every stored document (test helper). */
   allDocuments(): StoredDocument[] {
@@ -507,6 +512,32 @@ export class MemoryRepo implements PipelineRepo {
     const change = curatedChange(previous?.passed ?? null, c.passed);
     if (change) this.projectChanges.push({ projectId, field: "curated", ...change, changedAt: at });
   }
+
+  async saveLinkCheck(url: string, status: LinkCheckStatus, at: Date): Promise<void> {
+    this.linkChecks.set(url, { url, status, checkedAt: at });
+  }
+
+  async listLinkChecks(urls: string[]): Promise<LinkCheck[]> {
+    return rowsOf(this.linkChecks, urls);
+  }
+
+  async saveClaimPage(url: string, text: string, at: Date): Promise<void> {
+    this.claimPages.set(url, { url, text, fetchedAt: at });
+  }
+
+  async listClaimPages(urls: string[]): Promise<ClaimPage[]> {
+    return rowsOf(this.claimPages, urls);
+  }
+}
+
+/** Copies of the rows stored under `urls` (missing ones left out), ordered by url. */
+function rowsOf<T extends { url: string }>(rows: ReadonlyMap<string, T>, urls: string[]): T[] {
+  return [...new Set(urls)]
+    .flatMap((url) => {
+      const row = rows.get(url);
+      return row === undefined ? [] : [{ ...row }];
+    })
+    .sort((a, b) => compareText(a.url, b.url));
 }
 
 /** `coalesce(value->>'investor', '')`, the investor part of the project_signals unique index. */

@@ -9,6 +9,7 @@ import { countHacks, fetchHacks } from "../enrich/hacks.js";
 import { domainAgeDays } from "../enrich/rdap.js";
 import type { DailyStats } from "../stats.js";
 import type { PipelineRepo, ProjectForScoring } from "../store/repo.js";
+import { checkClaimLinks, saveLinkChecks } from "./link-checks.js";
 import { LINK_KINDS } from "./merge.js";
 import type { LinkKind } from "./merge.js";
 import type { SignalCoverage } from "./signals.js";
@@ -160,8 +161,10 @@ function countCuration(stats: DailyStats, c: CurationRecord): void {
  * GoPlus stops starting requests after `goplusBudgetMinutes` (by `deps.now()`, from the start of this step) or after
  * `goplusMaxConsecutiveFailures` domains in a row without an answer; the domains not asked count as not run.
  * The latest `scam` and `contradictions` analyses (from the `analyze` stage, earlier in the same run) go into
- * `RiskInput.aiFlags`; they can only add reasons and raise the level. Curation takes the signals the `signals` stage
- * stored and its `coverage` (by project id; a project missing from it had no source checked this run).
+ * `RiskInput.aiFlags`; they can only add reasons and raise the level. Every claim/app link is classified from the
+ * same per-domain GoPlus answers (`checkClaimLinks`), goes into `RiskInput.claimLinks` (a phishing one adds
+ * `phishing_claim_link`, high) and, once every project is scored, into `link_checks`. Curation takes the signals the
+ * `signals` stage stored and its `coverage` (by project id; a project missing from it had no source checked this run).
  * One project failing to save, whose analyses cannot be read, or whose curation throws, counts as `score_failed` and
  * does not stop the others.
  */
@@ -223,6 +226,8 @@ export async function scoreProjects(
 
   stats.domain_age_from_crtsh = agesFromCrtsh.size;
   stats.phishing_list_failed = domains.filter((d) => phishing.get(d) === null).length;
+  // Claim/app links (#42): classified from the per-domain GoPlus answers above; GoPlus is never asked again here.
+  const claimLinks = checkClaimLinks(projects, phishing);
   for (const project of projects) {
     if (project.officialDomains.length === 0) continue;
     stats.projects_with_official_domain += 1;
@@ -265,6 +270,7 @@ export async function scoreProjects(
         contractVerified: null,
         hackCount: hacks ? countHacks(hacks, project.name) : null,
         aiFlags: aiFlagsFromAnalyses(scam?.result ?? null, contradictions?.result ?? null),
+        claimLinks: claimLinks.byProject.get(project.id) ?? [],
       };
       const assessment = assessRisk(input);
       await repo.saveRiskAssessment(project.id, assessment, now);
@@ -278,4 +284,6 @@ export async function scoreProjects(
       stats.score_failed += 1;
     }
   }
+  // After every project is scored, so a link_checks write that fails (a stage error) never keeps a project unscored.
+  await saveLinkChecks(repo, claimLinks.byUrl, now, stats);
 }

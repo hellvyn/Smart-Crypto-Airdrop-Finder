@@ -248,15 +248,37 @@ function fakeChat(replies: Record<string, unknown> = REPLIES, fail: Set<string> 
   return fake;
 }
 
+/** The untrusted-page fetch of a run (claim portals): answers from `pages` (others 404) and records each URL. */
+function fakeFetchUntrusted(pages: Pages): { fetchUntrusted: (url: string) => Promise<{ status: number; body: string }>; requested: string[] } {
+  const requested: string[] = [];
+  return {
+    requested,
+    fetchUntrusted: async (url) => {
+      requested.push(url);
+      return pages[url] ?? { status: 404, body: "" };
+    },
+  };
+}
+
 function setup(opts: { pages?: Pages; chat?: FakeChat; repo?: MemoryRepo; now?: Date; config?: PipelineConfig } = {}) {
   const repo = opts.repo ?? new MemoryRepo();
-  const http = fakeHttp(opts.pages ?? basePages());
+  const pages = opts.pages ?? basePages();
+  const http = fakeHttp(pages);
+  const untrusted = fakeFetchUntrusted(pages);
   const chat = opts.chat ?? fakeChat();
   const now = opts.now ?? NOW;
   // Failed AI analyses are reported here instead of on the console.
   const warnings: string[] = [];
-  const deps = { repo, http, chat: chat.chat, sleep: async () => {}, now: () => now, warn: (line: string) => warnings.push(line) };
-  return { repo, http, chat, deps, warnings, config: opts.config ?? defaultConfig };
+  const deps = {
+    repo,
+    http,
+    fetchUntrusted: untrusted.fetchUntrusted,
+    chat: chat.chat,
+    sleep: async () => {},
+    now: () => now,
+    warn: (line: string) => warnings.push(line),
+  };
+  return { repo, http, untrusted, chat, deps, warnings, config: opts.config ?? defaultConfig };
 }
 
 async function projects(repo: MemoryRepo) {
@@ -2480,6 +2502,130 @@ describe("runDaily curation", () => {
       [deepbook, null, "true", NOW],
       [deepbook, "true", "false", nextDay],
     ]);
+  });
+
+  describe("claim links (#42, #56)", () => {
+    const CLAIM = "https://claimportal.xyz/claim";
+    /** REPLIES with a DeepBook that also links a claim portal on another domain. */
+    const deepbookWithClaim: Record<string, unknown> = {
+      ...REPLIES,
+      [DEEPBOOK]: {
+        is_airdrop_content: true,
+        projects: [
+          project({
+            name: "DeepBook",
+            status: "live",
+            status_evidence: "Airdrop confirmed",
+            chains: ["Sui"],
+            tasks: ["Join the waitlist"],
+            official_urls: ["https://deepbook.tech/waitlist", CLAIM],
+          }),
+        ],
+      },
+    };
+    const linkChecks = async (repo: MemoryRepo) => repo.listLinkChecks([CLAIM]);
+    /** The base pages with the claim portal linked from the DeepBook page (extraction keeps only URLs in the source). */
+    const pagesWithClaim = (): Pages => {
+      const pages = basePages();
+      pages[DEEPBOOK] = {
+        status: 200,
+        body: fixture("airdrops-detail.html").replace(
+          "Claims are open for 30 days.",
+          `Claims are open for 30 days. Claim at <a href="${CLAIM}">the claim portal</a>.`,
+        ),
+      };
+      return pages;
+    };
+
+    it("drops a curated project with a phishing claim link out of the list and logs curated true to false", async () => {
+      const { repo, deps, config, http } = setup({ pages: pagesWithClaim(), chat: fakeChat(deepbookWithClaim) });
+      const first = await runDaily(deps, config);
+      expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: true });
+      expect(await linkChecks(repo)).toEqual([{ url: CLAIM, status: "different_domain", checkedAt: NOW }]);
+      expect(first).toMatchObject({ link_checks_total: 1, link_checks_phishing: 0 });
+      const nextDay = new Date(NOW.getTime() + DAY);
+
+      const second = await runDaily({ ...deps, http: phishingFor(http, "claimportal.xyz"), now: () => nextDay }, config);
+
+      expect(await linkChecks(repo)).toEqual([{ url: CLAIM, status: "phishing", checkedAt: nextDay }]);
+      expect(second).toMatchObject({ link_checks_total: 1, link_checks_phishing: 1 });
+      const risk = await latestRisk(repo, "deepbook");
+      expect(risk?.reasons.find((r) => r.code === "phishing_claim_link")).toMatchObject({ severity: "high", source: "goplus" });
+      // The public reason never carries the link.
+      expect(risk?.reasons.find((r) => r.code === "phishing_claim_link")?.message).not.toContain("claimportal");
+      const curation = await latestCurationOf(repo, "deepbook");
+      expect(curation).toMatchObject({ passed: false, tab: null });
+      expect(codes(curation)).toContain("risk_too_high");
+      const deepbook = (await repo.findProjectsByNameKey("deepbook"))[0]?.id;
+      expect(curatedChanges(repo).filter(([id]) => id === deepbook)).toEqual([
+        [deepbook, null, "true", NOW],
+        [deepbook, "true", "false", nextDay],
+      ]);
+    });
+
+    it("reads the claim portal in analyze so its text reaches the scam analyst in the same run", async () => {
+      const pages = pagesWithClaim();
+      pages[CLAIM] = {
+        status: 200,
+        body: "<html><head><script>steal()</script></head><body><h1>DeepBook claim</h1><p>Only 2 hours left to claim!</p></body></html>",
+      };
+      const base = fakeChat(deepbookWithClaim);
+      const scamInputs: string[] = [];
+      const chat: FakeChat = {
+        ...base,
+        chat: async (model, messages) => {
+          const scamPrompt = (messages[0]?.content ?? "").includes('{"flags"');
+          const user = messages[1]?.content ?? "";
+          if (!scamPrompt || !user.includes("PROJECT: DeepBook")) return base.chat(model, messages);
+          scamInputs.push(user);
+          const flags = [{ pattern: "urgency", quote: "Only 2 hours left to claim!", explanation: "Desakan waktu." }];
+          return { content: JSON.stringify({ flags }), finishReason: "stop", latencyMs: 1, httpStatus: 200, servedModel: null };
+        },
+      };
+      const { repo, deps, config, untrusted } = setup({ pages, chat });
+
+      const stats = await runDaily(deps, config);
+
+      expect(untrusted.requested).toEqual([CLAIM]);
+      expect(stats.claim_pages_read).toBe(1);
+      expect(scamInputs).toHaveLength(1);
+      expect(scamInputs[0]).toContain(`${CLAIM} ---\nDeepBook claim\n\nOnly 2 hours left to claim!`);
+      expect(scamInputs[0]).not.toContain("steal()");
+      const risk = await latestRisk(repo, "deepbook");
+      expect(risk?.reasons.filter((r) => r.source === "ai").map((r) => [r.code, r.severity])).toEqual([["ai_scam_pattern", "medium"]]);
+    });
+
+    it("gives the claim portal to the scam analyst only", async () => {
+      const pages = pagesWithClaim();
+      pages[CLAIM] = { status: 200, body: "<p>Only 2 hours left to claim!</p>" };
+      const base = fakeChat(deepbookWithClaim);
+      const prompts: { system: string; user: string }[] = [];
+      const chat: FakeChat = {
+        ...base,
+        chat: async (model, messages) => {
+          prompts.push({ system: messages[0]?.content ?? "", user: messages[1]?.content ?? "" });
+          return base.chat(model, messages);
+        },
+      };
+      const { deps, config } = setup({ pages, chat });
+
+      await runDaily(deps, config);
+
+      const withPortal = prompts.filter((p) => p.user.includes("Only 2 hours left"));
+      expect(withPortal).toHaveLength(1);
+      expect(withPortal[0]?.system).toContain('{"flags"');
+    });
+
+    it("does not fetch claim portals when no scam analyzer runs", async () => {
+      const pages = pagesWithClaim();
+      pages[CLAIM] = { status: 200, body: "<p>Only 2 hours left to claim!</p>" };
+      const { deps, config, untrusted } = setup({ pages, chat: fakeChat(deepbookWithClaim) });
+
+      const stats = await runDaily({ ...deps, analyzers: [] }, config);
+
+      expect(untrusted.requested).toEqual([]);
+      expect(stats.claim_pages_read).toBe(0);
+    });
   });
 
   it("keeps a curated project listed when it ends and logs only a status change", async () => {

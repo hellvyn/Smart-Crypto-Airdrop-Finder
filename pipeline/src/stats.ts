@@ -65,6 +65,12 @@ export interface DailyStats extends RunStats {
    * all the same; the count is for the owner's review of AI writing (gate G13).
    */
   ai_style_violations: number;
+  /** Claim portal pages fetched this run (at most 20) for the AI Scam Analyst; pages read from the cache not counted. */
+  claim_pages_read: number;
+  /** Distinct claim/app links checked and written to `link_checks` this run. */
+  link_checks_total: number;
+  /** Of those, links on the phishing list (`phishing`; never rendered as a link, and the project's risk is high). */
+  link_checks_phishing: number;
   /** Projects whose curation (`curate` + `worth`) was computed and stored this run. */
   curation_checked: number;
   /** Of those, the curations that passed, in all tabs and per tab (`live_now` is what gate G9 counts). */
@@ -115,6 +121,9 @@ export function emptyStats(): DailyStats {
     ai_analyses_failed: 0,
     ai_analyses_deferred: 0,
     ai_style_violations: 0,
+    claim_pages_read: 0,
+    link_checks_total: 0,
+    link_checks_phishing: 0,
     curation_checked: 0,
     curation_passed: 0,
     curation_passed_live_now: 0,

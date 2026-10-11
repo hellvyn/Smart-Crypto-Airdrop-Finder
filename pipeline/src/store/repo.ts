@@ -6,6 +6,7 @@ import type {
   DeadlineKind,
   ExtractedDeadline,
   ExtractionResult,
+  LinkCheckStatus,
   NewSignal,
   RiskAssessment,
   RiskLevel,
@@ -155,6 +156,21 @@ export interface NewAiAnalysis {
 
 export type StoredAiAnalysis = NewAiAnalysis;
 
+/** One `link_checks` row (#42): the latest check status of a claim/app link. Public read. */
+export interface LinkCheck {
+  url: string;
+  status: LinkCheckStatus;
+  checkedAt: Date;
+}
+
+/** One `claim_pages` row (#56): the text of a claim portal page as last fetched. Service role only. */
+export interface ClaimPage {
+  url: string;
+  /** Page text after HTML-to-text (`claimPageText`); "" when the page had no text without running its scripts. */
+  text: string;
+  fetchedAt: Date;
+}
+
 /**
  * `curations.public_fail_reason` (#55): the message of the first `fail` reason, readable by anonymous visitors.
  * Null for a passing curation.
@@ -276,4 +292,12 @@ export interface PipelineRepo {
    * that passes, also writes a `project_changes` row with field `curated` (see `curatedChange`).
    */
   saveCuration(projectId: string, c: CurationRecord, at: Date): Promise<void>;
+  /** Inserts or replaces the check of one claim/app link (`link_checks`, url is the key), checked at `at`. */
+  saveLinkCheck(url: string, status: LinkCheckStatus, at: Date): Promise<void>;
+  /** The stored checks of these URLs (URLs never checked are left out), ordered by url. */
+  listLinkChecks(urls: string[]): Promise<LinkCheck[]>;
+  /** Inserts or replaces the cached text of one claim portal page (`claim_pages`, url is the key), fetched at `at`. */
+  saveClaimPage(url: string, text: string, at: Date): Promise<void>;
+  /** The cached claim portal pages of these URLs (URLs never fetched are left out), ordered by url. */
+  listClaimPages(urls: string[]): Promise<ClaimPage[]>;
 }

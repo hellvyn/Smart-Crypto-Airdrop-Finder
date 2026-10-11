@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { createHttp } from "../src/http.js";
+import { createFetchUntrusted, createHttp } from "../src/http.js";
 import type { Http } from "../src/collectors/types.js";
 import { collectAirdropsIo, parseDetail, parseListing } from "../src/collectors/airdrops-io.js";
 import { collectTelegram, parseTelegramPage } from "../src/collectors/telegram.js";
@@ -81,6 +81,105 @@ describe("createHttp", () => {
   it("resolveRedirect returns null when there is no location header", async () => {
     const http = createHttp((async () => new Response("ok", { status: 200 })) as typeof fetch);
     expect(await http.resolveRedirect("https://a.test/visit/1/")).toBeNull();
+  });
+});
+
+describe("createFetchUntrusted", () => {
+  type Answer = (url: string) => Response;
+  /** A fetch that answers by URL and records each request with its options. */
+  function recordingFetch(answer: Answer): { fetchImpl: typeof fetch; calls: { url: string; init: RequestInit | undefined }[] } {
+    const calls: { url: string; init: RequestInit | undefined }[] = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return answer(String(url));
+    }) as typeof fetch;
+    return { fetchImpl, calls };
+  }
+  const html = (body: string, status = 200) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
+  const redirect = (location: string) => new Response(null, { status: 302, headers: { location } });
+
+  it("sends the project User-Agent without cookies, with a timeout, following no redirect by itself", async () => {
+    const { fetchImpl, calls } = recordingFetch(() => html("<p>Claim</p>"));
+
+    expect(await createFetchUntrusted(fetchImpl)("https://claim.a.test/")).toEqual({ status: 200, body: "<p>Claim</p>" });
+
+    expect(calls).toHaveLength(1);
+    const init = calls[0]?.init;
+    expect(new Headers(init?.headers).get("user-agent")).toBe("SmartAirdropFinder/0.1 (+https://github.com/hellvyn/Smart-Airdrop-Finder)");
+    expect(init?.redirect).toBe("manual");
+    expect(init?.credentials).toBe("omit");
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("follows up to 3 redirects to public http(s) hosts and gives up after that", async () => {
+    const hops: Record<string, string> = {
+      "https://a.test/": "https://b.test/x",
+      "https://b.test/x": "http://c.test/y",
+      "http://c.test/y": "/z",
+    };
+    const three = recordingFetch((url) => (hops[url] ? redirect(hops[url]) : html("landed")));
+    expect(await createFetchUntrusted(three.fetchImpl)("https://a.test/")).toEqual({ status: 200, body: "landed" });
+    expect(three.calls.map((c) => c.url)).toEqual(["https://a.test/", "https://b.test/x", "http://c.test/y", "http://c.test/z"]);
+
+    const four = recordingFetch((url) => redirect(`${url}r`));
+    expect(await createFetchUntrusted(four.fetchImpl)("https://a.test/")).toEqual({ status: 0, body: "" });
+    expect(four.calls).toHaveLength(4);
+    // One timeout covers every hop.
+    expect(new Set(four.calls.map((c) => c.init?.signal)).size).toBe(1);
+  });
+
+  it.each([
+    ["file:///etc/passwd"],
+    ["javascript:alert(1)"],
+    ["http://127.0.0.1/"],
+    ["http://169.254.169.254/latest/meta-data/"],
+    ["http://localhost:8080/"],
+    ["http://[::1]/"],
+    ["http://metadata.google.internal/"],
+    ["http://router.local/"],
+  ])("never requests %s, directly or through a redirect", async (target) => {
+    const direct = recordingFetch(() => html("secret"));
+    expect(await createFetchUntrusted(direct.fetchImpl)(target)).toEqual({ status: 0, body: "" });
+    expect(direct.calls).toEqual([]);
+
+    const viaRedirect = recordingFetch((url) => (url === "https://claim.a.test/" ? redirect(target) : html("secret")));
+    expect(await createFetchUntrusted(viaRedirect.fetchImpl)("https://claim.a.test/")).toEqual({ status: 0, body: "" });
+    expect(viaRedirect.calls.map((c) => c.url)).toEqual(["https://claim.a.test/"]);
+  });
+
+  it("reads at most 1 MB of the body", async () => {
+    let cancelled = false;
+    const chunk = new TextEncoder().encode("a".repeat(64 * 1024));
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        sent += chunk.length;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const { fetchImpl } = recordingFetch(() => new Response(stream, { status: 200, headers: { "content-type": "text/html" } }));
+
+    const page = await createFetchUntrusted(fetchImpl)("https://claim.a.test/");
+
+    expect(page.status).toBe(200);
+    expect(page.body.length).toBe(1_000_000);
+    expect(cancelled).toBe(true);
+    expect(sent).toBeLessThan(1_200_000);
+  });
+
+  it("gives an empty body for a response that is not text", async () => {
+    const { fetchImpl } = recordingFetch(() => new Response("%PDF-1.7", { status: 200, headers: { "content-type": "application/pdf" } }));
+    expect(await createFetchUntrusted(fetchImpl)("https://claim.a.test/")).toEqual({ status: 200, body: "" });
+  });
+
+  it("turns a network error into status 0", async () => {
+    const fetchImpl = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof fetch;
+    expect(await createFetchUntrusted(fetchImpl)("https://claim.a.test/")).toEqual({ status: 0, body: "" });
   });
 });
 

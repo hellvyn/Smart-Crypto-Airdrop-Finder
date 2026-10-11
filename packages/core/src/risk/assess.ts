@@ -1,6 +1,7 @@
 import type { RiskLevel, RiskReason, Severity, Status } from "../types.js";
 import { DANGEROUS_ASK_CODES, detectDangerousAsks } from "./dangerous-asks.js";
 import type { DangerousAskCode } from "./dangerous-asks.js";
+import type { ClaimLink } from "./claim-links.js";
 import { isLookalike, registrableOf } from "./lookalike.js";
 
 export type { RiskReason } from "../types.js";
@@ -57,6 +58,11 @@ export interface RiskInput {
    * analysis; `contradictions`: number of contradictions found. These can only add reasons and raise the level.
    */
   aiFlags?: { scam: { pattern: string; quote: string }[] | null; contradictions: number };
+  /**
+   * The project's claim/app links with their check status (`classifyLink`, #42). A `phishing` one adds the
+   * `phishing_claim_link` reason (high). Missing = no claim/app links.
+   */
+  claimLinks?: ClaimLink[];
 }
 
 export interface RiskAssessment {
@@ -191,6 +197,18 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       code: "token_honeypot",
       severity: "critical",
       message: "The token looks like a honeypot: it can be bought but not sold.",
+      source: "goplus",
+    });
+  }
+
+  // High: claim/app links on the phishing list. One reason for all of them; the public message never names a link.
+  const phishingClaimLinks = new Set((input.claimLinks ?? []).filter((l) => l.status === "phishing").map((l) => l.url));
+  if (phishingClaimLinks.size > 0) {
+    const n = phishingClaimLinks.size;
+    reasons.push({
+      code: "phishing_claim_link",
+      severity: "high",
+      message: `${plural(n, "claim link")} of this project ${n === 1 ? "is" : "are"} on the phishing list and hidden.`,
       source: "goplus",
     });
   }

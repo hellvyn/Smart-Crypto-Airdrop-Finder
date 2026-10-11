@@ -5,6 +5,7 @@ import type {
   DatePrecision,
   DeadlineKind,
   ExtractedDeadline,
+  LinkCheckStatus,
   NewSignal,
   RiskAssessment,
   RiskLevel,
@@ -18,7 +19,9 @@ import type { RaisePage } from "../enrich/alphadrops-raises.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 import { FACT_FIELDS, curatedChange, endedScoringSince, publicFailReason } from "./repo.js";
 import type {
+  ClaimPage,
   ExtractionStatus,
+  LinkCheck,
   NewAiAnalysis,
   NewEvidence,
   NewProject,
@@ -34,6 +37,8 @@ import type {
 
 const DAY_MS = 86_400_000;
 const PAGE_SIZE = 1000;
+/** URLs per `in.(...)` filter, which goes into the request URL: keeps it far below proxy URL length limits. */
+const URL_CHUNK = 100;
 
 interface DocumentDb {
   id: string;
@@ -872,4 +877,65 @@ export class SupabaseRepo implements PipelineRepo {
       );
     }
   }
+
+  async saveLinkCheck(url: string, status: LinkCheckStatus, at: Date): Promise<void> {
+    check(
+      "saveLinkCheck",
+      await this.db.from("link_checks").upsert({ url, status, checked_at: at.toISOString() }, { onConflict: "url" }),
+    );
+  }
+
+  async listLinkChecks(urls: string[]): Promise<LinkCheck[]> {
+    const rows: { url: string; status: LinkCheckStatus; checked_at: string }[] = [];
+    for (const chunk of chunks(urls, URL_CHUNK)) {
+      const data = check(
+        "listLinkChecks",
+        await this.db
+          .from("link_checks")
+          .select("url, status, checked_at")
+          .in("url", chunk)
+          .order("url")
+          .returns<{ url: string; status: LinkCheckStatus; checked_at: string }[]>(),
+      );
+      rows.push(...(data ?? []));
+    }
+    return rows.map((r) => ({ url: r.url, status: r.status, checkedAt: new Date(r.checked_at) })).sort(byUrl);
+  }
+
+  async saveClaimPage(url: string, text: string, at: Date): Promise<void> {
+    check(
+      "saveClaimPage",
+      await this.db.from("claim_pages").upsert({ url, text, fetched_at: at.toISOString() }, { onConflict: "url" }),
+    );
+  }
+
+  async listClaimPages(urls: string[]): Promise<ClaimPage[]> {
+    const rows: { url: string; text: string; fetched_at: string }[] = [];
+    for (const chunk of chunks(urls, URL_CHUNK)) {
+      const data = check(
+        "listClaimPages",
+        await this.db
+          .from("claim_pages")
+          .select("url, text, fetched_at")
+          .in("url", chunk)
+          .order("url")
+          .returns<{ url: string; text: string; fetched_at: string }[]>(),
+      );
+      rows.push(...(data ?? []));
+    }
+    return rows.map((r) => ({ url: r.url, text: r.text, fetchedAt: new Date(r.fetched_at) })).sort(byUrl);
+  }
+}
+
+/** The distinct values of `values` in slices of at most `size`. */
+function chunks(values: string[], size: number): string[][] {
+  const distinct = [...new Set(values)];
+  const out: string[][] = [];
+  for (let i = 0; i < distinct.length; i += size) out.push(distinct.slice(i, i + size));
+  return out;
+}
+
+/** Byte order, like the `collate "C"` url columns, so chunks read separately come back in one order. */
+function byUrl(a: { url: string }, b: { url: string }): number {
+  return a.url < b.url ? -1 : a.url > b.url ? 1 : 0;
 }
