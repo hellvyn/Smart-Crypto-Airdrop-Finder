@@ -78,16 +78,16 @@ Dashboard.
 1. **Sign In / Providers:** turn off **Allow new users to sign up**. Without this, anyone can still create an
    account through the Auth API with the public anon key, even though the web app has no signup page.
 2. **Sign In / Providers > Email:** turn off **Secure password change**. It needs a reauthentication email,
-   and the project sends none. The "Ganti password" form in `/settings` re-checks the current password itself
-   instead.
+   and the project sends none. Members cannot change their own password (owner decision #60), so nothing in the app
+   needs it; it stays off so the owner can set passwords in the Dashboard without a reauthentication step.
 3. Leave **Confirm email** as it is: users are created confirmed (below), so it never has to deliver anything.
    No custom SMTP and no email templates are needed; remove any that were set up for the old flow.
 
 **Add a member:** Authentication > Users > **Add user** > **Create new user**. Enter the email and a password, tick
 **Auto Confirm User**, then create. Send the password to the member yourself (Telegram or DM). The member logs in
-at `/login` right away. Ask them to replace it in `/settings` > **Ganti password** (current password, then the
-new one twice), so the password in the chat history stops working. A database trigger creates the member's `profiles` row, so nothing else is needed. Without
-Auto Confirm the account stays unconfirmed and login fails.
+at `/login` right away. A database trigger creates the member's `profiles` row, so nothing else is needed. Without
+Auto Confirm the account stays unconfirmed and login fails. Members cannot change their own password: the app has no
+form for it (owner decision #60), so a member who wants a new one asks you, and you reset it as below.
 
 **Reset a password:** open the user in Authentication > Users and set a new password there, then tell the member
 in person. Do not use "Send password recovery": there is no SMTP, and the app has no page to receive the link.
