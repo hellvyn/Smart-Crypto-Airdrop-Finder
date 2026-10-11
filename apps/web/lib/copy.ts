@@ -653,6 +653,8 @@ export const coach = {
     title: "Tanya AI",
     remaining: (left: number) => `Sisa ${left}/100 pesan hari ini`,
     disclaimer: "Bukan nasihat keuangan. Tetap DYOR.",
+    /** Owner decision 2026-10-11: say it plainly, the model chain can end at third-party providers. */
+    privacy: "Pertanyaan dan profil kamu diproses penyedia model AI pihak ketiga. Jangan tulis data rahasia.",
     label: "Pertanyaan kamu",
     send: "Kirim",
     sending: "AI Coach lagi nulis...",
