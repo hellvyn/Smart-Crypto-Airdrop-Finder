@@ -52,7 +52,18 @@ function rows(signals: CuratedSignal[], facts: EvidenceRow[]): Row[] {
     const quote = typeof c.quote === "string" && c.quote.trim() !== "" ? c.quote.trim() : null;
     out.push({ text: quote ? w.claimQuote(quote) : c.investor, label: w.claimedLabel, verified: false });
   }
-  return out;
+  return onePerText(out);
+}
+
+/** A row once per text and label (whitespace collapsed, case ignored), the first one kept: one quote can come from two documents. */
+function onePerText(list: Row[]): Row[] {
+  const seen = new Set<string>();
+  return list.filter((r) => {
+    const key = `${r.label}\n${r.text.trim().replace(/\s+/g, " ").toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
