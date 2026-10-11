@@ -1,8 +1,12 @@
 name: CI
 
+# Push only: a pull request's checks are the push run on its head commit, so a branch with an open PR runs once, not twice.
+# Docs-only commits skip CI.
 on:
   push:
-  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
 
 permissions:
   contents: read
