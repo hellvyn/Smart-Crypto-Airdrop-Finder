@@ -33,6 +33,7 @@ export async function SiteHeader() {
         ) : (
           <nav className="site-nav site-nav-visitor" aria-label={header.navLabel}>
             <Link href={LIST_PATH}>{header.airdrops}</Link>
+            <Link href="/coach">{header.coach}</Link>
             <Link href="/#cara">{header.why}</Link>
             <Link href="/#jejak">{header.trackRecord}</Link>
           </nav>

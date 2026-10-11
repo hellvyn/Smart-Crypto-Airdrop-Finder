@@ -1,4 +1,4 @@
-export type StampTone = "pass" | "ended" | "caution";
+export type StampTone = "pass" | "ended" | "caution" | "alert";
 export type StampSize = "sm" | "md" | "lg";
 
 const MAX_ROTATION = 10;

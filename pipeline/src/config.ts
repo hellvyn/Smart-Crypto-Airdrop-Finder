@@ -18,6 +18,13 @@ export interface PipelineConfig {
   telegramChannels: string[];
   defillama: { minTvl: number; excludedCategories: string[]; limit: number; newWithinDays: number };
   /**
+   * The `/protocol/{slug}` detail endpoint (description, methodology, github, raises), asked for the speculative
+   * candidates only, and only when the `/protocols` list does not carry those fields: at most `maxRequests` a run,
+   * `delayMs` apart, none started after `budgetMinutes` from the start of the first (the answers carry full TVL
+   * history, so they are big). Candidates left over keep the list fields.
+   */
+  defillamaDetails: { maxRequests: number; delayMs: number; budgetMinutes: number };
+  /**
    * AlphaDrops collector (curation spec §15.1): at most `maxDetails` detail pages per run, `delayMs` apart.
    * `intermediaryHosts` (exact host match) are never a project's domain: the collector drops a website link that
    * ends there, and extraction and merge refuse them as official URLs and domains (`isNonProjectHost`).
@@ -78,6 +85,8 @@ export interface PipelineConfig {
    * analyses in the same run instead of the next day.
    */
   analyzeListedBudgetMinutes: number;
+  /** AI analyses started at once (the extraction keeps `llmConcurrency`). */
+  analyzeConcurrency: number;
   maxAnalysesPerRun: number;
   scoreActiveSinceDays: number;
   textRetentionDays: number;
@@ -90,6 +99,17 @@ export interface PipelineConfig {
    * next run.
    */
   logos: { budgetMinutes: number; concurrency: number; maxXAvatarsPerRun: number };
+  /**
+   * Official website text for the AI Analyst (owner request 2026-10-11, `official_sites` stage): listed projects only,
+   * `concurrency` sites at a time, no site started after `budgetMinutes` from the start of the stage, at most
+   * `maxPerRun` sites a run (never-fetched first, then the oldest). A site is fetched again after 7 days.
+   */
+  officialSites: { concurrency: number; budgetMinutes: number; maxPerRun: number };
+  /**
+   * The optional enrichments (DefiLlama details, official websites) start no request more than this many minutes after
+   * the run started, so a slow day keeps its time for `score`, `analyze` and `purge` (they count as skipped).
+   */
+  enrichmentCutoffMinutes: number;
 }
 
 /**
@@ -150,6 +170,7 @@ export const VC_LIST: VcConfig[] = [
 export const defaultConfig: PipelineConfig = {
   telegramChannels: ["airdrops_io"],
   defillama: { minTvl: 1_000_000, excludedCategories: ["CEX"], limit: 80, newWithinDays: 180 },
+  defillamaDetails: { maxRequests: 80, delayMs: 400, budgetMinutes: 2 },
   alphadrops: {
     enabled: true,
     maxDetails: 80,
@@ -169,9 +190,32 @@ export const defaultConfig: PipelineConfig = {
   crtshBudgetMinutes: 3,
   analyzeBudgetMinutes: 10,
   analyzeListedBudgetMinutes: 5,
+  analyzeConcurrency: 3,
   maxAnalysesPerRun: 60,
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
   vcs: VC_LIST,
   logos: { budgetMinutes: 2, concurrency: 3, maxXAvatarsPerRun: 20 },
+  officialSites: { concurrency: 2, budgetMinutes: 2, maxPerRun: 30 },
+  enrichmentCutoffMinutes: 40,
 };
+
+/**
+ * A manual backfill run (workflow_dispatch inputs) may give the AI analyses more time and more parallel calls:
+ * ANALYZE_BUDGET_MINUTES and ANALYZE_LISTED_BUDGET_MINUTES (1 to 30 each) and ANALYZE_CONCURRENCY (1 to 8). Empty,
+ * missing or out-of-range values keep `base`, so the scheduled run is unchanged.
+ */
+export function withAnalyzeOverrides(base: PipelineConfig, env: Record<string, string | undefined>): PipelineConfig {
+  const read = (name: string, min: number, max: number, fallback: number): number => {
+    const raw = env[name]?.trim() ?? "";
+    if (!/^\d+$/.test(raw)) return fallback;
+    const value = Number(raw);
+    return value >= min && value <= max ? value : fallback;
+  };
+  return {
+    ...base,
+    analyzeBudgetMinutes: read("ANALYZE_BUDGET_MINUTES", 1, 30, base.analyzeBudgetMinutes),
+    analyzeListedBudgetMinutes: read("ANALYZE_LISTED_BUDGET_MINUTES", 1, 30, base.analyzeListedBudgetMinutes),
+    analyzeConcurrency: read("ANALYZE_CONCURRENCY", 1, 8, base.analyzeConcurrency),
+  };
+}

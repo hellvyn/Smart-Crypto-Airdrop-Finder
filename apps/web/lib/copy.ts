@@ -34,7 +34,7 @@ export const header = {
   why: "Kenapa AirdropIQ",
   trackRecord: "Track record",
   garapan: "Garapan saya",
-  coach: "Coach",
+  coach: "AI Coach",
   watchlist: "Watchlist",
   wallets: "Wallet",
   account: "Akun",
@@ -569,14 +569,22 @@ export const coach = {
   },
   /** Stored as the member's message of a plan request (it shows in the history). */
   planRequest: "Bikinin rencana garapan buat aku.",
-  title: "Coach",
-  heading: "Coach garapan",
+  title: "AI Coach",
+  heading: "AI Coach",
+  /** What a visitor sees on /coach (owner 2026-10-11): the menu is there for everyone, the Coach is for members. */
+  visitor: {
+    stampTop: "KHUSUS",
+    stampBottom: "MEMBER",
+    text: "AI Coach bantu kamu milih airdrop yang cocok sama modal, jumlah wallet, dan waktu kamu, terus jelasin tiap langkahnya. Fitur ini khusus member.",
+  },
   intro:
     "Jawab beberapa pertanyaan, nanti Coach pilihin airdrop dari list yang udah lolos check, sesuai modal dan waktu kamu.",
   /** The member's own message when they ask the Coach to explain a step on a project page. */
   explainRequest: "Jelasin langkah ini dong.",
   form: {
     privacy: "Kami gak minta email, alamat wallet, atau saldo kamu.",
+    /** The empty first option of every dropdown. */
+    choose: "Pilih...",
     level: { legend: "Level kamu", beginner: "Pemula", intermediate: "Menengah", pro: "Pro" },
     capital: {
       legend: "Modal yang siap dipakai",
@@ -716,8 +724,8 @@ export const landing = {
       { title: "Level worth it", note: "Sepadan gak sama effort-nya, plus urutan dari yang paling worth it.", free: false },
       { title: "AI verdict", note: "Garap, pantau, atau skip. Tiap alasan ada kutipan source-nya.", free: false },
       { title: "Estimasi effort", note: "Berapa menit per hari, modal, dan gas fee.", free: false },
-      { title: "Morning briefing", note: "Airdrop baru dan update penting, dirangkum sebelum kamu buka grup.", free: false, soon: true },
-      { title: "Farming Coach", note: "Tanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", free: false, soon: true },
+      { title: "Morning briefing", note: "Airdrop baru dan update penting, dirangkum sebelum kamu buka grup.", free: false },
+      { title: "AI Coach", note: "Tanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", free: false },
       { title: "Farming tracker & watchlist", note: "Daily checklist, heatmap, dan update kalau ada yang berubah.", free: false },
     ],
   },

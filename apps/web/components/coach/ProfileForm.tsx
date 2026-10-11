@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import type { CoachProfile } from "@saf/core";
-import { saveCoachProfileAction } from "@/app/(app)/coach/actions";
+import { saveCoachProfileAction } from "@/app/(public)/coach/actions";
 import { Button } from "@/components/ui";
 import { formValuesFrom, validateProfileForm, type ProfileFormErrors, type ProfileFormValues } from "@/lib/coach-text";
 import { coach } from "@/lib/copy";
@@ -18,18 +18,18 @@ const CAPITALS = (["free", "gas_only", "up_to_100", "up_to_1000", "over_1000"] a
 const MINUTES = ([15, 30, 60, 120] as const).map((v) => [String(v), copy.minutes[v]] as const);
 const GOALS = (["quick", "long_term", "learn"] as const).map((v) => [v, copy.goal[v]] as const);
 
-/** A group of radio buttons under one legend, with its error message below. */
-function Radios({
-  name,
-  legend,
+/** One dropdown with its label above and its error message below; the empty first option means "not chosen yet". */
+function Select({
+  id,
+  label,
   options,
   value,
   error,
   onChange,
   children,
 }: {
-  name: string;
-  legend: string;
+  id: string;
+  label: string;
   options: readonly (readonly [string, string])[];
   value: string;
   error: string | undefined;
@@ -37,21 +37,23 @@ function Radios({
   children?: React.ReactNode;
 }) {
   return (
-    <fieldset className="coach-field">
-      <legend>{legend}</legend>
-      <div className="coach-options">
-        {options.map(([optionValue, label]) => (
-          <label key={optionValue} className="coach-option">
-            <input type="radio" name={name} value={optionValue} checked={value === optionValue} onChange={() => onChange(optionValue)} />
-            <span>{label}</span>
-          </label>
+    <div className="coach-field">
+      <label htmlFor={id}>{label}</label>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={error ? true : undefined}>
+        <option value="">{copy.choose}</option>
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>
+            {optionLabel}
+          </option>
         ))}
-      </div>
+      </select>
       {children}
       {error ? <p className="form-error">{error}</p> : null}
-    </fieldset>
+    </div>
   );
 }
+
+const WALLET_COUNTS = Array.from({ length: 10 }, (_, i) => [String(i + 1), String(i + 1)] as const);
 
 /**
  * The Coach profile form (spec §5.1). Checked here for the messages and again on the server before anything is saved.
@@ -102,53 +104,49 @@ export function ProfileForm({
 
   return (
     <form className="coach-form" onSubmit={submit} noValidate>
-      <Radios name="level" legend={copy.level.legend} options={LEVELS} value={values.level} error={errors.level} onChange={(v) => set("level", v)} />
-      <Radios
-        name="capital_band"
-        legend={copy.capital.legend}
-        options={CAPITALS}
-        value={values.capital_band}
-        error={errors.capital_band}
-        onChange={(v) => set("capital_band", v)}
-      >
-        {values.level === "beginner" ? <p className="muted coach-hint">{copy.capital.beginnerHint}</p> : null}
-      </Radios>
-      <Radios
-        name="has_wallet"
-        legend={copy.wallet.legend}
-        options={[
-          ["yes", copy.wallet.yes],
-          ["no", copy.wallet.no],
-        ]}
-        value={values.has_wallet}
-        error={errors.has_wallet}
-        onChange={(v) => setValues((prev) => ({ ...prev, has_wallet: v as ProfileFormValues["has_wallet"] }))}
-      />
-      {values.has_wallet === "yes" ? (
-        <div className="coach-field">
-          <label htmlFor="coach-wallet-count">{copy.wallet.count}</label>
-          <input
+      <div className="coach-form-grid">
+        <Select id="coach-level" label={copy.level.legend} options={LEVELS} value={values.level} error={errors.level} onChange={(v) => set("level", v)} />
+        <Select
+          id="coach-capital"
+          label={copy.capital.legend}
+          options={CAPITALS}
+          value={values.capital_band}
+          error={errors.capital_band}
+          onChange={(v) => set("capital_band", v)}
+        >
+          {values.level === "beginner" ? <p className="muted coach-hint">{copy.capital.beginnerHint}</p> : null}
+        </Select>
+        <Select
+          id="coach-has-wallet"
+          label={copy.wallet.legend}
+          options={[
+            ["yes", copy.wallet.yes],
+            ["no", copy.wallet.no],
+          ]}
+          value={values.has_wallet}
+          error={errors.has_wallet}
+          onChange={(v) => setValues((prev) => ({ ...prev, has_wallet: v as ProfileFormValues["has_wallet"] }))}
+        />
+        {values.has_wallet === "yes" ? (
+          <Select
             id="coach-wallet-count"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={10}
-            step={1}
+            label={copy.wallet.count}
+            options={WALLET_COUNTS}
             value={values.wallet_count}
-            onChange={(e) => set("wallet_count", e.target.value)}
+            error={errors.wallet_count}
+            onChange={(v) => set("wallet_count", v)}
           />
-          {errors.wallet_count ? <p className="form-error">{errors.wallet_count}</p> : null}
-        </div>
-      ) : null}
-      <Radios
-        name="minutes_per_day"
-        legend={copy.minutes.legend}
-        options={MINUTES}
-        value={values.minutes_per_day}
-        error={errors.minutes_per_day}
-        onChange={(v) => set("minutes_per_day", v)}
-      />
-      <Radios name="goal" legend={copy.goal.legend} options={GOALS} value={values.goal} error={errors.goal} onChange={(v) => set("goal", v)} />
+        ) : null}
+        <Select
+          id="coach-minutes"
+          label={copy.minutes.legend}
+          options={MINUTES}
+          value={values.minutes_per_day}
+          error={errors.minutes_per_day}
+          onChange={(v) => set("minutes_per_day", v)}
+        />
+        <Select id="coach-goal" label={copy.goal.legend} options={GOALS} value={values.goal} error={errors.goal} onChange={(v) => set("goal", v)} />
+      </div>
       {chains.length > 0 ? (
         <fieldset className="coach-field">
           <legend>{copy.chains.legend}</legend>

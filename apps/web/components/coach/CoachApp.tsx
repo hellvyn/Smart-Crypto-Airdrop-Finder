@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { CoachProfile } from "@saf/core";
-import { planCardsAction } from "@/app/(app)/coach/actions";
+import { planCardsAction } from "@/app/(public)/coach/actions";
 import { Button } from "@/components/ui";
 import { requestPlan, type PlanRecommendation } from "@/lib/coach-client";
 import type { PlanCardInfo } from "@/lib/coach-view";

@@ -4,6 +4,10 @@ import type { RunStats } from "./store/repo.js";
 export interface DailyStats extends RunStats {
   docs_collected: number;
   docs_changed: number;
+  /** DefiLlama `/protocol/{slug}` details fetched for the speculative candidates (when the list lacks them), failed, and not asked (cap or budget). */
+  defillama_details_fetched: number;
+  defillama_details_failed: number;
+  defillama_details_skipped: number;
   extract_ok: number;
   extract_failed: number;
   /** Pending documents left for the next run because the extraction budget ran out. */
@@ -85,6 +89,14 @@ export interface DailyStats extends RunStats {
    * all the same; the count is for the owner's review of AI writing (gate G13).
    */
   ai_style_violations: number;
+  /**
+   * Official website pages (`official_sites` stage, listed projects): pages fetched and kept; pages that failed (not 2xx,
+   * a broken connection, or a redirect to another domain); and pages not used: a page that is not HTML, and sites
+   * not started because the stage's budget or per-run cap was used up (the next run takes them).
+   */
+  official_pages_fetched: number;
+  official_pages_failed: number;
+  official_pages_skipped: number;
   /** Claim portal pages fetched this run (at most 20) for the AI Scam Analyst; pages read from the cache not counted. */
   claim_pages_read: number;
   /** Distinct claim/app links checked and written to `link_checks` this run. */
@@ -149,6 +161,7 @@ export interface DailyStats extends RunStats {
   stage_seconds_extract: number;
   stage_seconds_speculative: number;
   stage_seconds_signals: number;
+  stage_seconds_official_sites: number;
   stage_seconds_analyze: number;
   stage_seconds_score: number;
   stage_seconds_briefing: number;
@@ -161,6 +174,9 @@ export function emptyStats(): DailyStats {
   return {
     docs_collected: 0,
     docs_changed: 0,
+    defillama_details_fetched: 0,
+    defillama_details_failed: 0,
+    defillama_details_skipped: 0,
     extract_ok: 0,
     extract_failed: 0,
     extract_deferred: 0,
@@ -197,6 +213,9 @@ export function emptyStats(): DailyStats {
     ai_analyses_deferred: 0,
     ai_models_tripped: 0,
     ai_style_violations: 0,
+    official_pages_fetched: 0,
+    official_pages_failed: 0,
+    official_pages_skipped: 0,
     claim_pages_read: 0,
     link_checks_total: 0,
     link_checks_phishing: 0,
@@ -231,6 +250,7 @@ export function emptyStats(): DailyStats {
     stage_seconds_extract: 0,
     stage_seconds_speculative: 0,
     stage_seconds_signals: 0,
+    stage_seconds_official_sites: 0,
     stage_seconds_analyze: 0,
     stage_seconds_score: 0,
     stage_seconds_briefing: 0,

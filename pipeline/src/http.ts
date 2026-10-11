@@ -36,10 +36,11 @@ export function createHttp(fetchImpl: typeof fetch = fetch): Http {
 }
 
 /**
- * GET of a page an unknown party wrote (a claim portal, #42). Never throws: anything refused or failed is status 0
- * with an empty body.
+ * GET of a page an unknown party wrote (a claim portal, #42; an official website, #owner request 2026-10-11). Never
+ * throws: anything refused or failed is status 0 with an empty body. `finalUrl` is the URL the answer came from after
+ * redirects, when a page was answered at all (a caller that only wants pages of one domain compares its host).
  */
-export type FetchUntrusted = (url: string) => Promise<{ status: number; body: string }>;
+export type FetchUntrusted = (url: string) => Promise<{ status: number; body: string; finalUrl?: string }>;
 
 /** Most bytes of an untrusted page that are read; the rest is not downloaded. */
 export const UNTRUSTED_MAX_BYTES = 1_000_000;
@@ -114,9 +115,9 @@ export function createFetchUntrusted(fetchImpl: typeof fetch = fetch): FetchUntr
         }
         if (!TEXT_TYPE.test(res.headers.get("content-type") ?? "text/html")) {
           await res.body?.cancel().catch(() => undefined);
-          return { status: res.status, body: "" };
+          return { status: res.status, body: "", finalUrl: current };
         }
-        return { status: res.status, body: await readCapped(res, UNTRUSTED_MAX_BYTES) };
+        return { status: res.status, body: await readCapped(res, UNTRUSTED_MAX_BYTES), finalUrl: current };
       } catch {
         return { status: 0, body: "" };
       }

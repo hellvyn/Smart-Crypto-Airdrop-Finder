@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/app/(app)/coach/actions", () => ({ startCoachThreadAction: vi.fn() }));
+vi.mock("@/app/(public)/coach/actions", () => ({ startCoachThreadAction: vi.fn() }));
 
 import { StepsList } from "@/components/detail/StepsList";
 

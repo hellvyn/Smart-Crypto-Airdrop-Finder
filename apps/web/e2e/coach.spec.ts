@@ -39,7 +39,9 @@ async function userIdOf(email: string): Promise<string> {
   return user.id;
 }
 
-const pick = (page: Page, name: string) => page.getByRole("radio", { name, exact: true }).check();
+/** Chooses the option labelled `name` in the dropdown that has it. */
+const pick = (page: Page, name: string) =>
+  page.locator("select", { has: page.getByRole("option", { name, exact: true }) }).selectOption({ label: name });
 
 /** Fills the form as an experienced member with two wallets and a whole hour a day. */
 async function fillProPlan(page: Page): Promise<void> {
@@ -47,7 +49,7 @@ async function fillProPlan(page: Page): Promise<void> {
   await pick(page, "Pro");
   await pick(page, "> $1.000");
   await pick(page, "Udah");
-  await page.getByLabel("Jumlah wallet").fill("2");
+  await page.getByLabel("Jumlah wallet").selectOption("2");
   await pick(page, "60 menit");
   await pick(page, "Jangka panjang");
   await page.getByRole("button", { name: "Simpan dan bikin rencana" }).click();
@@ -55,15 +57,18 @@ async function fillProPlan(page: Page): Promise<void> {
 
 const cards = (page: Page) => page.locator(".coach-card");
 
-test("a visitor is sent to the login page, and the project page offers no Coach", async ({ page }) => {
-  await page.goto("/coach");
-  await expect(page).toHaveURL(/\/login\?next=%2Fcoach$/);
-  await expect(page.getByRole("link", { name: "Coach" })).toHaveCount(0);
+test("a visitor sees AI Coach in the menu and a KHUSUS MEMBER stamp on /coach, with no form and no chat", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("banner").getByRole("link", { name: "AI Coach" }).click();
+  await expect(page).toHaveURL(/\/coach$/);
+  await expect(page.getByRole("img", { name: "KHUSUS MEMBER" })).toBeVisible();
+  await expect(page.getByLabel("Level kamu")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Kirim" })).toHaveCount(0);
 });
 
 test("a member fills the form, gets a plan, starts farming from a card and finds it on /garapan", async ({ page }) => {
   await signIn(page, "coach-plan");
-  await expect(page.getByRole("banner").getByRole("link", { name: "Coach" })).toHaveAttribute("href", "/coach");
+  await expect(page.getByRole("banner").getByRole("link", { name: "AI Coach" })).toHaveAttribute("href", "/coach");
   await fillProPlan(page);
 
   await expect(page.getByRole("heading", { name: "Rencana garapan kamu" })).toBeVisible();

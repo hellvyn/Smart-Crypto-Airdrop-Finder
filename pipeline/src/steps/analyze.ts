@@ -69,7 +69,7 @@ export interface AnalyzeDeps {
    * Extra input documents of one analyzer for one project (e.g. claim portal pages for the scam analyst), next to
    * the project's own source texts. They go into that analyzer's prompt and input hash only.
    */
-  extraSources?: (project: ProjectForScoring, kind: AiKind) => Promise<SourceText[]>;
+  extraSources?: (project: ProjectForScoring, kind: AiKind, own: SourceText[]) => Promise<SourceText[]>;
   /**
    * Projects whose analyses `maxAnalysesPerRun` does not limit: the listed ones, which members see and which must not
    * show an empty AI section. The time budget (`analyzeBudgetMinutes`) still applies to them.
@@ -87,6 +87,24 @@ export function claimPageSources(
   pages: ReadonlyMap<string, SourceText[]>,
 ): NonNullable<AnalyzeDeps["extraSources"]> {
   return async (project, kind) => (kind === "scam" ? (pages.get(project.id) ?? []) : []);
+}
+
+/**
+ * The run's official website texts (`loadOfficialSites`, by project id) go to the AI Analyst only. Not to the public
+ * contradiction check (it would put quotes of a third-party site on public pages), and not to the Scam Analyst (a
+ * marketing page that names its backers would risk a false `impersonation`, which fails curation on its own).
+ */
+export function officialSiteSources(
+  pages: ReadonlyMap<string, SourceText[]>,
+): NonNullable<AnalyzeDeps["extraSources"]> {
+  return async (project, kind) => (kind === "analyst" ? (pages.get(project.id) ?? []) : []);
+}
+
+/** An `extraSources` that gives each analyzer the sources of all of `parts`, in order. */
+export function combineExtraSources(
+  ...parts: NonNullable<AnalyzeDeps["extraSources"]>[]
+): NonNullable<AnalyzeDeps["extraSources"]> {
+  return async (project, kind, own) => (await Promise.all(parts.map((part) => part(project, kind, own)))).flat();
 }
 
 /**
@@ -115,7 +133,7 @@ export function listedFirst<T extends { id: string }>(projects: T[], listedIds: 
 }
 
 /**
- * Runs every analyzer on every project, `llmConcurrency` projects at a time, and stores each new analysis.
+ * Runs every analyzer on every project, `analyzeConcurrency` projects at a time, and stores each new analysis.
  *
  * - The input of an analysis is the project's unpurged source documents (`listProjectSourceTexts`) plus the
  *   analyzer's `extraSources`. A project with no input is not analyzed; its previous analysis, if any, stays.
@@ -148,11 +166,11 @@ export async function runAnalyses(
   const deadline = deps.now().getTime() + config.analyzeBudgetMinutes * MINUTE_MS;
   const budgetSpent = (): boolean => deps.now().getTime() >= deadline;
   const breaker = createCircuitBreaker(CIRCUIT_BREAKER_THRESHOLD);
-  const limit = pLimit(config.llmConcurrency);
+  const limit = pLimit(config.analyzeConcurrency);
   let started = 0;
 
   const analyzeOne = async (project: ProjectForScoring, own: SourceText[], analyzer: Analyzer): Promise<void> => {
-    const extra = deps.extraSources ? await deps.extraSources(project, analyzer.kind) : [];
+    const extra = deps.extraSources ? await deps.extraSources(project, analyzer.kind, own) : [];
     const sources = [...own, ...extra];
     if (sources.length === 0) return;
     const inputHash = analysisInputHash(project, sources.map((s) => `${s.url}\n${s.text}`));

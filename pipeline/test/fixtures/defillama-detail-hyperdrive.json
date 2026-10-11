@@ -1,0 +1,51 @@
+{
+  "id": "5123",
+  "name": "Hyperdrive Lend",
+  "address": null,
+  "symbol": "-",
+  "url": "https://hyperdrive.fi",
+  "description": "Hyperdrive Lend is a money market on Hyperliquid L1.\n\nSupply assets to earn yield or borrow against collateral.",
+  "chain": "Hyperliquid L1",
+  "logo": "https://icons.llama.fi/hyperdrive-lend.png",
+  "audits": "2",
+  "audit_note": null,
+  "audit_links": ["https://github.com/hyperdrive-fi/audits/blob/main/oak.pdf", "https://example-auditor.io/reports/hyperdrive", "https://a.example/3", "https://a.example/4"],
+  "gecko_id": null,
+  "cmcId": null,
+  "category": "Lending",
+  "chains": ["Hyperliquid L1"],
+  "module": "hyperdrive/index.js",
+  "twitter": "hyperdrive_fi",
+  "github": ["hyperdrive-fi", "hyperdrive-labs"],
+  "methodology": "TVL is the sum of supplied assets in the lending pools, minus borrowed amounts.",
+  "slug": "hyperdrive-lend",
+  "listedAt": 1760000000,
+  "raises": [
+    {
+      "date": 1680000000,
+      "name": "Hyperdrive",
+      "round": "Seed",
+      "amount": 5,
+      "chains": ["Hyperliquid L1"],
+      "sector": "Lending",
+      "category": "DeFi",
+      "categoryGroup": "Finance",
+      "source": "https://example.org/announcement",
+      "leadInvestors": ["Alpha Capital"],
+      "otherInvestors": ["Beta Ventures", "Gamma DAO"],
+      "valuation": null,
+      "defillamaId": "5123"
+    },
+    {
+      "date": 1700000000,
+      "name": "Hyperdrive",
+      "round": "Series A",
+      "amount": 12.5,
+      "leadInvestors": [],
+      "otherInvestors": ["Delta Fund"]
+    }
+  ],
+  "tvl": [{ "date": 1759900000, "totalLiquidityUSD": 24000000 }],
+  "chainTvls": { "Hyperliquid L1": { "tvl": [{ "date": 1759900000, "totalLiquidityUSD": 24000000 }] } },
+  "currentChainTvls": { "Hyperliquid L1": 25000000 }
+}

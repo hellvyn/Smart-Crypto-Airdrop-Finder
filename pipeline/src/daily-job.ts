@@ -2,7 +2,7 @@
 // returns the process exit code. Split out of the entry point so tests can run it with fakes.
 import { createClient } from "@supabase/supabase-js";
 import { createChat, createClaudeClient, loadProviders, usableModels } from "@saf/llm";
-import { defaultConfig } from "./config.js";
+import { defaultConfig, withAnalyzeOverrides } from "./config.js";
 import { createFetchImage, createFetchUntrusted, createHttp } from "./http.js";
 import { runDaily } from "./run.js";
 import type { PipelineDeps } from "./run.js";
@@ -27,7 +27,10 @@ export async function runDailyJob(
   const providers = loadProviders(env);
   const claude = providers.anthropic.apiKey === "" ? null : createClaudeClient(providers.anthropic.apiKey, fetch);
   // Without ANTHROPIC_API_KEY the analyses skip Claude entirely: no request and no circuit breaker failure.
-  const config = { ...defaultConfig, analyzeModels: usableModels(defaultConfig.analyzeModels, providers) };
+  const config = withAnalyzeOverrides(
+    { ...defaultConfig, analyzeModels: usableModels(defaultConfig.analyzeModels, providers) },
+    env,
+  );
 
   let stats;
   try {

@@ -13,6 +13,7 @@
   --pass: #1f7a45;
   --ended: #55554f;
   --caution: #b45309;
+  --alert: #b91c1c;
   --warn-fill: #ffd7c2;
   --member-fill: #fff1ea;
   --hazard: repeating-linear-gradient(-45deg, var(--ink) 0 14px, var(--accent) 14px 28px);
@@ -766,6 +767,16 @@ blockquote {
 
 .ui-stamp[data-tone="caution"] {
   --tone: var(--caution);
+}
+
+.ui-stamp[data-tone="alert"] {
+  --tone: var(--alert);
+}
+
+.coach-visitor-stamp {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0;
 }
 
 .ui-stamp-top {
@@ -2505,10 +2516,24 @@ blockquote {
   font-weight: 700;
 }
 
-.coach-field input[type="number"] {
-  width: 6rem;
+.coach-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 12px;
+}
+
+.coach-form-grid .coach-field > label {
+  font-weight: 700;
+}
+
+.coach-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
   border: 2px solid var(--ink);
   background: var(--surface);
+  color: var(--ink);
+  font: inherit;
 }
 
 .coach-options {

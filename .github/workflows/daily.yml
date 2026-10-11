@@ -4,6 +4,20 @@ on:
   schedule:
     - cron: "0 23 * * *"
   workflow_dispatch:
+    # Backfill knobs for a manual run (the scheduled run leaves them empty and keeps the defaults: 10, 5, 3).
+    inputs:
+      analyze_minutes:
+        description: "AI analysis budget in minutes (1-30, default 10)"
+        required: false
+        default: ""
+      analyze_listed_minutes:
+        description: "Catch-up analysis budget for newly listed projects in minutes (1-30, default 5)"
+        required: false
+        default: ""
+      analyze_concurrency:
+        description: "AI analyses at once (1-8, default 3)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -41,6 +55,9 @@ jobs:
           # Anthropic Claude Sonnet, first model of the AI analyses only (prepaid credit, expires 2026-10-27).
           # Empty or unset: the analyses skip Claude and use the chain above. Any Claude failure falls back too.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANALYZE_BUDGET_MINUTES: ${{ inputs.analyze_minutes }}
+          ANALYZE_LISTED_BUDGET_MINUTES: ${{ inputs.analyze_listed_minutes }}
+          ANALYZE_CONCURRENCY: ${{ inputs.analyze_concurrency }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: pnpm --silent --filter pipeline start

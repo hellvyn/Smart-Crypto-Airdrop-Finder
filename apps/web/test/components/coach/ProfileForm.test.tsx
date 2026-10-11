@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const actions = vi.hoisted(() => ({ saveCoachProfileAction: vi.fn() }));
-vi.mock("@/app/(app)/coach/actions", () => actions);
+vi.mock("@/app/(public)/coach/actions", () => actions);
 
 import { ProfileForm } from "@/components/coach/ProfileForm";
 
@@ -17,7 +17,17 @@ function renderForm(onSaved = vi.fn()) {
   return onSaved;
 }
 
-const pick = (name: string) => fireEvent.click(screen.getByRole("radio", { name }));
+/** Chooses the option whose text is `name` in whichever dropdown has it. */
+function pick(name: string): void {
+  for (const select of screen.getAllByRole("combobox") as HTMLSelectElement[]) {
+    const option = [...select.options].find((o) => o.text === name);
+    if (option) {
+      fireEvent.change(select, { target: { value: option.value } });
+      return;
+    }
+  }
+  throw new Error(`no option ${name}`);
+}
 const submit = () => fireEvent.click(screen.getByRole("button", { name: "Simpan dan bikin rencana" }));
 
 describe("ProfileForm", () => {
@@ -55,9 +65,11 @@ describe("ProfileForm", () => {
     pick("Udah");
     submit();
     expect(await screen.findByText("Isi jumlah wallet, 1 sampai 10.")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Jumlah wallet"), { target: { value: "11" } });
-    submit();
-    expect(await screen.findByText("Isi jumlah wallet, 1 sampai 10.")).toBeTruthy();
+    // The dropdown offers 1 to 10 only.
+    expect([...(screen.getByLabelText("Jumlah wallet") as HTMLSelectElement).options].map((o) => o.value)).toEqual([
+      "",
+      ...Array.from({ length: 10 }, (_, i) => String(i + 1)),
+    ]);
   });
 
   it("saves the profile it was filled with, chains included, then calls onSaved", async () => {
@@ -105,8 +117,8 @@ describe("ProfileForm", () => {
         onSaved={() => {}}
       />,
     );
-    expect((screen.getByRole("radio", { name: "Pro" }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByLabelText("Jumlah wallet") as HTMLInputElement).value).toBe("3");
+    expect((screen.getByLabelText("Level kamu") as HTMLSelectElement).value).toBe("pro");
+    expect((screen.getByLabelText("Jumlah wallet") as HTMLSelectElement).value).toBe("3");
     expect((screen.getByRole("checkbox", { name: "base" }) as HTMLInputElement).checked).toBe(true);
   });
 });

@@ -270,6 +270,79 @@ Nothing about a member is sent, and the prompt and the answer are not logged.
 Retention (`purge` stage): coach threads (their messages go with them) and briefings older than 30 days, and
 `coach_usage` rows (the quota ledger) older than 2 days.
 
+### DefiLlama fields for the AI analyses (`collect`)
+
+A project whose only source is its DefiLlama listing used to give the AI analyses a text of five lines (name, category,
+chains, website, listing date). The AI Analyst now also gets, as one more source `defillama-detail://<slug>` (never an
+http(s) URL, so never shown as a link), these labelled lines when DefiLlama has them: `Description:`, `Methodology:`,
+`Audits: <n>` and `Audit links:` (3 at most, http(s) only), `GitHub:` and `Raises:` (the 5 latest rounds, one `- round,
+$amount, date, investors: ...` line each; DefiLlama gives amounts in millions of USD). Description and methodology are
+cut at 600 characters and put on one line; nothing in them moves from day to day (no TVL).
+
+**The Scam Analyst and the public contradiction check do not get these lines**, and the stored DefiLlama document
+(`defillamaDocument`) is unchanged: wording written by a protocol could trigger a false scam flag and delist a project.
+
+The `/protocols` list is read as before; the fields are taken from it when it has them (`description`, `audits`,
+`audit_links`). `methodology`, `github` and `raises` are known to come from `https://api.llama.fi/protocol/{slug}`; when no
+entry of the list carries any of those three keys, the collector asks that endpoint for the speculative candidates (the
+only projects with a DefiLlama document) after the list, one request at a time, `defillamaDetails.delayMs` (400 ms)
+apart, at most `maxRequests` (80, the candidate limit), none started after `budgetMinutes` (2) and none more than
+`enrichmentCutoffMinutes` (40) after the run started (they count as skipped). The answers carry the full TVL history, so
+they are big; only the fields above are read.
+
+**No flapping.** A successful answer is cached in `claim_pages` (key `defillama-detail://<slug>`, no migration). A cached
+detail under 7 days old is used without a request; a detail whose request fails or is skipped keeps the cached lines up to 14
+days (then the list's own fields), so a bad day does not change the Analyst's input and cause a re-analysis. Counters:
+`defillama_details_fetched` / `_failed` / `_skipped`. The schemas are tolerant: a wrongly typed field is left empty and
+never drops the candidate. Expected added time: 0 when the list carries the fields, otherwise about 1 to 2 minutes in
+`collect` on the first day, much less afterwards (7-day cache).
+
+### Official website text (`official_sites` stage, step 13)
+
+A listed project whose sources are thin (an aggregator line, a DefiLlama listing) gets a better AI Analyst analysis when
+the Analyst can also read the project's own website. The `official_sites` stage (`pipeline/src/steps/official-sites.ts`)
+runs after `signals` and right before `analyze`, so the same run's analyses use it; `analyze_listed` does the same for
+the projects that run newly listed, after `score`.
+
+- **Who:** projects whose latest curation passed (listed), with no `lookalike_of`, and the first official domain that is a
+  registrable domain, not an aggregator or intermediary host (`isNonProjectHost`). A listed project is one whose last
+  `score` found no phishing-listed official domain (critical risk fails curation) and ran the key checks, which is how
+  the "clean official domain" rule holds before `analyze`, where this run's GoPlus answers do not exist yet. In
+  `analyze_listed` (after `score`) the domain must also be one GoPlus answered "not phishing" for in that run, the same
+  test the favicon tier uses.
+- **What:** `https://<domain>/` and at most 2 pages found on it, same registrable domain only (subdomains such as
+  `docs.` count), whose path or link text names airdrop, points, rewards, quests, campaigns, incentives (best) or docs.
+  No file links, no other domain or port (default port only), query and fragment dropped. Fetched with the guarded `fetchUntrusted` (public hosts
+  only, 10 s, 3 redirects, 1 MB, text types only); a page that answers from another domain after redirects, a non-2xx
+  answer or a non-HTML page is not used. Text is `claimPageText` (scripts and styles dropped), cut at 8,000 characters
+  per page, under `[Page <path>]` headings (paths, never full URLs).
+- **Pace:** 2 sites at a time (`officialSites.concurrency`), no site started after 2 minutes (`budgetMinutes`), at most 30
+  sites a run (`maxPerRun`; never-fetched first, then the oldest), and none at all more than 40 minutes
+  (`enrichmentCutoffMinutes`) after the run started, in the stage and in `analyze_listed`: the due sites count as skipped and
+  the cache is still used. A site whose homepage fails (and has no usable cached text) gets an empty row, so it waits 7 days
+  instead of heading the queue on every run and starving healthy sites. A site is fetched again after 7 days; until then, and
+  for up to 14 days if a refresh fails, the cached text is used. Expected added time: about 1 to 2 minutes on the first
+  days (30 sites a day until the listed projects are cached), a few seconds afterwards; worst case 2.5 minutes
+  (budget plus the last site) in the stage, and the same again in `analyze_listed` when a run lists new projects. The
+  DefiLlama detail requests add up to 2 minutes to `collect` on the first day. Together that is 1 to 3 minutes on a typical
+  day and up to about 7 minutes when every budget is used; with the 35-minute extraction budget also spent the 60-minute
+  job limit gets tight, so watch `stage_seconds_*` and lower `officialSites.budgetMinutes` or `enrichmentCutoffMinutes`
+  first if it does. Nothing of this starts more than 40 minutes after the run started.
+- **Where it is stored:** the existing `claim_pages` table (service role only) under the key `official-site://<domain>`,
+  one row per domain with all its pages; no migration. The key cannot be a claim link, so `readClaimPages` never sees it.
+- **Who reads it:** the AI Analyst only, as one more source `official-site://<domain>`. Not the Scam Analyst (a
+  marketing page naming its backers could be read as `impersonation`, which fails curation on its own) and not the
+  public contradiction check (it would put quotes of a third-party site on public pages). The text is untrusted data:
+  every analysis prompt calls the SUMBER section untrusted and says not to follow instructions in it; a point or
+  quote must come from a source, and the web links an AI `source_url` only when it is a stored source document, which
+  `official-site://` never is, so no member sees a link from it. Nothing from a page is stored as a link. The text is
+  part of the analysis input hash, so a site that changes re-runs that project's Analyst (at most weekly).
+- **Counters:** `official_pages_fetched` (pages fetched and used), `official_pages_failed` (non-2xx, a broken connection, a
+  redirect to another domain, or a cache write that failed), `official_pages_skipped` (a non-HTML page, and sites not
+  started because of the budget or the per-run cap), `stage_seconds_official_sites`. Page text, prompts and answers are
+  never logged. The stage is optional enrichment: an error in it (a repository read, say) is counted in `official_pages_failed`
+  and never sets `run_error` or `failed_step`; the analyses then go without the sites.
+
 ### Project logos (`logos` stage, list cards)
 
 After `score`, the `logos` stage (`pipeline/src/steps/logos.ts`) stores one logo per scored project in
@@ -344,6 +417,8 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `logos_skipped` | projects due for a logo not tried because the 2-minute budget ran out (tried next run) |
 | `logos_x_avatar_requests` / `logos_x_avatar_failed` | unavatar.io requests this run (at most 20) / of those, the ones that gave no logo (404, other answer, refused image) |
 | `logos_x_avatar_deferred` | projects whose X avatar was next after the 20 requests were used; they went on to their favicon, and the X avatar waits for a later run |
+| `defillama_details_fetched` / `_failed` / `_skipped` | DefiLlama `/protocol/{slug}` details read for the speculative candidates (only when the `/protocols` list lacks them and no cached detail is under 7 days old) / answers that were not usable / candidates not asked after the 80-request cap, the 2-minute budget or the 40-minute cutoff |
+| `official_pages_fetched` / `_failed` / `_skipped` | official website pages for the AI Analyst ("Official website text") fetched and used / failed (non-2xx, error, redirect to another domain) / not used (not HTML, or a site not started after the 2-minute budget, the 30-site cap or the 40-minute cutoff) |
 | `claim_pages_read` | claim portal pages fetched in `analyze` for the AI Scam Analyst (at most 20 per run; pages fetched in the last 7 days come from `claim_pages`) |
 | `track_record_total` / `_listed` / `_no_token` / `_risk_raised` | the public track record (#43); see "Track record" below |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
@@ -351,8 +426,9 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `purged` | documents whose text passed the 90-day retention and was blanked |
 | `briefing_items` / `briefing_ai` | items in the briefing saved this run (0 when there were no facts) / 1 when the model wrote it, 0 for the version without the AI |
 | `coach_threads_purged` / `coach_usage_purged` | coach threads older than 30 days / quota ledger rows older than 2 days deleted this run |
-| `stage_seconds_collect` / `_extract` / `_speculative` / `_signals` / `_analyze` / `_score` / `_analyze_listed` / `_briefing` / `_logos` / `_purge` | seconds each stage took (one decimal), also when it failed; flat keys because the stats are numbers only |
+| `stage_seconds_collect` / `_extract` / `_speculative` / `_signals` / `_official_sites` / `_analyze` / `_score` / `_analyze_listed` / `_briefing` / `_logos` / `_purge` | seconds each stage took (one decimal), also when it failed; flat keys because the stats are numbers only |
 | `ai_analyses_*` (listed projects) | listed projects are analysed first and are never held back by `maxAnalysesPerRun` (only by the 10-minute budget); projects a run newly puts on the list get theirs in `analyze_listed` right after scoring (5-minute budget), so a listed project never waits a day for its AI section |
+| backfill (manual run) | the Daily pipeline workflow's manual run takes `analyze_minutes` and `analyze_listed_minutes` (1 to 30) and `analyze_concurrency` (1 to 8) to fill a backlog of AI analyses in one run; the scheduled run leaves them empty and keeps 10, 5 and 3 |
 | `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 8 signals, 9 analyze, 5 score, 12 analyze_listed, 11 briefing, 10 logos, 6 purge, in run order); the other stages still ran |
 
 Exit code (shown as the workflow status): **failed** when `run_error`, `source_failed`, `ingest_failed`,

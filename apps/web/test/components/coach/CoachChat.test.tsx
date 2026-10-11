@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const actions = vi.hoisted(() => ({ startCoachThreadAction: vi.fn() }));
-vi.mock("@/app/(app)/coach/actions", () => actions);
+vi.mock("@/app/(public)/coach/actions", () => actions);
 
 import { CoachChat } from "@/components/coach/CoachChat";
 
