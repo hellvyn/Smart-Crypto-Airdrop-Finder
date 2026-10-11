@@ -571,7 +571,7 @@ export const coach = {
       "Belum ada project yang cocok sama profil kamu sekarang. Coba ubah modal atau level di profil, atau cek lagi besok. Pesan ini gak memotong jatah kamu.",
     noPlan: "Coach belum bisa bikin rencana, coba lagi.",
     /** Tanya AI about a project that is no longer on the list (the profile never filters that chat). */
-    projectGone: "Project ini lagi gak ada di list yang lolos check, jadi Coach belum bisa bahas. Pesan ini gak memotong jatah kamu.",
+    projectGone: "Coach belum punya cukup data soal project ini (belum lolos check, atau belum ada poin dan langkah dari analisis), jadi belum bisa bahas. Coba lagi besok. Pesan ini gak memotong jatah kamu.",
   },
   /** Stored as the member's message of a plan request (it shows in the history). */
   planRequest: "Bikinin rencana garapan buat aku.",

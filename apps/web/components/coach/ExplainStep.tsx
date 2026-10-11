@@ -49,9 +49,8 @@ export function ExplainStep({ projectId, stepId }: { projectId: string; stepId: 
     );
     if (!outcome.ok) {
       setAnswer(null);
-      // "bad_input" is what the route answers when there is no profile yet; the message of the route says less.
-      const needProfile = outcome.code === "bad_input";
-      setError({ message: needProfile ? copy.needProfile : outcome.message, needProfile });
+      // The route no longer needs a profile for a project's steps, so every error says what it says.
+      setError({ message: outcome.message, needProfile: false });
     }
     setBusy(false);
   }

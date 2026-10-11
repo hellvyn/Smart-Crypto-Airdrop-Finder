@@ -66,10 +66,11 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
   const now = new Date();
   const [curated, lastRunAt, summary, trackRecord, chains, changes, briefing] = await Promise.all([
     listCurated(db, tab, filters, page, member),
-    getLastSuccessfulRunAt(db),
-    getRunSummary(db),
-    getTrackRecord(db),
-    listChains(db),
+    // The list is the page; its extras fall back to nothing instead of the error page.
+    getLastSuccessfulRunAt(db).catch(() => null),
+    getRunSummary(db).catch(() => null),
+    getTrackRecord(db).catch(() => null),
+    listChains(db).catch((): string[] => []),
     user ? getChangeFeed(db, user.id, now) : EMPTY_CHANGE_FEED,
     user ? getBriefingData(db, now) : null,
   ]);

@@ -51,11 +51,16 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
   ]);
   if (!project) notFound();
   // Only a signed-in user gets the watch and farming state (null = signed out).
-  const [watching, farming, canExplain] = user
-    ? await Promise.all([isWatching(db, project.id), isFarming(db, project.id), isCoachCandidate(db, project.id, now)])
-    : [null, null, false];
+  // A failed extra hides its own part (no button) instead of turning the public project page into the error page.
   // Wallet activity is for signed-in users (null = signed out); see WalletActivitySection for what each case shows.
-  const wallets = user ? await listWallets(db) : null;
+  const [watching, farming, canExplain, wallets] = user
+    ? await Promise.all([
+        isWatching(db, project.id).catch(() => false),
+        isFarming(db, project.id).catch(() => null),
+        isCoachCandidate(db, project.id, now),
+        listWallets(db).catch(() => null),
+      ])
+    : [null, null, false, null];
   const notListed = notCuratedReason(project.curation);
   return (
     <>
