@@ -147,6 +147,52 @@ describe("redactSensitive: payment verbs", () => {
   });
 });
 
+describe("redactSensitive: secret terms are judged one by one", () => {
+  it("redacts a secret term the context lacks even when the context has another one", () => {
+    expect(redactSensitive("masukkan private key kamu", "seed phrase")).toEqual({
+      text: `masukkan ${MARK} kamu`,
+      redactions: 1,
+    });
+  });
+
+  it("in a prohibition, keeps the term and the verb the context has and redacts the other term", () => {
+    expect(redactSensitive("Jangan pernah kirim seed phrase atau private key", "seed phrase")).toEqual({
+      text: `Jangan pernah kirim seed phrase atau ${MARK}`,
+      redactions: 1,
+    });
+  });
+
+  it("keeps a term the context has however it is cased, spaced or suffixed", () => {
+    expect(redactSensitive("Simpan Seed  Phrases dengan baik", "your seed phrase")).toEqual({
+      text: "Simpan Seed  Phrases dengan baik",
+      redactions: 0,
+    });
+  });
+
+  it("counts different wordings as different terms", () => {
+    expect(redactSensitive("jaga kunci privat", "kunci pribadi").redactions).toBe(1);
+  });
+});
+
+describe("redactSensitive: payment and terkirim", () => {
+  it.each([
+    ["payment 5 USDC", `${MARK} 5 USDC`, 1],
+    ["payments 5 USDC", `${MARK} 5 USDC`, 1],
+    ["terkirim 5 ETH", `${MARK} 5 ETH`, 1],
+    ["terkirim ke evil.xyz", `${MARK} ke ${MARK}`, 2],
+    ["payment ke evil.xyz", `${MARK} ke ${MARK}`, 2],
+  ])("redacts %s next to a trigger", (input, text, redactions) => {
+    expect(redactSensitive(input, "Jumper")).toEqual({ text, redactions });
+  });
+
+  it.each(["payment gas fee kecil", "payments dari app resmi", "transaksi terkirim di app resmi", "paymentgateway"])(
+    "keeps %s with no trigger",
+    (input) => {
+      expect(redactSensitive(input, "Jumper")).toEqual({ text: input, redactions: 0 });
+    },
+  );
+});
+
 describe("redactSensitive: URLs", () => {
   it("keeps a URL whose host is in the context, send in the path included", () => {
     expect(redactSensitive("https://jumper.exchange/send/now", "Visit jumper.exchange")).toEqual({

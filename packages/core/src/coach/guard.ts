@@ -61,13 +61,19 @@ const LINK_RE = new RegExp(
   `((?:https?://)?(${HOST_RE.source})(?::\\d+)?)([/?#](?:[^\\s]*[^\\s.,;:!?)\\]'"])?)?`,
   "gi",
 );
-const SECRET_PHRASE_RE = new RegExp(`\\b(?:${SECRET_TERM_RE.source.replace(/ /g, "\\s+")})\\p{L}*`, "giu");
+const SECRET_CORE = SECRET_TERM_RE.source.replace(/ /g, "\\s+");
+const SECRET_PHRASE_RE = new RegExp(`\\b(?:${SECRET_CORE})\\p{L}*`, "giu");
+const SECRET_CORE_RE = new RegExp(SECRET_CORE, "gi");
+
+/** The secret terms in `text`, lowercased, spaces collapsed, suffix dropped ("Seed  Phrases" gives "seed phrase"). */
+const secretCores = (text: string): string[] =>
+  (text.match(SECRET_CORE_RE) ?? []).map((core) => core.toLowerCase().replace(/\s+/g, " "));
 /** Indonesian verb prefixes; the k of kirim and the s of setor drop out after meng-, peng-, meny- and peny-. */
-const VERB_PREFIX = "(?:di|me(?:m|n|ng)?|pe(?:m|n|ng)?)?";
+const VERB_PREFIX = "(?:di|ter|me(?:m|n|ng)?|pe(?:m|n|ng)?)?";
 /** Payment verbs as whole words, suffixes included. send and pay are anchored so payload and sender stay alone. */
 const PAYMENT_WORD_RE = new RegExp(
   `\\b(?:${VERB_PREFIX}(?:kirim|bayar|setor|transfer|deposit)|(?:meng|peng)irim|(?:meny|peny)etor)\\p{L}*` +
-    `|\\b(?:send|pay)(?:s|ing)?\\b|\\b(?:sent|paid)\\b`,
+    `|\\b(?:send(?:s|ing)?|pay(?:s|ing|ments?)?)\\b|\\b(?:sent|paid)\\b`,
   "giu",
 );
 const PROHIBITION_RE = /\b(?:jangan|never|don['’]t|do\s+not|gak\s+boleh|tidak\s+boleh)\b/i;
@@ -79,7 +85,8 @@ const overlaps = (a: Span, b: Span): boolean => a.start < b.end && b.start < a.e
 interface ContextFacts {
   tokens: Set<string>;
   numbers: Set<string>;
-  hasSecretTerm: boolean;
+  /** The secret terms (lowercased cores) the context has. */
+  secretTerms: Set<string>;
 }
 
 /**
@@ -168,11 +175,11 @@ function redactSentence(sentence: string, facts: ContextFacts): { text: string; 
 
   const prohibited = PROHIBITION_RE.test(sentence);
   const payRedacted = sensitiveTokens.length > 0 || (secrets.length > 0 && !prohibited) || newNumber;
-  const secretRedacted = !facts.hasSecretTerm || (payments.length > 0 && !prohibited);
+  const forbiddenWithPayment = payments.length > 0 && !prohibited;
 
   return replaceSpans(
     sentence,
-    nonOverlapping([...sensitiveTokens, ...(payRedacted ? payments : []), ...(secretRedacted ? secrets : [])]),
+    nonOverlapping([...sensitiveTokens, ...(payRedacted ? payments : []), ...secrets.filter((s) => forbiddenWithPayment || !secretCores(sentence.slice(s.start, s.end)).every((c) => facts.secretTerms.has(c)))]),
   );
 }
 
@@ -183,9 +190,10 @@ function redactSentence(sentence: string, facts: ContextFacts): { text: string; 
  * judged on its own:
  * - a host or URL, `@handle` or address that `context` does not have is replaced; a URL goes whole, as one span.
  *   When the host of a URL is in `context`, scheme, host and port stay and its path and query are scanned again;
- * - a secret term (seed phrase, private key, kunci privat, ...) that `context` does not have is replaced, suffix
- *   included ("seed phrases", "kunci rahasianya");
- * - a payment verb (kirim, bayar, setor, transfer, deposit, send, pay, with Indonesian prefixes and suffixes, whole
+ * - a secret term (seed phrase, private key, kunci privat, ...) is replaced, suffix included ("seed phrases",
+ *   "kunci rahasianya"), unless `context` has the same term (case, spacing and suffix aside; another wording such as
+ *   "kunci pribadi" for "kunci privat" is another term);
+ * - a payment verb (kirim, bayar, setor, transfer, deposit, send, pay, payment, with Indonesian prefixes and suffixes, whole
  *   words only) is replaced only when the sentence also has a replaced host, URL, handle or address, or a secret
  *   term (unless the sentence forbids it: jangan, never, ...), or a number that `context` lacks. `context` never
  *   exempts a verb next to such a trigger;
@@ -195,7 +203,7 @@ export function redactSensitive(text: string, context: string): { text: string; 
   const facts: ContextFacts = {
     tokens: new Set(tokensOf(context)),
     numbers: new Set((context.match(NUMBER_RE) ?? []).map(digitsOf)),
-    hasSecretTerm: SECRET_TERM_RE.test(context),
+    secretTerms: new Set(secretCores(context)),
   };
   let redactions = 0;
   const parts = text.split(SENTENCE_SPLIT_RE).map((part, i) => {
