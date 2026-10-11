@@ -344,3 +344,37 @@ Ruling: AlphaDrops is capped at 120 requests per run — two caps that were neve
 - FX7: fix round 1/5 (2 addressed, 0 open — Satsuma/collector_crypt snapshot labels; README reference; commits a24bb23..94e0e2e)
 - FX7: complete (commits d658821..94e0e2e). The audit changed labels in 4 cases. legit.json Polygon and Lido were replaced (domains checked against CoinGecko because the project sites were blocked). Five recorded runs: final labels with the default order: status 23/30 (76.7%) FAIL, deadline 20/22 (90.9%) PASS, radar recall 11/28 FAIL. Final labels with NVIDIA glm-5.3-flash first: status 28/30 (93.3%) PASS, deadline 17/22 (77.3%) FAIL, recall 26/28 PASS. G7/G8 scam-set numbers predate the new legit.json (`build.ts`/`run.ts` must be re-run).
 - G4-4e2 merged (no conflicts). Tests: core 455, pipeline 661, web 342 unit · typecheck ok · pgTAP 291 · e2e 74/74.
+
+---
+
+# SDD ledger — plan: docs/superpowers/plans/2026-10-10-plan-6-web-curation-ui.md
+
+Mode: plain subagent-driven development (Agent tool, one task at a time on the branch). Order: T1 → T3 → T2 → T4 → T5 → T8 → T7 → T6. Push after every 2-3 tasks, with all gates passing.
+
+## Pre-flight scan
+
+| Pair or task | Shared surface | Finding | Ruling |
+|---|---|---|---|
+| T1 × T5 | `packages/core/src/risk/assess.ts` | T1 rewrites every reason message. T5 adds `RiskCheck.detail` | Sequential (T1 first) |
+| T2 × all UI tasks | every page, component and e2e spec | T2 moves strings to `copy.ts` and translates | T2 before T4–T8 |
+| T3 × T4/T5/T7/T8 | `lib/queries.ts`, `lib/view.ts`, 0012 | T3 creates the views and queries the others read | T3 before them |
+| T4 × T7 | `airdrops/page.tsx` | Both edit it | T7 after T4 |
+| T5 × T6 | `ProjectDetailView.tsx`, `projects/[slug]/page.tsx` | T6 adds the banner and noindex on T5's rewrite | T6 last |
+| T6 × T7 | `watchlist/page.tsx`, `e2e/watchlist.spec.ts` | Both edit | T7 before T6 |
+| T8 × Plan 8 | `lib/farming.ts`, `garapan/*`, FarmingCard | Real dependency (merged) | — |
+| T4 self | duplicate components | P7.T3 already built `components/ui/WorthBadge.tsx` and `TabBar.tsx`. T4 lists new `components/WorthBadge.tsx` and `TabNav.tsx` | Reuse the P7 components. No duplicates |
+| T4 self | landing | P7.T4 expects `getRunSummary` (Update hari ini) and `getTrackRecord` (≥ 10) wired into `(public)/page.tsx`, but no P6 task lists that file | T4 wires both into the landing |
+| T4/T6 self | glossary vs task text | Tasks say "Berakhir" and "{k}/4 cek keamanan kunci jalan", while the glossary says "Ended" and "{k}/4 security check jalan" | The glossary wins (the plan says so) |
+| T4 self | stale gate | "sebelum task ini dikerjakan, sistem desain … ditambahkan sebagai Global Constraint" | Already done (P7.T3, spec §16). Not an owner gate |
+| T2 self | dead copy | The `unsubscribe` copy area: the page was removed in P7.T2 | Do not create it |
+| T1 self | test scope | Messages are also asserted in `pipeline/test/run.test.ts` and `apps/web/test/components.test.tsx` | Run `pnpm -r test` |
+| T5 self | Files | `RiskInput` is built in `pipeline/src/steps/score.ts`, not `run.ts`. `lookalike.detail.compared` needs a count of official domains that no repo method provides | Fill `detail` in `score.ts`. Add a small repo count method |
+| T5 self | carried | G2: the web query hides v3 fact fields with a hard-coded `HIDDEN_FACT_FIELDS` list. P5.T9: stored analyst results can have `points: []` while `analystSchema` needs ≥ 1. P5.T7: `CHECK_LABELS` lacks `ai_review` | T5 replaces the hidden-facts filter with the real facts section, parses stored analyst results with a schema that allows empty points, and labels `ai_review` |
+| T6 self | #55 | The banner reads `public_fail_reason` for visitors (plan amended) | — |
+| T7 self | carried | P5.T2: the first passing curation writes `curated` null→"true", so the first run floods the feed. `old_value` can be null | The feed accepts null and shows "Baru masuk list". The first post-deploy run is capped or collapsed in the UI |
+| T8 self | carried from G3 | stale `?error=` after success. RPC 42501 after a cascade delete. `archived_at` can be backdated by the member (rewrites past heatmap totals). Invalid-tz 22023 is mapped to `task_inactive`. `nextDeadline` is not rendered | All in scope. The `archived_at` stamping trigger goes in `0015_farming_results.sql` |
+| T2 self | carried from G1 | Tab titles still say "Smart Airdrop Finder". The header shows English "Wallets/Settings/Sign out". `.env.example` email text. `LinkStatus` has no unknown-status fallback. Stamp README `aria-label`. Ticket README "no links inside Ticket". `web.md` deploy order (signup switch first) | In scope for T2 (the copy and docs sweep) |
+| T3 self | carried from G3 | `getFarmingBoard` passes `endedOn`. Plan 8's `heatmapRange`/`streak` signatures were revised (`endsOn`, streak from checks) | Use the current signatures (the plan text is aligned) |
+
+Ruling: reuse the P7 design components instead of creating second copies — P6's own Architecture says to — costs nothing.
+Ruling: T4 wires `getRunSummary` and `getTrackRecord` into the landing — P7.T4 left the slots and no task owns them — costs one file in T4's scope.
