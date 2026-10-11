@@ -454,8 +454,16 @@ button:disabled {
 
 .filter-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
+}
+
+/* Phone: the button and "Hapus filter" get their own full row, so the link never runs off the screen. */
+@media (max-width: 639px) {
+  .filter-actions {
+    grid-column: 1 / -1;
+  }
 }
 
 .filter-actions .ui-button {
