@@ -206,8 +206,9 @@ function countCuration(stats: DailyStats, c: CurationRecord): void {
 
 /**
  * Scores every project `listProjectsForScoring` returns (seen within `scoreActiveSinceDays`, still listed and open, or
- * ended after passing curation at most 90 days ago): expiry, risk assessment, then curation (`curations`). Enrichment is fetched once per
- * registrable domain per run (the job is daily, so this replaces a longer-lived cache), and hacks once per run.
+ * ended after passing curation at most 90 days ago): expiry, risk assessment, then curation (`curations`). Enrichment
+ * is fetched once per registrable domain per run (the job is daily, so this replaces a longer-lived cache), and hacks
+ * once per run.
  * Domain age comes from RDAP, and from the first crt.sh certificate when RDAP has no answer.
  * GoPlus stops starting requests after `goplusBudgetMinutes` (by `deps.now()`, from the start of this step) or after
  * `goplusMaxConsecutiveFailures` domains in a row without an answer; the domains not asked count as not run.
