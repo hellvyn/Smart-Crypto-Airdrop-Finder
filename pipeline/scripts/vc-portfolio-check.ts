@@ -1,8 +1,9 @@
 // Manual check of the VC portfolio pages (curation plan 5 Task 4, step 3): fetches each page of VC_LIST (verified) and
 // VC_CANDIDATES (not yet verified) once with the pipeline's HTTP client and prints its status and the portfolio
-// domains found in its HTML. A candidate with status 200 whose domains are its portfolio companies moves to VC_LIST;
-// one with another status, no domains (page rendered by JavaScript) or domains that are not portfolio companies is
-// struck. Either way it is recorded in docs/ops/pipeline.md ("Daftar VC"). Reads public pages only; writes nothing.
+// domains found in its HTML. A candidate with status 200 whose domains are its portfolio companies (and whose
+// robots.txt and terms allow reading the page) moves to VC_LIST; one with another status, no domains (page rendered by
+// JavaScript), domains that are not portfolio companies or terms that forbid it stays in VC_CANDIDATES with a one-line
+// reason. Either way it is recorded in docs/ops/pipeline.md ("Daftar VC"). Reads public pages only; writes nothing.
 // Usage: pnpm --filter pipeline exec tsx scripts/vc-portfolio-check.ts
 import { VC_CANDIDATES, VC_LIST } from "../src/config.js";
 import { parsePortfolioDomains } from "../src/enrich/vc-portfolios.js";
