@@ -107,12 +107,13 @@ A changed listing (no Next.js payload, no items) or a connection that breaks dur
 ### Daftar VC (VC portfolio cross-check)
 
 The `signals` stage gives a project a verified `vc_backer` (`{investor, tier}`, source `vc_portfolio`) when the
-registrable domain of one of its official domains is linked from the portfolio page of a VC in `VC_LIST`
+registrable domain of one of its official domains is linked from the portfolio page of a verified VC (`VC_LIST`)
 (`pipeline/src/config.ts`). A name match or a "backed by" claim never counts. The page's outbound `<a href>` links are
 reduced to registrable domains (`parsePortfolioDomains` in `pipeline/src/enrich/vc-portfolios.ts`; the VC's own
 domain and social, hiring and aggregator hosts are left out) and only the domains are cached in `vc_portfolios`.
 
-- A cache up to 7 days old is used without a request, so each page is fetched about once a week (about 15 requests).
+- A cache up to 7 days old is used without a request, so each page is fetched about once a week (one request per
+  VC in `VC_LIST`).
 - A page that fails (not 200, or no portfolio link in its HTML, e.g. rendered by JavaScript) never overwrites the
   cache: a cache up to 14 days old is still used; with an older or no cache that VC is "not checked". Its earlier
   `vc_backer` signals stay with their own `observed_at`, while the signals of the VCs that were checked are rewritten.
@@ -120,27 +121,32 @@ domain and social, hiring and aggregator hosts are left out) and only the domain
 
 Candidates (curation plan 5 Task 4; tier 1: a16z crypto, Paradigm, Polychain, Pantera, Multicoin, Dragonfly,
 Coinbase Ventures, YZi Labs; tier 2: Framework Ventures, Variant, Electric Capital, Hack VC, Placeholder, Delphi
-Ventures, Jump Crypto). **Status on 2026-10-11: none verified, none struck.** Every page was unreachable from the
-development container: `curl` got `curl: (56) CONNECT tunnel failed, response 403` from the egress proxy for all 15
-URLs in `VC_LIST` (the same proxy answered 200 for `airdrops.io` and `api.llama.fi`), so neither the HTML structure
-nor the terms of any page could be checked. The portfolio URLs are the candidates' known portfolio paths, not
-confirmed ones.
+Ventures, Jump Crypto) are in `VC_CANDIDATES`. Only the VCs in `VC_LIST` (the verified ones) are fetched and can give a
+`vc_backer`. **Status on 2026-10-11: none verified, none struck, so `VC_LIST` is empty and the pipeline gives no
+`vc_backer` yet.** Every page was unreachable from the development container: `curl` got
+`curl: (56) CONNECT tunnel failed, response 403` from the egress proxy for all 15 candidate URLs (the same proxy
+answered 200 for `airdrops.io` and `api.llama.fi`), so neither the HTML structure nor the terms of any page could be
+checked. The portfolio URLs are the candidates' known portfolio paths, not confirmed ones. Two of them are likely not
+plain portfolio lists and need a close look: Coinbase Ventures (`coinbase.com/ventures`) and Delphi Ventures (its
+homepage).
 
-Before trusting `vc_backer` in production, run where the pages are reachable (a GitHub Actions runner or a local
-machine):
+To verify, run where the pages are reachable (a GitHub Actions runner or a local machine):
 
 ```
 pnpm --filter pipeline exec tsx scripts/vc-portfolio-check.ts
 ```
 
-It prints each VC's HTTP status, the number of portfolio domains in its HTML and the domains. Strike a VC from
-`VC_LIST` (and record it below with the reason) when its status is not 200, it has 0 domains (JavaScript-rendered),
-its domains are not its portfolio companies (footer or article links), or its terms forbid automated reading. Add a
-host to `NON_PORTFOLIO_DOMAINS` in `vc-portfolios.ts` when a page links to it outside its portfolio.
+It prints each VC's list (`verified` or `candidate`), HTTP status, the number of portfolio domains in its HTML and the
+domains. Move a candidate from `VC_CANDIDATES` to `VC_LIST` only when its status is 200, its domains are its
+portfolio companies (not footer, article, podcast or sister-site links) and its terms allow automated reading; fix its
+`portfolioUrl` first if the page moved. Strike it (remove it from `VC_CANDIDATES` and record it below with the reason)
+when its status is not 200, it has 0 domains (JavaScript-rendered), its domains are not its portfolio companies, or
+its terms forbid automated reading. Add a host to `NON_PORTFOLIO_DOMAINS` in `vc-portfolios.ts` when a page links to
+it outside its portfolio. Record every result in the table below.
 
 | VC | Status | Reason |
 |---|---|---|
-| all 15 candidates | unverified | page unreachable from the development container (proxy CONNECT 403) |
+| all 15 candidates | unverified (in `VC_CANDIDATES`, not used) | page unreachable from the development container (proxy CONNECT 403) |
 
 ## 4. Read the result
 

@@ -50,13 +50,14 @@ export interface PipelineConfig {
 }
 
 /**
- * VC candidates of curation plan 5 Task 4 (tier 1 as the plan sets it). None of these pages could be fetched from
- * the development environment (every host refused by its proxy), so none is verified yet: run
- * `scripts/vc-portfolio-check.ts` where they are reachable and strike every VC whose page has no portfolio links in
- * its HTML or whose terms forbid reading it (docs/ops/pipeline.md, "Daftar VC"). An unreachable or link-less page
- * only leaves that VC "not checked" in a run; it never removes signals from the other VCs.
+ * VC candidates of curation plan 5 Task 4 (tier 1 as the plan sets it), **not verified**: none of these pages could
+ * be fetched from the development environment (every host refused by its proxy), so their HTML structure and terms
+ * are unknown and their `portfolioUrl`s are unconfirmed. A candidate gives no `vc_backer` until it is verified: run
+ * `scripts/vc-portfolio-check.ts` where the pages are reachable, then move each VC whose page lists its portfolio
+ * companies as outbound links in its HTML (and whose terms allow reading it) to `VC_LIST`, and strike the others
+ * (docs/ops/pipeline.md, "Daftar VC").
  */
-export const VC_LIST: VcConfig[] = [
+export const VC_CANDIDATES: VcConfig[] = [
   { id: "a16z-crypto", name: "a16z crypto", aliases: ["a16z", "Andreessen Horowitz"], tier: 1, portfolioUrl: "https://a16zcrypto.com/portfolio/" },
   { id: "paradigm", name: "Paradigm", aliases: [], tier: 1, portfolioUrl: "https://www.paradigm.xyz/portfolio" },
   { id: "polychain", name: "Polychain Capital", aliases: ["Polychain"], tier: 1, portfolioUrl: "https://polychain.capital/portfolio" },
@@ -73,6 +74,13 @@ export const VC_LIST: VcConfig[] = [
   { id: "delphi-ventures", name: "Delphi Ventures", aliases: ["Delphi Digital"], tier: 2, portfolioUrl: "https://delphiventures.io/" },
   { id: "jump-crypto", name: "Jump Crypto", aliases: ["Jump"], tier: 2, portfolioUrl: "https://jumpcrypto.com/portfolio/" },
 ];
+
+/**
+ * Verified VCs: the only ones the pipeline fetches and trusts (`defaultConfig.vcs`). Empty until the candidates above
+ * are checked, so no unverified page can give a project a verified `vc_backer`. An unreachable or link-less page of a
+ * listed VC only leaves that VC "not checked" in a run; it never removes signals from the other VCs.
+ */
+export const VC_LIST: VcConfig[] = [];
 
 /**
  * Model fallback order (curation spec decision #30). `max_tokens` and `temperature` are set by `streamChat`.

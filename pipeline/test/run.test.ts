@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Http } from "../src/collectors/types.js";
 import type { ChatFn } from "../src/llm/extract.js";
 import type { ChatResult } from "../src/llm/nvidia.js";
-import { defaultConfig } from "../src/config.js";
+import { defaultConfig, VC_CANDIDATES } from "../src/config.js";
 import { loadProviders } from "../src/config.js";
 import type { PipelineConfig } from "../src/config.js";
 import { runDailyJob } from "../src/daily-job.js";
@@ -1794,6 +1794,21 @@ describe("runDaily signals", () => {
     // Paradigm comes from the cache; only Variant, which has none, is asked again.
     expect(http.gets.slice(gets).filter((u) => u.endsWith("/portfolio"))).toEqual([variant.portfolioUrl]);
     expect(next).toMatchObject({ signals_vc_backer: 1, vc_portfolios_failed: 1 });
+  });
+
+  it("never fetches or trusts an unverified VC candidate page with the shipped config", async () => {
+    const pages = basePages();
+    // Every candidate page "lists" DeepBook: if the shipped config used any of them, DeepBook would get a backer.
+    for (const vc of VC_CANDIDATES) {
+      pages[vc.portfolioUrl] = { status: 200, body: '<a href="https://deepbook.tech/">DeepBook</a>' };
+    }
+    const { repo, deps, http } = setup({ pages });
+
+    const stats = await runDaily(deps, defaultConfig);
+
+    expect((await signalsOf(repo, "deepbook")).filter((s) => s.kind === "vc_backer")).toEqual([]);
+    expect(http.gets.filter((u) => VC_CANDIDATES.some((vc) => vc.portfolioUrl === u))).toEqual([]);
+    expect(stats).toMatchObject({ signals_vc_backer: 0, vc_portfolios_failed: 0 });
   });
 
   it("stores domain-matched DefiLlama signals and curated sources for every project, speculative ones included", async () => {
