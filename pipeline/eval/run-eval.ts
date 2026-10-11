@@ -3,9 +3,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtractionResult } from "@saf/core";
 import type { CollectedDocument } from "../src/collectors/types.js";
-import { MODELS } from "../src/config.js";
+import { defaultConfig, loadProviders } from "../src/config.js";
 import { extractWithFallback } from "../src/llm/extract.js";
-import { streamChat } from "../src/llm/nvidia.js";
+import { createChat } from "../src/llm/chat.js";
+import { modelKey } from "../src/llm/nvidia.js";
 import { PROMPT_VERSION } from "../src/llm/prompt.js";
 import { evaluatePass, rawOfficialUrlsOfOutcome, scoreCase } from "./score.js";
 import type { CaseScore, GroundTruth } from "./score.js";
@@ -19,6 +20,7 @@ interface CaseMeta {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const ratio = (matched: number, expected: number): string => (expected === 0 ? "-" : `${matched}/${expected}`);
 const cell = (value: unknown, width: number): string => String(value).padEnd(width);
 
 async function run(): Promise<number> {
@@ -35,17 +37,19 @@ async function run(): Promise<number> {
     return 2;
   }
 
-  const chat = (model: Parameters<typeof streamChat>[0], messages: Parameters<typeof streamChat>[1]) =>
-    streamChat(model, messages, { fetch, apiKey: process.env["NVIDIA_API_KEY"] ?? "" });
+  const providers = loadProviders(process.env);
+  const models = defaultConfig.models;
+  // Extraction models only (no Claude), so no Claude client.
+  const chat = createChat(providers, { fetch, claude: null });
 
-  if ((process.env["NVIDIA_API_KEY"] ?? "") === "" && process.env["NODE_USE_ENV_PROXY"] !== "1") {
+  if (providers.nvidia.apiKey === "" && process.env["NODE_USE_ENV_PROXY"] !== "1") {
     console.warn(
-      "Notice: NVIDIA_API_KEY is empty and NODE_USE_ENV_PROXY is not 1. Calls only work if the key is injected by a proxy; " +
+      "Notice: NVIDIA_API_KEY is empty and NODE_USE_ENV_PROXY is not 1. NVIDIA calls only work if the key is injected by a proxy; " +
         "in that case Node needs NODE_USE_ENV_PROXY=1 to use it. Continuing.",
     );
   }
 
-  console.log(`Prompt version ${PROMPT_VERSION}; models: ${MODELS.map((m) => m.id).join(" > ")}`);
+  console.log(`Prompt version ${PROMPT_VERSION}; models: ${models.map(modelKey).join(" > ")}`);
 
   const scores: CaseScore[] = [];
   const rows: string[] = [];
@@ -67,7 +71,11 @@ async function run(): Promise<number> {
     };
 
     const started = Date.now();
-    const outcome = await extractWithFallback(doc, MODELS, { chat, sleep });
+    const outcome = await extractWithFallback(doc, models, {
+      chat,
+      sleep,
+      intermediaryHosts: defaultConfig.alphadrops.intermediaryHosts,
+    });
     const result: ExtractionResult | null = outcome.ok ? outcome.result : null;
     const score = scoreCase(id, result, truth, text, rawOfficialUrlsOfOutcome(outcome.attempts));
     scores.push(score);
@@ -80,6 +88,8 @@ async function run(): Promise<number> {
         cell(mark(score.statusOk), 7),
         cell(mark(score.tokenOk), 7),
         cell(mark(score.chainOk), 7),
+        cell(ratio(score.deadlinesMatched, score.deadlinesExpected), 7),
+        cell(ratio(score.officialDomainsMatched, score.officialDomainsExpected), 7),
         cell(score.hallucinatedUrls, 7),
         cell(mark(score.negativeOk), 7),
         cell(score.radarRecall ?? "-", 7),
@@ -92,7 +102,7 @@ async function run(): Promise<number> {
 
   console.log("");
   console.log(
-    ["case".padEnd(20), "status ", "token  ", "chain  ", "halluc ", "negat  ", "recall ", "time    ", "model"].join(" "),
+    ["case".padEnd(20), "status ", "token  ", "chain  ", "dlines ", "domains", "halluc ", "negat  ", "recall ", "time    ", "model"].join(" "),
   );
   for (const row of rows) console.log(row);
 

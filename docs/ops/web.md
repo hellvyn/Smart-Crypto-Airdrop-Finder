@@ -1,19 +1,23 @@
 # Web app runbook
 
-How to run, test and configure the Next.js dashboard (`apps/web`). It signs users in with Supabase Auth (email +
-password, email verification, password reset). Spec: sections 9 (accounts, privacy, security) and 10 (web
-dashboard) of `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md`.
+How to run, test, configure and manage members of the Next.js dashboard (`apps/web`). It signs users in with
+Supabase Auth (email + password), but there is no self-service signup and no email at all: the owner adds each
+member by hand in the Supabase Dashboard (section 4). Spec: decisions #31 to #34 and section 15.5 of
+`docs/superpowers/specs/2026-10-10-curation-foundation-design.md`. Sections 8 and 9 of
+`docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md` (email digest, signup, verification and
+password-reset emails) are superseded by it.
 
 ## 1. Environment
 
-The web app holds three settings, none of them secret (see `apps/web/.env.example`). They are inlined at build
-time, so set them before `build`:
+The web app reads two settings, none of them secret (see `apps/web/.env.example`). They are inlined at build
+time, so set them before `build`. The third, `NEXT_PUBLIC_SITE_URL`, is only for the e2e tests:
 
 | Variable | Value |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | project URL (`https://<ref>.supabase.co`; locally `http://127.0.0.1:54321`) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the project's anon (public) key |
-| `NEXT_PUBLIC_SITE_URL` | public base URL of the web app (locally `http://127.0.0.1:3000`); every auth email redirect URL is built from it, never from request headers |
+| `NEXT_PUBLIC_SITE_URL` | base URL of the web app (locally `http://127.0.0.1:3000`). The app no longer reads it: only the Playwright config and CI set it, to the e2e server's address |
+| `COINGECKO_API_KEY` | optional, **secret, server-side only**: the CoinGecko Demo API key for token prices (section 6). Read at runtime, never inlined, never a `NEXT_PUBLIC_` name |
 
 The service role key never goes into the web app, its env or the browser. Row Level Security protects user data;
 the anon key is meant to be public.
@@ -32,17 +36,14 @@ pnpm --filter web dev                   # http://127.0.0.1:3000
 `dev` and `build` use webpack (`--webpack`): `@saf/core` is consumed from TypeScript source and imports its own
 files as `./x.js`, which only webpack's `extensionAlias` can map to `./x.ts`.
 
-Pages: the public airdrop list (`/`) and project pages (`/projects/<slug>`), `/login`, `/signup`,
-`/reset-password`, `/update-password`, and the signed-in pages (`/watchlist`, `/wallets` and `/settings`, all linked
-from the header). Signed-out visits to a signed-in page redirect to `/login?next=<page>`; after login the
-user goes back there. `next` only accepts same-site paths and is used exactly as given (`apps/web/lib/safe-next.ts`;
-anything that is, or normalises to, `//...` is replaced by `/watchlist`).
+Public pages: `/` (landing), `/airdrops`, `/projects/<slug>` and `/login`. The signed-in pages (`/watchlist`,
+`/wallets` and `/settings`) redirect a signed-out visit to `/login?next=<page>`; after login the user goes back
+there. `next` only accepts same-site paths and is used exactly as given (`apps/web/lib/safe-next.ts`; anything that
+is, or normalises to, `//...` is replaced by `/watchlist`).
 
-Auth email links land on `/auth/callback`, which verifies the token (`token_hash` with `type=email` or
-`type=recovery`, the only types the app accepts; or a PKCE `code`), sets the session cookies and redirects: recovery
-links to `/update-password`, a verified signup to `/watchlist`. Email links carry no `next` (the templates do not
-pass one), so a page asked for before signup is not restored after verification. An invalid, used or unsupported
-link (magic link, invite, email change) goes to `/login?error=link`.
+There is no page to register, to ask for a password reset, or to confirm an email address, and the old
+email-link URLs (`/auth/callback`, `/unsubscribe`) answer 404. A person without access sees only the login form and
+the text "Belum punya akses? Hubungi admin.".
 
 ## 3. Tests
 
@@ -59,45 +60,89 @@ link (magic link, invite, email change) goes to `/login?error=link`.
   `start` script is a plain `next start`) with `NEXT_PUBLIC_SITE_URL` set to that address (CI
   builds in its own step and exports the same value). It reads the URL, anon key
   and service role key from the environment or, if missing, from `supabase status`. The service role key is used
-  only by the test harness (`apps/web/e2e/support/`) to create users and to generate the verification and
-  recovery links Supabase would email (`auth.admin.generateLink`), because there is no inbox in CI. The web server
-  is started with that key blanked out.
+  only by the test harness (`apps/web/e2e/support/`) to create already-confirmed test users
+  (`auth.admin.createUser` with `email_confirm: true`), the same state "Auto Confirm User" gives a member in the
+  Dashboard. The web server is started with that key blanked out.
 
 CI (`.github/workflows/ci.yml`, job `e2e`) starts Supabase without Mailpit and the other unneeded services, runs the
 pgTAP tests (`supabase test db`), builds the app and runs Playwright with Chromium installed in
 `PLAYWRIGHT_BROWSERS_PATH`.
 
-## 4. Auth settings: local vs production
+## 4. Manage members
 
-`supabase/config.toml` keeps **email confirmations off** locally: CI and the dev sandbox have no SMTP server, and
-with confirmations on, signup fails with "Error sending confirmation email". Password-reset requests likewise
-answer "Error sending recovery email" locally when Mailpit is not running; the form shows Supabase's message as-is.
+Members exist only because the owner created them. Do all of this in the Supabase Dashboard of the production
+project, **Authentication**. Nothing here sends an email, and no step needs the service role key outside the
+Dashboard.
 
-The hosted project must be configured differently. In the Supabase dashboard (Authentication):
+**One-time setup** (before the first real member; the hosted project must differ from the local config here):
 
-1. **Sign In / Providers > Email:** turn on **Confirm email**. With it on, signup shows "Check your email to confirm
-   your account, then log in." and no session exists until the link is opened.
-2. **Emails > SMTP Settings:** set up custom SMTP. The built-in sender is rate-limited and for testing only;
-   the Brevo setup and the SMTP values are in [`docs/ops/email.md`](email.md).
-3. **URL Configuration:** Site URL = the production web URL (same value as `NEXT_PUBLIC_SITE_URL`); add
-   `https://<web-host>/**` to Redirect URLs.
-4. **Emails > Templates:** use the link formats from `supabase/templates/` so links go through the web app's
-   callback and work in any browser:
-   - Confirm signup: `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email`
-   - Reset password: `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery`
-5. **Sign In / Providers > Email:** turn on **Secure password change** (`secure_password_change = true`), so changing
-   the password needs a recent login (reauthentication). The recovery link creates a fresh session just before
-   `/update-password`, which should satisfy it; re-run the reset flow once after turning it on. Locally it stays off.
+1. **Sign In / Providers:** turn off **Allow new users to sign up**. Without this, anyone can still create an
+   account through the Auth API with the public anon key, even though the web app has no signup page.
+2. **Sign In / Providers > Email:** turn off **Secure password change**. It is off because reauthentication needs
+   an email, which this project cannot send, and because the app has no password change at all (owner decision #60).
+   Decision #60 is UI-only: a member could still change their own password through the Supabase Auth API with their
+   own session. That is an accepted risk.
+3. Leave **Confirm email** as it is: users are created confirmed (below), so it never has to deliver anything.
+   No custom SMTP and no email templates are needed; remove any that were set up for the old flow.
 
-`/auth/callback` also accepts the PKCE `code` that the default templates (`{{ .ConfirmationURL }}`) produce (signup
-redirects to `<site>/auth/callback`, reset to `<site>/auth/callback?type=recovery`), but that only works in the
-browser where the user signed up or asked for the reset (and is not covered by the e2e tests).
+**Add a member:** Authentication > Users > **Add user** > **Create new user**. Enter the email and a password, tick
+**Auto Confirm User**, then create. Send the password to the member yourself (Telegram or DM). The member logs in
+at `/login` right away. A database trigger creates the member's `profiles` row, so nothing else is needed. Without
+Auto Confirm the account stays unconfirmed and login fails. Members cannot change their own password: the app has no
+form for it (owner decision #60), so a member who wants a new one asks you, and you reset it as below.
+
+**Reset a password:** open the user in Authentication > Users and set a new password there, then tell the member
+in person. Do not use "Send password recovery": there is no SMTP, and the app has no page to receive the link.
+If your Dashboard version has no way to set a password, use the Auth Admin API from your own machine (keep the
+service role key out of shell history and out of any repo):
+
+```
+curl -X PUT "https://<ref>.supabase.co/auth/v1/admin/users/<user-id>" \
+  -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json" -d '{"password":"<new password>"}'
+```
+
+**Delete a member:** Authentication > Users > the user's menu > **Delete user**. The user's `profiles`, `watchlist`
+and `wallets` rows go with the account (foreign keys with `on delete cascade`). Members can also delete their own
+account in `/settings`, which removes the same data.
+
+**Local stack.** `supabase/config.toml` has signup off, **Secure password change** off and email
+confirmations off, so Mailpit is not needed. Create a local user in the local Studio
+(`http://127.0.0.1:54323`, Authentication > Users, **Auto Confirm User** ticked). The e2e tests create their own
+users.
 
 ## 5. Deploy
 
-Order matters: the web app expects the database objects of every migration, so the database goes first.
+Order matters: signup is shut before anything else, and the web app expects the database objects of every migration,
+so the database goes before the web build.
 
-1. **Migrations.** Apply `supabase/migrations/0001` through `0006` to the hosted project before deploying the web app:
+### Checklist for the 0007 through 0015 release
+
+The hosted database has 0001–0006 only. Follow these steps in this order, without a pause between 3 and 4:
+
+1. **Signup off** (Supabase Dashboard > Authentication > Sign In / Providers > **Allow new users to sign up** off).
+2. **Migration history.** If not done yet, run the one-time `migration repair` in `docs/ops/pipeline.md` section 1:
+   0001–0006 were applied through the Supabase MCP connector, so the remote history holds timestamped entries
+   (`pipeline`, `users_part1`, `users_part2`, `users_part3`, `web_views`, `wallet_rate_limit`, `notifications`,
+   `project_changes_seq`). Check with `migration list` that local and remote match.
+3. **`db push`**, which applies `0007_manual_membership.sql` through `0015_farming_results.sql`.
+4. **Deploy the web build immediately.** The web build that is live now reads `risk_assessments.checks` as anon;
+   `0013_member_checks.sql` revokes that column from anon, so every project page errors for visitors from the moment
+   0013 lands until the new build is live.
+5. **Secrets.** `COINGECKO_API_KEY` on the web host (section 6; the owner has set it already) and the GitHub
+   Secrets in `docs/ops/pipeline.md` section 2.
+6. **Run the pipeline once** by hand: Actions > **Daily pipeline** > **Run workflow** (`workflow_dispatch`), or
+   `gh workflow run daily.yml`. Until this run finishes there are no `curations` rows: `/airdrops` is empty, and
+   every project page shows "Gak masuk list: belum dinilai" with `noindex`.
+7. **Check `/airdrops`** after the run: the tabs list projects, and a listed project's page has no "Gak masuk list"
+   banner.
+
+The numbered steps below describe each part in more detail.
+
+1. **Signup off (Supabase Dashboard, before anything else).** Authentication > Sign In / Providers: turn off
+   **Allow new users to sign up**. Until this is off, anyone can create an account through the Auth API with the
+   public anon key.
+2. **Migrations.** Apply `supabase/migrations/0001` through `0015` to the hosted project before deploying the web app:
 
    ```
    npx -y supabase@2.120.0 link --project-ref <ref>
@@ -105,21 +150,80 @@ Order matters: the web app expects the database objects of every migration, so t
    ```
 
    `0004_wallet_rate_limit.sql` adds `claim_wallet_check()`, which the wallet activity API calls on every cache
-   miss; a web build without it answers every uncached check with "Data unavailable, try again later.".
-   `0005_notifications.sql` adds `notification_log` and `unsubscribe_digest()` (the unsubscribe page needs it);
-   `0006_project_changes_seq.sql` orders project changes for the digest.
-2. **Build-time env.** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_SITE_URL` (the
-   public `https://` URL of the web app) are inlined by `next build`: set them in the host's build environment, and
-   rebuild after changing any of them. No other secret belongs in the web app (never the service role key).
-3. **Build and start.** `pnpm --filter web build`, then `pnpm --filter web start` (plain `next start`; the host's
+   miss; a web build without it answers every uncached check with "Data lagi gak tersedia. Coba lagi nanti.".
+   `0007_manual_membership.sql` removes what only the email flow used (`notification_log`, `unsubscribe_digest()` and the
+   `profiles` columns for the email preferences and the unsubscribe token). Existing user data stays. The previous
+   web build still reads those columns, so deploy the new build right after applying it. The later files:
+   `0008_served_model.sql` (the model that answered an extraction), `0009_extraction_v3.sql` (ordered steps with a
+   cadence), `0010_farming.sql` ("Garapan saya"), `0011_curation.sql` (curations, signals, link checks, AI analyses),
+   `0012_curated_list.sql` (the public list views), `0013_member_checks.sql` (check details; anon loses
+   `risk_assessments.checks`, see the checklist above), `0014_changes_seen.sql` (changes since the last visit) and
+   `0015_farming_results.sql` ("Hasil garapan"). See `docs/ops/pipeline.md` section 1 for aligning the production
+   migration history before the first `db push`.
+3. **Build-time env.** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are inlined by `next build`:
+   set them in the host's build environment, and rebuild after changing either of them. `NEXT_PUBLIC_SITE_URL` is
+   not needed for a deploy. The only secret the web app may hold is `COINGECKO_API_KEY` (section 6), a runtime
+   server env var; never the service role key.
+4. **Build and start.** `pnpm --filter web build`, then `pnpm --filter web start` (plain `next start`; the host's
    `PORT` or `-- --port <n>` picks the port). Hosts that build Next.js themselves need the `--webpack` build script
    (see section 2).
-4. **Supabase Auth (dashboard), before the first real signup** (details in section 4):
-   - URL Configuration: Site URL = `NEXT_PUBLIC_SITE_URL`; the Redirect URLs allowlist must include
-     `<SITE_URL>/auth/callback` (or `<SITE_URL>/**`).
-   - Confirm email on, with custom SMTP set up (see [`docs/ops/email.md`](email.md)).
-   - Secure password change on (`secure_password_change = true`).
-   - Email templates from `supabase/templates/`.
-5. **Check.** Every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`,
+5. **Supabase Auth (dashboard), before announcing the site** (details in section 4): check that **Allow new users to
+   sign up** is still off, and turn off **Secure password change**. Then add the first member with Auto Confirm User.
+6. **Check.** Every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`,
    `Referrer-Policy: strict-origin-when-cross-origin` and `X-Content-Type-Options: nosniff` (`apps/web/next.config.ts`);
-   a host or proxy in front must not strip them. Then sign up, verify, add a wallet and run one wallet check.
+   a host or proxy in front must not strip them. Then, signed out: `/` and `/airdrops` open and `/watchlist`
+   redirects to `/login`. Log in as the member you added, add a wallet and run one wallet check.
+
+## 6. Token prices for "Hasil garapan"
+
+On "Garapan saya" a member enters what an ended airdrop gave them (`farming_results`, migration
+`0015_farming_results.sql`). The web stores the USD value at the claim date and shows today's value next to it. The
+token is found by the CoinGecko id the pipeline stores in `project_signals` (`coingecko_listed`, `value.gecko_id`);
+a project without that signal simply has no price. Code: `apps/web/lib/prices.ts` (server-side only).
+
+**Providers, in order:**
+
+1. **CoinGecko Demo**, only when `COINGECKO_API_KEY` is set. `https://api.coingecko.com/api/v3`, key in the
+   `x-cg-demo-api-key` header (never in a URL). Price on a day: `/coins/{id}/history?date=dd-mm-yyyy&localization=false`,
+   field `market_data.current_price.usd`. Price now: `/simple/price?ids={id}&vs_currencies=usd`.
+2. **DefiLlama coins** (keyless), the fallback when there is no key or CoinGecko answers with an error, a 429, any
+   other non-200 or an unexpected shape. Coin key `coingecko:{id}`. Price on a day (00:00 UTC):
+   `https://coins.llama.fi/prices/historical/{unixSeconds}/coingecko:{id}`; price now:
+   `https://coins.llama.fi/prices/current/coingecko:{id}`; field `coins["coingecko:{id}"].price`.
+
+When both fail the price is `null`, nothing throws, and the member sees "Harga belum ketemu, jumlah token tetap
+tersimpan." The token amount is saved anyway; "Ubah" + "Simpan" later computes the value again. Answers are cached by
+Next's data cache: 24 hours for a past day, 1 hour for the current price (only HTTP 200 answers are cached). Every
+request has a 5 second timeout. Nothing in this path logs a user id, an amount or a key.
+
+**`COINGECKO_API_KEY`:** a server-side Vercel environment variable for Production and Preview. The owner adds it in
+the Vercel project settings; it is never committed, never put in `.env.example`, and never pasted into chat. Without
+it the site runs on DefiLlama alone.
+
+**Attribution and licence.** The CoinGecko Demo plan requires attribution, so wherever a USD value from these prices
+is shown (the result box and the "Total hasil garapan" summary) the page shows "Data harga: CoinGecko, DefiLlama"
+with links to both. Which provider priced a stored value is not recorded, so both are named. Per third-party sources
+the Demo plan carries no commercial licence, and AirdropIQ is a paid membership: the owner accepts that risk
+(decision 2026-10-11).
+
+**What is known and what is not:**
+
+- Verified from the build container on 2026-10-11, without a key: `GET /coins/bitcoin/history?date=01-10-2026&localization=false`
+  answered 200 with `market_data.current_price.usd` (response header `cache-control: max-age=30, public,
+  must-revalidate, s-maxage=1800`), and `GET /simple/price?ids=bitcoin&vs_currencies=usd` answered 200 with
+  `{"bitcoin":{"usd":...}}`. An unkeyed request earlier the same day answered 429.
+- [UNKNOWN] CoinGecko Demo rate limits, monthly call allowance and how far back `/history` reaches on the Demo plan.
+  Not verified; no keyed request was made.
+- [UNKNOWN] DefiLlama's live response shape and rate limits: `coins.llama.fi` is blocked by the build container's
+  proxy, so the shape above is the documented one, parsed defensively (anything else counts as no price).
+- [UNKNOWN] DefiLlama's commercial terms for this use. Not verified.
+
+**Member average.** `farming_result_stats(project)` (security definer, members only) counts the results whose owner
+ticked "Boleh dipakai anonim buat rata-rata hasil member" and that have a USD value ("Gak dapet" counts as $0). It
+returns only that count and the average, and the average stays empty below 5 members. A member writes their own
+`usd_at_claim` (the web computes it, but the column is the member's), so one member can skew the average of a project
+with few contributors.
+
+**e2e.** The Playwright config starts `apps/web/e2e/support/prices-stub.mjs` on `127.0.0.1:3101` and points the web
+server at it with `PRICES_API_BASE`. `lib/prices.ts` honours that variable only for a plain `http://127.0.0.1` or
+`http://localhost` address, so it cannot redirect production requests elsewhere. Do not set it in a deploy.

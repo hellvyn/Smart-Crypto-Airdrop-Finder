@@ -10,14 +10,27 @@ export function isAggregatorHost(hostname: string): boolean {
 }
 
 /**
+ * The single check for hosts that are never a project's own: the aggregators we collect from (airdrops.io,
+ * alphadrops.net and their subdomains) and the intermediary hosts of the config (`alphadrops.intermediaryHosts`:
+ * short links, link pages, quest boards). Intermediary hosts match exactly, so a project that really lives on
+ * `kaito.ai` keeps its domain while `s.kaito.ai` is refused.
+ */
+export function isNonProjectHost(hostname: string, intermediaryHosts: readonly string[]): boolean {
+  const host = hostname.toLowerCase();
+  if (isAggregatorHost(host) || host === "alphadrops.net" || host.endsWith(".alphadrops.net")) return true;
+  return intermediaryHosts.some((h) => h.toLowerCase() === host);
+}
+
+/**
  * Appends ` [<cleaned url>] ` after every outbound anchor so the LLM can copy URLs verbatim.
- * Links to the aggregator itself are dropped; `onVisit` may turn `/visit/<code>/` links into a placeholder.
+ * Links to the aggregator itself are dropped; `onVisit` may turn `/visit/<code>/` links into a placeholder and
+ * receives the anchor's `data-outbound-host` (the destination host airdrops.io declares), if any.
  * Anchor text is always kept.
  */
 export function embedLinks(
   $: CheerioAPI,
   base: string,
-  onVisit?: (url: URL) => string | null,
+  onVisit?: (url: URL, outboundHost: string | null) => string | null,
 ): void {
   $("a[href]").each((_, el) => {
     const href = $(el).attr("href");
@@ -32,7 +45,7 @@ export function embedLinks(
     if (url.protocol !== "http:" && url.protocol !== "https:") return;
     if (url.hostname === "t.me" && url.pathname === "/") return;
     if (isAggregatorHost(url.hostname)) {
-      const placeholder = onVisit?.(url) ?? null;
+      const placeholder = onVisit?.(url, $(el).attr("data-outbound-host")?.trim() || null) ?? null;
       if (placeholder) $(el).after(` ${placeholder} `);
       return;
     }

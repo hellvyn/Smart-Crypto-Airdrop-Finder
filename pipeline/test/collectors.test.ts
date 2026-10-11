@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { createHttp } from "../src/http.js";
+import { createFetchUntrusted, createHttp } from "../src/http.js";
 import type { Http } from "../src/collectors/types.js";
 import { collectAirdropsIo, parseDetail, parseListing } from "../src/collectors/airdrops-io.js";
 import { collectTelegram, parseTelegramPage } from "../src/collectors/telegram.js";
@@ -84,6 +84,105 @@ describe("createHttp", () => {
   });
 });
 
+describe("createFetchUntrusted", () => {
+  type Answer = (url: string) => Response;
+  /** A fetch that answers by URL and records each request with its options. */
+  function recordingFetch(answer: Answer): { fetchImpl: typeof fetch; calls: { url: string; init: RequestInit | undefined }[] } {
+    const calls: { url: string; init: RequestInit | undefined }[] = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return answer(String(url));
+    }) as typeof fetch;
+    return { fetchImpl, calls };
+  }
+  const html = (body: string, status = 200) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
+  const redirect = (location: string) => new Response(null, { status: 302, headers: { location } });
+
+  it("sends the project User-Agent without cookies, with a timeout, following no redirect by itself", async () => {
+    const { fetchImpl, calls } = recordingFetch(() => html("<p>Claim</p>"));
+
+    expect(await createFetchUntrusted(fetchImpl)("https://claim.a.test/")).toEqual({ status: 200, body: "<p>Claim</p>" });
+
+    expect(calls).toHaveLength(1);
+    const init = calls[0]?.init;
+    expect(new Headers(init?.headers).get("user-agent")).toBe("SmartAirdropFinder/0.1 (+https://github.com/hellvyn/Smart-Airdrop-Finder)");
+    expect(init?.redirect).toBe("manual");
+    expect(init?.credentials).toBe("omit");
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("follows up to 3 redirects to public http(s) hosts and gives up after that", async () => {
+    const hops: Record<string, string> = {
+      "https://a.test/": "https://b.test/x",
+      "https://b.test/x": "http://c.test/y",
+      "http://c.test/y": "/z",
+    };
+    const three = recordingFetch((url) => (hops[url] ? redirect(hops[url]) : html("landed")));
+    expect(await createFetchUntrusted(three.fetchImpl)("https://a.test/")).toEqual({ status: 200, body: "landed" });
+    expect(three.calls.map((c) => c.url)).toEqual(["https://a.test/", "https://b.test/x", "http://c.test/y", "http://c.test/z"]);
+
+    const four = recordingFetch((url) => redirect(`${url}r`));
+    expect(await createFetchUntrusted(four.fetchImpl)("https://a.test/")).toEqual({ status: 0, body: "" });
+    expect(four.calls).toHaveLength(4);
+    // One timeout covers every hop.
+    expect(new Set(four.calls.map((c) => c.init?.signal)).size).toBe(1);
+  });
+
+  it.each([
+    ["file:///etc/passwd"],
+    ["javascript:alert(1)"],
+    ["http://127.0.0.1/"],
+    ["http://169.254.169.254/latest/meta-data/"],
+    ["http://localhost:8080/"],
+    ["http://[::1]/"],
+    ["http://metadata.google.internal/"],
+    ["http://router.local/"],
+  ])("never requests %s, directly or through a redirect", async (target) => {
+    const direct = recordingFetch(() => html("secret"));
+    expect(await createFetchUntrusted(direct.fetchImpl)(target)).toEqual({ status: 0, body: "" });
+    expect(direct.calls).toEqual([]);
+
+    const viaRedirect = recordingFetch((url) => (url === "https://claim.a.test/" ? redirect(target) : html("secret")));
+    expect(await createFetchUntrusted(viaRedirect.fetchImpl)("https://claim.a.test/")).toEqual({ status: 0, body: "" });
+    expect(viaRedirect.calls.map((c) => c.url)).toEqual(["https://claim.a.test/"]);
+  });
+
+  it("reads at most 1 MB of the body", async () => {
+    let cancelled = false;
+    const chunk = new TextEncoder().encode("a".repeat(64 * 1024));
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        sent += chunk.length;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const { fetchImpl } = recordingFetch(() => new Response(stream, { status: 200, headers: { "content-type": "text/html" } }));
+
+    const page = await createFetchUntrusted(fetchImpl)("https://claim.a.test/");
+
+    expect(page.status).toBe(200);
+    expect(page.body.length).toBe(1_000_000);
+    expect(cancelled).toBe(true);
+    expect(sent).toBeLessThan(1_200_000);
+  });
+
+  it("gives an empty body for a response that is not text", async () => {
+    const { fetchImpl } = recordingFetch(() => new Response("%PDF-1.7", { status: 200, headers: { "content-type": "application/pdf" } }));
+    expect(await createFetchUntrusted(fetchImpl)("https://claim.a.test/")).toEqual({ status: 200, body: "" });
+  });
+
+  it("turns a network error into status 0", async () => {
+    const fetchImpl = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof fetch;
+    expect(await createFetchUntrusted(fetchImpl)("https://claim.a.test/")).toEqual({ status: 0, body: "" });
+  });
+});
+
 describe("parseListing", () => {
   const urls = parseListing(fixture("airdrops-home.html"));
 
@@ -138,12 +237,83 @@ describe("parseDetail", () => {
     expect(detail?.visitLinks).toEqual([
       "https://airdrops.io/visit/53a3/?k=6efe1f6681",
       "https://airdrops.io/visit/dead/?k=1",
+      "https://airdrops.io/visit/9ea3/?k=11",
+      "https://airdrops.io/visit/aea3/?k=22",
+      "https://airdrops.io/visit/bea3/?k=33",
     ]);
   });
 
   it("returns null when the expected structure is missing", () => {
     expect(parseDetail("<html><body><h1>X</h1></body></html>", "https://airdrops.io/x/")).toBeNull();
     expect(parseDetail("", "https://airdrops.io/x/")).toBeNull();
+  });
+});
+
+describe("airdrops.io Overview box", () => {
+  const HOME = "https://airdrops.io/";
+  const DEEPBOOK = "https://airdrops.io/deepbook/";
+  const detailHtml = fixture("airdrops-detail.html");
+  const home = `<a href="/deepbook/">DeepBook</a>`;
+  const pagesFor = (body: string): Record<string, { status: number; body: string }> => ({
+    [HOME]: { status: 200, body: home },
+    [DEEPBOOK]: { status: 200, body },
+  });
+  const redirects = {
+    "https://airdrops.io/visit/9ea3/?k=11": "https://arcus.xyz/?ref=AB",
+    "https://airdrops.io/visit/bea3/?k=33": "https://bridge.airdrops.io/",
+  };
+  const withoutOverview = detailHtml.replace(/<div class="aidrop-info-wrapper">[\s\S]*?<\/div>/, "");
+
+  it("appends the Overview links with their resolved URLs", async () => {
+    const doc = (await collectAirdropsIo(fakeHttp(pagesFor(detailHtml), redirects), NOW)).documents[0]!;
+    expect(doc.text).toContain("Overview\nWebsite: [https://arcus.xyz/]");
+    expect(doc.text).toContain("Documentation: [https://docs.arcus.xyz/]"); // resolve failed, host fallback
+    expect(doc.text).toContain("X (Formerly Twitter): [https://x.com/arcus_xyz]");
+    expect(doc.text).not.toContain("Blog");
+    expect(doc.text).not.toContain("airdrops.io"); // aggregator target dropped
+    expect(doc.text).not.toContain("ref=AB");
+    expect(doc.text.endsWith("[https://x.com/arcus_xyz]")).toBe(true);
+  });
+
+  it("uses data-outbound-host when an in-body visit link cannot be resolved", async () => {
+    const body = detailHtml.replace(
+      "Claims are open for 30 days.",
+      'Open the <a href="/visit/5ea3/?k=1" data-outbound-host="app.arcus.xyz">portal</a>.',
+    );
+    const doc = (await collectAirdropsIo(fakeHttp(pagesFor(body)), NOW)).documents[0]!;
+    expect(doc.text).toContain("portal [https://app.arcus.xyz/]");
+  });
+
+  it("drops an unresolved visit link whose outbound host is an aggregator host", async () => {
+    const body = detailHtml.replace(
+      "Claims are open for 30 days.",
+      'Read <a href="/visit/7ea3/?k=1" data-outbound-host="bridge.airdrops.io">the bridge</a>.',
+    );
+    const doc = (await collectAirdropsIo(fakeHttp(pagesFor(body)), NOW)).documents[0]!;
+    expect(doc.text).toContain("the bridge");
+    expect(doc.text).not.toContain("airdrops.io");
+  });
+
+  it("accepts the correctly spelled wrapper class and pages without an Overview box", () => {
+    const spelled = detailHtml.replace("aidrop-info-wrapper", "airdrop-info-wrapper");
+    expect(parseDetail(spelled, DEEPBOOK)!.overview).toHaveLength(4);
+    expect(parseDetail(withoutOverview, DEEPBOOK)!.overview).toEqual([]);
+  });
+
+  it("reads label, absolute href and outbound host in page order", () => {
+    expect(parseDetail(detailHtml, DEEPBOOK)!.overview).toEqual([
+      { label: "Website", href: "https://airdrops.io/visit/9ea3/?k=11", outboundHost: "arcus.xyz" },
+      { label: "Documentation", href: "https://airdrops.io/visit/aea3/?k=22", outboundHost: "docs.arcus.xyz" },
+      { label: "X (Formerly Twitter)", href: "https://x.com/arcus_xyz?utm_source=x", outboundHost: null },
+      { label: "Blog", href: "https://airdrops.io/visit/bea3/?k=33", outboundHost: "bridge.airdrops.io" },
+    ]);
+    expect(parseDetail(detailHtml, DEEPBOOK)!.visitHosts.get("9ea3")).toBe("arcus.xyz");
+  });
+
+  it("still builds the document from the main block when there is no Overview box", async () => {
+    const doc = (await collectAirdropsIo(fakeHttp(pagesFor(withoutOverview), redirects), NOW)).documents[0]!;
+    expect(doc.text).toContain("Claims are open for 30 days.");
+    expect(doc.text).not.toContain("Overview");
   });
 });
 

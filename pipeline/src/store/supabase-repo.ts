@@ -1,37 +1,46 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
+  AiKind,
+  CurationRecord,
   DatePrecision,
   DeadlineKind,
-  DigestProject,
   ExtractedDeadline,
+  LinkCheckStatus,
+  NewSignal,
   RiskAssessment,
   RiskLevel,
+  SignalKind,
+  SignalSource,
   Status,
   StatusEvidence,
+  Tab,
+  TrackRecordProject,
 } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
+import type { RaisePage } from "../enrich/alphadrops-raises.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
-import { DuplicateDigestError } from "./repo.js";
+import { FACT_FIELDS, curatedChange, endedScoringSince, publicFailReason } from "./repo.js";
 import type {
-  DigestContext,
-  DigestRecipient,
+  ClaimPage,
   ExtractionStatus,
+  LinkCheck,
+  NewAiAnalysis,
   NewEvidence,
   NewProject,
   PipelineRepo,
   ProjectForScoring,
   ProjectRow,
   RunStats,
+  SignalKeep,
+  Step,
+  StoredAiAnalysis,
   StoredDocument,
 } from "./repo.js";
 
 const DAY_MS = 86_400_000;
-const HOUR_MS = 3_600_000;
 const PAGE_SIZE = 1000;
-/** Ids per `in (...)` filter, so request URLs stay short. */
-const ID_CHUNK = 100;
-/** Users per `auth.admin.listUsers` page. */
-const USERS_PAGE = 1000;
+/** URLs per `in.(...)` filter, which goes into the request URL: keeps it far below proxy URL length limits. */
+const URL_CHUNK = 100;
 
 interface DocumentDb {
   id: string;
@@ -61,11 +70,24 @@ interface ProjectDb {
   last_seen: string;
 }
 
+/** One round in `alphadrops_raises.rounds` (jsonb, snake case like the other jsonb values). */
+interface RaiseRoundDb {
+  round: string;
+  date: string | null;
+  amount_usd: number | null;
+  lead: string[];
+  others: string[];
+  source_url: string | null;
+}
+
 const PROJECT_COLUMNS =
   "id, slug, name, name_key, token_symbol, chains, official_domains, status, conflict, lookalike_of, first_seen, last_seen";
 
 const toDate = (value: string | null): Date | null => (value === null ? null : new Date(value));
 const toIso = (value: Date | null): string | null => (value === null ? null : value.toISOString());
+
+/** A value inside a PostgREST `in.(...)` list: double-quoted, with `\` and `"` escaped by a backslash. */
+const postgrestQuote = (value: string): string => `"${value.replace(/[\\"]/g, (c) => `\\${c}`)}"`;
 
 function toDocument(r: DocumentDb): StoredDocument {
   return {
@@ -99,27 +121,6 @@ function toProject(r: ProjectDb): ProjectRow {
   };
 }
 
-interface DigestProjectDb {
-  id: string;
-  slug: string;
-  name: string;
-  status: Status;
-  first_seen: string;
-}
-
-const DIGEST_PROJECT_COLUMNS = "id, slug, name, status, first_seen";
-
-function chunks<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
-/** Code-unit comparison (same as MemoryRepo); for uuids it matches Postgres uuid ordering. */
-function compareText(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 /** Throws a plain Error naming the operation; never includes row values beyond what Supabase reports. */
 function check<T>(op: string, result: { data: T; error: { message: string } | null }): T {
   if (result.error) throw new Error(`supabase ${op} failed: ${result.error.message}`);
@@ -131,40 +132,6 @@ function checkOne<T>(op: string, result: { data: T | null; error: { message: str
   const data = check(op, result);
   if (data === null) throw new Error(`supabase ${op} returned no row`);
   return data;
-}
-
-/** The part of `auth.admin` that `listConfirmedEmails` uses. */
-export interface UserLister {
-  listUsers(params: { page: number; perPage: number }): Promise<{
-    data: { users: { id: string; email?: string; email_confirmed_at?: string }[]; total?: number };
-    error: { message: string } | null;
-  }>;
-}
-
-/**
- * Confirmed email per user id, from auth.users (only the admin API can read them). Pages until an empty page, or
- * until `total` users (when the server reports it) have been seen. A short page is not the end: the server may cap
- * `perPage` below what was asked. A page with no user not seen before also ends it, so a server that ignores
- * `page` cannot loop forever.
- */
-export async function listConfirmedEmails(admin: UserLister): Promise<Map<string, string>> {
-  const emails = new Map<string, string>();
-  const seen = new Set<string>();
-  for (let page = 1; ; page += 1) {
-    const { data, error } = await admin.listUsers({ page, perPage: USERS_PAGE });
-    if (error) throw new Error(`supabase listDigestRecipients.users failed: ${error.message}`);
-    if (data.users.length === 0) break;
-    let added = 0;
-    for (const u of data.users) {
-      if (seen.has(u.id)) continue;
-      seen.add(u.id);
-      added += 1;
-      if (u.email && u.email_confirmed_at) emails.set(u.id, u.email);
-    }
-    if (added === 0) break;
-    if (typeof data.total === "number" && data.total > 0 && seen.size >= data.total) break;
-  }
-  return emails;
 }
 
 /** `PipelineRepo` backed by Supabase. Must use the service-role key (writes bypass RLS). */
@@ -264,6 +231,7 @@ export class SupabaseRepo implements PipelineRepo {
       await this.db.from("extractions").insert({
         document_id: documentId,
         model: attempt.model,
+        served_model: attempt.servedModel,
         prompt_version: promptVersion,
         raw: attempt.raw,
         http_status: attempt.httpStatus,
@@ -428,18 +396,46 @@ export class SupabaseRepo implements PipelineRepo {
     );
   }
 
-  async replaceTasks(projectId: string, documentId: string, tasks: string[]): Promise<void> {
+  async replaceTasks(projectId: string, documentId: string, steps: Step[]): Promise<void> {
     check(
       "replaceTasks.delete",
       await this.db.from("tasks").delete().eq("project_id", projectId).eq("document_id", documentId),
     );
-    if (tasks.length === 0) return;
+    if (steps.length === 0) return;
     check(
       "replaceTasks.insert",
-      await this.db
-        .from("tasks")
-        .insert(tasks.map((description) => ({ project_id: projectId, document_id: documentId, description }))),
+      await this.db.from("tasks").insert(
+        steps.map((step, position) => ({
+          project_id: projectId,
+          document_id: documentId,
+          description: step.text,
+          position,
+          cadence: step.cadence,
+        })),
+      ),
     );
+  }
+
+  async saveStepTranslations(projectId: string, texts: string[]): Promise<void> {
+    const rows =
+      check(
+        "saveStepTranslations.select",
+        await this.db
+          .from("tasks")
+          .select("id")
+          .eq("project_id", projectId)
+          // Step order, the same as listProjectsForScoring.
+          .order("document_id")
+          .order("position")
+          .returns<{ id: string }[]>(),
+      ) ?? [];
+    if (rows.length !== texts.length) return;
+    for (const [i, row] of rows.entries()) {
+      check(
+        "saveStepTranslations.update",
+        await this.db.from("tasks").update({ text_id: texts[i] }).eq("id", row.id).eq("project_id", projectId),
+      );
+    }
   }
 
   async upsertLinks(
@@ -465,35 +461,145 @@ export class SupabaseRepo implements PipelineRepo {
 
   async listProjectsForScoring(activeSinceDays: number, now: Date): Promise<ProjectForScoring[]> {
     const cutoff = new Date(now.getTime() - activeSinceDays * DAY_MS).toISOString();
-    type ScoringDb = ProjectDb & {
-      tasks: { description: string }[];
-      links: { url: string; kind: string }[];
-      evidence: { field: string; value: string; quote: string; documents: { source_key: string } | null }[];
-      lookalike: { name: string; official_domains: string[] } | null;
-    };
-    const rows = await this.fetchAll<ScoringDb>("listProjectsForScoring", (from, to) =>
+    const active = await this.scoringProjects("listProjectsForScoring", { lastSeenSince: cutoff });
+    // Ended projects outside the window: candidates are those with a passing curation that ended within the window,
+    // kept only when their latest curation is still such a one (a later failed curation freezes the project).
+    const endedSince = endedScoringSince(now);
+    const endedCandidates = await this.fetchAll<{ project_id: string }>("listProjectsForScoring.endedCandidates", (from, to) =>
       this.db
+        .from("curations")
+        .select("project_id")
+        .eq("passed", true)
+        .gte("ended_on", endedSince)
+        .order("seq")
+        .range(from, to),
+    );
+    // Open projects outside the window (their pages stopped changing): candidates are those with a passing open
+    // curation computed within the window, kept while their latest curation still passes and is open, so a listed
+    // project keeps being re-checked until it fails or ends. A project still passing is curated on every run, and the
+    // window bound keeps the candidates from growing with every project that ever passed.
+    const openCandidates = await this.fetchAll<{ project_id: string }>("listProjectsForScoring.openCandidates", (from, to) =>
+      this.db
+        .from("curations")
+        .select("project_id")
+        .eq("passed", true)
+        .neq("status_at", "ended")
+        .gte("computed_at", cutoff)
+        .order("seq")
+        .range(from, to),
+    );
+    const activeIds = new Set(active.map((p) => p.id));
+    const latestOf = new Map<string, Awaited<ReturnType<SupabaseRepo["latestCuration"]>>>();
+    const latest = async (id: string) => {
+      if (!latestOf.has(id)) latestOf.set(id, await this.latestCuration(id));
+      return latestOf.get(id) ?? null;
+    };
+    const endedIds: string[] = [];
+    for (const id of new Set(endedCandidates.map((c) => c.project_id))) {
+      if (activeIds.has(id)) continue;
+      const l = await latest(id);
+      if (l?.passed && l.endedOn !== null && l.endedOn >= endedSince) endedIds.push(id);
+    }
+    const openIds: string[] = [];
+    for (const id of new Set(openCandidates.map((c) => c.project_id))) {
+      if (activeIds.has(id)) continue;
+      // `ended_on` is set exactly when the curation's status is `ended`.
+      const l = await latest(id);
+      if (l?.passed && l.endedOn === null) openIds.push(id);
+    }
+    const extra = [
+      ...(endedIds.length === 0 ? [] : await this.scoringProjects("listProjectsForScoring.ended", { endedIds })),
+      ...(openIds.length === 0 ? [] : await this.scoringProjects("listProjectsForScoring.open", { openIds })),
+    ];
+    return [...active, ...extra];
+  }
+
+  /** `ProjectForScoring` rows of the projects last seen since a time, of the given ended projects, or of the given ids. */
+  private async scoringProjects(
+    op: string,
+    filter: { lastSeenSince: string } | { endedIds: string[] } | { openIds: string[] },
+  ): Promise<ProjectForScoring[]> {
+    type ScoringDb = ProjectDb & {
+      tasks: { description: string; cadence: string }[];
+      deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[];
+      links: { url: string; kind: string }[];
+      evidence: {
+        field: string;
+        value: string;
+        quote: string;
+        documents: { source_key: string; source_kind: SourceKind } | null;
+      }[];
+      lookalike: { name: string; official_domains: string[] } | null;
+      project_signals: {
+        kind: SignalKind;
+        value: Record<string, unknown>;
+        source: SignalSource;
+        verified: boolean;
+        observed_at: string;
+      }[];
+    };
+    const rows = await this.fetchAll<ScoringDb>(op, (from, to) => {
+      const query = this.db
         .from("projects")
         .select(
-          `${PROJECT_COLUMNS}, tasks(description), links(url, kind), ` +
-            "evidence(field, value, quote, documents(source_key)), lookalike:lookalike_of(name, official_domains)",
-        )
-        .gte("last_seen", cutoff)
-        .order("id")
-        // Evidence in insertion order, so sourceAsks match MemoryRepo.
-        .order("seq", { referencedTable: "evidence" })
-        .range(from, to)
-        .returns<ScoringDb[]>(),
-    );
+          `${PROJECT_COLUMNS}, tasks(description, cadence), deadlines(kind, date, precision), links(url, kind), ` +
+            "evidence(field, value, quote, documents(source_key, source_kind)), lookalike:lookalike_of(name, official_domains), " +
+            "project_signals(kind, value, source, verified, observed_at)",
+        );
+      const filtered =
+        "lastSeenSince" in filter
+          ? query.gte("last_seen", filter.lastSeenSince)
+          : "endedIds" in filter
+            ? query.eq("status", "ended").in("id", filter.endedIds)
+            : query.in("id", filter.openIds);
+      return (
+        filtered
+          .order("id")
+          // Steps grouped by document, in step order; same as MemoryRepo.
+          .order("document_id", { referencedTable: "tasks" })
+          .order("position", { referencedTable: "tasks" })
+          // Evidence in insertion order, so sourceAsks and facts match MemoryRepo.
+          .order("seq", { referencedTable: "evidence" })
+          .range(from, to)
+          .returns<ScoringDb[]>()
+      );
+    });
     return rows.map((r) => ({
       ...toProject(r),
       tasks: r.tasks.map((t) => t.description),
+      steps: r.tasks.map((t) => ({ text: t.description, cadence: t.cadence })),
+      facts: r.evidence
+        .filter((e) => FACT_FIELDS.includes(e.field))
+        .map((e) => ({ field: e.field, value: e.value, quote: e.quote })),
+      deadlines: r.deadlines.map((d) => ({ kind: d.kind, date: d.date, precision: d.precision })),
       links: r.links.map((l) => ({ url: l.url, kind: l.kind })),
       sourceCount: new Set(r.evidence.flatMap((e) => (e.documents ? [e.documents.source_key] : []))).size,
+      // Byte-order sort, same as MemoryRepo.
+      sourceKinds: [...new Set(r.evidence.flatMap((e) => (e.documents ? [e.documents.source_kind] : [])))].sort(),
       lookalikeOfName: r.lookalike?.name ?? null,
       lookalikeOfDomains: r.lookalike?.official_domains ?? [],
       sourceAsks: r.evidence.filter((e) => e.field === "dangerous_ask").map((e) => ({ code: e.value, quote: e.quote })),
+      signals: r.project_signals.map((s) => ({
+        kind: s.kind,
+        value: s.value,
+        source: s.source,
+        verified: s.verified,
+        observedAt: new Date(s.observed_at),
+      })),
     }));
+  }
+
+  async countOfficialDomains(): Promise<number> {
+    const rows = await this.fetchAll<{ official_domains: string[] }>("countOfficialDomains", (from, to) =>
+      this.db
+        .from("projects")
+        .select("official_domains")
+        .neq("official_domains", "{}")
+        .order("id")
+        .range(from, to)
+        .returns<{ official_domains: string[] }[]>(),
+    );
+    return new Set(rows.flatMap((r) => r.official_domains.map((d) => d.toLowerCase()))).size;
   }
 
   async latestRiskLevel(projectId: string): Promise<RiskLevel | null> {
@@ -568,205 +674,368 @@ export class SupabaseRepo implements PipelineRepo {
     return rows.length;
   }
 
-  async listDigestRecipients(): Promise<DigestRecipient[]> {
-    const profiles = await this.fetchAll<{ user_id: string; new_airdrops_opt_in: boolean; unsubscribe_token: string }>(
-      "listDigestRecipients.profiles",
-      (from, to) =>
-        this.db
-          .from("profiles")
-          .select("user_id, new_airdrops_opt_in, unsubscribe_token")
-          .eq("digest_enabled", true)
-          .order("user_id")
-          .range(from, to),
-    );
-    if (profiles.length === 0) return [];
-
-    const emails = await listConfirmedEmails(this.db.auth.admin);
-
-    const recipients: DigestRecipient[] = [];
-    for (const p of profiles) {
-      const email = emails.get(p.user_id);
-      if (email === undefined) continue;
-      const last = check(
-        "listDigestRecipients.lastDigest",
-        await this.db
-          .from("notification_log")
-          .select("sent_at")
-          .eq("user_id", p.user_id)
-          .eq("kind", "digest")
-          .order("sent_at", { ascending: false })
-          .limit(1)
-          .maybeSingle<{ sent_at: string }>(),
-      );
-      recipients.push({
-        userId: p.user_id,
-        email,
-        newAirdropsOptIn: p.new_airdrops_opt_in,
-        unsubscribeToken: p.unsubscribe_token,
-        lastDigestAt: last ? new Date(last.sent_at) : null,
-      });
+  async replaceSignals(
+    projectId: string,
+    signals: NewSignal[],
+    at: Date,
+    keep: readonly SignalKeep[] = [],
+  ): Promise<void> {
+    const wholeSources = keep.filter((k): k is SignalSource => typeof k === "string");
+    const partial = new Map<SignalSource, { investors: string[]; kinds: string[] }>();
+    for (const k of keep) {
+      if (typeof k === "string" || wholeSources.includes(k.source)) continue;
+      const entry = partial.get(k.source) ?? { investors: [], kinds: [] };
+      if ("kind" in k) entry.kinds.push(k.kind);
+      else entry.investors.push(k.investor);
+      partial.set(k.source, entry);
     }
-    return recipients;
-  }
-
-  /** Latest risk level per project id (same rule as `latestRiskLevel`, via the `project_list` view). */
-  private async latestRiskLevels(ids: string[]): Promise<Map<string, RiskLevel | null>> {
-    const levels = new Map<string, RiskLevel | null>();
-    for (const chunk of chunks(ids, ID_CHUNK)) {
-      const rows = checkOne(
-        "latestRiskLevels",
-        await this.db
-          .from("project_list")
-          .select("id, latest_risk_level")
-          .in("id", chunk)
-          .returns<{ id: string; latest_risk_level: RiskLevel | null }[]>(),
-      );
-      for (const r of rows) levels.set(r.id, r.latest_risk_level);
-    }
-    return levels;
-  }
-
-  private async toDigestProjects(rows: DigestProjectDb[]): Promise<DigestProject[]> {
-    const levels = await this.latestRiskLevels(rows.map((r) => r.id));
-    return rows.map((r) => ({
-      id: r.id,
-      slug: r.slug,
-      name: r.name,
-      status: r.status,
-      riskLevel: levels.get(r.id) ?? null,
-      firstSeen: new Date(r.first_seen),
-    }));
-  }
-
-  async getDigestContext(userId: string, since: Date | null, now: Date): Promise<DigestContext> {
-    const watchRows = await this.fetchAll<{ project_id: string }>("getDigestContext.watchlist", (from, to) =>
-      this.db.from("watchlist").select("project_id").eq("user_id", userId).order("project_id").range(from, to),
+    // First every source kept in whole or in part is left alone, then each source kept in part loses the signals
+    // that match none of its keeps (another investor and another kind). Source and kind values are plain identifiers
+    // (check constraints) and need no quoting.
+    const untouched = [...wholeSources, ...partial.keys()];
+    const remove = this.db.from("project_signals").delete().eq("project_id", projectId);
+    check(
+      "replaceSignals.delete",
+      await (untouched.length === 0 ? remove : remove.not("source", "in", `(${untouched.join(",")})`)),
     );
-    const ids = watchRows.map((r) => r.project_id);
-    if (ids.length === 0) return { lastDigestAt: since, watched: [], deadlines: [], changes: [] };
-
-    const cutoff = (since ?? new Date(now.getTime() - 24 * HOUR_MS)).toISOString();
-    const projectRows: DigestProjectDb[] = [];
-    const deadlines: DigestContext["deadlines"] = [];
-    const changes: (DigestContext["changes"][number] & { seq: number })[] = [];
-    for (const chunk of chunks(ids, ID_CHUNK)) {
-      projectRows.push(
-        ...checkOne(
-          "getDigestContext.projects",
-          await this.db.from("projects").select(DIGEST_PROJECT_COLUMNS).in("id", chunk).returns<DigestProjectDb[]>(),
-        ),
-      );
-      const deadlineRows = await this.fetchAll<{
-        project_id: string;
-        kind: DeadlineKind;
-        date: string;
-        precision: DatePrecision;
-        text: string;
-      }>("getDigestContext.deadlines", (from, to) =>
-        this.db
-          .from("deadlines")
-          .select("project_id, kind, date, precision, text")
-          .in("project_id", chunk)
-          .not("date", "is", null)
-          .order("id")
-          .range(from, to),
-      );
-      for (const d of deadlineRows) {
-        deadlines.push({ projectId: d.project_id, kind: d.kind, date: d.date, precision: d.precision, text: d.text });
+    for (const [source, { investors, kinds }] of partial) {
+      let query = this.db.from("project_signals").delete().eq("project_id", projectId).eq("source", source);
+      if (investors.length > 0) {
+        // A signal without an investor is never a kept one (as in MemoryRepo); `not in` alone would skip it.
+        query = query.or(`value->>investor.is.null,value->>investor.not.in.(${investors.map(postgrestQuote).join(",")})`);
       }
-      const changeRows = await this.fetchAll<{
-        project_id: string;
-        field: "status" | "risk_level";
-        old_value: string | null;
-        new_value: string;
-        changed_at: string;
-        seq: number;
-      }>("getDigestContext.changes", (from, to) =>
-        this.db
-          .from("project_changes")
-          .select("project_id, field, old_value, new_value, changed_at, seq")
-          .in("project_id", chunk)
-          .gt("changed_at", cutoff)
-          .order("seq")
-          .range(from, to),
-      );
-      for (const c of changeRows) {
-        changes.push({
-          projectId: c.project_id,
-          field: c.field,
-          oldValue: c.old_value,
-          newValue: c.new_value,
-          changedAt: new Date(c.changed_at),
-          seq: c.seq,
-        });
-      }
+      if (kinds.length > 0) query = query.not("kind", "in", `(${kinds.join(",")})`);
+      check("replaceSignals.deletePartial", await query);
     }
-    // Sorted here (not in SQL) so the order is the same as MemoryRepo's whatever the collation.
-    projectRows.sort((a, b) => compareText(a.id, b.id));
-    deadlines.sort(
-      (a, b) => compareText(a.date, b.date) || compareText(a.projectId, b.projectId) || compareText(a.kind, b.kind),
+    if (signals.length === 0) return;
+    check(
+      "replaceSignals.insert",
+      await this.db.from("project_signals").insert(
+        signals.map((s) => ({
+          project_id: projectId,
+          kind: s.kind,
+          value: s.value,
+          source: s.source,
+          verified: s.verified,
+          observed_at: at.toISOString(),
+        })),
+      ),
     );
-    // changed_at, then insertion order (seq): several changes of one run share its timestamp.
-    changes.sort((a, b) => a.changedAt.getTime() - b.changedAt.getTime() || a.seq - b.seq);
+  }
+
+  async listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }> {
+    const rows = await this.fetchAll<{ domain: string; fetched_at: string }>("listVcPortfolio", (from, to) =>
+      this.db
+        .from("vc_portfolios")
+        .select("domain, fetched_at")
+        .eq("vc_id", vcId)
+        // Same order as MemoryRepo (vc_portfolios.domain is collate "C").
+        .order("domain")
+        .range(from, to),
+    );
+    const fetchedAt = rows.reduce<Date | null>((min, r) => {
+      const d = new Date(r.fetched_at);
+      return min === null || d < min ? d : min;
+    }, null);
+    return { domains: rows.map((r) => r.domain), fetchedAt };
+  }
+
+  async saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void> {
+    check("saveVcPortfolio.delete", await this.db.from("vc_portfolios").delete().eq("vc_id", vcId));
+    if (domains.length === 0) return;
+    check(
+      "saveVcPortfolio.insert",
+      await this.db
+        .from("vc_portfolios")
+        .insert([...new Set(domains)].map((domain) => ({ vc_id: vcId, domain, fetched_at: at.toISOString() }))),
+    );
+  }
+
+  async listAlphaRaise(slug: string): Promise<(RaisePage & { fetchedAt: Date }) | null> {
+    const row = check(
+      "listAlphaRaise",
+      await this.db
+        .from("alphadrops_raises")
+        .select("official_domain, rounds, fetched_at")
+        .eq("slug", slug)
+        .maybeSingle<{ official_domain: string | null; rounds: RaiseRoundDb[]; fetched_at: string }>(),
+    );
+    if (row === null) return null;
     return {
-      lastDigestAt: since,
-      watched: await this.toDigestProjects(projectRows),
-      deadlines,
-      changes: changes.map(({ seq: _seq, ...c }) => c),
+      officialDomain: row.official_domain,
+      rounds: row.rounds.map((r) => ({
+        round: r.round,
+        date: r.date,
+        amountUsd: r.amount_usd,
+        lead: r.lead,
+        others: r.others,
+        sourceUrl: r.source_url,
+      })),
+      fetchedAt: new Date(row.fetched_at),
     };
   }
 
-  async listNewProjects(sinceHours: number, now: Date, limit: number): Promise<DigestProject[]> {
-    const cutoff = new Date(now.getTime() - sinceHours * HOUR_MS).toISOString();
-    // uuid order in Postgres is the same as MemoryRepo's code-unit order of the lowercase text form.
-    const rows = check(
-      "listNewProjects",
+  async saveAlphaRaise(slug: string, page: RaisePage, at: Date): Promise<void> {
+    const rounds: RaiseRoundDb[] = page.rounds.map((r) => ({
+      round: r.round,
+      date: r.date,
+      amount_usd: r.amountUsd,
+      lead: r.lead,
+      others: r.others,
+      source_url: r.sourceUrl,
+    }));
+    check(
+      "saveAlphaRaise",
       await this.db
-        .from("projects")
-        .select(DIGEST_PROJECT_COLUMNS)
-        .is("lookalike_of", null)
-        .gte("first_seen", cutoff)
-        .lte("first_seen", now.toISOString())
-        .order("first_seen", { ascending: false })
-        .order("id")
-        .limit(limit)
-        .returns<DigestProjectDb[]>(),
+        .from("alphadrops_raises")
+        .upsert(
+          { slug, official_domain: page.officialDomain, rounds, fetched_at: at.toISOString() },
+          { onConflict: "slug" },
+        ),
     );
-    return this.toDigestProjects(rows ?? []);
   }
 
-  async countDigestsSent(refDate: string): Promise<number> {
-    const { count, error } = await this.db
-      .from("notification_log")
-      .select("id", { count: "exact", head: true })
-      .eq("kind", "digest")
-      .eq("ref_date", refDate);
-    if (error) throw new Error(`supabase countDigestsSent failed: ${error.message}`);
-    return count ?? 0;
+  async listProjectSourceTexts(projectId: string): Promise<{ url: string; text: string }[]> {
+    const rows = checkOne(
+      "listProjectSourceTexts",
+      await this.db
+        .from("documents")
+        // The inner join keeps documents with evidence for this project; each document comes back once.
+        .select("url, text, evidence!inner(project_id)")
+        .eq("evidence.project_id", projectId)
+        .neq("text", "")
+        // documents.url is collate "C", the same order as MemoryRepo.
+        .order("url")
+        .returns<{ url: string; text: string }[]>(),
+    );
+    return rows.map((r) => ({ url: r.url, text: r.text }));
   }
 
-  async hasDigest(userId: string, refDate: string): Promise<boolean> {
+  async latestAiAnalysis(projectId: string, kind: AiKind): Promise<StoredAiAnalysis | null> {
+    type AiAnalysisDb = {
+      input_hash: string;
+      result: unknown;
+      model: string;
+      served_model: string | null;
+      prompt_version: string;
+      created_at: string;
+    };
     const row = check(
-      "hasDigest",
+      "latestAiAnalysis",
       await this.db
-        .from("notification_log")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("kind", "digest")
-        .eq("ref_date", refDate)
+        .from("ai_analyses")
+        .select("input_hash, result, model, served_model, prompt_version, created_at")
+        .eq("project_id", projectId)
+        .eq("kind", kind)
+        .order("created_at", { ascending: false })
+        .order("seq", { ascending: false })
         .limit(1)
-        .maybeSingle<{ id: string }>(),
+        .maybeSingle<AiAnalysisDb>(),
     );
-    return row !== null;
+    if (row === null) return null;
+    return {
+      projectId,
+      kind,
+      inputHash: row.input_hash,
+      result: row.result,
+      model: row.model,
+      servedModel: row.served_model,
+      promptVersion: row.prompt_version,
+      createdAt: new Date(row.created_at),
+    };
   }
 
-  async logDigest(userId: string, refDate: string, at: Date): Promise<void> {
-    const { error } = await this.db
-      .from("notification_log")
-      .insert({ user_id: userId, kind: "digest", ref_date: refDate, sent_at: at.toISOString() });
-    if (!error) return;
-    // 23505 = unique_violation on (user_id, kind, ref_date).
-    if (error.code === "23505") throw new DuplicateDigestError();
-    throw new Error(`supabase logDigest failed: ${error.message}`);
+  async saveAiAnalysis(a: NewAiAnalysis): Promise<void> {
+    check(
+      "saveAiAnalysis",
+      await this.db.from("ai_analyses").insert({
+        project_id: a.projectId,
+        kind: a.kind,
+        input_hash: a.inputHash,
+        result: a.result,
+        model: a.model,
+        served_model: a.servedModel,
+        prompt_version: a.promptVersion,
+        created_at: a.createdAt.toISOString(),
+      }),
+    );
   }
+
+  async latestCuration(projectId: string): Promise<{ passed: boolean; endedOn: string | null } | null> {
+    const row = check(
+      "latestCuration",
+      await this.db
+        .from("curations")
+        .select("passed, ended_on")
+        .eq("project_id", projectId)
+        .order("computed_at", { ascending: false })
+        .order("seq", { ascending: false })
+        .limit(1)
+        .maybeSingle<{ passed: boolean; ended_on: string | null }>(),
+    );
+    return row === null ? null : { passed: row.passed, endedOn: row.ended_on };
+  }
+
+  async passedBeforeEnd(projectId: string): Promise<boolean> {
+    const row = check(
+      "passedBeforeEnd",
+      await this.db
+        .from("curations")
+        .select("passed")
+        .eq("project_id", projectId)
+        .neq("status_at", "ended")
+        .order("computed_at", { ascending: false })
+        .order("seq", { ascending: false })
+        .limit(1)
+        .maybeSingle<{ passed: boolean }>(),
+    );
+    return row?.passed ?? false;
+  }
+
+  async saveCuration(projectId: string, c: CurationRecord, at: Date): Promise<void> {
+    const previous = await this.latestCuration(projectId);
+    check(
+      "saveCuration",
+      await this.db.from("curations").insert({
+        project_id: projectId,
+        passed: c.passed,
+        worth_level: c.worthLevel,
+        worth_points: c.worthPoints,
+        tab: c.tab,
+        status_at: c.statusAt,
+        ended_on: c.endedOn,
+        reasons: c.reasons,
+        coverage: c.coverage,
+        coingecko_listed: c.coingeckoListed,
+        public_fail_reason: publicFailReason(c.passed, c.reasons),
+        computed_at: at.toISOString(),
+      }),
+    );
+    const change = curatedChange(previous?.passed ?? null, c.passed);
+    if (change) {
+      check(
+        "saveCuration.change",
+        await this.db.from("project_changes").insert({
+          project_id: projectId,
+          field: "curated",
+          old_value: change.oldValue,
+          new_value: change.newValue,
+          changed_at: at.toISOString(),
+        }),
+      );
+    }
+  }
+
+  async listCurationHistoryForTrackRecord(): Promise<(TrackRecordProject & { projectId: string })[]> {
+    // One row per project with a passing curation (inner join), each embed cut to the one row it needs.
+    type HistoryDb = {
+      id: string;
+      first_pass: { computed_at: string; coingecko_listed: boolean | null }[];
+      latest: { tab: Tab | null }[];
+      last_high_risk: { computed_at: string }[];
+      listing: { kind: string }[];
+    };
+    const rows = await this.fetchAll<HistoryDb>("listCurationHistoryForTrackRecord", (from, to) =>
+      this.db
+        .from("projects")
+        .select(
+          "id, first_pass:curations!inner(computed_at, coingecko_listed), latest:curations(tab), " +
+            "last_high_risk:risk_assessments(computed_at), listing:project_signals(kind)",
+        )
+        .eq("first_pass.passed", true)
+        .order("computed_at", { referencedTable: "first_pass" })
+        .order("seq", { referencedTable: "first_pass" })
+        .limit(1, { referencedTable: "first_pass" })
+        .order("computed_at", { referencedTable: "latest", ascending: false })
+        .order("seq", { referencedTable: "latest", ascending: false })
+        .limit(1, { referencedTable: "latest" })
+        .in("last_high_risk.level", ["high", "critical"])
+        .order("computed_at", { referencedTable: "last_high_risk", ascending: false })
+        .limit(1, { referencedTable: "last_high_risk" })
+        .eq("listing.kind", "coingecko_listed")
+        .eq("listing.verified", true)
+        .limit(1, { referencedTable: "listing" })
+        .order("id")
+        .range(from, to)
+        .returns<HistoryDb[]>(),
+    );
+    return rows.flatMap((r) => {
+      const firstPass = r.first_pass[0];
+      if (firstPass === undefined) return [];
+      const firstPassAt = new Date(firstPass.computed_at);
+      const lastHighRisk = r.last_high_risk[0];
+      return [
+        {
+          projectId: r.id,
+          firstPassAt: firstPassAt.toISOString(),
+          listedAtFirstPass: firstPass.coingecko_listed,
+          tab: r.latest[0]?.tab ?? null,
+          coingeckoListed: r.listing.length > 0,
+          // Some high/critical assessment came after the first pass exactly when the latest one did.
+          riskRaisedAfterPass: lastHighRisk !== undefined && new Date(lastHighRisk.computed_at) > firstPassAt,
+        },
+      ];
+    });
+  }
+
+  async saveLinkCheck(url: string, status: LinkCheckStatus, at: Date): Promise<void> {
+    check(
+      "saveLinkCheck",
+      await this.db.from("link_checks").upsert({ url, status, checked_at: at.toISOString() }, { onConflict: "url" }),
+    );
+  }
+
+  async listLinkChecks(urls: string[]): Promise<LinkCheck[]> {
+    const rows: { url: string; status: LinkCheckStatus; checked_at: string }[] = [];
+    for (const chunk of chunks(urls, URL_CHUNK)) {
+      const data = check(
+        "listLinkChecks",
+        await this.db
+          .from("link_checks")
+          .select("url, status, checked_at")
+          .in("url", chunk)
+          .order("url")
+          .returns<{ url: string; status: LinkCheckStatus; checked_at: string }[]>(),
+      );
+      rows.push(...(data ?? []));
+    }
+    return rows.map((r) => ({ url: r.url, status: r.status, checkedAt: new Date(r.checked_at) })).sort(byUrl);
+  }
+
+  async saveClaimPage(url: string, text: string, at: Date): Promise<void> {
+    check(
+      "saveClaimPage",
+      await this.db.from("claim_pages").upsert({ url, text, fetched_at: at.toISOString() }, { onConflict: "url" }),
+    );
+  }
+
+  async listClaimPages(urls: string[]): Promise<ClaimPage[]> {
+    const rows: { url: string; text: string; fetched_at: string }[] = [];
+    for (const chunk of chunks(urls, URL_CHUNK)) {
+      const data = check(
+        "listClaimPages",
+        await this.db
+          .from("claim_pages")
+          .select("url, text, fetched_at")
+          .in("url", chunk)
+          .order("url")
+          .returns<{ url: string; text: string; fetched_at: string }[]>(),
+      );
+      rows.push(...(data ?? []));
+    }
+    return rows.map((r) => ({ url: r.url, text: r.text, fetchedAt: new Date(r.fetched_at) })).sort(byUrl);
+  }
+}
+
+/** The distinct values of `values` in slices of at most `size`. */
+function chunks(values: string[], size: number): string[][] {
+  const distinct = [...new Set(values)];
+  const out: string[][] = [];
+  for (let i = 0; i < distinct.length; i += size) out.push(distinct.slice(i, i + size));
+  return out;
+}
+
+/** Byte order, like the `collate "C"` url columns, so chunks read separately come back in one order. */
+function byUrl(a: { url: string }, b: { url: string }): number {
+  return a.url < b.url ? -1 : a.url > b.url ? 1 : 0;
 }

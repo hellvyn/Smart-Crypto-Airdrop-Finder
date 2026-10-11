@@ -8,8 +8,10 @@ import {
   registrableDomain,
 } from "@saf/core";
 import type { ExtractedDeadline, Status } from "@saf/core";
+import { isNonProjectHost } from "../collectors/html-text.js";
 import type { DailyStats } from "../stats.js";
-import type { PipelineRepo, ProjectRow, StoredDocument } from "../store/repo.js";
+import { FACT_FIELDS } from "../store/repo.js";
+import type { Fact, PipelineRepo, ProjectRow, Step, StoredDocument } from "../store/repo.js";
 
 export type LinkKind = "website" | "app" | "docs" | "claim" | "social";
 
@@ -93,7 +95,10 @@ export interface ProjectInput {
   status: Status;
   /** Quote that supports `status`. */
   quote: string;
-  tasks: string[];
+  /** Ordered steps, stored as `tasks` rows. */
+  steps: Step[];
+  /** v3 facts, stored as evidence; each `field` is one of `FACT_FIELDS`. */
+  facts: Fact[];
   deadlines: ExtractedDeadline[];
   /** Cleaned official URLs; their kinds come from `classifyLink`. */
   urls: string[];
@@ -129,9 +134,10 @@ function inputLinks(input: ProjectInput): { url: string; kind: LinkKind }[] {
  * Finds or creates the project for one input and applies chains, token and status evidence.
  *
  * Official domains (registrable domains of website, app and docs links, never claim, social or platform
- * hosts) are only set while the project has none: on creation, or on an existing project with an empty
- * list. A project that already has official domains never gains new ones automatically, so a phishing
- * domain listed next to the real one cannot whitelist itself.
+ * hosts, nor links on a non-project host such as `s.kaito.ai` or `alphadrops.net`; see `isNonProjectHost`) are
+ * only set while the project has none: on creation, or on an existing project with an empty list. A project
+ * that already has official domains never gains new ones automatically, so a phishing domain listed next to the
+ * real one cannot whitelist itself.
  *
  * Before the first status evidence of this (project, document) pair is written in this merge, the
  * document's earlier evidence for that field is deleted, so a page that changed replaces its own claim.
@@ -143,6 +149,7 @@ async function mergeProject(
   now: Date,
   stats: DailyStats,
   cleared: Set<string>,
+  intermediaryHosts: readonly string[],
 ): Promise<{ id: string; links: { url: string; kind: LinkKind }[] } | null> {
   const nameKey = normalizeName(input.name);
   if (nameKey === "") return null;
@@ -151,7 +158,7 @@ async function mergeProject(
   const officialDomains = [
     ...new Set(
       links
-        .filter((l) => OFFICIAL_KINDS.has(l.kind))
+        .filter((l) => OFFICIAL_KINDS.has(l.kind) && !isNonProjectHost(new URL(l.url).hostname, intermediaryHosts))
         .flatMap((l) => registrableDomain(l.url) ?? [])
         .filter((d) => !isPlatformDomain(d)),
     ),
@@ -223,14 +230,18 @@ async function mergeProject(
 }
 
 /**
- * Merges every project a document mentions. Deadlines and tasks are replaced per (project, document),
- * accumulated first so two mentions of the same project in one document do not overwrite each other.
+ * Merges every project a document mentions. Deadlines, steps and v3 facts are replaced per (project, document),
+ * accumulated first so two mentions of the same project in one document do not overwrite each other. Steps keep
+ * their order (a step text already listed by an earlier mention is skipped). Facts follow the `status` pattern:
+ * every `FACT_FIELDS` evidence row of this document is deleted, then the new facts are written, so a fact the page
+ * no longer states disappears. An input without facts or steps is no error.
  *
  * When the document yields exactly one project, its text is also scanned for dangerous asks (spec section 6:
  * text and LLM output), stored as `dangerous_ask` evidence (value = ask code, quote = the sentence). A
  * document about several projects cannot tell whose ask it is, so nothing is attributed. Earlier
- * `dangerous_ask` evidence of this document is replaced either way. DefiLlama documents are skipped: their
- * text is our own summary.
+ * `dangerous_ask` evidence of this document is replaced either way. DefiLlama documents skip the ask scan and
+ * the fact replacement: their text is our own summary and never goes through extraction.
+ * `intermediaryHosts` (the config's `alphadrops.intermediaryHosts`) never become official domains.
  */
 export async function mergeDocument(
   repo: PipelineRepo,
@@ -238,25 +249,27 @@ export async function mergeDocument(
   inputs: ProjectInput[],
   now: Date,
   stats: DailyStats,
+  intermediaryHosts: readonly string[],
 ): Promise<void> {
   const touched = new Map<
     string,
-    { deadlines: ExtractedDeadline[]; tasks: string[]; links: { url: string; kind: LinkKind }[] }
+    { deadlines: ExtractedDeadline[]; steps: Step[]; facts: Fact[]; links: { url: string; kind: LinkKind }[] }
   >();
   const cleared = new Set<string>();
   for (const input of inputs) {
-    const merged = await mergeProject(repo, input, document, now, stats, cleared);
+    const merged = await mergeProject(repo, input, document, now, stats, cleared, intermediaryHosts);
     if (merged === null) continue;
-    const acc = touched.get(merged.id) ?? { deadlines: [], tasks: [], links: [] };
+    const acc = touched.get(merged.id) ?? { deadlines: [], steps: [], facts: [], links: [] };
     acc.deadlines.push(...input.deadlines);
-    for (const task of input.tasks) if (!acc.tasks.includes(task)) acc.tasks.push(task);
+    for (const step of input.steps) if (!acc.steps.some((s) => s.text === step.text)) acc.steps.push(step);
+    acc.facts.push(...input.facts);
     acc.links.push(...merged.links);
     touched.set(merged.id, acc);
   }
-  const scanText = document.sourceKind !== "defillama";
-  const asks = scanText && touched.size === 1 ? findDangerousAskSentences(document.text) : [];
+  const extracted = document.sourceKind !== "defillama";
+  const asks = extracted && touched.size === 1 ? findDangerousAskSentences(document.text) : [];
   for (const [projectId, acc] of touched) {
-    if (scanText) {
+    if (extracted) {
       await repo.deleteEvidence(projectId, document.id, "dangerous_ask");
       for (const ask of asks) {
         await repo.addEvidence({
@@ -268,9 +281,13 @@ export async function mergeDocument(
           at: pickEvidenceDate(document),
         });
       }
+      for (const field of FACT_FIELDS) await repo.deleteEvidence(projectId, document.id, field);
+      for (const fact of acc.facts) {
+        await repo.addEvidence({ projectId, documentId: document.id, ...fact, at: pickEvidenceDate(document) });
+      }
     }
     await repo.replaceDeadlines(projectId, document.id, acc.deadlines);
-    await repo.replaceTasks(projectId, document.id, acc.tasks);
+    await repo.replaceTasks(projectId, document.id, acc.steps);
     await repo.upsertLinks(
       projectId,
       acc.links.map((l) => ({ url: l.url, kind: l.kind, referralStripped: false })),

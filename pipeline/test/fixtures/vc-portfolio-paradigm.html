@@ -1,0 +1,44 @@
+<!doctype html>
+<!--
+  Hand-written test page, NOT a trimmed copy of paradigm.xyz: the real VC portfolio pages were unreachable from the
+  development container (proxy CONNECT 403, see docs/ops/pipeline.md "Daftar VC"). parsePortfolioDomains does not
+  depend on a page's structure (it reads every <a href>), so this page only exercises its link rules: internal,
+  social, aggregator, hiring and non-http links are dropped; outbound links count once per registrable domain.
+-->
+<html>
+<head>
+  <title>Portfolio</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">
+  <script src="https://cdn.example-analytics.com/a.js"></script>
+</head>
+<body>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/team">Team</a>
+    <a href="https://www.paradigm.xyz/writing">Writing</a>
+    <a href="https://jobs.paradigm.xyz/">Jobs</a>
+  </nav>
+  <main>
+    <ul>
+      <li><a href="https://uniswap.org/">Uniswap</a></li>
+      <li><a href="https://app.uniswap.org/#/swap">Uniswap app</a></li>
+      <li><a href="https://www.arcus.xyz/?ref=paradigm">Arcus</a></li>
+      <li><a href="//www.crunchbase.com/organization/arcus">Arcus on Crunchbase</a></li>
+      <li><a href="https://github.com/arcus-labs">Arcus code</a></li>
+      <li><a>No link</a></li>
+      <li><a href="#top">Top</a></li>
+      <li><a href="mailto:hello@paradigm.xyz">Mail</a></li>
+      <li><a href="javascript:void(0)">Menu</a></li>
+      <li><a href="https://192.168.0.1/">Router</a></li>
+    </ul>
+  </main>
+  <footer>
+    <a href="https://x.com/paradigm">X</a>
+    <a href="https://twitter.com/paradigm">Twitter</a>
+    <a href="https://www.linkedin.com/company/paradigm">LinkedIn</a>
+    <a href="https://www.youtube.com/@paradigm">YouTube</a>
+    <a href="https://podcasts.apple.com/podcast/paradigm">Podcast</a>
+    <a href="https://boards.greenhouse.io/paradigm">Careers</a>
+  </footer>
+</body>
+</html>

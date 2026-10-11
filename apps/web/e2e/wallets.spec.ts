@@ -15,7 +15,7 @@ async function signedInUser(page: Page, tag: string): Promise<string> {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Login", exact: true }).click();
   await expect(page).toHaveURL(/\/watchlist$/);
   return email;
 }
@@ -24,9 +24,9 @@ const rows = (page: Page) => page.getByTestId("wallet-row");
 const rowFor = (page: Page, address: string) => page.locator(`[data-testid="wallet-row"][data-address="${address}"]`);
 
 async function addWallet(page: Page, address: string, label?: string) {
-  await page.getByLabel("Wallet address").fill(address);
-  if (label !== undefined) await page.getByLabel("Label (optional)").fill(label);
-  await page.getByRole("button", { name: "Add wallet" }).click();
+  await page.getByLabel("Alamat wallet").fill(address);
+  if (label !== undefined) await page.getByLabel("Label (opsional)").fill(label);
+  await page.getByRole("button", { name: "Tambah wallet" }).click();
 }
 
 test("signed out, /wallets sends the user to log in", async ({ page }) => {
@@ -37,8 +37,8 @@ test("signed out, /wallets sends the user to log in", async ({ page }) => {
 test("an empty wallet list says so", async ({ page }) => {
   await signedInUser(page, "w-empty");
   await page.goto("/wallets");
-  await expect(page.getByRole("heading", { name: "Your wallets" })).toBeVisible();
-  await expect(page.getByText("You have not added any wallets yet.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Wallet kamu" })).toBeVisible();
+  await expect(page.getByText("Kamu belum nambahin wallet.")).toBeVisible();
 });
 
 test("adding a checksum-cased address stores it lowercase, in short form with the full address as title", async ({ page }) => {
@@ -60,7 +60,7 @@ test("adding the same wallet again (mixed case) shows the duplicate message", as
   await addWallet(page, LOWER);
   await expect(rows(page)).toHaveCount(1);
   await addWallet(page, CHECKSUM);
-  await expect(page.getByText("You already added this wallet.")).toBeVisible();
+  await expect(page.getByText("Wallet ini udah kamu tambahin.")).toBeVisible();
   await expect(rows(page)).toHaveCount(1);
 });
 
@@ -68,7 +68,7 @@ test("an invalid address shows a message and adds nothing", async ({ page }) => 
   await signedInUser(page, "w-bad");
   await page.goto("/wallets");
   await addWallet(page, "0x123");
-  await expect(page.getByText("That doesn't look like an EVM address (0x + 40 hex characters).")).toBeVisible();
+  await expect(page.getByText("Itu bukan alamat EVM yang valid (0x + 40 karakter hex).")).toBeVisible();
   await expect(rows(page)).toHaveCount(0);
 });
 
@@ -76,9 +76,9 @@ test("a label over 64 characters is refused", async ({ page }) => {
   await signedInUser(page, "w-label");
   await page.goto("/wallets");
   // The input's maxLength stops typing at 64; post the form directly to exercise the server-side check.
-  await page.getByLabel("Label (optional)").evaluate((el) => el.removeAttribute("maxlength"));
+  await page.getByLabel("Label (opsional)").evaluate((el) => el.removeAttribute("maxlength"));
   await addWallet(page, LOWER, "x".repeat(65));
-  await expect(page.getByText("Label must be 64 characters or fewer.")).toBeVisible();
+  await expect(page.getByText("Label maksimal 64 karakter.")).toBeVisible();
   await expect(rows(page)).toHaveCount(0);
 });
 
@@ -99,7 +99,7 @@ test("the 21st wallet is refused with the limit message", async ({ page }) => {
   await page.goto("/wallets");
   await expect(rows(page)).toHaveCount(20);
   await addWallet(page, LOWER);
-  await expect(page.getByText("You can add up to 20 wallets.")).toBeVisible();
+  await expect(page.getByText("Kamu cuma bisa nambahin sampai 20 wallet.")).toBeVisible();
   await expect(rows(page)).toHaveCount(20);
 });
 
@@ -109,17 +109,17 @@ test("deleting needs a confirmation, and the wallet is gone afterwards", async (
   await addWallet(page, LOWER);
   await expect(rows(page)).toHaveCount(1);
 
-  await rows(page).getByRole("link", { name: /Delete wallet/ }).click();
-  await expect(page.getByText("Delete this wallet?")).toBeVisible();
+  await rows(page).getByRole("link", { name: /^Hapus wallet 0x/ }).click();
+  await expect(page.getByText("Hapus wallet ini?")).toBeVisible();
   // Cancelling keeps it.
-  await page.getByRole("link", { name: "Cancel" }).click();
+  await page.getByRole("link", { name: "Batal" }).click();
   await expect(rows(page)).toHaveCount(1);
-  await expect(page.getByText("Delete this wallet?")).toHaveCount(0);
+  await expect(page.getByText("Hapus wallet ini?")).toHaveCount(0);
 
-  await rows(page).getByRole("link", { name: /Delete wallet/ }).click();
-  await page.getByRole("button", { name: "Confirm delete" }).click();
+  await rows(page).getByRole("link", { name: /^Hapus wallet 0x/ }).click();
+  await page.getByRole("button", { name: "Ya, hapus" }).click();
   await expect(rows(page)).toHaveCount(0);
-  await expect(page.getByText("You have not added any wallets yet.")).toBeVisible();
+  await expect(page.getByText("Kamu belum nambahin wallet.")).toBeVisible();
 });
 
 test("another user cannot see (or confirm-delete) the first user's wallet", async ({ page, browser }) => {
@@ -127,7 +127,7 @@ test("another user cannot see (or confirm-delete) the first user's wallet", asyn
   await page.goto("/wallets");
   await addWallet(page, LOWER);
   await expect(rowFor(page, LOWER)).toBeVisible();
-  const confirmHref = await rowFor(page, LOWER).getByRole("link", { name: /Delete wallet/ }).getAttribute("href");
+  const confirmHref = await rowFor(page, LOWER).getByRole("link", { name: /^Hapus wallet 0x/ }).getAttribute("href");
   expect(confirmHref).toMatch(/^\/wallets\?confirm=/);
 
   const other = await browser.newContext();
@@ -136,8 +136,8 @@ test("another user cannot see (or confirm-delete) the first user's wallet", asyn
   await otherPage.goto("/wallets");
   await expect(rows(otherPage)).toHaveCount(0);
   await otherPage.goto(confirmHref!);
-  await expect(otherPage.getByText("Delete this wallet?")).toHaveCount(0);
-  await expect(otherPage.getByText("You have not added any wallets yet.")).toBeVisible();
+  await expect(otherPage.getByText("Hapus wallet ini?")).toHaveCount(0);
+  await expect(otherPage.getByText("Kamu belum nambahin wallet.")).toBeVisible();
   // The same address is theirs to add: wallets are per user.
   await addWallet(otherPage, LOWER);
   await expect(rows(otherPage)).toHaveCount(1);

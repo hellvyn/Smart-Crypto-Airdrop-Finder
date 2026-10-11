@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
+import { pageTitle, wallets as copy } from "@/lib/copy";
 import { createServerClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 import { isAddWalletError, listWallets, MAX_LABEL_LENGTH, shortAddress, WALLET_ERROR_MESSAGES } from "@/lib/wallets";
 import { submitAddWallet, submitDeleteWallet } from "./actions";
 
-export const metadata = { title: "Wallets · Smart Airdrop Finder" };
+export const metadata = { title: pageTitle(copy.title) };
 
 const first = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
 
@@ -22,14 +23,14 @@ export default async function WalletsPage({
   const wallets = await listWallets(db);
   return (
     <>
-      <h1>Your wallets</h1>
+      <h1>{copy.heading}</h1>
       <form action={submitAddWallet} className="auth-form">
         <label>
-          Wallet address
+          {copy.address}
           <input type="text" name="address" placeholder="0x…" autoComplete="off" spellCheck={false} required />
         </label>
         <label>
-          Label (optional)
+          {copy.label}
           <input type="text" name="label" maxLength={MAX_LABEL_LENGTH} autoComplete="off" />
         </label>
         {isAddWalletError(error) ? (
@@ -37,10 +38,10 @@ export default async function WalletsPage({
             {WALLET_ERROR_MESSAGES[error]}
           </p>
         ) : null}
-        <button type="submit">Add wallet</button>
+        <button type="submit">{copy.add}</button>
       </form>
       {wallets.length === 0 ? (
-        <p>You have not added any wallets yet.</p>
+        <p>{copy.empty}</p>
       ) : (
         <ul className="wallet-list">
           {wallets.map((w) => (
@@ -50,13 +51,13 @@ export default async function WalletsPage({
               {isUuid(confirm) && confirm.toLowerCase() === w.id ? (
                 <form action={submitDeleteWallet} className="inline-form">
                   <input type="hidden" name="id" value={w.id} />
-                  <span>Delete this wallet?</span>
-                  <button type="submit">Confirm delete</button>
-                  <Link href="/wallets">Cancel</Link>
+                  <span>{copy.confirmQuestion}</span>
+                  <button type="submit">{copy.confirmDelete}</button>
+                  <Link href="/wallets">{copy.cancel}</Link>
                 </form>
               ) : (
-                <Link href={`/wallets?confirm=${w.id}`} aria-label={`Delete wallet ${shortAddress(w.address)}`}>
-                  Delete
+                <Link href={`/wallets?confirm=${w.id}`} aria-label={copy.deleteLabel(shortAddress(w.address))}>
+                  {copy.delete}
                 </Link>
               )}
             </li>

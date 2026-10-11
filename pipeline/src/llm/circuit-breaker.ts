@@ -3,6 +3,7 @@
  * limits that outlast their retries) is skipped for the rest of the run, so a degraded endpoint costs a few
  * timeouts instead of one per document. Any HTTP 200 reply counts as a success: the model is reachable, and
  * an unparsable answer depends on the document, not on the endpoint. Once open, a circuit stays open.
+ * Callers key circuits by `"<provider>:<id>"` (see `modelKey`), so the same model id on two providers is two circuits.
  */
 export interface CircuitBreaker {
   isOpen(modelId: string): boolean;

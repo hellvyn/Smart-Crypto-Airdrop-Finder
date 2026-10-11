@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectSpeculativeCandidates } from "../src/collectors/defillama.js";
+import { parseProtocols, selectSpeculativeCandidates } from "../src/collectors/defillama.js";
 
 const base = {
   url: "https://example.org",
@@ -11,7 +11,19 @@ const base = {
   symbol: "-",
 };
 
-const opts = { minTvl: 10_000_000, excludedCategories: ["CEX"], limit: 10 };
+const NOW = new Date("2026-10-10T00:00:00Z");
+const DAY_S = 86_400;
+const daysAgo = (n: number): number => NOW.getTime() / 1000 - n * DAY_S;
+
+const opts = { minTvl: 10_000_000, excludedCategories: ["CEX"], limit: 10, newWithinDays: 180, now: NOW };
+/** The production defaults (spec 15.1). */
+const v2 = { minTvl: 1_000_000, excludedCategories: ["CEX"], limit: 80, newWithinDays: 180, now: NOW };
+const proto = (name: string, extra: Record<string, unknown> = {}) => ({
+  ...base,
+  name,
+  slug: name.toLowerCase(),
+  ...extra,
+});
 
 describe("selectSpeculativeCandidates", () => {
   it("drops tokened, low-TVL and excluded-category protocols and sorts the rest", () => {
@@ -34,6 +46,7 @@ describe("selectSpeculativeCandidates", () => {
       tvl: 50_000_000,
       change7d: 40,
       category: "Dexs",
+      listedAt: null,
     });
     expect(result[2]?.change7d).toBeNull();
   });
@@ -46,13 +59,13 @@ describe("selectSpeculativeCandidates", () => {
     expect(selectSpeculativeCandidates(protocols, opts).map((c) => c.slug)).toEqual(["empty-gecko"]);
   });
 
-  it("requires tvl strictly above minTvl and a numeric tvl", () => {
+  it("requires tvl of at least minTvl and a numeric tvl", () => {
     const protocols = [
+      { ...base, name: "Below", slug: "below", tvl: 9_999_999 },
       { ...base, name: "Edge", slug: "edge", tvl: 10_000_000 },
       { ...base, name: "NullTvl", slug: "null-tvl", tvl: null },
-      { ...base, name: "Ok", slug: "ok", tvl: 10_000_001 },
     ];
-    expect(selectSpeculativeCandidates(protocols, opts).map((c) => c.slug)).toEqual(["ok"]);
+    expect(selectSpeculativeCandidates(protocols, opts).map((c) => c.slug)).toEqual(["edge"]);
   });
 
   it("compares excluded categories case-insensitively", () => {
@@ -107,5 +120,113 @@ describe("selectSpeculativeCandidates", () => {
       { ...base, name: "Good", slug: "good" },
     ];
     expect(selectSpeculativeCandidates(protocols, opts).map((c) => c.slug)).toEqual(["good"]);
+  });
+
+  it("keeps young protocols above $1M and drops rugged, dead and misrepresented ones", () => {
+    const out = selectSpeculativeCandidates(
+      [
+        proto("Young", { tvl: 2e6, listedAt: daysAgo(30) }),
+        proto("Old", { tvl: 5e7, listedAt: daysAgo(900), change_7d: 50 }),
+        proto("Rug", { tvl: 9e6, rugged: true }),
+        proto("Dead", { tvl: 9e6, deadFrom: "2026-01-01" }),
+        proto("Mis", { tvl: 9e6, misrepresentedTokens: true }),
+        proto("Tiny", { tvl: 9e5 }),
+      ],
+      v2,
+    );
+    expect(out.map((c) => c.name)).toEqual(["Young", "Old"]);
+  });
+
+  it("keeps protocols whose rugged, deadFrom and misrepresentedTokens are false or null", () => {
+    const out = selectSpeculativeCandidates(
+      [proto("Clean", { rugged: false, deadFrom: null, misrepresentedTokens: false })],
+      v2,
+    );
+    expect(out.map((c) => c.name)).toEqual(["Clean"]);
+  });
+
+  it("puts protocols listed within newWithinDays first, then change7d desc (nulls last), then tvl desc", () => {
+    const out = selectSpeculativeCandidates(
+      [
+        proto("OldHot", { listedAt: daysAgo(400), change_7d: 90 }),
+        proto("NewFlat", { listedAt: daysAgo(10), change_7d: 1, tvl: 2e6 }),
+        proto("NewNull", { listedAt: daysAgo(10), change_7d: null }),
+        proto("NewHot", { listedAt: daysAgo(100), change_7d: 30 }),
+        proto("NewTie", { listedAt: daysAgo(5), change_7d: 1, tvl: 8e6 }),
+        proto("NoDate", { change_7d: 60 }),
+      ],
+      v2,
+    );
+    expect(out.map((c) => c.name)).toEqual(["NewHot", "NewTie", "NewFlat", "NewNull", "OldHot", "NoDate"]);
+  });
+
+  it("treats the newWithinDays boundary as young and one day beyond as old", () => {
+    const out = selectSpeculativeCandidates(
+      [
+        proto("Beyond", { listedAt: daysAgo(181), change_7d: 99 }),
+        proto("Edge", { listedAt: daysAgo(180), change_7d: 1 }),
+      ],
+      v2,
+    );
+    expect(out.map((c) => c.name)).toEqual(["Edge", "Beyond"]);
+  });
+
+  it("exposes listedAt as a Date, or null when DefiLlama gives no usable listing time", () => {
+    const out = selectSpeculativeCandidates(
+      [
+        proto("Dated", { listedAt: 1_760_000_000 }),
+        proto("Missing"),
+        proto("Zero", { listedAt: 0 }),
+        proto("OutOfRange", { listedAt: 1e20 }),
+      ],
+      v2,
+    );
+    const byName = Object.fromEntries(out.map((c) => [c.name, c.listedAt]));
+    expect(byName).toEqual({ Dated: new Date("2025-10-09T08:53:20Z"), Missing: null, Zero: null, OutOfRange: null });
+  });
+
+  it("caps at the limit", () => {
+    const protocols = Array.from({ length: 100 }, (_, i) => proto(`P${i}`, { change_7d: i }));
+    const out = selectSpeculativeCandidates(protocols, v2);
+    expect(out).toHaveLength(80);
+    expect(out[0]?.name).toBe("P99");
+  });
+});
+
+describe("parseProtocols", () => {
+  it("keeps every protocol, tokened ones included, with url, TVL and CoinGecko id", () => {
+    const raw = [
+      { ...base, name: "Speculative", slug: "speculative", url: "https://spec.xyz", tvl: 2_000_000 },
+      { ...base, name: "Tokened", slug: "tokened", url: "https://tok.xyz", tvl: 9e8, gecko_id: "tokened", symbol: "TOK" },
+      { ...base, name: "Exchange", slug: "exchange", category: "CEX", url: "https://cex.com", rugged: true },
+    ];
+    expect(parseProtocols(raw)).toEqual([
+      { name: "Speculative", url: "https://spec.xyz", tvl: 2_000_000, geckoId: null },
+      { name: "Tokened", url: "https://tok.xyz", tvl: 9e8, geckoId: "tokened" },
+      { name: "Exchange", url: "https://cex.com", tvl: 50_000_000, geckoId: null },
+    ]);
+  });
+
+  it("turns missing, empty or non-finite fields into null", () => {
+    const raw = [
+      { name: "NoUrl", url: "", tvl: null, gecko_id: "" },
+      { name: "Missing" },
+      { name: "WrongTypes", url: 7, tvl: "12", gecko_id: 3 },
+      { name: "Infinite", url: "https://inf.xyz", tvl: Number.POSITIVE_INFINITY, gecko_id: null },
+    ];
+    expect(parseProtocols(raw)).toEqual([
+      { name: "NoUrl", url: null, tvl: null, geckoId: null },
+      { name: "Missing", url: null, tvl: null, geckoId: null },
+      { name: "WrongTypes", url: null, tvl: null, geckoId: null },
+      { name: "Infinite", url: "https://inf.xyz", tvl: null, geckoId: null },
+    ]);
+  });
+
+  it("skips entries without a name, and returns [] for anything but an array", () => {
+    expect(parseProtocols([null, "x", { url: "https://a.xyz" }, { name: "" }, { name: "Ok" }])).toEqual([
+      { name: "Ok", url: null, tvl: null, geckoId: null },
+    ]);
+    expect(parseProtocols({ protocols: [] })).toEqual([]);
+    expect(parseProtocols(null)).toEqual([]);
   });
 });

@@ -1,12 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 import { adminClient, createConfirmedUser, deleteCreatedUsers, uniqueEmail } from "./support/admin";
-import { cleanupSeed, seedProjects, type Seed } from "./support/seed";
+import { cleanupSeed, seedCuratedList, seedProjects, type CuratedSeed, type Seed } from "./support/seed";
 
 const PASSWORD = "correct-horse-1";
 let seed: Seed;
+let curated: CuratedSeed;
 
 test.beforeAll(async () => {
   seed = await seedProjects();
+  curated = await seedCuratedList();
 });
 
 test.afterAll(async () => {
@@ -20,13 +22,13 @@ async function signedInUser(page: Page, tag: string): Promise<string> {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Login", exact: true }).click();
   await expect(page).toHaveURL(/\/watchlist$/);
   return email;
 }
 
-const watchButton = (page: Page) => page.getByRole("button", { name: "Watch", exact: true });
-const unwatchButton = (page: Page) => page.getByRole("button", { name: "Unwatch", exact: true });
+const watchButton = (page: Page) => page.getByRole("button", { name: "Tambah ke watchlist", exact: true });
+const unwatchButton = (page: Page) => page.getByRole("button", { name: "Hapus dari watchlist", exact: true });
 const rowFor = (page: Page, slug: string) => page.locator(`[data-testid="project-row"][data-slug="${slug}"]`);
 
 async function watchRowCount(slug: string): Promise<number> {
@@ -38,9 +40,9 @@ async function watchRowCount(slug: string): Promise<number> {
   return data.length;
 }
 
-test("signed out, the detail page offers 'Sign in to watch' with a way back", async ({ page }) => {
+test("signed out, the detail page offers 'Login buat pakai watchlist' with a way back", async ({ page }) => {
   await page.goto(`/projects/${seed.main.slug}`);
-  const link = page.getByRole("link", { name: "Sign in to watch" });
+  const link = page.getByRole("link", { name: "Login buat pakai watchlist" });
   await expect(link).toHaveAttribute("href", `/login?next=${encodeURIComponent(`/projects/${seed.main.slug}`)}`);
   await expect(watchButton(page)).toHaveCount(0);
 });
@@ -48,8 +50,8 @@ test("signed out, the detail page offers 'Sign in to watch' with a way back", as
 test("an empty watchlist says so", async ({ page }) => {
   await signedInUser(page, "wl-empty");
   await page.goto("/watchlist");
-  await expect(page.getByRole("heading", { name: "Your watchlist" })).toBeVisible();
-  await expect(page.getByText("You are not watching any airdrops yet.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Watchlist kamu" })).toBeVisible();
+  await expect(page.getByText("Watchlist kamu masih kosong. Buka sebuah airdrop, lalu klik Tambah ke watchlist.")).toBeVisible();
 });
 
 test("watching from the detail page adds it to /watchlist, and unwatching removes it", async ({ page }) => {
@@ -60,7 +62,7 @@ test("watching from the detail page adds it to /watchlist, and unwatching remove
 
   await page.goto("/watchlist");
   await expect(rowFor(page, seed.main.slug)).toBeVisible();
-  await expect(page.getByText("You are not watching any airdrops yet.")).toHaveCount(0);
+  await expect(page.getByText("Watchlist kamu masih kosong. Buka sebuah airdrop, lalu klik Tambah ke watchlist.")).toHaveCount(0);
 
   await page.goto(`/projects/${seed.main.slug}`);
   await unwatchButton(page).click();
@@ -68,7 +70,7 @@ test("watching from the detail page adds it to /watchlist, and unwatching remove
 
   await page.goto("/watchlist");
   await expect(rowFor(page, seed.main.slug)).toHaveCount(0);
-  await expect(page.getByText("You are not watching any airdrops yet.")).toBeVisible();
+  await expect(page.getByText("Watchlist kamu masih kosong. Buka sebuah airdrop, lalu klik Tambah ke watchlist.")).toBeVisible();
 });
 
 test("a fast double click on Watch still leaves exactly one row", async ({ page }) => {
@@ -95,4 +97,128 @@ test("one user's watchlist is not visible to another", async ({ page, browser })
   await otherPage.goto(`/projects/${seed.main.slug}`);
   await expect(watchButton(otherPage)).toBeVisible();
   await other.close();
+});
+
+// ---- "Perubahan sejak kunjungan terakhir" (Plan 6 Task 7) ----
+
+const changesSection = (page: Page) => page.getByRole("region", { name: "Perubahan sejak kunjungan terakhir" });
+
+/** Writes changes for one project as one pipeline run would: every row shares the run's changed_at. */
+async function recordRun(
+  slug: string,
+  rows: { field: string; old_value: string | null; new_value: string }[],
+): Promise<void> {
+  const db = adminClient();
+  const { data: p, error: pe } = await db.from("projects").select("id").eq("slug", slug).single();
+  if (pe) throw pe;
+  const changedAt = new Date().toISOString();
+  const { error } = await db
+    .from("project_changes")
+    .insert(rows.map((r) => ({ project_id: p.id as string, changed_at: changedAt, ...r })));
+  if (error) throw error;
+}
+
+/** Adds an exact claim deadline `days` from today (UTC) to a seeded project; returns its id-ID date ("11 Okt 2026"). */
+async function addClaimDeadline(slug: string, days: number): Promise<string> {
+  const db = adminClient();
+  const { data: p, error: pe } = await db.from("projects").select("id").eq("slug", slug).single();
+  if (pe) throw pe;
+  const { data: doc, error: de } = await db.from("deadlines").select("document_id").eq("project_id", p.id).limit(1).single();
+  if (de) throw de;
+  const date = new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+  const { error } = await db
+    .from("deadlines")
+    .insert({ project_id: p.id, document_id: doc.document_id, kind: "claim", date, precision: "exact", text: "e2e near claim" });
+  if (error) throw error;
+  return new Intl.DateTimeFormat("id-ID", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(
+    new Date(`${date}T00:00:00Z`),
+  );
+}
+
+async function watch(page: Page, slug: string): Promise<void> {
+  await page.goto(`/projects/${slug}`);
+  await watchButton(page).click();
+  await expect(unwatchButton(page)).toBeVisible();
+}
+
+test("a watched project leaving the list shows 'Keluar dari list' until 'Tandai sudah dibaca'; a near deadline stays", async ({
+  page,
+}) => {
+  await signedInUser(page, "wl-changes-out");
+  await watch(page, seed.main.slug);
+  await recordRun(seed.main.slug, [{ field: "curated", old_value: "true", new_value: "false" }]);
+  const nearDeadline = `Deadline claim dalam 48 jam (${await addClaimDeadline(seed.main.slug, 1)})`;
+
+  await page.goto("/watchlist");
+  const onWatchlist = changesSection(page);
+  await expect(onWatchlist.getByText("Keluar dari list")).toBeVisible();
+  const changeItem = onWatchlist.getByRole("listitem").filter({ hasText: "Keluar dari list" });
+  await expect(changeItem.getByRole("link", { name: seed.main.name })).toHaveAttribute(
+    "href",
+    `/projects/${seed.main.slug}`,
+  );
+
+  await expect(onWatchlist.getByText(nearDeadline)).toBeVisible();
+
+  await page.goto("/airdrops");
+  await expect(changesSection(page).getByText("Keluar dari list")).toBeVisible();
+  await changesSection(page).getByRole("button", { name: "Tandai sudah dibaca" }).click();
+  // The change is gone; the near deadline is a reminder and stays (with nothing left to mark seen).
+  await expect(changesSection(page).getByText("Keluar dari list")).toHaveCount(0);
+  await expect(changesSection(page).getByText(nearDeadline)).toBeVisible();
+  await expect(changesSection(page).getByRole("button", { name: "Tandai sudah dibaca" })).toHaveCount(0);
+
+  await page.goto("/watchlist");
+  await expect(rowFor(page, seed.main.slug)).toBeVisible();
+  await expect(changesSection(page).getByText("Keluar dari list")).toHaveCount(0);
+  await expect(changesSection(page).getByText(nearDeadline)).toBeVisible();
+});
+
+test("a watched project that ended shows 'Udah ended', not 'Keluar dari list', even if it left the list in that run", async ({
+  page,
+}) => {
+  await signedInUser(page, "wl-changes-ended");
+  await watch(page, seed.conflicted.slug);
+  await recordRun(seed.conflicted.slug, [
+    { field: "status", old_value: "live", new_value: "ended" },
+    { field: "curated", old_value: "true", new_value: "false" },
+  ]);
+
+  await page.goto("/watchlist");
+  await expect(changesSection(page).getByText("Udah ended")).toBeVisible();
+  await expect(changesSection(page).getByText("Keluar dari list")).toHaveCount(0);
+
+  // No near deadline on this project: marking the changes seen empties the panel, so it is hidden.
+  await changesSection(page).getByRole("button", { name: "Tandai sudah dibaca" }).click();
+  await expect(changesSection(page)).toHaveCount(0);
+  await page.goto("/watchlist");
+  await expect(changesSection(page)).toHaveCount(0);
+});
+
+test("a member who does not watch the project never sees its changes", async ({ page }) => {
+  await recordRun(seed.main.slug, [{ field: "risk_level", old_value: "low", new_value: "critical" }]);
+  await signedInUser(page, "wl-changes-other");
+  await page.goto("/watchlist");
+  await expect(changesSection(page)).toHaveCount(0);
+  await page.goto("/airdrops");
+  await expect(changesSection(page)).toHaveCount(0);
+});
+
+// ---- The "Gak masuk list" label (Plan 6 Task 6) ----
+
+test("the watchlist labels a project that failed curation or has none, and leaves passed ones alone", async ({ page }) => {
+  await signedInUser(page, "wl-label");
+  for (const slug of [curated.failed.slug, seed.main.slug, curated.live.slug, curated.ended.slug]) await watch(page, slug);
+
+  await page.goto("/watchlist");
+  const label = (slug: string) => rowFor(page, slug).getByTestId("not-curated");
+  await expect(label(curated.failed.slug)).toHaveText("Gak masuk list: Risiko tinggi");
+  await expect(label(seed.main.slug)).toHaveText("Gak masuk list: belum dinilai");
+  // Passed, also the one that passed and then ended (#40): no label.
+  await expect(rowFor(page, curated.live.slug)).toBeVisible();
+  await expect(label(curated.live.slug)).toHaveCount(0);
+  await expect(rowFor(page, curated.ended.slug)).toBeVisible();
+  await expect(label(curated.ended.slug)).toHaveCount(0);
+  // The member-only reason stays out of the label.
+  await expect(label(curated.failed.slug)).not.toContainText(curated.failedMemberReason);
 });

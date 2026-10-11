@@ -3,7 +3,9 @@
 Tanggal: 2026-10-10
 Status: **rev. 3, disetujui owner untuk dibuat plan (2026-10-10)**. Rev. 2: perbaikan skor setelah simulasi terhadap data run
 pertama. Rev. 3: akar masalah domain, halaman project vs airdrops.io, fitur AI (§13, detail provider belum lengkap),
-Bahasa Indonesia.
+Bahasa Indonesia. Tambahan 2026-10-10: keputusan #40 (airdrop yang berakhir setelah lolos kurasi tetap tampil);
+keputusan #47–#49 (nama AirdropIQ, desain C, gaya tulisan, §16); keputusan #41–#46 (head-to-head AlphaDrops, §15): sumber baru, cek link klaim, rekam jejak, "Dicek", web publik + fitur AI
+khusus member.
 Dibangun di atas: `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md` (spec v1, sudah live)
 
 Label: **[FACT]** dari data/kode/run, **[INFERENCE]** kesimpulan dari bukti, **[UNKNOWN]** belum terverifikasi.
@@ -15,8 +17,9 @@ Label: **[FACT]** dari data/kode/run, **[INFERENCE]** kesimpulan dari bukti, **[
 **Masalah** (dari owner): list v1 terlalu "mentah". Semua orang lihat isi yang sama, info airdrop kurang menarik, dan belum
 ada pembeda antara airdrop yang legit dan yang gak jelas.
 
-**Tujuan produk (keputusan owner, direvisi 2026-10-10):** produk **berbayar**. Isi web cuma bisa diakses member yang
-**ditambahkan manual oleh owner** (pembayaran diurus owner di luar web); pengunjung lain cuma lihat landing page. Ukuran suksesnya: konversi ke berbayar. Target user:
+**Tujuan produk (keputusan owner, direvisi 2026-10-10, lalu #45):** produk **berbayar** dengan model **freemium**.
+List kurasi dan lapisan keamanan bisa dilihat semua pengunjung (seperti AlphaDrops); keputusan dan fitur AI penghemat
+waktu khusus member yang **ditambahkan manual oleh owner**. Pendaftaran dan pembayaran di web menyusul (#46). Ukuran suksesnya: konversi ke berbayar. Target user:
 pemula **dan** farmer berpengalaman.
 
 **Positioning:** "Airdrop paling cuan, yang udah dicek aman, dan ada buktinya." Cuan = pengait (skor Worth it, top picks),
@@ -45,10 +48,12 @@ Permintaan owner dipecah jadi sub-proyek, masing-masing punya spec → plan → 
 |---|---|---|
 | 1 | **Fondasi kurasi**: sinyal legit, `curate()`, `worth()`, status kedaluwarsa, tampilan list kurasi | **spec ini** |
 | 2 | **Akses member manual** (Plan 7, dikerjakan lebih dulu): hapus signup/email, data khusus user login, landing page. Sisa: top picks, pindah dari Vercel Hobby, ToS/privasi/disclaimer | Plan 7 + berikutnya |
-| 3 | Track record: hasil nyata airdrop dibanding level Worth it (riset sumber data dulu) | nanti |
+| 3 | Track record: hasil nyata airdrop dibanding level Worth it. Versi pertama = rekam jejak #43 (§15.3) | §15 |
 | 4 | **Tracker "Garapan saya"**: checklist harian + heatmap per project (§14, Plan 8, dikerjakan setelah Plan 4) | Plan 8 |
-| 5 | Link klaim terverifikasi | nanti |
+| 5 | Link klaim terverifikasi: versi pertama = cek link klaim #42 (§15.2) | §15 |
 | 6 | Cek eligibility lebih dalam | paling belakang |
+| 7 | **AI Daily Briefing + Change Detector (A4)**: plan berikutnya setelah Plan 6, sebelum Coach (#41–#46) | setelah Plan 6 |
+| 8 | Pendaftaran + pembayaran di web (#46) | nanti |
 
 **Dicoret:** alert Telegram (keputusan owner). Notifikasi tetap lewat email digest yang ada.
 
@@ -67,21 +72,42 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 21 | Arsitektur | Pendekatan A: tahap sinyal + fungsi deterministik di core. LLM cuma mengekstrak, gak pernah menilai |
 | 22 | Sumber VC terverifikasi | Cek silang ke halaman portfolio VC top (opsi A) + sinyal lain tetap jalan (opsi B). Scraper Apify jadi upgrade kalau ada budget |
 | 23 | Positioning | "Paling cuan, udah dicek aman, ada buktinya" |
-| 24 | Model akses | Cuma member berbayar yang bisa akses isi web |
+| 24 | Model akses | ~~Cuma member berbayar yang bisa akses isi web~~ Diganti #45 |
 | 25 | Pengunjung non-member | Landing page + contoh terbatas (detail di sub-proyek #2) |
 | 26 | Alert Telegram | Gak dibikin |
-| 27 | Dua jenis peluang | List dipisah jadi tab **"Live now"** (live/announced) dan **"Early bets"** (speculative); `worth()` meranking di dalam tab |
+| 27 | Dua jenis peluang | List dipisah jadi tab **"Live now"** (live/announced) dan **"Early bets"** (speculative); `worth()` meranking di dalam tab. Tab ketiga "Sudah berakhir" (#40) |
 | 28 | Standar tampil | Project cuma tampil kalau cek keamanan kuncinya jalan; paywall baru dinyalakan setelah gerbang kualitas §12 terpenuhi |
 | 29 | Bahasa | **Bahasa Indonesia saja** untuk UI web, email, dan semua output AI (menggantikan asumsi v1 "UI bahasa Inggris dulu"). Konten sumber berbahasa Inggris diterjemahkan/diringkas AI |
 | 31 | Pendaftaran member | Gak ada signup; owner menambah user satu per satu di Supabase (Auto Confirm); signup dimatikan di Supabase Auth |
 | 32 | Email | Gak ada email sama sekali: email digest dihapus, lupa password = owner reset manual |
-| 33 | Akses data | Semua data airdrop cuma untuk user login, dikunci di RLS **dan** routing; non-login cuma landing (`/`) + `/login`. Menggantikan rencana paywall berbayar di web |
+| 33 | Akses data | ~~Diganti #45.~~ Semua data airdrop cuma untuk user login, dikunci di RLS **dan** routing; non-login cuma landing (`/`) + `/login`. Menggantikan rencana paywall berbayar di web |
 | 34 | Info perubahan | Ditampilkan di web ("Perubahan sejak kunjungan terakhir"), gak lewat email |
 | 35 | Tracker garapan | Checklist + heatmap **per project** (bukan per wallet), warna = % task harian dicentang (4 tingkat), streak hari 100% |
 | 39 | Rentang heatmap | Sesuai masa garap: dari "Mulai garap" sampai snapshot/akhir kampanye paling awal; tanpa tanggal selesai = 1 tahun (52 minggu) dari hari mulai; maks. 52 minggu |
 | 36 | Privasi tracker | Cuma member itu sendiri yang bisa melihat |
 | 37 | Asal task tracker | Langkah Harian/Mingguan dari sumber + task buatan member; centang cuma untuk hari ini (zona waktu member) |
 | 38 | Coach → tracker | Rekomendasi AI Farming Coach menampilkan tombol "Mulai garap" yang memakai aksi yang sama dengan halaman project |
+| 40 | Airdrop yang berakhir | Yang **pernah lolos kurasi** tetap tampil setelah berakhir, di tab ketiga **"Sudah berakhir"**, dengan status "Berakhir", **selamanya** (arsip rekam jejak). Yang belum pernah lolos tetap tersembunyi. Risiko tetap dicek: kalau naik ke high/critical, keluar dari list |
+| 41 | Sumber baru | DefiLlama v2 (TVL ≥ $1 jt, listing < 180 hari diprioritaskan, buang rugged/dead/misrepresented, 80 kandidat), collector AlphaDrops (listing), backer dari data fundraising AlphaDrops (`reported_backer`, gak terverifikasi) (§15.1) |
+| 42 | Cek link klaim | Tiap link `claim`/`app` dicek domain resmi, umur domain, phishing; AI Scam Analyst membaca halaman portal klaim; link phishing gak bisa diklik (§15.2) |
+| 43 | Rekam jejak | Angka agregat dari airdrop yang lolos sebelum token diperdagangkan; tampil publik setelah ≥ 10 berakhir (§15.3) |
+| 44 | "Dicek" | Waktu cek terakhir di tiap baris dan halaman; peringatan kalau > 48 jam (§15.4) |
+| 45 | Web publik + fitur member | Menggantikan #24/#33: list, keamanan, kontradiksi, langkah, rekam jejak publik; Kelayakan, urutan "paling cuan", Keputusan AI, effort, Briefing, Coach, tracker, watchlist, wallet khusus member. Dikunci di RLS, bukan cuma UI (§15.5) |
+| 46 | Jalan jadi member | Belum ada tombol/CTA; bagian member menampilkan "Khusus member" saja. Pendaftaran + pembayaran di update berikutnya |
+| 47 | Nama produk | **AirdropIQ** (domain kandidat airdropiq.ai, belum dibeli; airdropiq.com dipakai pihak lain) (§16) |
+| 48 | Desain | Arah C **"Sertifikat inspeksi"**: terang, garis hitam tebal, oranye keselamatan, strip hazard, cap bundar "LOLOS 4/4 CEK". Mockup acuan `docs/design/airdropiq-c/` (§16) |
+| 49 | Gaya tulisan | Ditulis dengan skill humanizer: tanpa klise AI dan em dash, panjang kalimat bervariasi, nada santai dengan opini "kami", boleh campur istilah Inggris yang umum di crypto Indonesia. Teks final = glosarium Plan 6 (§16) |
+| 50 | Task utama di tracker | Langkah sekali jalan (`once`) ikut masuk "Garapan saya" sebagai "Task utama" (dicentang sekali, gak masuk heatmap/streak). "Tambah task" dikecilkan jadi link teks "+ Tambah task sendiri" |
+| 51 | Hasil garapan | Member mengisi sendiri hasil airdrop yang udah ended (jumlah token + tanggal claim, atau "Gak dapet"); nilai dolar dihitung dari harga CoinGecko di tanggal claim dan hari ini. Privat. Opt-in "boleh dipakai anonim" untuk rata-rata hasil member, tampil kalau ≥ 5 member ikut. Deteksi otomatis dari wallet ditunda (risiko token palsu, cakupan chain) |
+| 52 | Sub-filter modal di list | Di bawah tab ada "Modal:" Semua / Gratis / Butuh $. Tag per baris: "Gratis", "Butuh ${x}+" (atau "Butuh $" kalau angkanya gak disebut), "Modal belum jelas". Sumber: `capital_required` + `capital_min_usd` hasil ekstraksi (publik), bukan estimasi effort AI yang khusus member. Gabungan antar sumber: ada satu sumber bilang deposit → deposit; `none` cuma kalau semua sumber yang menyebut bilang gratis; angka = minimum terkecil yang disebut. Label dipilih owner ("Gratis" / "Butuh $") |
+| 53 | Security check versi laporan inspeksi | Bagian "04 · Security check" menampilkan isi cek, bukan cuma centang: strip angka (lapis cek, source dibaca, link dicek, red flag), 4 kartu "Wajib lolos" (hasil, detail, sumber data: Scanner AirdropIQ, Database AirdropIQ, RDAP registry, GoPlus Security), lalu "Advanced check" (riwayat hack DefiLlama, cross-check antar source, AI baca halaman claim) dan status tiap link. Cuma cek yang benar-benar jalan yang ditampilkan; `token_security`/`contract_verified` gak tampil selama belum pernah jalan. Detail angka disimpan di `risk_assessments.checks[].detail` |
+| 54 | Advanced check khusus member | Pengunjung melihat judul dan isi cek "Advanced check", tapi hasilnya diganti cap "Member only". Pengecualian: temuan masalah (alasan risiko `hack_history`, `ai_scam_pattern`, kontradiksi) gak pernah dikunci, tetap tampil ke semua orang lewat level risiko dan peringatan. 4 cek "Wajib lolos" tetap publik. Dikunci di DB: anon gak bisa baca kolom `risk_assessments.checks` dan `ai_analyses` kind `scam`; pengunjung pakai view `public_risk_checks` |
+| 55 | Alasan gak lolos untuk pengunjung | Pengunjung melihat satu alasan gagal pertama (kolom publik `curations.public_fail_reason`, diisi `saveCuration`). `reasons` lengkap, `coverage`, dan `worth_level` tetap khusus member. Sejalan dengan #54: masalah yang ditemukan tetap publik. |
+| 56 | Portal klaim dibaca di run yang sama | Halaman portal klaim diambil di tahap `analyze` (sebelum AI Scam Analyst), bukan di `score`, supaya teksnya gak telat satu run. Cek phishing GoPlus dan `link_checks` tetap di `score`. |
+| 57 | Migrasi gak diedit task lain | Plan 6 Task 7 dan 8 dapat migrasi sendiri (`0014_changes_seen.sql`, `0015_farming_results.sql`), gak menambah ke `0012`. |
+| 58 | Pola scam kuat menggugurkan kurasi | Flag AI Scam Analyst dengan pola `secret_request`, `payment_request`, `impersonation`, atau `fake_support` (kutipan lolos `quoteInSource`) → `curate()` gagal dengan alasan `scam_pattern`, apa pun level risikonya. `urgency`, `connect_wallet_to_check`, `other` tetap cuma alasan risiko karena umum di airdrop legit. |
+| 59 | Rentang heatmap selalu memuat hari ini | Revisi #39 (G3, diputuskan controller atas mandat owner 2026-10-11): selama project belum berakhir, jendela heatmap selalu memuat hari ini. Deadline yang sudah lewat dilewati (pakai yang berikutnya); tanpa deadline tersisa = jendela 1 tahun yang digeser sampai hari ini, tanpa hitung mundur; deadline > 1 tahun lagi = 364 sel yang memuat hari ini, hitung mundur tetap ke deadline. Streak dihitung dari semua centang, bukan dari sel yang tampil. |
+| 60 | Gak ada ganti password mandiri | Owner 2026-10-11: member gak bisa mengganti password sendiri di `/settings`. Password diatur owner lewat Supabase Dashboard (runbook `docs/ops/web.md`). Form "Ganti password" yang sempat ditambahkan di review G1 dicabut. |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -96,10 +122,10 @@ Satu baris per sinyal per project. Diperbarui tiap run; baris sinyal yang gak di
 | Kolom | Isi |
 |---|---|
 | `project_id` | FK ke `projects`, `on delete cascade` |
-| `kind` | `vc_backer`, `tvl`, `coingecko_listed`, `curated_source`, `claimed_backer` |
-| `value` | jsonb. `vc_backer`: `{investor, tier}`. `tvl`: `{tvl_usd}`. `coingecko_listed`: `{gecko_id}`. `curated_source`: `{source_kind}`. `claimed_backer`: `{investor, quote}` |
-| `source` | `vc_portfolio`, `defillama`, `airdrops_io`, `telegram`, `llm_text` |
-| `verified` | `true` hanya untuk sinyal dari sumber independen yang cocok domain. `claimed_backer` **selalu** `false` |
+| `kind` | `vc_backer`, `tvl`, `coingecko_listed`, `curated_source`, `claimed_backer`, `reported_backer` (#41) |
+| `value` | jsonb. `vc_backer`: `{investor, tier}`. `tvl`: `{tvl_usd}`. `coingecko_listed`: `{gecko_id}`. `curated_source`: `{source_kind}`. `claimed_backer`: `{investor, quote}`. `reported_backer`: `{investor, lead, amount_usd, round, round_date, source_url}` |
+| `source` | `vc_portfolio`, `defillama`, `airdrops_io`, `telegram`, `llm_text`, `alphadrops` |
+| `verified` | `true` hanya untuk sinyal dari sumber independen yang cocok domain. `claimed_backer` dan `reported_backer` **selalu** `false` |
 | `observed_at` | waktu sinyal terakhir dicek |
 
 Unik per `(project_id, kind, value->>'investor')` untuk backer, dan per `(project_id, kind)` untuk sinyal lain.
@@ -112,7 +138,12 @@ Riwayat, pola sama dengan `risk_assessments`: "terbaru" = `computed_at` terbesar
 |---|---|
 | `project_id` | FK ke `projects` |
 | `passed` | boolean |
+| `tab` | `live_now`, `early_bets`, `ended` (#40), atau null kalau gak lolos |
+| `status_at` | status project (setelah `expireStatus`) saat kurasi dihitung; dasar aturan "pernah lolos sebelum berakhir" (§6.2) |
+| `ended_on` | tanggal berakhir (date, null kalau belum berakhir): tanggal deadline dasar `expireStatus` kalau ada, kalau gak ada tanggal pertama status tercatat `ended` (dibawa dari curation sebelumnya) |
 | `worth_level` | `high`, `medium`, `low`, `insufficient_data` |
+| `worth_points` | integer: total poin `worth()` di balik `worth_level` (migrasi 0011); khusus member seperti `worth_level`; null untuk baris lama |
+| `coingecko_listed` | boolean: project punya sinyal `coingecko_listed` terverifikasi saat run ini; null kalau DefiLlama gak dicek dan gak ada listing yang diketahui. Publik; dibaca dari curation lolos pertama untuk rekam jejak (#43, §15.3) |
 | `reasons` | jsonb: alasan lolos/gagal + alasan worth (kode + pesan, seperti `RiskReason`) |
 | `coverage` | jsonb: sinyal mana yang dicek vs belum (mis. portfolio VC gagal diambil) |
 | `computed_at`, `seq` | seperti `risk_assessments` |
@@ -131,8 +162,9 @@ halaman. Gak bisa dibaca publik.
 ### 4.5 View `curated_list` (baru)
 
 Turunan `project_list` (security_invoker), cuma project yang curation terbarunya `passed = true`. Menambah kolom
-`tab` (`live_now` untuk status live/announced, `early_bets` untuk speculative), `worth_level`, dan ringkasan sinyal (untuk
-badge). Urutan default di §6.3.
+`tab` (`live_now` untuk status live/announced, `early_bets` untuk speculative, `ended` untuk yang berakhir setelah lolos,
+#40), `ended_on`, `worth_level`, dan ringkasan sinyal (untuk badge). Urutan default di §6.3; tab `ended` diurutkan
+`ended_on` terbaru dulu.
 
 ### 4.6 Ekstraksi LLM (versi prompt naik)
 
@@ -150,6 +182,8 @@ Field yang sudah direncanakan di rev. 1:
 - `claimed_backers`: `[{investor, quote}]`. Nama investor yang disebut teks, plus kalimat aslinya. Kutipan wajib ada di
   teks sumber (aturan yang sama dengan field lain).
 - `capital_required`: `none` | `low` | `high` | `unknown`. Contoh: "deposit min. $1,000" = `high`.
+- `capital_min_usd`: angka minimal deposit dalam USD kalau teks menyebutnya (stablecoin dihitung 1:1), selain itu
+  `null`. Gak dikonversi dari ETH/token lain. Dipakai label "Butuh ${x}+" (#52).
 
 ## 5. Pipeline
 
@@ -195,6 +229,8 @@ collect → extract+merge → speculative → signals (baru) → score (diperlua
 | `tvl`, `coingecko_listed` | Cocokkan project ke daftar `/protocols` DefiLlama yang **sudah diambil** di tahap collect (daftar lengkap, bukan hasil filter collector yang sengaja membuang protocol ber-`gecko_id`) | 0 |
 | `curated_source` | Dari `source_kind` dokumen project (airdrops.io atau channel Telegram di config) | 0 |
 | `claimed_backer` | Dari `claimed_backers` hasil ekstraksi | 0 |
+| `curated_source` (AlphaDrops) | Project dari collector `alphadrops` (#41) | 0 |
+| `reported_backer` | Halaman `/raises/<slug>` AlphaDrops, diterima cuma kalau "Official Website" cocok domain (§15.1) | ≤ 40 halaman **seminggu sekali** |
 | `vc_backer` | Cek domain project terhadap cache `vc_portfolios` | 0 per project; ~10–15 request **seminggu sekali** untuk menyegarkan cache |
 
 **Aturan pencocokan (anti-scam, wajib):** sinyal terverifikasi (`tvl`, `coingecko_listed`, `vc_backer`) hanya menempel
@@ -214,7 +250,11 @@ gak menggagalkan run.
 
 ### 5.3 Tahap `score` (diperluas)
 
-Per project aktif, urut:
+Per project aktif, urut (project berstatus `ended` yang curation terbarunya lolos tetap ikut di-score sampai 90 hari
+setelah `ended_on`, karena masa klaim adalah waktu paling rawan situs klaim palsu; setelah itu hasil terakhir dibekukan
+dan halaman menampilkan tanggal cek terakhir. Project yang belum `ended` dan curation terbarunya lolos juga tetap ikut
+di-score walau `last_seen`-nya sudah di luar jendela aktif, sampai curation-nya gagal atau project-nya berakhir, supaya
+project yang halamannya gak berubah gak membeku di "Live now" tanpa cek ulang; revisi review G4, 2026-10-11):
 1. `expireStatus()`: status kedaluwarsa (§6.1). Perubahan status masuk `project_changes`.
 2. `assessRisk()`: tetap seperti v1.
 3. `curate()` + `worth()`: hasil masuk `curations`. Perubahan `passed` masuk `project_changes` (`field = curated`).
@@ -244,8 +284,17 @@ Lolos kalau **semua**:
 5. **Cek keamanan kunci jalan semua:** `dangerous_asks`, `lookalike`, `domain_age`, dan `phishing_list` untuk domain resmi
    project. Project tanpa domain resmi otomatis gagal di sini (alasan "insufficient checks"). Ini yang membuat "low risk"
    berarti "dicek dan bersih", bukan "gak sempat dicek".
+6. **Gak ada pola scam kuat dari AI (#58):** flag `secret_request`, `payment_request`, `impersonation`, atau
+   `fake_support` dengan kutipan valid → gagal `scam_pattern`. Syarat ini juga berlaku untuk project yang berakhir.
 
 Alasan gagal disimpan (untuk owner dan peringatan di halaman detail).
+
+**Project yang berakhir (keputusan #40).** Kalau status (setelah `expireStatus`) = `ended`, syarat 1, 3, dan 5 diganti
+dengan "**pernah lolos sebelum berakhir**": curation terbaru dengan `status_at` ≠ `ended` punya `passed = true`. Syarat 2
+dilonggarkan jadi risiko ∉ {`high`, `critical`} (`insufficient_data` gak menggugurkan, karena cek domain bisa berhenti
+jalan setelah kampanye selesai), syarat 4 tetap. Lolos → `tab = ended`, alasan `ended_after_curation`. Yang gak pernah
+lolos sebelum berakhir tetap gagal (`status_not_open`), jadi filter gak bocor. Kalau status balik ke live/announced/
+speculative, aturan normal berlaku lagi.
 
 **Konsekuensi** [INFERENCE dari data run pertama]: dengan cakupan domain sekarang (7 dari 47 project teks), syarat 5
 akan menyembunyikan hampir semua airdrop live. Itu disengaja: perbaikan §5.0 harus selesai lebih dulu, dan gerbang §12
@@ -271,6 +320,7 @@ menyebut ticker. Rev. 2 memperbaiki tiga hal:
 | TVL ≥ $100 jt / ≥ $10 jt | +2 / +1 |
 | Belum ada token yang diperdagangkan (gak `coingecko_listed`, gak ada `tge` yang lewat) | +2 |
 | Sinyal dari > 1 sumber independen | +1 |
+| Funding dilaporkan (`reported_backer`) ≥ $5 jt, gak dijumlah dengan `vc_backer` terverifikasi (diambil yang tertinggi) | +1 (#41, ikut kalibrasi) |
 | `capital_required` high / low / none | −2 / −1 / 0 (`unknown` = 0, disebut di alasan) |
 | Task > 8 | −1 |
 
@@ -295,12 +345,15 @@ Sub-proyek #1 membangunnya di route yang sekarang; pemindahan ke balik paywall d
 
 ### 7.1 Halaman list (sekarang `/`)
 - Sumber data: `curated_list`. Project yang gak lolos gak muncul di list mana pun.
-- Dua tab: **"Live now"** (bisa dikerjakan sekarang; default) dan **"Early bets"** (belum ada pengumuman, taruhan awal).
+- Tiga tab: **"Live now"** (bisa dikerjakan sekarang; default), **"Early bets"** (belum ada pengumuman, taruhan awal), dan
+  **"Sudah berakhir"** (#40: pernah lolos kurasi lalu berakhir; status "Berakhir" + tanggal berakhir, urut terbaru dulu,
+  tanpa batas waktu).
 - Baris ringkasan dari run terakhir: "N airdrops checked today · M passed curation".
-- Tiap baris menampilkan cakupan cek: "4/4 key safety checks ran".
+- Tiap baris menampilkan cakupan cek: "4/4 key safety checks ran" dan "Dicek {waktu}" (#44).
 - Tiap baris: nama, status, level **Worth it**, level risiko, badge sinyal (`VC-backed: Paradigm ✓`, `TVL $45M`,
   `Listed on CoinGecko`, `Curated source`), deadline terdekat.
 - Filter: status, risiko, chain (sudah ada) + Worth it.
+- Sub-filter modal di bawah tab (#52): Semua / Gratis / Butuh $, plus tag modal di tiap baris.
 - Kosong: "No airdrop passed curation today" + jumlah yang dicek.
 
 ### 7.2 Halaman detail `/projects/<slug>`: harus lebih berguna dari halaman airdrops.io
@@ -329,6 +382,9 @@ Aturan yang tetap: backer klaim ditulis "Diklaim project, belum terverifikasi"; 
 (deadline lewat)" + deadline dasarnya; semua link keluar lewat pembersih referral yang sudah ada.
 
 ### 7.3 Project yang gak lolos / keluar dari kurasi
+Berakhir setelah lolos (#40) **bukan** "keluar dari kurasi": halaman detailnya tanpa peringatan, dengan status "Berakhir"
++ tanggal berakhir, dan perubahannya tampil sebagai perubahan status ("X sudah berakhir"), bukan `curated` true→false.
+
 - Halaman detail tetap bisa dibuka lewat link langsung (oleh yang punya akses), dengan peringatan di paling atas:
   "Not in the curated list: <alasan>". Halaman diberi `noindex`.
 - Watchlist tetap menampilkannya dengan label peringatan yang sama.
@@ -337,8 +393,8 @@ Aturan yang tetap: backer klaim ditulis "Diklaim project, belum terverifikasi"; 
 
 ## 8. Keamanan dan privasi
 
-- Semua tabel baru RLS on. `project_signals`, `curations`, `ai_analyses` dan view `curated_list` cuma bisa dibaca
-  `authenticated` (keputusan #33; tabel tampilan lama dikunci di Plan 7). `vc_portfolios` tanpa akses web.
+- Semua tabel baru RLS on. Pembagian baca publik vs member mengikuti #45 dan §15.5 (menggantikan "cuma
+  `authenticated`" dari #33). `vc_portfolios` tanpa akses web.
 - Gak ada data user baru. Log run tetap angka saja (spec v1 §9).
 - Teks halaman portfolio VC gak disimpan, cuma domain.
 - LLM gak pernah memutuskan lolos/worth; teks project (termasuk klaim "backed by X") gak bisa menaikkan status verified.
@@ -354,7 +410,8 @@ Aturan yang tetap: backer klaim ditulis "Diklaim project, belum terverifikasi"; 
 
 ## 10. Testing
 
-- Unit (core): `expireStatus` (termasuk fixture CZR), `curate` (tiap syarat gagal sendiri-sendiri), `worth` (tiap faktor,
+- Unit (core): `expireStatus` (termasuk fixture CZR), `curate` (tiap syarat gagal sendiri-sendiri; berakhir setelah
+  lolos → `ended`; berakhir tanpa pernah lolos → gagal; berakhir + risiko high → gagal), `worth` (tiap faktor,
   batas level, `insufficient_data`), pencocokan domain (nama sama + domain beda = **gak** cocok).
 - Unit (pipeline): tahap `signals` dengan fake DefiLlama/portfolio, kegagalan sumber → coverage, cache portfolio mingguan.
 - pgTAP: RLS tabel baru, `vc_portfolios` gak terbaca anon/authenticated, view `curated_list` cuma berisi yang lolos.
@@ -397,6 +454,108 @@ Owner **gak menambahkan member berbayar** sebelum semua gerbang ini terpenuhi da
 | G9 | Isi list | ≥ 5 project lolos di tab "Live now", rata-rata 3 run | `curation_passed` |
 | G10 | Urutan worth disetujui owner | top 20 per tab di-review | prosedur §6.3 |
 
+**Hasil set uji scam, versi risk-only (2026-10-10; Task P4.T7, `pipeline/eval/scam-set/`).** `curate()` belum ada, jadi
+angka ini baru mengukur risk engine; Plan 5 mengulangnya dengan `curate()`. Set: 60 domain fake-airdrop dari daftar
+phishing publik (MetaMask `eth-phishing-detect`, ScamSniffer) yang memuat nama project dari 45 airdrop legit
+(`legit.json`, label kita sendiri). Daftar domain scam tidak di-commit.
+
+| Gerbang | Hasil (risk-only) | Catatan |
+|---|---|---|
+| G7 scam yang lolos | 0 dari 60 (level low/medium); 60 tertangkap high/critical | Hampir melingkar: semua 60 ada di daftar phishing dan `phishing_listed` kena 60/60. Tanpa jawaban GoPlus: 0 lolos, 6 `insufficient_data`, 54 tertangkap (lookalike). Set cuma berisi domain yang memuat nama project, jadi angka lookalike optimistis |
+| G8 legit yang tersembunyi | 2 dari 45 (4,4%) | Dua-duanya `lookalike_domain` pada domain klaim di luar domain resmi (domain foundation); jadi `insufficient_data` bila domain klaim = domain resmi |
+
+Cakupan cek di run ini: phishing 60/60 scam dan 49/49 legit; **umur domain hanya 2/60 scam dan 3/49 legit** karena crt.sh
+diblokir kebijakan jaringan container dan beberapa server RDAP tidak terjangkau. G2 gak bisa dinilai dari run ini.
+Temuan untuk Plan 5: (1) GoPlus menjawab HTTP 200 dengan `code 4029 "too many requests"` setelah ~30 request, dan
+`checkPhishingSite` hanya mengulang untuk HTTP 429/5xx, jadi jawaban itu jadi `null` tanpa retry; (2) lookalike gak
+cocok untuk nama 4 huruf yang menempel dengan kata lain dalam satu label (Jito, Lido, Ondo, Safe, Pyth); (3) domain
+foundation/klaim milik project harus masuk daftar domain resmi, kalau tidak aturan lookalike menyembunyikan project
+legit. Detail: `pipeline/eval/scam-set/README.md`.
+
+**Hasil set uji scam dengan `curate()` (2026-10-11; Task P5.T10).** Set yang sama (60 scam, 45 legit), `curate()`
+dijalankan dengan sinyal `curated_source` di setiap kasus (sinyal legit terlemah), jadi yang diukur aturan risiko dan
+cek kunci saja. Lingkungan sama seperti di atas: crt.sh diblokir dan umur domain hanya terjawab untuk 3/60 scam dan
+1/49 legit.
+
+| Gerbang | Hasil (dengan `curate()`) | Catatan |
+|---|---|---|
+| G7 scam yang lolos kurasi | 0 dari 60 | Semua 60 juga ada di daftar phishing, jadi hampir melingkar; nama project di domain membuat lookalike optimistis (`brandOf` mencocokkan substring). 0 scam yang tertahan *hanya* karena cek kunci gak jalan |
+| G8 legit yang tersembunyi | 44 dari 45 (97,8%), **belum bisa dinilai** | 44 kasus tersembunyi karena `insufficient_checks` (umur domain gak terjawab), bukan karena penilaian aturan. Yang disembunyikan aturan lain: 2 dari 45 (4,4%), dua kasus `lookalike_domain` yang sama dengan hasil risk-only. Ulangi di lingkungan yang RDAP/crt.sh-nya menjawab sebelum angka ini dipakai |
+
+`legit.json` diaudit 2026-10-11 (Task FX7): Polygon, Lido, Sui, Pendle dan Ondo diganti project yang jelas membagi
+airdrop publik, domain dYdX, 1inch dan Kamino diganti ke yang tercantum di CoinGecko; total tetap 45. Dua tabel hasil
+set uji scam di atas diukur dengan daftar **sebelum** audit, dan `build.ts` memilih domain scam dari nama di daftar
+itu, jadi set scam berikutnya berbeda. Jalankan ulang `build.ts` dan `run.ts` sebelum G7/G8 dipakai lagi. Detail:
+`pipeline/eval/scam-set/README.md` bagian "Audit of `legit.json`".
+
+Alat ukur gerbang lain sudah ada (`pipeline/eval/quality-report.ts` untuk G1, G2, G3, G9; `worth-review.ts` untuk G10;
+`ai-samples.ts` untuk G11 dan G13; G12 belum punya alat). Angka G1 sampai G3 dan G9 sampai G13 **belum diukur terhadap
+data produksi**: itu butuh satu run harian dengan kode Plan 5 dan kunci service role produksi. Perintahnya ada di
+`pipeline/eval/README.md` ("Quality gate tools").
+
+**Eval LLM diperluas (Task P4.T6; `pipeline/eval/`).** Penilaian G4–G6 sekarang ada di kode: status ≥ 90% dari kasus
+berstatus (G4), tanggal + jenis deadline cocok ≥ 90% (G5), URL halusinasi 0 (G6), dan domain resmi (registrable domain
+dari `official_urls` yang ada di teks sumber) cocok ≥ 80%. Syarat v1 (negatif ditolak, Abstract `ended`, recall radar)
+tetap. Gerbang deadline/domain yang belum punya label dinilai **gagal**, bukan lolos, supaya gerbang yang belum
+terukur gak terlihat terpenuhi.
+
+Label: **lama** = sebelum audit (18 deadline berlabel); **audit-1** = audit FX7 pertama (20 deadline); **final** =
+audit-1 plus 2 `snapshot` dari review audit (22 deadline). Status dan domain sama di audit-1 dan final.
+
+| Gerbang | A: 10-10, label lama, default | B: 10-11, audit-1, default | C: 10-11, audit-1, NVIDIA dulu | D: 10-11, final, default | E: 10-11, final, NVIDIA dulu |
+|---|---|---|---|---|---|
+| G4 akurasi status | **22/30 (73,3%) — gagal** | **25/30 (83,3%) — gagal** | **29/30 (96,7%) — lolos** | **23/30 (76,7%) — gagal** | **28/30 (93,3%) — lolos** |
+| G5 akurasi deadline | **13/18 (72,2%) — gagal** | 17/20 (85,0%); di label final 17–19/22 (≤ 86,4%) — **gagal** | 18/20 (90,0%); di label final 18–20/22 (81,8–90,9%) — **gak bisa dipastikan** | **20/22 (90,9%) — lolos** | **17/22 (77,3%) — gagal** |
+| G6 URL halusinasi | **0 — lolos** | **0 — lolos** | **0 — lolos** | **0 — lolos** | **0 — lolos** |
+| Domain resmi (≥ 80%) | **28/28 (100%) — lolos** | **28/28 (100%) — lolos** | **27/28 (96,4%) — lolos** | **26/28 (92,9%) — lolos** | **27/28 (96,4%) — lolos** |
+| Syarat v1: negatif ditolak / Abstract `ended` / recall radar ≥ 22 | lolos / **gagal** / **18/28 gagal** | lolos / lolos / 24/28 lolos | lolos / lolos / 26/28 lolos | lolos / lolos / **11/28 gagal** | lolos / lolos / 26/28 lolos |
+| Model yang menjawab | 29 `freellm:auto`, 4 `nvidia:z-ai/glm-5.3-flash` | 24 `freellm:auto`, 9 `nvidia:z-ai/glm-5.3-flash` | 33 `nvidia:z-ai/glm-5.3-flash` | 23 `freellm:auto`, 10 `nvidia:z-ai/glm-5.3-flash` | 32 `nvidia:z-ai/glm-5.3-flash`, 1 gagal di semua model |
+
+Semua run: prompt `2026-10-10.3`, `NODE_USE_ENV_PROXY=1 pnpm --filter pipeline eval`, 33 kasus berlabel (23 halaman
+airdrops.io, 10 post Telegram; 30 berstatus, 28 domain berlabel). Teks kasus diambil 2026-10-10 dengan collector
+pipeline sendiri (bukan `export-cases.ts`: kunci service role produksi gak tersedia); 4 kasus Telegram lama dicocokkan
+ulang ke post sumbernya lewat isi. "NVIDIA dulu" = run lokal dengan urutan `glm-5.3-flash` > `kimi-k3` >
+`gemma-4-31b-it` > `freellm:auto` (perubahan `MODELS` sementara, gak di-commit). Run D dan E memakai label final.
+
+- **A (2026-10-10, label lama).** Salah status: `aio_abstract`, `aio_czr`, `aio_extended`, `aio_memebook`,
+  `aio_mint_io`, `aio_perptools`, `aio_synthra`, `tg_flop`. Deadline meleset: Abstract `withdraw_funds`, Extended dan
+  Variational `campaign_end`, 1 dari 3 di CZR, 1 dari 2 di Concrete.
+- **Audit label 2026-10-11 (Task FX7, agent dengan mandat owner).** Semua label 33 kasus dicek ulang ke teksnya.
+  Audit-1 mengubah 3 label di 2 kasus: `tg_flop` status `speculative` → `announced`, plus `snapshot` tanpa tanggal di
+  `tg_flop` dan `aio_mint_io`. Review audit menemukan aturan yang sama belum diterapkan di `aio_satsuma` ("The Genesis
+  snapshot is already taken") dan `aio_collector_crypt` ("snapshot timing is kept undisclosed"); keduanya ditambah
+  `snapshot` tanpa tanggal (label final). Alasan per label dan label ragu yang dipertahankan ada di
+  `pipeline/eval/README.md` bagian "Label diaudit 2026-10-11 (agent, mandat owner)".
+- **B dan C dinilai ulang ke label final.** Baris per kasus cuma mencatat jumlah deadline yang cocok, bukan deadline
+  yang diekstrak, jadi apakah model menulis `snapshot` tanpa tanggal untuk Satsuma dan Collector Crypt gak bisa dibaca
+  dari output-nya: B jadi 17–19/22 (gagal di semua kemungkinan), C jadi 18–20/22 (lolos hanya kalau dua-duanya cocok).
+  Karena itu D dan E dijalankan ulang di label final; angka yang dipakai adalah D dan E.
+- **B (urutan default).** Kelima salah status (`aio_extended`, `aio_memebook`, `aio_mint_io`, `aio_perptools`,
+  `aio_synthra`) dijawab `freellm:auto`. Deadline meleset: Concrete 1 dari 2, Extended `campaign_end`, `snapshot`
+  `tg_flop`.
+- **C (NVIDIA dulu).** Satu-satunya salah status: `tg_flop` (label yang diubah audit). Deadline meleset: 1 dari 3 di
+  CZR, Extended `campaign_end`. Domain meleset: `arcus.xyz` di `tg_7928`.
+- **D (urutan default, label final).** Ketujuh salah status dijawab `freellm:auto`: `aio_memebook`, `aio_orbinum`,
+  `aio_variational`, `tg_7892`, `tg_ink`, serta `tg_7919` dan `tg_7928` yang keluar tanpa proyek sama sekali (dua
+  domain dan deadline `tg_7919` ikut meleset). Deadline meleset: 1 dari 2 di Collector Crypt, `tg_7919`. Radar:
+  `freellm:auto` cuma mengembalikan 11 proyek (11/28).
+- **E (NVIDIA dulu, label final).** `aio_variational` gagal di keempat model (`schema`, `json_parse`, `http_502`,
+  `json_parse`), jadi status, deadline dan domainnya meleset. Salah status lain: `tg_flop`. Deadline meleset juga:
+  1 dari 2 di Collector Crypt, DeepBook dan Satsuma, Extended `campaign_end`.
+- **Efek label review (2 `snapshot` tambahan) di D dan E.** Dari baris per kasus yang sama: tanpa dua label itu, D jadi
+  18–19/20 (lolos di semua kemungkinan) dan E jadi 15–17/20 (gagal di semua kemungkinan). Jadi hasil G5 di D dan E
+  gak bergantung pada dua label itu. Hasil G5 C (lolos 18/20 di audit-1) memang bergantung pada dua `snapshot` audit-1
+  (dengan label lama C jadi 16/18, 88,9%).
+- **Efek model vs efek label.** Di B dan D semua salah status dijawab `freellm:auto`, dan kasus yang sama benar saat
+  `glm-5.3-flash` menjawab (di C dan E; `aio_variational` benar di C, di E gagal di semua model), jadi selisih G4
+  terbesar adalah efek model: `auto` memilih model per request. Antar run dengan urutan yang sama hasilnya bergeser
+  jauh: label status dan radar sama di B dan D, tapi status turun dari 25/30 ke 23/30 dan radar dari 24/28 ke 11/28;
+  NVIDIA dulu lolos G5 di C tapi gagal di E, dan E tetap gagal walau dinilai tanpa dua label review (15–17/20), karena
+  `aio_variational` gagal di semua model dan 4 deadline lain meleset. Satu run per kombinasi belum cukup untuk
+  menyimpulkan.
+- G4–G6 belum dianggap terpenuhi untuk keputusan paywall: urutan produksi (B, D) gagal G4 di kedua run, dan gak ada
+  run yang lolos G4 dan G5 sekaligus di label final.
+
 Kalau G7 gagal (ada scam yang lolos), penyebabnya diperbaiki di aturan risiko/kurasi dulu, lalu set uji dijalankan
 ulang. Kalau G9 gagal karena syarat cek kunci, perbaikannya di cakupan data (§5.0), bukan melonggarkan syarat.
 
@@ -421,7 +580,7 @@ dari "Data terverifikasi"; semua output Bahasa Indonesia (keputusan #29); hasil 
 | A3 | **Deteksi kontradiksi** | Membandingkan fakta antar sumber dan di dalam satu sumber (label vs teks) | #1 |
 | A4 | **Daily Briefing + Change Detector** | Membandingkan versi dokumen (hash konten sudah disimpan) dan merangkum perubahan yang penting; briefing pagi per member | #3 |
 | A5 | **Farming Coach (chat)** | Rencana farming personal dari modal, jumlah wallet, dan waktu member, berdasar data kurasi. Tiap project yang direkomendasikan punya tombol **"Mulai garap"** (aksi `startFarming` dari §14) | #4 |
-| A6 | **Estimasi effort + terjemahan langkah** | Menit per hari, modal, gas; langkah diringkas ke Bahasa Indonesia | #1 |
+| A6 | **Estimasi effort + terjemahan langkah** | Menit per hari, modal, gas; langkah diringkas ke Bahasa Indonesia. Terjemahan (publik, `tasks.text_id`) ditolak semuanya kalau satu langkah terjemahan memuat host/URL, `@handle`, alamat `0x`/base58, atau angka yang gak ada di langkah aslinya, atau minta seed phrase/kunci privat atau pembayaran yang gak diminta langkah aslinya (review G4, 2026-10-11) | #1 |
 
 **Provider (keputusan #30):** AI pribadi owner `https://freellm.hellvyn.id/v1`, model **`auto`** (keputusan owner:
 pakai `auto`, tanpa eval sekarang). Fakta dari pengecekan 2026-10-10:
@@ -474,15 +633,154 @@ konsistensinya sebagai heatmap sepanjang masa garap airdrop itu (seperti grafik 
   `campaign_end` (presisi `exact`/`approximate`) paling awal yang ≥ hari mulai. Hari yang belum lewat sampai deadline
   tampil sebagai kotak "akan datang" + teks "Sisa {n} hari sampai {snapshot|akhir kampanye}". Tanpa tanggal selesai: 1 tahun
   (364 hari) dari hari mulai, tanpa teks "Sisa n hari"; begitu sumber menyebut snapshot/akhir kampanye, rentang ikut
-  berubah (dihitung ulang tiap kali dibuka). Maksimal 52 minggu (yang dipotong bagian paling awal).
+  berubah (dihitung ulang tiap kali dibuka). Maksimal 52 minggu (yang dipotong bagian paling awal). Project yang sudah
+  berakhir (#40): rentang berhenti di `ended_on` kalau itu lebih awal, dengan teks "Berakhir {tanggal}".
+  **Revisi #59:** selama project belum berakhir, jendela selalu memuat hari ini (deadline yang sudah lewat dilewati,
+  tanpa deadline tersisa = 1 tahun yang digeser sampai hari ini, deadline > 1 tahun lagi = 364 sel yang memuat hari ini
+  dengan hitung mundur tetap ke deadline). Streak dihitung dari semua centang.
 - Task Mingguan gak masuk persentase harian; "sudah" kalau dicentang di minggu ISO yang sama (zona waktu member).
-- Task awal = langkah `daily`/`weekly` dari sumber (terjemahan AI kalau ada) saat "Mulai garap". Member bisa menambah dan
+- Task awal = semua langkah dari sumber (terjemahan AI kalau ada) saat "Mulai garap": `once` jadi "Task utama" (#50), `daily`/`weekly` jadi checklist harian/mingguan. Member bisa menambah dan
   mengarsipkan task sendiri. "Ambil ulang langkah dari sumber" menambah langkah baru (berdasar teks) dan mengarsipkan yang
   sudah hilang; centang lama tetap tersimpan dengan teks task-nya.
 - Batas: 50 project aktif per member, 30 task aktif per project.
+- **Hasil garapan (#51):** kartu project yang ended menanyakan "Dapet berapa dari airdrop ini?" (jumlah token + tanggal
+  claim, atau "Gak dapet"). Nilai dolar dari harga CoinGecko (`gecko_id` dari sinyal `coingecko_listed` yang cocok
+  domain); kalau gak ada `gecko_id`, cuma jumlah token. Di atas halaman: "Total hasil garapan". Privat untuk member itu.
+  Opt-in anonim untuk "Rata-rata member yang garap {project}: ≈ ${x} (dari {n} member yang mau berbagi)", tampil kalau
+  n ≥ 5. Token yang masuk wallet **gak pernah** dicatat otomatis: token palsu dengan simbol sama sering dikirim ke banyak
+  wallet.
 
 **Data dan keamanan:** tabel `farming_projects`, `farming_tasks`, `farming_checks`; RLS: tiap baris cuma bisa dibaca
 dan diubah pemiliknya (`user_id = auth.uid()`); centang lewat fungsi `SECURITY DEFINER` yang menghitung tanggal lokal di
 server, jadi klien gak bisa menulis tanggal lain. Hapus akun ikut menghapus semuanya (cascade dari `auth.users`).
 
 **Gak termasuk:** cek onchain otomatis, versi per wallet, leaderboard/profil publik, pengingat email.
+
+## 15. Head-to-head AlphaDrops (keputusan #41–#46)
+
+Riset: `docs/research/2026-10-10-alphadrops-head-to-head.md`. Ringkas [FACT]: AlphaDrops punya 169 airdrop + 881
+proyek fundraising, tanpa cek keamanan per project, 25% link website berupa referral, 42 dari 63 entri aktif ditambahkan
+sebelum April 2026, tanpa AI, Inggris saja, Premium $5/bulan. Irisan dengan data kita: 11 dari 63 airdrop aktif mereka.
+Strategi: **tutup celah isi, menang di kepercayaan dan keputusan.**
+
+### 15.1 Sumber baru (#41)
+
+**DefiLlama v2** (mengganti seleksi kandidat collector `defillama`): gak ada `gecko_id`/symbol; TVL ≥ $1.000.000;
+buang `rugged = true`, `deadFrom` terisi, `misrepresentedTokens = true`; urut: `listedAt` < 180 hari dulu, lalu
+`change_7d` desc, lalu TVL desc; maksimal 80. Syarat sinyal legit TVL di §6.2 tetap ≥ $10 jt.
+
+**Collector `alphadrops`** (`source_kind` baru):
+- Listing `https://alphadrops.net/airdrops`: data terstruktur di HTML (Next.js), ambil status `active`, `upcoming`,
+  `claimable`. Satu dokumen per project untuk ekstraksi LLM: nama, deskripsi, kategori, chain, funding, status, plus teks
+  halaman detail kalau diambil.
+- Halaman detail `/airdrops/<slug>` untuk tiap item yang diambil, maksimal 80 per run, jeda ≥ 1,5 detik. Hash dokumen
+  yang sudah ada mencegah ekstraksi LLM ulang kalau isinya sama.
+- Link website: buang parameter referral (pembersih yang ada), resolve redirect (maks. 3 lompatan). Kalau host akhir
+  persis ada di daftar host perantara di config (`s.kaito.ai`, `linktr.ee`, `galxe.com`, `app.galxe.com`, `zealy.io`,
+  `layer3.xyz`, `bit.ly`, `t.co`) atau `alphadrops.net`, link itu **bukan** domain resmi dan gak ditulis ke dokumen.
+  Cocok host persis, bukan registrable domain, supaya project yang memang beralamat di `kaito.ai` tetap punya domain.
+- Gagal ambil = `CollectorResult.failed`, run tetap jalan (pola collector yang ada).
+
+**`reported_backer`** (tahap `signals`; halaman diambil seminggu sekali dan disimpan di cache `alphadrops_raises`
+(`slug` pk, `official_domain`, `rounds` jsonb, `fetched_at`), service role saja, karena sinyal ditulis ulang tiap run): untuk project kita yang belum punya `reported_backer` segar,
+cari slug di daftar fundraising `https://alphadrops.net/llms-full.txt` (nama dinormalisasi; **cuma untuk memilih halaman
+yang diambil**), ambil `/raises/<slug>`, terima ronde hanya kalau link "Official Website" di halaman itu punya
+registrable domain yang sama dengan domain resmi project. Simpan investor (lead ditandai), jumlah, jenis ronde, tanggal,
+URL. Maksimal 40 halaman per minggu. Tampil "Menurut AlphaDrops: …"; jadi terverifikasi cuma lewat `vc_backer`.
+
+**Ditunda:** membuat kandidat baru dari 881 data fundraising (butuh crawl ±881 halaman).
+
+### 15.2 Cek link klaim (#42)
+
+- Per link berjenis `claim` atau `app` (tahap `score`): `official` = host-nya domain resmi atau subdomainnya; umur domain
+  (RDAP/crt.sh yang ada); phishing (GoPlus yang ada).
+- Status per link: `official` ("✓ Domain resmi"), `different_domain` ("⚠ Domain beda dari situs resmi"), `phishing`
+  ("Link disembunyikan: terdeteksi phishing"), `unchecked` ("Belum dicek"). Link `phishing` gak pernah dirender sebagai
+  link; `different_domain` tetap bisa diklik dengan peringatan.
+- **AI Scam Analyst (A2)** juga membaca teks halaman portal klaim (diambil sekali, maks. 20 halaman per run, dicache per
+  URL 7 hari). Hasilnya cuma bisa menaikkan risiko (batas keras §13).
+- Project ber-deadline `claim` yang masih terbuka mendapat badge "Klaim terbuka · link dicek" kalau semua link klaimnya
+  `official`.
+- Link `phishing` pada project yang lolos kurasi menaikkan risiko project ke `high` (lewat alasan risiko baru
+  `phishing_claim_link`), jadi project keluar dari list.
+
+Hasil cek per link disimpan di tabel `link_checks` (`url` pk, `status`, `checked_at`), baca publik; link yang sama di
+beberapa project cukup dicek sekali per run.
+
+### 15.3 Rekam jejak (#43)
+
+- Populasi: project yang **curation lolos pertamanya** terjadi saat project belum `coingecko_listed`, dan sekarang
+  `tab = ended` (#40) **atau** setelah lolos pernah berisiko `high`/`critical` (apa pun curation terbarunya). Revisi
+  review G4 (2026-10-11): project yang jadi risky lalu terus gagal kurasi gak pernah sampai tab `ended`; tanpa cabang
+  kedua, angka (c) cuma menghitung yang pulih dan total membesar-besarkan tingkat sukses.
+- Angka: (a) jumlah yang sekarang `coingecko_listed`; (b) jumlah yang ada di tab `ended` tanpa token diperdagangkan;
+  (c) jumlah yang setelah lolos pernah berisiko `high`/`critical`. Tiga angka + total populasi, tanpa nama project.
+  (a) dan (b) gak harus berjumlah total: project risky yang belum berakhir dan tokennya belum diperdagangkan ada di
+  total dan (c) saja.
+- Dihitung harian di pipeline, disimpan di `pipeline_runs.stats` (`track_record_total`, `_listed`, `_no_token`,
+  `_risk_raised`).
+- Tampil di landing dan halaman list publik **hanya kalau populasi ≥ 10**; sebelum itu gak ditampilkan sama sekali.
+
+### 15.4 "Dicek" (#44)
+
+- `checked_at` = `computed_at` curation terbaru. Baris dan kepala halaman: "Dicek {relatif}" ("hari ini", "kemarin",
+  "{n} hari lalu").
+- > 48 jam: "Belum dicek ulang sejak {tanggal}" dengan warna peringatan. Project `ended` yang dibekukan (§5.3, > 90 hari)
+  menampilkan "Cek terakhir {tanggal}" tanpa warna peringatan.
+
+### 15.5 Publik vs member (#45, #46)
+
+| Isi | Pengunjung | Member |
+|---|---|---|
+| List kurasi 3 tab (urut "terbaru dicek"), status, risiko, deadline, chain, "Dicek", ringkasan run | ✓ | ✓ |
+| Badge sinyal (terverifikasi, "Menurut AlphaDrops", TVL, CoinGecko, sumber kurasi) | ✓ | ✓ |
+| Keamanan: 4 cek kunci, A2, cek link klaim | ✓ | ✓ |
+| Kontradiksi (A3) | ✓ | ✓ |
+| Langkah (terjemahan A6) | ✓ | ✓ |
+| Rekam jejak | ✓ | ✓ |
+| Level Kelayakan, urutan "paling cuan" (§6.3) | ✗ | ✓ |
+| Keputusan AI (A1) | "Khusus member" | ✓ |
+| Estimasi effort (A6: menit/hari, modal, gas) | ✗ | ✓ |
+| Daily Briefing (A4), Farming Coach (A5), "Tanya AI" | ✗ | ✓ |
+| Garapan saya, watchlist, wallet, "Perubahan sejak kunjungan terakhir" | ✗ | ✓ |
+
+- **Dikunci di database**, bukan cuma UI (anon key publik bisa query REST langsung): view publik `public_list` tanpa
+  `worth_level`; `curated_list` (dengan `worth_level`) cuma `authenticated`; `ai_analyses` kind `analyst` cuma
+  `authenticated`, kind `scam`/`contradictions` publik; terjemahan langkah disimpan terpisah dari hasil Analyst (kolom
+  `tasks.text_id`) supaya bisa publik; `curations.reasons` worth dibaca lewat view member.
+- Halaman publik bisa di-index; yang gak lolos kurasi tetap `noindex` (§7.3). Root `/` = landing + cuplikan list;
+  `/airdrops` = list publik; `/login` tetap; signup tetap mati (#31).
+- Bagian khusus member menampilkan "Khusus member" tanpa tombol atau link pendaftaran (#46).
+- Gerbang §12 tetap syarat sebelum owner menarik bayaran dari member.
+
+## 16. Identitas, desain, dan gaya tulisan (keputusan #47–#49)
+
+**Nama:** AirdropIQ. Cek 2026-10-10 [FACT, registry Vercel]: airdropiq.ai tersedia ($160/2 tahun), airdropiq.com dipakai
+pihak lain. Merek dagang dan handle sosial [UNKNOWN], dicek owner sebelum launch.
+
+**Proses memilih desain:** mockup pertama (gelap, ungu, kartu bulat) ditolak owner sebagai "AI slop". Tiga arah dibuat
+dengan isi sama (A laporan riset, B terminal, C sertifikat inspeksi); owner memilih **C**.
+
+**Sistem desain C** (dibangun di Plan 7 Task 3; nilai di bawah adalah sumber kebenaran):
+
+| Token | Nilai |
+|---|---|
+| Latar / permukaan | `#F7F7F2` / `#FFFFFF` |
+| Tinta / teks sekunder / redup | `#111111` / `#2B2B28` / `#3D3D3A` |
+| Garis lembut | `#CFCFC8` |
+| Aksen (isian saja) / teks aksen kecil | `#FF5A1F` / `#C2410C` |
+| Lolos / ended / hati-hati | `#1F7A45` / `#55554F` / `#B45309` |
+| Isian peringatan / isian member | `#FFD7C2` / `#FFF1EA` |
+| Strip hazard | `repeating-linear-gradient(-45deg, #111111 0 14px, #FF5A1F 14px 28px)` |
+| Huruf | Barlow Condensed 800 huruf kapital untuk judul; Barlow 400–700 untuk isi |
+| Bentuk | Sudut 0; garis 2 px (kartu), 3 px (header, kontainer utama, tombol), putus-putus untuk "Member only" |
+| Cap | Lingkaran bergaris 3–5 px, diputar −10° sampai 10°; "LOLOS 4/4 CEK" hijau, "ENDED" abu, rekam jejak hijau/abu/oranye tua |
+| Tema | Terang saja di versi ini |
+
+Elemen yang wajib konsisten: strip hazard di atas tiap halaman, link phishing dibungkus strip hazard dan gak bisa
+diklik, tiket bergaris untuk tiap airdrop, bagian halaman project bernomor "01 · …".
+
+**Gaya tulisan:** aturan lengkap ada di Global Constraints Plan 6 (kata terlarang, tanpa em dash, variasi kalimat,
+nada santai, campur Inggris yang wajar). Output AI ikut aturan yang sama (Plan 5). Teks yang dikutip di bagian lain spec
+ini (mis. "Khusus member", "Sudah berakhir") adalah rancangan awal; teks final mengikuti glosarium Plan 6.
+

@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Garapan saya · AirdropIQ</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&amp;family=Barlow:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F7F7F2}
+a{color:#111111}a:hover{color:#C2410C}
+.hazard{background:repeating-linear-gradient(-45deg,#111111 0 14px,#FF5A1F 14px 28px)}
+.wrap{max-width:1240px;margin:0 auto;padding:0 32px}
+.card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:0}
+@media (max-width:980px){.card{grid-template-columns:minmax(0,1fr)}.nav{display:none}.wrap{padding:0 16px}}
+</style>
+</helmet>
+<div style="font-family:'Barlow',system-ui,sans-serif;color:#111111;background:#F7F7F2;min-height:100vh">
+<div class="hazard" style="height:10px"></div>
+
+<header style="border-bottom:3px solid #111111">
+<div class="wrap" style="display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px">
+<a href="CLanding.dc.html" style="display:flex;align-items:center;gap:12px;text-decoration:none">
+<span style="width:34px;height:34px;border:3px solid #111111;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:16px">IQ</span>
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:26px;letter-spacing:1px;text-transform:uppercase">AirdropIQ</span>
+</a>
+<nav class="nav" style="display:flex;gap:28px;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">
+<a href="CList.dc.html" style="text-decoration:none">Airdrop</a>
+<a href="CGarapan.dc.html" style="text-decoration:none;border-bottom:3px solid #FF5A1F">Garapan saya</a>
+<a href="#" style="text-decoration:none">Watchlist</a>
+</nav>
+<a href="#" style="font-size:14px;font-weight:700;border:2px solid #111111;padding:10px 14px;text-transform:uppercase;text-decoration:none">Akun</a>
+</div>
+</header>
+
+<main class="wrap" style="padding-top:36px;padding-bottom:64px;display:flex;flex-direction:column;gap:24px">
+<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap">
+<div style="display:flex;flex-direction:column;gap:8px">
+<h1 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:64px;line-height:0.92;text-transform:uppercase">Garapan saya</h1>
+<span style="font-size:15px;color:#2B2B28">Sabtu, 10 Okt 2026 · reset harian jam 00.00 WIB</span>
+</div>
+<div style="display:flex;border:3px solid #111111;background:#FFFFFF">
+<div style="padding:10px 16px;border-right:2px solid #111111"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;line-height:1">{{projectCount}}</div><div style="font-size:12px;font-weight:700;text-transform:uppercase">project digarap</div></div>
+<div style="padding:10px 16px;border-right:2px solid #111111"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;line-height:1;color:#1F7A45">{{todayDone}}/{{todayTotal}}</div><div style="font-size:12px;font-weight:700;text-transform:uppercase">daily task hari ini</div></div>
+<div style="padding:10px 16px;background:#FFF1EA"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;line-height:1">≈ $412</div><div style="font-size:12px;font-weight:700;text-transform:uppercase">total hasil garapan</div></div>
+</div>
+</div>
+
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13px;font-weight:600">
+<span>Heatmap:</span>
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:14px;height:14px;background:#FFFFFF;border:1px solid #CFCFC8"></span>0%</span>
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:14px;height:14px;background:#BFE3CC"></span>1–49%</span>
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:14px;height:14px;background:#5FAE80"></span>50–99%</span>
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:14px;height:14px;background:#1F7A45"></span>100%</span>
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border:1px dashed #9A9A93"></span>belum lewat</span>
+<span style="margin-left:auto;font-size:11px;font-weight:700;text-transform:uppercase;border:2px dashed #111111;padding:3px 7px">Data contoh</span>
+</div>
+
+<sc-for list="{{projects}}" as="p" hint-placeholder-count="3">
+<section style="background:#FFFFFF;border:2px solid #111111">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 18px;border-bottom:2px solid #111111">
+<div style="display:flex;align-items:center;gap:14px;min-width:0">
+<div style="{{p.stampStyle}}"><span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:13px;line-height:1">{{p.stampTop}}</span><span style="font-size:8px;font-weight:700">{{p.stampBottom}}</span></div>
+<div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+<a href="CProject.dc.html" style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:30px;text-transform:uppercase;line-height:1;text-decoration:none">{{p.name}}</a>
+<span style="font-size:14px;color:#2B2B28">{{p.meta}}</span>
+</div>
+</div>
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+<span style="{{p.countdownStyle}}">{{p.countdown}}</span>
+<span style="font-size:14px;font-weight:700;border:2px solid #111111;padding:5px 10px">Streak: {{p.streak}} hari</span>
+</div>
+</div>
+
+<div class="card">
+<div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px;border-right:2px solid #111111">
+<sc-if value="{{p.hasMain}}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;gap:4px;padding-bottom:10px;border-bottom:2px solid #111111">
+<div style="display:flex;justify-content:space-between;align-items:baseline">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:20px;text-transform:uppercase">Task utama</span>
+<span style="font-size:14px;font-weight:600">{{p.mainDone}}/{{p.mainTotal}} selesai</span>
+</div>
+<sc-for list="{{p.main}}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{t.toggle}}" style="display:flex;align-items:center;gap:12px;min-height:44px;background:transparent;border:0;border-bottom:2px dashed #CFCFC8;font:inherit;font-size:16px;text-align:left;padding:8px 0;cursor:pointer;color:#111111">
+<span style="{{t.boxStyle}}">{{t.mark}}</span>
+<span style="{{t.textStyle}}">{{t.text}}</span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+<div style="display:flex;justify-content:space-between;align-items:baseline">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:20px;text-transform:uppercase">Hari ini</span>
+<span style="font-size:14px;font-weight:600">{{p.done}} dari {{p.total}} task</span>
+</div>
+<sc-if value="{{p.hasDaily}}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column">
+<sc-for list="{{p.daily}}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{t.toggle}}" style="display:flex;align-items:center;gap:12px;min-height:44px;background:transparent;border:0;border-bottom:2px dashed #CFCFC8;font:inherit;font-size:16px;text-align:left;padding:8px 0;cursor:pointer;color:#111111">
+<span style="{{t.boxStyle}}">{{t.mark}}</span>
+<span style="{{t.textStyle}}">{{t.text}}</span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{p.noDaily}}" hint-placeholder-val="{{ false }}">
+<div style="font-size:15px;color:#3D3D3A;border:2px dashed #CFCFC8;padding:12px">{{p.emptyText}}</div>
+</sc-if>
+<sc-if value="{{p.hasResult}}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:8px;border:3px solid #111111;background:#FFF1EA;padding:14px">
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:20px;text-transform:uppercase">Hasil kamu</span>
+<button type="button" style="background:transparent;border:0;font:inherit;font-size:13px;font-weight:600;text-decoration:underline;cursor:pointer;padding:0">Ubah</button>
+</div>
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:36px;line-height:1">{{p.resultAmount}}</span>
+<span style="font-size:15px">{{p.resultValue}}</span>
+<span style="font-size:13px;color:#3D3D3A">{{p.resultNote}}</span>
+<label style="display:flex;align-items:center;gap:10px;font-size:14px;padding-top:4px;cursor:pointer">
+<input type="checkbox" checked style="width:20px;height:20px;accent-color:#111111">
+Boleh dipakai anonim buat rata-rata hasil member
+</label>
+</div>
+</sc-if>
+<sc-if value="{{p.askResult}}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:10px;border:3px solid #111111;padding:14px">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:20px;text-transform:uppercase">Dapet berapa dari airdrop ini?</span>
+<span style="font-size:14px;color:#3D3D3A">Isi sendiri ya. Nilai dolarnya kami hitung dari harga di tanggal claim.</span>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<label style="display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;flex:1 1 140px">Jumlah token
+<input type="text" inputmode="decimal" placeholder="contoh: 1250" style="height:44px;border:2px solid #111111;padding:0 10px;font:inherit;font-size:15px">
+</label>
+<label style="display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;flex:1 1 140px">Tanggal claim
+<input type="date" style="height:44px;border:2px solid #111111;padding:0 10px;font:inherit;font-size:15px">
+</label>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<button type="button" style="background:#FF5A1F;border:3px solid #111111;font:inherit;font-size:14px;font-weight:800;text-transform:uppercase;padding:10px 16px">Simpan</button>
+<button type="button" style="background:#FFFFFF;border:2px solid #111111;font:inherit;font-size:14px;font-weight:700;text-transform:uppercase;padding:10px 16px">Gak dapet</button>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{p.hasWeekly}}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;gap:6px;padding-top:6px">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:18px;text-transform:uppercase">Weekly</span>
+<sc-for list="{{p.weekly}}" as="w" hint-placeholder-count="1">
+<div style="display:flex;justify-content:space-between;gap:10px;font-size:15px">
+<span>{{w.text}}</span><span style="{{w.statusStyle}}">{{w.status}}</span>
+</div>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{p.active}}" hint-placeholder-val="{{ true }}">
+<button type="button" style="align-self:flex-start;background:transparent;border:0;font:inherit;font-size:14px;font-weight:600;padding:6px 0;text-decoration:underline;cursor:pointer;color:#3D3D3A">+ Tambah task sendiri</button>
+<div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:8px">
+<button type="button" style="background:#FFFFFF;border:2px solid #111111;font:inherit;font-size:13px;font-weight:700;text-transform:uppercase;padding:9px 12px">Ambil ulang step dari source</button>
+<button type="button" style="background:transparent;border:0;font:inherit;font-size:13px;font-weight:700;text-transform:uppercase;padding:9px 4px;text-decoration:underline">Berhenti garap</button>
+</div>
+</sc-if>
+</div>
+
+<div style="padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0">
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+<span style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:20px;text-transform:uppercase">Progres</span>
+<span style="font-size:13px;color:#3D3D3A">{{p.rangeLabel}}</span>
+</div>
+<div style="overflow-x:auto">
+<div style="display:flex;gap:3px;padding-bottom:4px">
+<div style="display:flex;flex-direction:column;gap:3px;font-size:10px;font-weight:600;color:#3D3D3A;padding-right:4px">
+<span style="height:14px;line-height:14px">Sen</span><span style="height:14px"></span><span style="height:14px;line-height:14px">Rab</span><span style="height:14px"></span><span style="height:14px;line-height:14px">Jum</span><span style="height:14px"></span><span style="height:14px;line-height:14px">Min</span>
+</div>
+<sc-for list="{{p.weeks}}" as="wk" hint-placeholder-count="12">
+<div style="display:flex;flex-direction:column;gap:3px">
+<sc-for list="{{wk.days}}" as="d" hint-placeholder-count="7">
+<span title="{{d.title}}" style="{{d.style}}"></span>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</div>
+<span style="font-size:13px;color:#3D3D3A">{{p.note}}</span>
+</div>
+</div>
+</section>
+</sc-for>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2800}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { checks: { nebula: [true, true, false], orbit: [true, false], nebulaMain: [true, true, false, false], orbitMain: [true, false] } };
+  }
+  renderVals() {
+    const DAY = 86400000;
+    const today = Date.UTC(2026, 9, 10);
+    const fmt = (t) => { const d = new Date(t); const m = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']; return d.getUTCDate() + ' ' + m[d.getUTCMonth()]; };
+    const pattern = [3, 3, 2, 3, 1, 3, 3, 0, 3, 2, 3, 3, 3, 1];
+    const colors = { 0: 'background:#FFFFFF;border:1px solid #CFCFC8', 1: 'background:#BFE3CC', 2: 'background:#5FAE80', 3: 'background:#1F7A45' };
+    const cell = 'width:14px;height:14px;box-sizing:border-box;display:block;';
+    const build = (start, end, todayLevel) => {
+      const mondayOffset = (new Date(start).getUTCDay() + 6) % 7;
+      const first = start - mondayOffset * DAY;
+      const weeks = [];
+      let levels = [];
+      for (let w = first; w <= end; w += 7 * DAY) {
+        const days = [];
+        for (let i = 0; i < 7; i++) {
+          const t = w + i * DAY;
+          let style, title;
+          if (t < start || t > end) { style = cell + 'background:transparent'; title = ''; }
+          else if (t > today) { style = cell + 'border:1px dashed #9A9A93'; title = fmt(t) + ': belum lewat'; }
+          else {
+            const idx = Math.round((t - start) / DAY);
+            const lvl = t === today ? todayLevel : pattern[idx % pattern.length];
+            levels.push(lvl);
+            style = cell + colors[lvl] + (t === today ? ';outline:2px solid #FF5A1F;outline-offset:1px' : '');
+            title = fmt(t) + ': ' + ['0%', '1–49%', '50–99%', '100%'][lvl] + ' daily task';
+          }
+          days.push({ style, title });
+        }
+        weeks.push({ days });
+      }
+      let streak = 0;
+      for (let i = levels.length - 1; i >= 0; i--) { if (levels[i] === 3) streak++; else if (i === levels.length - 1) continue; else break; }
+      return { weeks, streak };
+    };
+    const levelOf = (arr) => { const n = arr.filter(Boolean).length; if (n === 0) return 0; if (n === arr.length) return 3; return n / arr.length >= 0.5 ? 2 : 1; };
+    const box = (on) => 'width:24px;height:24px;flex:none;border:3px solid #111111;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;' + (on ? 'background:#1F7A45;color:#FFFFFF;border-color:#1F7A45' : 'background:#FFFFFF;color:#111111');
+    const txt = (on) => on ? 'text-decoration:line-through;color:#55554F' : '';
+    const mkDaily = (key, texts) => texts.map((text, i) => {
+      const on = this.state.checks[key][i];
+      return { text, mark: on ? '✓' : '', boxStyle: box(on), textStyle: txt(on), toggle: () => {
+        const checks = { ...this.state.checks, [key]: this.state.checks[key].map((v, j) => j === i ? !v : v) };
+        this.setState({ checks });
+      } };
+    });
+    const stamp = (deg, color) => 'width:56px;height:56px;flex:none;border-radius:50%;border:3px solid ' + color + ';color:' + color + ';display:flex;flex-direction:column;align-items:center;justify-content:center;transform:rotate(' + deg + 'deg)';
+    const ok = 'font-size:13px;font-weight:700;color:#1F7A45';
+    const pending = 'font-size:13px;font-weight:700;color:#C2410C';
+
+    const nebulaChecks = this.state.checks.nebula;
+    const nebula = build(Date.UTC(2026, 7, 24), Date.UTC(2026, 10, 30), levelOf(nebulaChecks));
+    const orbitChecks = this.state.checks.orbit;
+    const orbit = build(Date.UTC(2026, 8, 21), Date.UTC(2026, 9, 25), levelOf(orbitChecks));
+    const endedWeeks = (start, end) => {
+      const mondayOffset = (new Date(start).getUTCDay() + 6) % 7;
+      const weeks = [];
+      for (let w = start - mondayOffset * DAY; w <= end; w += 7 * DAY) {
+        const days = [];
+        for (let i = 0; i < 7; i++) {
+          const t = w + i * DAY;
+          if (t < start || t > end) { days.push({ style: cell + 'background:transparent', title: '' }); continue; }
+          const lvl = pattern[Math.round((t - start) / DAY) % pattern.length];
+          days.push({ style: cell + colors[lvl], title: fmt(t) + ': ' + ['0%', '1–49%', '50–99%', '100%'][lvl] + ' daily task' });
+        }
+        weeks.push({ days });
+      }
+      return { weeks };
+    };
+    const astra = endedWeeks(Date.UTC(2026, 6, 13), Date.UTC(2026, 9, 5));
+    const myriad = endedWeeks(Date.UTC(2026, 7, 3), Date.UTC(2026, 8, 28));
+
+    const projects = [
+      {
+        name: 'Nebula Perps', meta: 'Perp DEX · Arbitrum · mulai garap 24 Agu', stampTop: 'LOLOS', stampBottom: '4/4 CEK', stampStyle: stamp(-7, '#1F7A45'),
+        countdown: 'Sisa 51 hari sampai snapshot', countdownStyle: 'font-size:14px;font-weight:700;background:#111111;color:#F7F7F2;padding:6px 10px',
+        streak: nebula.streak, done: nebulaChecks.filter(Boolean).length, total: nebulaChecks.length,
+        hasResult: false, askResult: false, resultAmount: '', resultValue: '', resultNote: '',
+        hasMain: true, main: mkDaily('nebulaMain', ['Bridge aset ke Arbitrum lewat bridge official', 'Connect akun X di halaman points', 'Deposit minimal $100 ke akun trading', 'Isi kode referral dari teman (opsional)']),
+        mainDone: this.state.checks.nebulaMain.filter(Boolean).length, mainTotal: this.state.checks.nebulaMain.length,
+        hasDaily: true, noDaily: false, emptyText: '', daily: mkDaily('nebula', ['Trade minimal sekali di app official-nya', 'Check-in harian di halaman points', 'Cek posisi terbuka sebelum tidur']),
+        hasWeekly: true, weekly: [{ text: 'Cek points di dashboard tiap Senin', status: 'Minggu ini udah', statusStyle: ok }],
+        active: true, weeks: nebula.weeks, rangeLabel: '24 Agu sampai 30 Nov (snapshot)', note: 'Kotak bergaris oranye = hari ini. Centang task di kiri, warnanya langsung berubah.'
+      },
+      {
+        name: 'Orbit Chain', meta: 'L2 · Ethereum · mulai garap 21 Sep', stampTop: 'LOLOS', stampBottom: '4/4 CEK', stampStyle: stamp(5, '#1F7A45'),
+        countdown: 'Sisa 16 hari sampai akhir campaign', countdownStyle: 'font-size:14px;font-weight:700;background:#FF5A1F;border:2px solid #111111;padding:4px 10px',
+        streak: orbit.streak, done: orbitChecks.filter(Boolean).length, total: orbitChecks.length,
+        hasResult: false, askResult: false, resultAmount: '', resultValue: '', resultNote: '',
+        hasMain: true, main: mkDaily('orbitMain', ['Bridge ETH ke Orbit lewat bridge official', 'Mint NFT pass di halaman campaign']),
+        mainDone: this.state.checks.orbitMain.filter(Boolean).length, mainTotal: this.state.checks.orbitMain.length,
+        hasDaily: true, noDaily: false, emptyText: '', daily: mkDaily('orbit', ['Swap kecil di DEX official', 'Bridge balik kalau saldo L2 di bawah $20']),
+        hasWeekly: true, weekly: [{ text: 'Ikut quest mingguan di Galxe resmi', status: 'Belum minggu ini', statusStyle: pending }],
+        active: true, weeks: orbit.weeks, rangeLabel: '21 Sep sampai 25 Okt (akhir campaign)', note: 'Rentang heatmap ngikutin jadwal campaign, bukan setahun penuh.'
+      },
+      {
+        name: 'Astra Swap', meta: 'DEX · Base · mulai garap 13 Jul', stampTop: 'ENDED', stampBottom: 'ARSIP', stampStyle: stamp(-4, '#55554F'),
+        countdown: 'Ended 5 Okt 2026', countdownStyle: 'font-size:14px;font-weight:700;border:2px solid #55554F;color:#55554F;padding:4px 10px',
+        streak: 0, done: 0, total: 0, hasMain: false, main: [], mainDone: 0, mainTotal: 0,
+        hasDaily: false, noDaily: true, emptyText: 'Campaign udah ended. Checklist dikunci, riwayat garapanmu tetap tersimpan di sini.', daily: [],
+        hasWeekly: false, weekly: [],
+        hasResult: true, askResult: false, resultAmount: '1.250 ASTRA', resultValue: '≈ $412 waktu claim (7 Okt) · sekarang ≈ $380',
+        resultNote: 'Rata-rata member yang garap Astra Swap: ≈ $296 (dari 23 member yang mau berbagi).',
+        active: false, weeks: astra.weeks, rangeLabel: '13 Jul sampai 5 Okt (ended)', note: 'Heatmap berhenti di tanggal ended.'
+      },
+      {
+        name: 'Myriad Points', meta: 'Social · Ethereum · mulai garap 3 Agu', stampTop: 'ENDED', stampBottom: 'ARSIP', stampStyle: stamp(6, '#55554F'),
+        countdown: 'Ended 28 Sep 2026', countdownStyle: 'font-size:14px;font-weight:700;border:2px solid #55554F;color:#55554F;padding:4px 10px',
+        streak: 0, done: 0, total: 0, hasMain: false, main: [], mainDone: 0, mainTotal: 0,
+        hasDaily: false, noDaily: false, emptyText: '', daily: [],
+        hasWeekly: false, weekly: [],
+        hasResult: false, askResult: true, resultAmount: '', resultValue: '', resultNote: '',
+        active: false, weeks: myriad.weeks, rangeLabel: '3 Agu sampai 28 Sep (ended)', note: 'Udah claim? Isi hasilnya di kiri biar total garapanmu ke-update.'
+      }
+    ];
+    const todayDone = nebulaChecks.filter(Boolean).length + orbitChecks.filter(Boolean).length;
+    const todayTotal = nebulaChecks.length + orbitChecks.length;
+    return { projects, projectCount: 2, todayDone, todayTotal };
+  }
+}
+</script>
+</body>
+</html>

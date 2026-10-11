@@ -173,8 +173,8 @@ enable_refresh_token_rotation = true
 # Allows refresh tokens to be reused after expiry, up to the specified interval in seconds.
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
-# Allow/disallow new user signups to your project.
-enable_signup = true
+# Accounts are created by an admin (auth.admin.createUser / the dashboard), never by visitors: signups stay off.
+enable_signup = false
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
@@ -218,17 +218,18 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Allow/disallow new user signups via email to your project.
+# Despite the name this switches the whole email provider (email + password login), not only signup. It must stay
+# true; new signups are refused by `enable_signup = false` under [auth] above.
 enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
-# If enabled, users need to confirm their email address before signing in.
-# Off locally on purpose: CI and the dev sandbox run without an SMTP server (Mailpit excluded), and with this on
-# signup fails with "Error sending confirmation email". Production MUST turn it on, with custom SMTP
-# (docs/ops/web.md). The e2e tests cover the verification link through the admin API instead.
+# If enabled, users need to confirm their email address before signing in. Off: the admin creates accounts with
+# email_confirm: true, and nothing sends email.
 enable_confirmations = false
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
+# Off: the reauthentication it needs is sent by email, and nothing sends email. Members do not change their own
+# password in the app; the admin sets the first password and resets forgotten ones in the Dashboard.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
@@ -246,16 +247,6 @@ otp_expiry = 3600
 # pass = "env(SENDGRID_API_KEY)"
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
-
-# Auth email links point at the web app's /auth/callback (token_hash flow), so they work in any browser.
-# The hosted project needs the same templates (docs/ops/web.md).
-[auth.email.template.confirmation]
-subject = "Confirm your Smart Airdrop Finder account"
-content_path = "./supabase/templates/confirmation.html"
-
-[auth.email.template.recovery]
-subject = "Reset your Smart Airdrop Finder password"
-content_path = "./supabase/templates/recovery.html"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]

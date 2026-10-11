@@ -37,17 +37,17 @@ async function userWithWallet(page: Page, tag: string): Promise<{ userId: string
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Login", exact: true }).click();
   await expect(page).toHaveURL(/\/watchlist$/);
   return { userId: user.id, walletId: wallet.id as string };
 }
 
 test("signed out, the project page has no wallet-related UI and the API answers 401 in JSON", async ({ page }) => {
   await page.goto(`/projects/${seed.main.slug}`);
-  await expect(page.getByText("Chains: ethereum, base")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Check wallet activity/ })).toHaveCount(0);
-  await expect(page.getByText("Chain not supported yet.")).toHaveCount(0);
-  await expect(page.getByText("Wallet activity", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Chain: ethereum, base")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Cek aktivitas wallet/ })).toHaveCount(0);
+  await expect(page.getByText("Chain ini belum didukung.")).toHaveCount(0);
+  await expect(page.getByText("Aktivitas wallet", { exact: true })).toHaveCount(0);
 
   const res = await page.request.post("/api/wallet-activity", { data: { walletId: "x", chain: "ethereum" }, maxRedirects: 0 });
   expect(res.status()).toBe(401);
@@ -77,11 +77,13 @@ test("a signed-in user with a fresh cached result sees it without any provider c
   await page.goto(`/projects/${seed.main.slug}`);
   await expect(page.getByTestId("wallet-check")).toHaveCount(1);
   // Spec §7: the risk badge and the official checker link sit next to the wallet activity check.
-  const riskLine = page.getByRole("region", { name: "Wallet activity" }).getByTestId("wallet-risk-line");
-  await expect(riskLine.getByTestId("risk-badge")).toHaveText("Risk High");
-  await expect(riskLine.getByRole("link", { name: "Official checker (unverified)" })).toHaveAttribute("href", seed.main.claimUrl);
-  await page.getByRole("button", { name: /Check wallet activity on Ethereum/ }).click();
-  await expect(page.getByText("Wallet activity on Ethereum: 42 transactions, first 2021-03-05, last 2026-09-30, active 7+ months")).toBeVisible();
+  const riskLine = page.getByRole("region", { name: "Aktivitas wallet" }).getByTestId("wallet-risk-line");
+  await expect(riskLine.getByTestId("risk-badge")).toHaveText("Risiko Tinggi");
+  await expect(riskLine.getByRole("link", { name: "Checker official (belum verified)" })).toHaveAttribute("href", seed.main.claimUrl);
+  await page.getByRole("button", { name: "Cek aktivitas wallet di Ethereum untuk Main" }).click();
+  await expect(page.getByTestId("wallet-check").locator("[aria-live] p")).toHaveText(
+    "Aktivitas wallet di Ethereum: 42 transaksi, pertama 2021-03-05, terakhir 2026-09-30, aktif 7+ bulan (dicek dalam 6 jam terakhir)",
+  );
 
   // A cache hit is not a request.
   const { count, error: ce } = await db.from("wallet_check_requests").select("*", { count: "exact", head: true }).eq("user_id", userId);
@@ -93,16 +95,16 @@ test("a signed-in user with a fresh cached result sees it without any provider c
 test("a project on an unsupported chain says so, and offers no check button", async ({ page }) => {
   await userWithWallet(page, "wa-unsupported");
   await page.goto(`/projects/${unsupportedSlug}`);
-  await expect(page.getByText("Chain not supported yet.")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Check wallet activity/ })).toHaveCount(0);
+  await expect(page.getByText("Chain ini belum didukung.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Cek aktivitas wallet/ })).toHaveCount(0);
 });
 
-test("a project with no chains keeps the existing 'Chain unknown' copy and no check button", async ({ page }) => {
+test("a project with no chains keeps the existing 'Chain belum diketahui' copy and no check button", async ({ page }) => {
   await userWithWallet(page, "wa-nochain");
   await page.goto(`/projects/${seed.conflicted.slug}`);
-  await expect(page.getByText("Chain unknown")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Check wallet activity/ })).toHaveCount(0);
-  await expect(page.getByText("Chain not supported yet.")).toHaveCount(0);
+  await expect(page.getByText("Chain belum diketahui")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Cek aktivitas wallet/ })).toHaveCount(0);
+  await expect(page.getByText("Chain ini belum didukung.")).toHaveCount(0);
 });
 
 test("the API refuses a wallet id of another user with 404", async ({ page }) => {
@@ -146,20 +148,20 @@ test("a signed-in user without wallets is pointed to /wallets from the header an
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Login", exact: true }).click();
   await expect(page).toHaveURL(/\/watchlist$/);
 
-  await page.getByRole("banner").getByRole("link", { name: "Wallets" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "Wallet", exact: true }).click();
   await expect(page).toHaveURL(/\/wallets$/);
 
   await page.goto(`/projects/${seed.main.slug}`);
-  await expect(page.getByRole("button", { name: /Check wallet activity/ })).toHaveCount(0);
-  await page.getByRole("link", { name: "Add a wallet to check wallet activity" }).click();
+  await expect(page.getByRole("button", { name: /Cek aktivitas wallet/ })).toHaveCount(0);
+  await page.getByRole("link", { name: "Tambah wallet buat cek aktivitas wallet" }).click();
   await expect(page).toHaveURL(/\/wallets$/);
 });
 
-test("signed out, the header has no Wallets link", async ({ page }) => {
+test("signed out, the header has no Wallet link", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("banner").getByRole("link", { name: "Log in" })).toBeVisible();
-  await expect(page.getByRole("banner").getByRole("link", { name: "Wallets" })).toHaveCount(0);
+  await expect(page.getByRole("banner").getByRole("link", { name: "Login" })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("link", { name: "Wallet", exact: true })).toHaveCount(0);
 });

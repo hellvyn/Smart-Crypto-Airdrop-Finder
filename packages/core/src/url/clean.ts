@@ -5,7 +5,7 @@ export interface CleanedUrl {
   referralStripped: boolean;
 }
 
-const REFERRAL_PARAMS = new Set(["ref", "referral"]);
+const REFERRAL_PARAMS = new Set(["ref", "referral", "r"]);
 
 function isReferralParam(name: string): boolean {
   const lower = name.toLowerCase();
@@ -13,7 +13,7 @@ function isReferralParam(name: string): boolean {
 }
 
 /**
- * Removes referral tracking from a URL: `ref`, `referral` and `utm_*` query
+ * Removes referral tracking from a URL: `ref`, `referral`, `r` and `utm_*` query
  * params (case-insensitive names) and a `/r/<code>` path. Other params keep
  * their original order. Throws on input that is not a valid absolute URL.
  */

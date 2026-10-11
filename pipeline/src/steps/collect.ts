@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { collectAirdropsIo } from "../collectors/airdrops-io.js";
-import { selectSpeculativeCandidates } from "../collectors/defillama.js";
-import type { SpeculativeCandidate } from "../collectors/defillama.js";
+import { collectAlphaDrops } from "../collectors/alphadrops.js";
+import { parseProtocols, selectSpeculativeCandidates } from "../collectors/defillama.js";
+import type { DefillamaProtocol, SpeculativeCandidate } from "../collectors/defillama.js";
 import { collectTelegram } from "../collectors/telegram.js";
 import type { CollectedDocument, CollectorResult, Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
+import { defaultSleep } from "../enrich/goplus.js";
 import type { DailyStats } from "../stats.js";
 import type { PipelineRepo, StoredDocument } from "../store/repo.js";
 
@@ -22,7 +24,8 @@ export function contentHash(text: string): string {
 
 /**
  * Document for a DefiLlama candidate. Only stable fields go into the text (and so the hash), so daily TVL
- * moves do not count as a change; TVL and the 7-day change appear only in the evidence quote.
+ * moves do not count as a change; TVL and the 7-day change appear only in the evidence quote. The listing
+ * date (day precision) is stable and tells the reader how new the protocol is.
  */
 export function defillamaDocument(candidate: SpeculativeCandidate, now: Date): CollectedDocument {
   const text = [
@@ -30,6 +33,7 @@ export function defillamaDocument(candidate: SpeculativeCandidate, now: Date): C
     `Category: ${candidate.category}`,
     `Chains: ${candidate.chains.length > 0 ? candidate.chains.join(", ") : "n/a"}`,
     `Website: ${candidate.url ?? "n/a"}`,
+    `Listed on DefiLlama: ${candidate.listedAt ? candidate.listedAt.toISOString().slice(0, 10) : "n/a"}`,
     "No token listed on DefiLlama.",
   ].join("\n");
   return {
@@ -43,22 +47,33 @@ export function defillamaDocument(candidate: SpeculativeCandidate, now: Date): C
   };
 }
 
-/** Fetches DefiLlama protocols and keeps the speculative candidates. `failed` on HTTP, JSON or shape errors. */
-async function collectDefillama(
-  http: Http,
-  config: PipelineConfig,
-): Promise<{ failed: boolean; candidates: SpeculativeCandidate[] }> {
+interface DefillamaResult {
+  /** The full protocol list for the `signals` stage, or null when it could not be fetched. */
+  protocols: DefillamaProtocol[] | null;
+  candidates: SpeculativeCandidate[];
+}
+
+const DEFILLAMA_FAILED: DefillamaResult = { protocols: null, candidates: [] };
+
+/**
+ * Fetches DefiLlama protocols once: the full list (for signals) and the speculative candidates. `protocols` is null
+ * on HTTP, JSON or shape errors.
+ */
+async function collectDefillama(http: Http, config: PipelineConfig, now: Date): Promise<DefillamaResult> {
   const res = await http.get(PROTOCOLS_URL);
-  if (res.status !== 200) return { failed: true, candidates: [] };
+  if (res.status !== 200) return DEFILLAMA_FAILED;
   let raw: unknown;
   try {
     raw = JSON.parse(res.body);
   } catch {
-    return { failed: true, candidates: [] };
+    return DEFILLAMA_FAILED;
   }
   // An empty list means the API changed or broke, not that there are no protocols.
-  if (!Array.isArray(raw) || raw.length === 0) return { failed: true, candidates: [] };
-  return { failed: false, candidates: selectSpeculativeCandidates(raw, config.defillama) };
+  if (!Array.isArray(raw) || raw.length === 0) return DEFILLAMA_FAILED;
+  return {
+    protocols: parseProtocols(raw),
+    candidates: selectSpeculativeCandidates(raw, { ...config.defillama, now }),
+  };
 }
 
 /** Stores a collected document when its hash is new or changed. */
@@ -83,14 +98,16 @@ async function ingestSafely(repo: PipelineRepo, doc: CollectedDocument, stats: D
  * Collects every source. A source that throws or reports `failed` counts toward `source_failed`;
  * any documents it still returned are ingested. Each document is ingested on its own: one that cannot be
  * stored counts as `ingest_failed` and the rest (and the other sources) continue. DefiLlama documents are
- * stored as `done` (never sent to the LLM) and returned for the speculative merge.
+ * stored as `done` (never sent to the LLM) and returned for the speculative merge, together with the full DefiLlama
+ * protocol list for the `signals` stage (null when it could not be fetched). `sleep` paces the AlphaDrops detail
+ * pages.
  */
 export async function collectSources(
-  deps: { repo: PipelineRepo; http: Http },
+  deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void> },
   config: PipelineConfig,
   now: Date,
   stats: DailyStats,
-): Promise<SpeculativeItem[]> {
+): Promise<{ speculative: SpeculativeItem[]; protocols: DefillamaProtocol[] | null }> {
   const { repo, http } = deps;
 
   const runCollector = async (collect: () => Promise<CollectorResult>): Promise<void> => {
@@ -109,14 +126,17 @@ export async function collectSources(
   for (const channel of config.telegramChannels) {
     await runCollector(async () => collectTelegram(http, channel, await repo.lastTelegramMessageId(channel), now));
   }
-
-  let llama: { failed: boolean; candidates: SpeculativeCandidate[] };
-  try {
-    llama = await collectDefillama(http, config);
-  } catch {
-    llama = { failed: true, candidates: [] };
+  if (config.alphadrops.enabled) {
+    await runCollector(() => collectAlphaDrops(http, now, config.alphadrops, deps.sleep ?? defaultSleep));
   }
-  if (llama.failed) stats.source_failed += 1;
+
+  let llama: DefillamaResult;
+  try {
+    llama = await collectDefillama(http, config, now);
+  } catch {
+    llama = DEFILLAMA_FAILED;
+  }
+  if (llama.protocols === null) stats.source_failed += 1;
 
   const items: SpeculativeItem[] = [];
   for (const candidate of llama.candidates) {
@@ -134,5 +154,5 @@ export async function collectSources(
       stats.ingest_failed += 1;
     }
   }
-  return items;
+  return { speculative: items, protocols: llama.protocols };
 }

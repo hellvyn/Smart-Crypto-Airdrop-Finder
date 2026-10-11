@@ -1,11 +1,6 @@
+import { createClient } from "@supabase/supabase-js";
 import { expect, test, type Page } from "@playwright/test";
-import {
-  createConfirmedUser,
-  deleteCreatedUsers,
-  recoveryLink,
-  signupVerificationLink,
-  uniqueEmail,
-} from "./support/admin";
+import { adminClient, createConfirmedUser, deleteCreatedUsers, uniqueEmail } from "./support/admin";
 
 const PASSWORD = "correct-horse-1";
 
@@ -16,7 +11,7 @@ test.afterAll(async () => {
 async function logIn(page: Page, email: string, password: string): Promise<void> {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Login", exact: true }).click();
 }
 
 /** The form's error message (Next.js also renders an empty role=alert route announcer outside <main>). */
@@ -26,7 +21,7 @@ function formError(page: Page) {
 
 async function expectSignedInAs(page: Page, email: string): Promise<void> {
   await expect(page.getByTestId("user-email")).toHaveText(email);
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Logout", exact: true })).toBeVisible();
 }
 
 test("opening /watchlist signed out redirects to /login, and back after logging in", async ({ page }) => {
@@ -39,8 +34,64 @@ test("opening /watchlist signed out redirects to /login, and back after logging 
 
   await logIn(page, email, PASSWORD);
   await expect(page).toHaveURL(/\/watchlist$/);
-  await expect(page.getByRole("heading", { name: "Your watchlist" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Watchlist kamu" })).toBeVisible();
   await expectSignedInAs(page, email);
+});
+
+test("a signed-in user who opens /login goes to the list, or to a safe next page", async ({ page }) => {
+  const email = uniqueEmail("login-again");
+  await createConfirmedUser(email, PASSWORD);
+  await page.goto("/login");
+  await logIn(page, email, PASSWORD);
+  await expect(page).toHaveURL(/\/watchlist$/);
+
+  await page.goto("/login");
+  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/airdrops$/);
+  await page.goto("/login?next=%2Fsettings");
+  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/settings$/);
+  await page.goto("/login?next=//evil.example/steal");
+  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/airdrops$/);
+});
+
+test("a session that ends mid-way sends the next account page or form post to /login?next=..., not a blank page", async ({ page, context }) => {
+  const email = uniqueEmail("expired");
+  await createConfirmedUser(email, PASSWORD);
+  await page.goto("/login?next=%2Fsettings");
+  await logIn(page, email, PASSWORD);
+  await expect(page).toHaveURL(/\/settings$/);
+
+  // The session cookies disappear while the page is open (expired refresh token, signed out elsewhere).
+  await context.clearCookies();
+  await page.getByRole("button", { name: "Simpan pengaturan" }).click();
+  await expect(page).toHaveURL(/\/login\?next=%2Fsettings$/);
+  await expect(page.getByRole("button", { name: "Login", exact: true })).toBeVisible();
+
+  await logIn(page, email, PASSWORD);
+  await expect(page).toHaveURL(/\/settings$/);
+  await context.clearCookies();
+  await page.getByRole("banner").getByRole("link", { name: "Wallet", exact: true }).click();
+  await expect(page).toHaveURL(/\/login\?next=%2Fwallets$/);
+  await expect(page.getByRole("button", { name: "Login", exact: true })).toBeVisible();
+});
+
+test("the anon key reads no rows of the user tables over REST", async () => {
+  // The rows exist: one user with a profile (created by the signup trigger) and a wallet.
+  const created = await adminClient().auth.admin.createUser({ email: uniqueEmail("rest-anon"), password: PASSWORD, email_confirm: true });
+  if (created.error) throw created.error;
+  const wallet = await adminClient()
+    .from("wallets")
+    .insert({ user_id: created.data.user.id, address: "0x00000000000000000000000000000000000000e5", chain_family: "evm" });
+  if (wallet.error) throw wallet.error;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  for (const table of ["watchlist", "wallets", "profiles"]) {
+    const res = await fetch(`${url}/rest/v1/${table}?select=*`, { headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` } });
+    const body = (await res.json()) as unknown;
+    // Either PostgREST refuses outright (no privilege, 42501) or RLS leaves an empty list; never a row.
+    if (Array.isArray(body)) expect(body, table).toEqual([]);
+    else expect((body as { code?: string }).code, table).toBe("42501");
+  }
 });
 
 test("an off-site next parameter is ignored after login", async ({ page }) => {
@@ -52,109 +103,61 @@ test("an off-site next parameter is ignored after login", async ({ page }) => {
   await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/watchlist$/);
 });
 
-test("signup form creates an account and signs the user in", async ({ page }) => {
-  // Local supabase/config.toml keeps email confirmations off (no SMTP in CI), so signup signs in directly.
-  // The verification-link path is covered by the next test.
-  const email = uniqueEmail("signup");
-  await page.goto("/signup");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign up" }).click();
-
-  await expect(page.getByRole("heading", { name: "Your watchlist" })).toBeVisible();
-  await expectSignedInAs(page, email);
-});
-
-test("signup verification link confirms the email, then login works", async ({ page }) => {
-  const email = uniqueEmail("verify");
-  const link = await signupVerificationLink(email, PASSWORD);
-
-  // Before verifying, Supabase refuses the login and the message is shown as-is.
-  await page.goto("/login");
-  await logIn(page, email, PASSWORD);
-  await expect(formError(page)).toHaveText("Email not confirmed");
-
-  await page.goto(link);
-  await expect(page).toHaveURL(/\/watchlist$/);
-  await expectSignedInAs(page, email);
-
-  await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/login$/);
-  await expect(page.getByTestId("user-email")).toHaveCount(0);
-
-  await logIn(page, email, PASSWORD);
-  await expect(page).toHaveURL(/\/watchlist$/);
-  await expectSignedInAs(page, email);
-});
-
-test("password reset: request, recovery link, new password, login with it", async ({ page }) => {
-  const email = uniqueEmail("reset");
-  const newPassword = "new-battery-staple-2";
+test("wrong credentials show the Indonesian error, then logging in and out works", async ({ page }) => {
+  const email = uniqueEmail("logout");
   await createConfirmedUser(email, PASSWORD);
 
-  // The request form posts to Supabase and shows its answer as-is. The local stack (CI, sandbox) runs without an
-  // SMTP server, so Supabase answers with its send error; the link itself comes from the admin API below.
-  await page.goto("/reset-password");
-  await page.getByLabel("Email").fill(email);
-  await page.getByRole("button", { name: "Send reset link" }).click();
-  await expect(formError(page)).toHaveText("Error sending recovery email");
-
-  await page.goto(await recoveryLink(email));
-  await expect(page).toHaveURL(/\/update-password$/);
-  await page.getByLabel("New password").fill(newPassword);
-  await page.getByRole("button", { name: "Update password" }).click();
-  await expect(page).toHaveURL(/\/watchlist$/);
-  await expectSignedInAs(page, email);
-
-  await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/login$/);
+  await page.goto("/login");
+  await logIn(page, email, "wrong-password-9");
+  await expect(formError(page)).toHaveText("Email atau password salah.");
+  await expect(page.getByText(email)).toHaveCount(0);
 
   await logIn(page, email, PASSWORD);
-  await expect(formError(page)).toHaveText("Invalid login credentials");
-
-  await logIn(page, email, newPassword);
   await expect(page).toHaveURL(/\/watchlist$/);
   await expectSignedInAs(page, email);
+
+  await page.getByRole("button", { name: "Logout", exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByTestId("user-email")).toHaveCount(0);
 });
 
-test("a verification link with an off-site next lands on the same-origin default", async ({ page }) => {
-  const email = uniqueEmail("cbnext");
-  const link = await signupVerificationLink(email, PASSWORD);
-
-  await page.goto(`${link}&next=${encodeURIComponent("/%2e//evil.example")}`);
-  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/watchlist$/);
-  await expectSignedInAs(page, email);
+test("the login page has no signup or forgot-password link, and tells visitors to ask the admin", async ({ page }) => {
+  await page.goto("/login");
+  await expect(page).toHaveTitle("Login · AirdropIQ");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Login");
+  await expect(page.getByText("Belum punya akses? Hubungi admin.")).toBeVisible();
+  await expect(page.locator("main a[href*='signup']")).toHaveCount(0);
+  await expect(page.locator("main a[href*='reset-password']")).toHaveCount(0);
+  await expect(page.getByText(/sign up|forgot your password/i)).toHaveCount(0);
 });
 
-test("a verification link with a non-ASCII next lands on the default instead of a 500", async ({ page }) => {
-  const email = uniqueEmail("cbascii");
-  const link = await signupVerificationLink(email, PASSWORD);
+// Old email links and bookmarks must end in a plain 404, never a 500 or a redirect to a form.
+for (const path of [
+  "/signup",
+  "/reset-password",
+  "/update-password",
+  "/auth/callback",
+  "/auth/callback?token_hash=old-token&type=email",
+  "/auth/callback?code=old-code",
+  "/unsubscribe",
+  "/unsubscribe?token=3f0b4d6c-8e53-4c43-9f0e-0d6d5a1f2b11",
+]) {
+  test(`${path} is gone (404)`, async ({ page }) => {
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Halaman gak ketemu");
+  });
+}
 
-  const response = await page.goto(`${link}&next=${encodeURIComponent("/café")}`);
-  expect(response?.status()).toBe(200);
-  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:3000\/watchlist$/);
-  await expectSignedInAs(page, email);
-});
+test("signing up through the auth API with the anon key is refused", async () => {
+  // The web app has no signup form any more; this checks that the API is shut too (supabase/config.toml).
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  const anon = createClient(url, anonKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  const email = uniqueEmail("api-signup");
 
-test("link types the app does not use are refused, even with a valid token", async ({ page }) => {
-  const email = uniqueEmail("types");
-  const link = await signupVerificationLink(email, PASSWORD);
-  const tokenHash = new URL(link, "http://x.invalid").searchParams.get("token_hash") ?? "";
-
-  for (const type of ["signup", "magiclink", "invite", "email_change"]) {
-    await page.goto(`/auth/callback?${new URLSearchParams({ token_hash: tokenHash, type }).toString()}`);
-    await expect(page).toHaveURL(/\/login\?error=link$/);
-    await expect(page.getByTestId("user-email")).toHaveCount(0);
-  }
-
-  // The token was not used up by the refused attempts: the real link still works.
-  await page.goto(link);
-  await expect(page).toHaveURL(/\/watchlist$/);
-  await expectSignedInAs(page, email);
-});
-
-test("an invalid or used link shows an error on the login page", async ({ page }) => {
-  await page.goto("/auth/callback?token_hash=not-a-real-token&type=email");
-  await expect(page).toHaveURL(/\/login\?error=link$/);
-  await expect(formError(page)).toHaveText("This link is invalid or has expired. Request a new one.");
+  const { data, error } = await anon.auth.signUp({ email, password: PASSWORD });
+  expect(error?.code).toBe("signup_disabled");
+  expect(data.user).toBeNull();
+  expect(data.session).toBeNull();
 });

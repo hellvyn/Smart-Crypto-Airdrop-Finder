@@ -17,7 +17,8 @@ field yang menyamai isi airdrops.io, dan akurasi bisa diukur (eval diperluas + s
 
 **Tech Stack:** sama dengan Plan 1–3 (TypeScript, pnpm, Vitest, zod v4, cheerio, Supabase/Postgres, pgTAP).
 
-**Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` (rev. 3: §4.4, §4.6, §5.0, §10, §12, §13)
+**Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` (rev. 3: §4.4, §4.6, §5.0, §10, §12, §13;
+§15.1 untuk Task 8–9)
 
 **Bergantung ke:** Plan 7 (dikerjakan lebih dulu; migrasi `0007`), Plan 1 (pipeline, `PipelineRepo`, `streamChat`, `extractWithFallback`, eval), PR #2 (circuit breaker,
 `llm_models_tripped`). Plan 5 dan 6 bergantung ke plan ini.
@@ -38,6 +39,10 @@ field yang menyamai isi airdrops.io, dan akurasi bisa diukur (eval diperluas + s
 - Tiap field hasil ekstraksi yang punya kutipan (`quote`) dibuang kalau kutipannya gak ada di teks sumber.
 - URL resmi tetap lewat aturan "URL harus ada di sumber" (`filterUrlsInSource`) dan pembersih referral (`cleanUrl`).
 - Domain dari host `airdrops.io` / `*.airdrops.io` (termasuk `bridge.airdrops.io`) gak pernah jadi domain project.
+  Sama untuk `alphadrops.net` dan host perantara di config (`s.kaito.ai`, `linktr.ee`, `galxe.com`, `app.galxe.com`,
+  `zealy.io`, `layer3.xyz`, `bit.ly`, `t.co`; cocok host persis) — Task 9.
+- Request ke alphadrops.net: User-Agent yang sama dengan collector lain, jeda ≥ 1,5 detik antar halaman detail,
+  maksimal 80 halaman detail per run.
 - Urutan model: `freellm:auto` → `nvidia:z-ai/glm-5.3-flash` → `nvidia:moonshotai/kimi-k3` →
   `nvidia:google/gemma-4-31b-it`. Streaming wajib (502 di ~30 detik tanpa streaming, di kedua provider).
 - Secret gak pernah di kode, log, atau output test. `LLM_API_KEY` boleh kosong (header `Authorization` gak dikirim).
@@ -57,6 +62,8 @@ field yang menyamai isi airdrops.io, dan akurasi bisa diukur (eval diperluas + s
 4. **crt.sh lambat, error, atau mengembalikan ribuan sertifikat** → umur domain `null` (cek dianggap gak jalan), gak
    throw, run tetap selesai. Test di Task 2.
 5. **GoPlus kena 429 beruntun** → satu retry setelah jeda, lalu `null`; angka gagalnya kelihatan di stats. Test di Task 2.
+6. **Halaman AlphaDrops berubah format atau terputus di tengah** (Next.js payload gak ketemu, connection reset) → collector
+   `failed`, dokumen yang sudah terkumpul tetap di-ingest, sumber lain jalan. Test di Task 9.
 
 ---
 
@@ -311,6 +318,7 @@ git commit -m "feat(llm): multi-provider models, freellm auto first with NVIDIA 
   - `latest_update: { text: string; date: string | null } | null` (`date` = YYYY-MM-DD kalender valid)
   - `claimed_backers: { investor: string; quote: string }[]`
   - `capital_required: "none" | "low" | "high" | "unknown"` (default `"unknown"`)
+  - `capital_min_usd: number | null` (default `null`; kalau angka harus > 0 dan finite; spec #52)
   - `tasks` tetap ada untuk kompatibilitas; `postProcess` mengisinya dari `steps[].text` kalau `tasks` kosong.
   - Helper core baru: `quoteInSource(quote: string, text: string): boolean` (bandingkan setelah whitespace dirapatkan
     dan lowercase).
@@ -324,6 +332,7 @@ git commit -m "feat(llm): multi-provider models, freellm auto first with NVIDIA 
 it("accepts v3 fields and defaults missing ones", () => {
   const p = extractionSchema.parse({ is_airdrop_content: true, projects: [minimalV2Project] }).projects[0]!;
   expect(p.steps).toEqual([]); expect(p.capital_required).toBe("unknown"); expect(p.latest_update).toBeNull();
+  expect(p.capital_min_usd).toBeNull();
 });
 it("rejects an unknown cadence and an invalid latest_update date", () => {
   expect(() => extractionSchema.parse(withSteps([{ text: "x", cadence: "hourly" }]))).toThrow();
@@ -362,6 +371,8 @@ Prompt: tambah field ke blok Schema, plus definisi:
 - `claimed_backers`: investor yang disebut teks mendukung project; `quote` = kalimat aslinya. Jangan menebak.
 - `capital_required`: `high` kalau teks menyebut deposit/modal minimal ≥ $500 atau setara, `low` kalau di bawahnya atau
   cuma gas, `none` kalau gratis, `unknown` kalau gak disebut.
+- `capital_min_usd`: angka deposit/modal minimal dalam USD kalau teks menyebutnya persis (USDC/USDT dihitung 1:1),
+  selain itu null. Jangan mengonversi dari ETH atau token lain, jangan menebak.
 Aturan untrusted-text yang ada tetap di atas aturan baru.
 
 - [ ] **Step 4: Jalankan test, pastikan lulus**
@@ -395,7 +406,8 @@ git commit -m "feat(extract): v3 schema - steps with cadence, key parameters, so
   - `ProjectInput` mendapat `steps`, `facts: { field: string; value: string; quote: string }[]`.
   - Field evidence baru (tabel `evidence` yang ada, pola hapus-lalu-tulis per dokumen seperti `status`):
     `key_parameter:<name>`, `source_rating:<name>`, `latest_update` (value = tanggal atau ""), `claimed_backer`
-    (value = nama investor), `capital_required` (value = level; gak ditulis kalau `unknown`).
+    (value = nama investor), `capital_required` (value = level; gak ditulis kalau `unknown`), `capital_min_usd`
+    (value = angka sebagai teks; gak ditulis kalau null).
   - `ProjectForScoring` mendapat `steps: { text: string; cadence: string }[]` dan `facts: { field: string; value: string; quote: string }[]`
     (dipakai Plan 5).
 
@@ -553,9 +565,95 @@ git commit -m "feat(eval): scam and legit test set for the risk engine"
 
 ---
 
+### Task 8: Seleksi DefiLlama v2 (#41)
+
+**Files:**
+- Modify: `pipeline/src/collectors/defillama.ts` (`protocolSchema`, `selectSpeculativeCandidates`), `pipeline/src/config.ts`
+- Test: `pipeline/test/defillama.test.ts`
+
+**Interfaces:**
+- `protocolSchema` mendapat `listedAt` (unix detik, nullish), `rugged` (boolean nullish), `deadFrom` (nullish),
+  `misrepresentedTokens` (boolean nullish).
+- `selectSpeculativeCandidates(protocols, opts: { minTvl: number; excludedCategories: string[]; limit: number; newWithinDays: number; now: Date })`:
+  syarat lama (tanpa `gecko_id`, `symbol === "-"`, kategori gak dikecualikan) + TVL ≥ `minTvl` + bukan `rugged`, gak ada
+  `deadFrom`, bukan `misrepresentedTokens`. Urut: `listedAt` dalam `newWithinDays` hari dulu, lalu `change7d` desc
+  (null terakhir), lalu TVL desc.
+- Config: `defillama: { minTvl: 1_000_000, excludedCategories: ["CEX"], limit: 80, newWithinDays: 180 }`.
+- `SpeculativeCandidate` mendapat `listedAt: Date | null`; teks dokumen DefiLlama menyebut tanggal listing.
+
+- [ ] **Step 1: Test yang gagal**
+
+```ts
+it("keeps young protocols above $1M and drops rugged, dead and misrepresented ones", () => {
+  const out = selectSpeculativeCandidates([proto({ name: "Young", tvl: 2e6, listedAt: daysAgo(30) }),
+    proto({ name: "Old", tvl: 5e7, listedAt: daysAgo(900), change_7d: 50 }), proto({ name: "Rug", tvl: 9e6, rugged: true }),
+    proto({ name: "Dead", tvl: 9e6, deadFrom: "2026-01-01" }), proto({ name: "Mis", tvl: 9e6, misrepresentedTokens: true }),
+    proto({ name: "Tiny", tvl: 9e5 })], { ...opts, now: NOW });
+  expect(out.map((c) => c.name)).toEqual(["Young", "Old"]);
+});
+it("caps at the limit", () => { /* 100 eligible → 80 */ });
+```
+
+- [ ] **Step 2–4:** gagal → implementasi → `pnpm --filter pipeline exec vitest run && pnpm -r typecheck` lulus.
+- [ ] **Step 5: Commit** — `git commit -m "feat(collect): DefiLlama v2 selection (young protocols, $1M floor, drop rugged/dead)"`
+
+---
+
+### Task 9: Collector AlphaDrops (#41)
+
+**Files:**
+- Create: `pipeline/src/collectors/alphadrops.ts`, `pipeline/test/fixtures/alphadrops-listing.html`,
+  `pipeline/test/fixtures/alphadrops-detail.html` (dipotong dari halaman asli; cuma data publik)
+- Modify: `pipeline/src/collectors/types.ts` (`SourceKind` + `"alphadrops"`), `pipeline/src/steps/collect.ts`,
+  `pipeline/src/config.ts`, pemeriksa host non-project yang sekarang menolak `airdrops.io` (cari `airdrops.io` di
+  `pipeline/src/steps/merge.ts` dan `packages/core/src`), `supabase/migrations/0009_extraction_v3.sql` (check
+  `documents.source_kind` + `'alphadrops'`)
+- Test: `pipeline/test/alphadrops.test.ts`, `pipeline/test/run.test.ts`, `supabase/tests/extraction_v3.test.sql`
+
+**Interfaces:**
+- `parseAlphaListing(html: string): AlphaItem[]` — gabungkan string dari semua `self.__next_f.push([1,"…"])`, ambil
+  objek JSON yang punya `slug` dan `fundingAmount`, dedupe per `slug`. `AlphaItem = { name; slug; status; shortDescription;
+  description; categories: string[]; blockchains: string[]; fundingAmount: string | null; website: string | null;
+  hasPoints: boolean; claimDeadline: string | null; addedDate: string }`. Nilai `"$undefined"`, `""`, `"NA"`, `"—"` →
+  `null`; `"$$30M"` → `"$30M"` (teks apa adanya, gak diparse jadi angka).
+- `parseAlphaDetail(html: string): string` — teks konten utama (deskripsi, "Airdrop tasks", "Deep dive strategy") lewat
+  `normalizeText`, tanpa blok "Learn more"/iklan/"Other airdrop opportunities".
+- `resolveWebsite(http, raw: string, intermediaryHosts: string[]): Promise<string | null>` — `cleanUrl`, ikuti
+  `resolveRedirect` maks. 3 kali; host akhir `alphadrops.net` atau persis ada di `intermediaryHosts` → `null`.
+- `collectAlphaDrops(http, now, opts: { maxDetails: number; delayMs: number; intermediaryHosts: string[] }): Promise<CollectorResult>`
+  — status `active`/`upcoming`/`claimable` saja; satu dokumen per item: `url = https://alphadrops.net/airdrops/<slug>`,
+  `sourceKey = "alphadrops"`, `publishedAt = addedDate`, teks:
+  `Name: …\nStatus (AlphaDrops): …\nCategories: …\nChains: …\nFunding (reported by AlphaDrops): …\nWebsite: <url>\n\n<detail>`
+  (baris Website dihilangkan kalau `resolveWebsite` null). Detail gagal diambil → dokumen tetap dibuat dari listing.
+  Hash dokumen yang ada mencegah ekstraksi ulang kalau isinya sama.
+- Config: `alphadrops: { enabled: true, maxDetails: 80, delayMs: 1500, intermediaryHosts: [ ...daftar Global Constraints ] }`.
+
+- [ ] **Step 1: Test yang gagal**
+
+```ts
+it("parses listing items from the Next.js payload", () => {
+  const items = parseAlphaListing(LISTING);
+  expect(items.find((i) => i.slug === "catalyst")).toMatchObject({ status: "upcoming", fundingAmount: "$30M", website: "https://catalyst.app/?r=gVe0u" });
+});
+it("strips the referral and drops intermediary hosts", async () => {
+  expect(await resolveWebsite(fakeHttp({}), "https://catalyst.app/?r=gVe0u", HOSTS)).toBe("https://catalyst.app/");
+  expect(await resolveWebsite(fakeHttp({ "https://s.kaito.ai/x": null }), "https://s.kaito.ai/x", HOSTS)).toBeNull();
+  expect(await resolveWebsite(fakeHttp({}), "https://kaito.ai/", HOSTS)).toBe("https://kaito.ai/");
+});
+it("skips ended items and keeps listing-only documents when a detail page fails", async () => { /* detail 500 → doc tanpa detail */ });
+it("reports failed when the payload is missing", async () => { expect((await collectAlphaDrops(fakeHttp({ listing: "<html></html>" }), NOW, OPTS)).failed).toBe(true); });
+// run.test.ts: an alphadrops document never yields alphadrops.net as an official domain
+```
+
+- [ ] **Step 2–4:** gagal → implementasi → `pnpm --filter pipeline exec vitest run && pnpm -r typecheck && npx -y supabase@2.120.0 db reset && npx -y supabase@2.120.0 test db` lulus.
+- [ ] **Step 5: Commit** — `git commit -m "feat(collect): AlphaDrops collector with referral stripping and intermediary-host filter"`
+
+---
+
 ## Selesai kalau
 
 - Semua test (`pnpm -r test`), typecheck, pgTAP, dan e2e lulus.
+- Run produksi: dokumen `alphadrops` masuk (`docs_collected` naik), kandidat DefiLlama sampai 80.
 - Run produksi pertama setelah merge: `projects_with_official_domain` naik jauh dari 7 (target spec §5.0: ≥ 80% project
   live/announced teks), `domain_age_ran` dan `phishing_list_ran` dilaporkan, `extractions.served_model` terisi.
 - Angka eval dan set uji scam tercatat di spec §12.

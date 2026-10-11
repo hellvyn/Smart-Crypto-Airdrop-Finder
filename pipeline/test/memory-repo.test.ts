@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { RiskAssessment } from "@saf/core";
+import type { CurationRecord, NewSignal, RiskAssessment } from "@saf/core";
 import type { CollectedDocument } from "../src/collectors/types.js";
 import { MemoryRepo } from "../src/store/memory-repo.js";
-import type { NewProject } from "../src/store/repo.js";
+import type { NewAiAnalysis, NewProject } from "../src/store/repo.js";
 
 const T0 = new Date("2026-10-10T00:00:00Z");
 const daysBefore = (d: Date, n: number) => new Date(d.getTime() - n * 86_400_000);
@@ -161,11 +161,16 @@ describe("MemoryRepo documents", () => {
     const d = await repo.upsertDocument(doc(), "h");
     await repo.saveExtraction(
       d.id,
-      { model: "m", httpStatus: 200, finishReason: "stop", latencyMs: 12, error: null, raw: "{}" },
+      { model: "freellm:auto", servedModel: "gpt-oss:120b", httpStatus: 200, finishReason: "stop", latencyMs: 12, error: null, raw: "{}" },
       "v1",
     );
     expect(repo.extractions).toHaveLength(1);
-    expect(repo.extractions[0]).toMatchObject({ documentId: d.id, promptVersion: "v1", model: "m" });
+    expect(repo.extractions[0]).toMatchObject({
+      documentId: d.id,
+      promptVersion: "v1",
+      model: "freellm:auto",
+      servedModel: "gpt-oss:120b",
+    });
   });
 });
 
@@ -278,9 +283,12 @@ describe("MemoryRepo projects", () => {
     const p = await repo.createProject(project(), T0);
     const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
     const d2 = await repo.upsertDocument(doc({ url: "https://x.test/2" }), "2");
-    await repo.replaceTasks(p.id, d1.id, ["Bridge", "Swap"]);
-    await repo.replaceTasks(p.id, d2.id, ["Stake"]);
-    await repo.replaceTasks(p.id, d1.id, ["Bridge only"]);
+    await repo.replaceTasks(p.id, d1.id, [
+      { text: "Bridge", cadence: "once" },
+      { text: "Swap", cadence: "daily" },
+    ]);
+    await repo.replaceTasks(p.id, d2.id, [{ text: "Stake", cadence: "weekly" }]);
+    await repo.replaceTasks(p.id, d1.id, [{ text: "Bridge only", cadence: "once" }]);
     await repo.upsertLinks(p.id, [{ url: "https://ink.test/", kind: "website", referralStripped: false }]);
     await repo.upsertLinks(p.id, [{ url: "https://ink.test/", kind: "claim", referralStripped: true }]);
     await repo.replaceDeadlines(p.id, d1.id, [
@@ -290,7 +298,108 @@ describe("MemoryRepo projects", () => {
     expect(repo.deadlines).toHaveLength(0);
     const [scored] = await repo.listProjectsForScoring(30, T0);
     expect(scored?.tasks.sort()).toEqual(["Bridge only", "Stake"]);
+    expect(scored?.steps).toHaveLength(2);
+    expect(scored?.steps).toEqual(
+      expect.arrayContaining([
+        { text: "Bridge only", cadence: "once" },
+        { text: "Stake", cadence: "weekly" },
+      ]),
+    );
     expect(scored?.links).toEqual([{ url: "https://ink.test/", kind: "claim" }]);
+  });
+
+  it("lists a document's steps in position order with their cadence", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    await repo.replaceTasks(p.id, d1.id, [
+      { text: "Check in", cadence: "daily" },
+      { text: "Bridge", cadence: "once" },
+      { text: "Vote", cadence: "weekly" },
+    ]);
+    const [scored] = await repo.listProjectsForScoring(30, T0);
+    expect(scored?.steps).toEqual([
+      { text: "Check in", cadence: "daily" },
+      { text: "Bridge", cadence: "once" },
+      { text: "Vote", cadence: "weekly" },
+    ]);
+    expect(scored?.tasks).toEqual(["Check in", "Bridge", "Vote"]);
+  });
+
+  it("stores Indonesian step texts on the project's tasks in step order when the counts match", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const other = await repo.createProject(project({ slug: "blast", name: "Blast", nameKey: "blast" }), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    const d2 = await repo.upsertDocument(doc({ url: "https://x.test/2" }), "2");
+    // Step order is (document id, position), whatever the order the documents were stored in.
+    const [first, second] = [d1, d2].sort((a, b) => (a.id < b.id ? -1 : 1));
+    await repo.replaceTasks(p.id, second!.id, [{ text: "Stake", cadence: "weekly" }]);
+    await repo.replaceTasks(p.id, first!.id, [
+      { text: "Bridge", cadence: "once" },
+      { text: "Swap", cadence: "daily" },
+    ]);
+    await repo.replaceTasks(other.id, first!.id, [{ text: "Deposit", cadence: "once" }]);
+    expect(repo.stepTextIds(p.id)).toEqual([null, null, null]);
+
+    await repo.saveStepTranslations(p.id, ["Bridge dulu", "Swap tiap hari", "Stake tiap minggu"]);
+
+    expect(repo.stepTextIds(p.id)).toEqual(["Bridge dulu", "Swap tiap hari", "Stake tiap minggu"]);
+    expect(repo.stepTextIds(other.id)).toEqual([null]);
+  });
+
+  it("leaves step texts alone when the number of translations differs from the project's tasks", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    await repo.replaceTasks(p.id, d1.id, [
+      { text: "Bridge", cadence: "once" },
+      { text: "Swap", cadence: "daily" },
+    ]);
+    await repo.saveStepTranslations(p.id, ["Bridge dulu", "Swap tiap hari"]);
+
+    await repo.saveStepTranslations(p.id, ["Bridge dulu"]);
+    await repo.saveStepTranslations(p.id, ["Bridge", "Swap", "Stake"]);
+
+    expect(repo.stepTextIds(p.id)).toEqual(["Bridge dulu", "Swap tiap hari"]);
+  });
+
+  it("drops the step texts of a document whose steps are replaced", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    await repo.replaceTasks(p.id, d1.id, [{ text: "Bridge", cadence: "once" }]);
+    await repo.saveStepTranslations(p.id, ["Bridge dulu"]);
+
+    await repo.replaceTasks(p.id, d1.id, [{ text: "Bridge", cadence: "once" }]);
+
+    expect(repo.stepTextIds(p.id)).toEqual([null]);
+  });
+
+  it("returns v3 fact evidence as facts in insertion order, without status or ask evidence", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const d1 = await repo.upsertDocument(doc({ url: "https://x.test/1" }), "1");
+    const add = (field: string, value: string, quote: string) =>
+      repo.addEvidence({ projectId: p.id, documentId: d1.id, field, value, quote, at: T0 });
+    await add("status", "live", "Ink airdrop is live");
+    await add("claimed_backer", "Paradigm", "Backed by Paradigm.");
+    await add("dangerous_ask", "asks_secret", "Enter your seed phrase.");
+    await add("key_parameter:allocation", "5%", "5% of supply.");
+    await add("source_rating:cost", "$0", "Cost to earn: $0");
+    await add("latest_update", "", "New quests added.");
+    await add("capital_required", "low", "");
+    await add("capital_min_usd", "50", "");
+    await add("defillama_listing", "speculative", "TVL");
+    const [scored] = await repo.listProjectsForScoring(30, T0);
+    expect(scored?.facts).toEqual([
+      { field: "claimed_backer", value: "Paradigm", quote: "Backed by Paradigm." },
+      { field: "key_parameter:allocation", value: "5%", quote: "5% of supply." },
+      { field: "source_rating:cost", value: "$0", quote: "Cost to earn: $0" },
+      { field: "latest_update", value: "", quote: "New quests added." },
+      { field: "capital_required", value: "low", quote: "" },
+      { field: "capital_min_usd", value: "50", quote: "" },
+    ]);
   });
 
   it("scores only recently seen projects and counts distinct evidence source keys", async () => {
@@ -344,6 +453,64 @@ describe("MemoryRepo scoring extras", () => {
   });
 });
 
+describe("MemoryRepo source kinds", () => {
+  it("lists the distinct source kinds of the project's evidence documents, sorted", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const other = await repo.createProject(project({ slug: "other", nameKey: "other", name: "Other" }), T0);
+    const tg = await repo.upsertDocument(
+      doc({ sourceKind: "telegram", sourceKey: "telegram:chan", url: "https://t.me/chan/1" }),
+      "t1",
+    );
+    const a1 = await repo.upsertDocument(doc({ url: "https://airdrops.io/a1/" }), "a1");
+    const a2 = await repo.upsertDocument(doc({ url: "https://airdrops.io/a2/" }), "a2");
+    const alpha = await repo.upsertDocument(
+      doc({ sourceKind: "alphadrops", sourceKey: "alphadrops", url: "https://alphadrops.net/airdrops/x" }),
+      "x",
+    );
+    for (const d of [tg, a1, a2]) {
+      await repo.addEvidence({ projectId: p.id, documentId: d.id, field: "status", value: "live", quote: "q", at: T0 });
+    }
+    // Another project's document is not this project's source.
+    await repo.addEvidence({ projectId: other.id, documentId: alpha.id, field: "status", value: "live", quote: "q", at: T0 });
+    const byId = new Map((await repo.listProjectsForScoring(30, T0)).map((s) => [s.id, s]));
+    expect(byId.get(p.id)?.sourceKinds).toEqual(["airdrops_io", "telegram"]);
+    expect(byId.get(other.id)?.sourceKinds).toEqual(["alphadrops"]);
+  });
+
+  it("is empty for a project without evidence", async () => {
+    const repo = new MemoryRepo();
+    await repo.createProject(project(), T0);
+    const [scored] = await repo.listProjectsForScoring(30, T0);
+    expect(scored?.sourceKinds).toEqual([]);
+  });
+});
+
+describe("MemoryRepo project source texts", () => {
+  it("lists each unpurged document that gave the project evidence once, by url", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const other = await repo.createProject(project({ slug: "ink-2" }), T0);
+    const b = await repo.upsertDocument(doc({ url: "https://x.test/b", text: "Text B" }), "b");
+    const a = await repo.upsertDocument(doc({ url: "https://x.test/a", text: "Text A" }), "a");
+    const old = await repo.upsertDocument(doc({ url: "https://x.test/old", text: "Old", fetchedAt: daysBefore(T0, 100) }), "o");
+    const elsewhere = await repo.upsertDocument(doc({ url: "https://x.test/elsewhere", text: "Other" }), "e");
+    const evidence = (projectId: string, documentId: string, field: string) =>
+      repo.addEvidence({ projectId, documentId, field, value: "v", quote: "q", at: T0 });
+    await evidence(p.id, b.id, "status");
+    await evidence(p.id, b.id, "claimed_backer");
+    await evidence(p.id, a.id, "status");
+    await evidence(p.id, old.id, "status");
+    await evidence(other.id, elsewhere.id, "status");
+    await repo.purgeDocumentText(90, T0);
+
+    expect(await repo.listProjectSourceTexts(p.id)).toEqual([
+      { url: "https://x.test/a", text: "Text A" },
+      { url: "https://x.test/b", text: "Text B" },
+    ]);
+  });
+});
+
 describe("MemoryRepo risk and runs", () => {
   it("writes project_changes for the first assessment and for level changes only", async () => {
     const repo = new MemoryRepo();
@@ -383,5 +550,406 @@ describe("MemoryRepo risk and runs", () => {
     const end = new Date(T0.getTime() + 60_000);
     await repo.finishRun(id, { documents: 12, sourceFailed: 1 }, end);
     expect(repo.runs).toEqual([{ id, startedAt: T0, finishedAt: end, stats: { documents: 12, sourceFailed: 1 } }]);
+  });
+});
+
+function curation(overrides: Partial<CurationRecord> = {}): CurationRecord {
+  return {
+    passed: true,
+    worthLevel: "medium",
+    worthPoints: 2,
+    tab: "live_now",
+    statusAt: "live",
+    endedOn: null,
+    reasons: [{ code: "official_domain", message: "Domain resmi tercatat", kind: "pass" }],
+    coverage: { defillama: true },
+    coingeckoListed: false,
+    ...overrides,
+  };
+}
+
+const failed = (overrides: Partial<CurationRecord> = {}): CurationRecord =>
+  curation({ passed: false, worthLevel: null, worthPoints: null, tab: null, reasons: [], ...overrides });
+
+describe("MemoryRepo curations", () => {
+  const t = (n: number) => new Date(T0.getTime() + n * 1000);
+
+  it("writes a curated change for the first passing curation and for passed flips only", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    await repo.saveCuration(p.id, curation(), t(1));
+    await repo.saveCuration(p.id, curation(), t(2));
+    await repo.saveCuration(p.id, failed(), t(3));
+    await repo.saveCuration(p.id, failed(), t(4));
+    expect(repo.projectChanges).toEqual([
+      { projectId: p.id, field: "curated", oldValue: null, newValue: "true", changedAt: t(1) },
+      { projectId: p.id, field: "curated", oldValue: "true", newValue: "false", changedAt: t(3) },
+    ]);
+    expect(repo.curations).toHaveLength(4);
+  });
+
+  it("writes no curated change when the first curation fails", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    await repo.saveCuration(p.id, failed(), t(1));
+    expect(repo.projectChanges).toEqual([]);
+    await repo.saveCuration(p.id, curation(), t(2));
+    expect(repo.projectChanges).toEqual([
+      { projectId: p.id, field: "curated", oldValue: "false", newValue: "true", changedAt: t(2) },
+    ]);
+  });
+
+  it("stores the first fail message as the public fail reason, and null for a passing curation", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    await repo.saveCuration(
+      p.id,
+      failed({
+        reasons: [
+          { code: "official_domain", message: "Domain resmi tercatat", kind: "pass" },
+          { code: "insufficient_checks", message: "Cek kunci belum lengkap", kind: "fail" },
+          { code: "risk_high", message: "Risiko tinggi", kind: "fail" },
+        ],
+      }),
+      t(1),
+    );
+    await repo.saveCuration(
+      p.id,
+      curation({ reasons: [{ code: "tvl_high", message: "TVL di atas $100 juta", kind: "worth" }] }),
+      t(2),
+    );
+    expect(repo.curations.map((c) => c.publicFailReason)).toEqual(["Cek kunci belum lengkap", null]);
+    expect(repo.curations[1]).toEqual({
+      projectId: p.id,
+      passed: true,
+      worthLevel: "medium",
+      worthPoints: 2,
+      tab: "live_now",
+      statusAt: "live",
+      endedOn: null,
+      reasons: [{ code: "tvl_high", message: "TVL di atas $100 juta", kind: "worth" }],
+      coverage: { defillama: true },
+      coingeckoListed: false,
+      publicFailReason: null,
+      computedAt: t(2),
+    });
+  });
+
+  it("lists the track record history of every project that ever passed", async () => {
+    const repo = new MemoryRepo();
+    const ended = await repo.createProject(project(), T0);
+    const dropped = await repo.createProject(project({ slug: "dropped", name: "Dropped", nameKey: "dropped" }), T0);
+    const never = await repo.createProject(project({ slug: "never", name: "Never", nameKey: "never" }), T0);
+    // Two passing rows at the same time: the earlier insert is the first pass.
+    await repo.saveCuration(ended.id, curation({ coingeckoListed: false }), t(1));
+    await repo.saveCuration(ended.id, curation({ coingeckoListed: true }), t(1));
+    await repo.saveRiskAssessment(ended.id, assessment("high"), t(2));
+    await repo.saveCuration(ended.id, curation({ statusAt: "ended", tab: "ended", endedOn: "2026-10-05" }), t(3));
+    await repo.replaceSignals(ended.id, [{ kind: "coingecko_listed", value: { gecko_id: "x" }, source: "defillama", verified: true }], t(3));
+    // High risk only on the run of the first pass, then dropped out: not raised after the pass, no tab now.
+    await repo.saveRiskAssessment(dropped.id, assessment("critical"), t(1));
+    await repo.saveCuration(dropped.id, curation({ coingeckoListed: null }), t(1));
+    await repo.saveCuration(dropped.id, failed(), t(2));
+    await repo.saveCuration(never.id, failed(), t(1));
+
+    const history = await repo.listCurationHistoryForTrackRecord();
+
+    expect(history).toHaveLength(2);
+    expect(history).toContainEqual({
+      projectId: ended.id,
+      firstPassAt: t(1).toISOString(),
+      listedAtFirstPass: false,
+      tab: "ended",
+      coingeckoListed: true,
+      riskRaisedAfterPass: true,
+    });
+    expect(history).toContainEqual({
+      projectId: dropped.id,
+      firstPassAt: t(1).toISOString(),
+      listedAtFirstPass: null,
+      tab: null,
+      coingeckoListed: false,
+      riskRaisedAfterPass: false,
+    });
+  });
+
+  it("never shows a public fail reason for a passing curation", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    await repo.saveCuration(
+      p.id,
+      curation({ reasons: [{ code: "tvl_low", message: "TVL kecil", kind: "fail" }] }),
+      t(1),
+    );
+    expect(repo.curations.map((c) => c.publicFailReason)).toEqual([null]);
+  });
+
+  it("returns the latest curation by computed_at, with insertion order breaking ties", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    expect(await repo.latestCuration(p.id)).toBeNull();
+    await repo.saveCuration(p.id, curation({ statusAt: "ended", tab: "ended", endedOn: "2026-10-05" }), t(5));
+    await repo.saveCuration(p.id, failed(), t(1));
+    expect(await repo.latestCuration(p.id)).toEqual({ passed: true, endedOn: "2026-10-05" });
+    await repo.saveCuration(p.id, failed(), t(5));
+    expect(await repo.latestCuration(p.id)).toEqual({ passed: false, endedOn: null });
+  });
+
+  it("passedBeforeEnd is true when the latest curation before the project ended passed", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    await repo.saveCuration(p.id, curation({ statusAt: "live" }), t(1));
+    await repo.saveCuration(p.id, curation({ statusAt: "ended", tab: "ended", endedOn: "2026-10-05" }), t(2));
+    expect(await repo.passedBeforeEnd(p.id)).toBe(true);
+  });
+
+  it("passedBeforeEnd is false with only ended curations, or none", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    expect(await repo.passedBeforeEnd(p.id)).toBe(false);
+    await repo.saveCuration(p.id, curation({ statusAt: "ended", tab: "ended", endedOn: "2026-10-05" }), t(1));
+    expect(await repo.passedBeforeEnd(p.id)).toBe(false);
+  });
+
+  it("keeps scoring an open project seen before the window while its latest curation passed within the window", async () => {
+    const repo = new MemoryRepo();
+    const listed = await repo.createProject(project(), daysBefore(T0, 40));
+    const dropped = await repo.createProject(project({ slug: "drop", nameKey: "drop", name: "Drop" }), daysBefore(T0, 40));
+    const stale = await repo.createProject(project({ slug: "stale", nameKey: "stale", name: "Stale" }), daysBefore(T0, 40));
+    await repo.saveCuration(listed.id, curation(), daysBefore(T0, 1));
+    await repo.saveCuration(dropped.id, curation(), daysBefore(T0, 2));
+    await repo.saveCuration(dropped.id, failed(), daysBefore(T0, 1));
+    // Its last passing curation is older than the window (no run for that long): not a candidate any more.
+    await repo.saveCuration(stale.id, curation(), daysBefore(T0, 31));
+
+    const scored = await repo.listProjectsForScoring(30, T0);
+
+    expect(scored.map((p) => p.slug)).toEqual(["ink"]);
+  });
+
+  it("passedBeforeEnd follows the latest curation before the end, not any earlier pass", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    await repo.saveCuration(p.id, curation({ statusAt: "live" }), t(1));
+    await repo.saveCuration(p.id, failed({ statusAt: "live" }), t(2));
+    await repo.saveCuration(p.id, failed({ statusAt: "ended", endedOn: "2026-10-05" }), t(3));
+    expect(await repo.passedBeforeEnd(p.id)).toBe(false);
+  });
+});
+
+describe("MemoryRepo signals", () => {
+  const tvl: NewSignal = { kind: "tvl", value: { tvl_usd: 25_000_000 }, source: "defillama", verified: true };
+  const paradigm: NewSignal = {
+    kind: "vc_backer",
+    value: { investor: "Paradigm", tier: 1 },
+    source: "vc_portfolio",
+    verified: true,
+  };
+
+  it("replaces every signal of the project and leaves other projects alone", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const other = await repo.createProject(project({ slug: "blast", name: "Blast", nameKey: "blast" }), T0);
+    await repo.replaceSignals(p.id, [tvl, paradigm], T0);
+    await repo.replaceSignals(other.id, [tvl], T0);
+    const later = new Date(T0.getTime() + 86_400_000);
+    const curated: NewSignal = {
+      kind: "curated_source",
+      value: { source_kind: "airdrops_io" },
+      source: "airdrops_io",
+      verified: true,
+    };
+    await repo.replaceSignals(p.id, [curated], later);
+    expect(repo.signals).toEqual([
+      { projectId: other.id, ...tvl, observedAt: T0 },
+      { projectId: p.id, ...curated, observedAt: later },
+    ]);
+    await repo.replaceSignals(p.id, [], later);
+    expect(repo.signals.map((s) => s.projectId)).toEqual([other.id]);
+  });
+
+  it("keeps the project's signals from the kept sources, with their own observation time", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const curated: NewSignal = { kind: "curated_source", value: {}, source: "airdrops_io", verified: false };
+    await repo.replaceSignals(p.id, [tvl, paradigm, curated], T0);
+    const later = new Date(T0.getTime() + 86_400_000);
+    const telegram: NewSignal = { kind: "curated_source", value: {}, source: "telegram", verified: false };
+
+    await repo.replaceSignals(p.id, [telegram], later, ["defillama"]);
+
+    expect(repo.signals).toEqual([
+      { projectId: p.id, ...tvl, observedAt: T0 },
+      { projectId: p.id, ...telegram, observedAt: later },
+    ]);
+    // A new signal that repeats a kept one breaks the unique index.
+    await expect(repo.replaceSignals(p.id, [tvl], later, ["defillama"])).rejects.toThrow("duplicate signal");
+  });
+
+  it("keeps only the kept investors' signals of a source kept by investor", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const variant: NewSignal = { ...paradigm, value: { investor: "Variant", tier: 2 } };
+    const claim: NewSignal = { kind: "claimed_backer", value: { investor: "Variant", quote: "q" }, source: "llm_text", verified: false };
+    const noInvestor: NewSignal = { ...paradigm, value: { tier: 1 } };
+    await repo.replaceSignals(p.id, [tvl, paradigm, variant, claim, noInvestor], T0);
+    const later = new Date(T0.getTime() + 86_400_000);
+
+    await repo.replaceSignals(p.id, [], later, [{ source: "vc_portfolio", investor: "Variant" }]);
+
+    // The kept investor counts for its source only: Variant's claimed backer (llm_text) is replaced like the rest,
+    // and so is a signal of the source without an investor.
+    expect(repo.signals).toEqual([{ projectId: p.id, ...variant, observedAt: T0 }]);
+  });
+
+  it("keeps only the kept kind's signals of a source kept by kind", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const reported: NewSignal = { kind: "reported_backer", value: { investor: "Paradigm" }, source: "alphadrops", verified: false };
+    const curated: NewSignal = { kind: "curated_source", value: { source_kind: "alphadrops" }, source: "alphadrops", verified: false };
+    const claim: NewSignal = { kind: "claimed_backer", value: { investor: "Paradigm", quote: "q" }, source: "llm_text", verified: false };
+    await repo.replaceSignals(p.id, [reported, curated, claim], T0);
+    const later = new Date(T0.getTime() + 86_400_000);
+
+    await repo.replaceSignals(p.id, [curated], later, [{ source: "alphadrops", kind: "reported_backer" }]);
+
+    expect(repo.signals).toEqual([
+      { projectId: p.id, ...reported, observedAt: T0 },
+      { projectId: p.id, ...curated, observedAt: later },
+    ]);
+  });
+
+  it("accepts one kind from two sources but rejects a duplicate (kind, source, investor), like the unique index", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const fromAirdrops: NewSignal = { kind: "curated_source", value: {}, source: "airdrops_io", verified: true };
+    const fromAlphadrops: NewSignal = { kind: "curated_source", value: {}, source: "alphadrops", verified: true };
+    await repo.replaceSignals(p.id, [fromAirdrops, fromAlphadrops], T0);
+    expect(repo.signals).toHaveLength(2);
+    await expect(
+      repo.replaceSignals(p.id, [paradigm, { ...paradigm, value: { investor: "Paradigm", tier: 2 } }], T0),
+    ).rejects.toThrow("duplicate signal");
+    // Like SupabaseRepo (delete, then a refused insert), a refused replace leaves the project without signals.
+    expect(repo.signals).toEqual([]);
+  });
+
+  it("rejects a verified claimed or reported backer, like the check constraint", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    for (const kind of ["claimed_backer", "reported_backer"] as const) {
+      await expect(
+        repo.replaceSignals(p.id, [{ kind, value: { investor: "a16z" }, source: "llm_text", verified: true }], T0),
+      ).rejects.toThrow("verified backer claim");
+    }
+  });
+});
+
+describe("MemoryRepo VC portfolios and AI analyses", () => {
+  it("replaces a VC's cached domains and reports when they were fetched", async () => {
+    const repo = new MemoryRepo();
+    expect(await repo.listVcPortfolio("paradigm")).toEqual({ domains: [], fetchedAt: null });
+    await repo.saveVcPortfolio("paradigm", ["inkonchain.com", "blast.io"], T0);
+    await repo.saveVcPortfolio("a16z", ["eigenlayer.xyz"], T0);
+    const later = new Date(T0.getTime() + 7 * 86_400_000);
+    await repo.saveVcPortfolio("paradigm", ["zora.co", "blast.io"], later);
+    expect(await repo.listVcPortfolio("paradigm")).toEqual({ domains: ["blast.io", "zora.co"], fetchedAt: later });
+    expect(await repo.listVcPortfolio("a16z")).toEqual({ domains: ["eigenlayer.xyz"], fetchedAt: T0 });
+  });
+
+  it("caches one AlphaDrops raise page per slug, a later save replacing it", async () => {
+    const repo = new MemoryRepo();
+    const seed = { round: "Seed", date: "2026-01-02", amountUsd: 5_000_000, lead: ["Paradigm"], others: ["Variant"], sourceUrl: null };
+    expect(await repo.listAlphaRaise("catalyst")).toBeNull();
+    await repo.saveAlphaRaise("catalyst", { officialDomain: "catalyst.app", rounds: [seed] }, T0);
+    await repo.saveAlphaRaise("meanwhile", { officialDomain: null, rounds: [] }, T0);
+    const later = new Date(T0.getTime() + 8 * 86_400_000);
+    await repo.saveAlphaRaise("catalyst", { officialDomain: "catalyst.xyz", rounds: [seed, { ...seed, round: "Series A" }] }, later);
+
+    expect(await repo.listAlphaRaise("catalyst")).toEqual({
+      officialDomain: "catalyst.xyz",
+      rounds: [seed, { ...seed, round: "Series A" }],
+      fetchedAt: later,
+    });
+    expect(await repo.listAlphaRaise("meanwhile")).toEqual({ officialDomain: null, rounds: [], fetchedAt: T0 });
+  });
+
+  it("stores a domain listed twice on a portfolio page once (vc_id, domain is the primary key)", async () => {
+    const repo = new MemoryRepo();
+    await repo.saveVcPortfolio("paradigm", ["blast.io", "zora.co", "blast.io"], T0);
+    expect((await repo.listVcPortfolio("paradigm")).domains).toEqual(["blast.io", "zora.co"]);
+  });
+
+  it("returns the latest analysis of one kind for one project", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const analysis = (overrides: Partial<NewAiAnalysis>): NewAiAnalysis => ({
+      projectId: p.id,
+      kind: "analyst",
+      inputHash: "h1",
+      result: { verdict: "pantau" },
+      model: "router:auto",
+      servedModel: null,
+      promptVersion: "analyst-1",
+      createdAt: T0,
+      ...overrides,
+    });
+    const at = (ms: number) => new Date(T0.getTime() + ms);
+    expect(await repo.latestAiAnalysis(p.id, "analyst")).toBeNull();
+    await repo.saveAiAnalysis(analysis({ inputHash: "h2", createdAt: at(2000) }));
+    await repo.saveAiAnalysis(analysis({ inputHash: "h1", createdAt: at(1000) }));
+    await repo.saveAiAnalysis(analysis({ kind: "scam", inputHash: "s1", createdAt: at(3000) }));
+    expect(await repo.latestAiAnalysis(p.id, "analyst")).toEqual(analysis({ inputHash: "h2", createdAt: at(2000) }));
+    expect((await repo.latestAiAnalysis(p.id, "scam"))?.inputHash).toBe("s1");
+    expect(await repo.latestAiAnalysis(p.id, "contradictions")).toBeNull();
+    // Equal created_at: the later insert wins.
+    await repo.saveAiAnalysis(analysis({ inputHash: "h3", servedModel: "gpt-oss:120b", createdAt: at(2000) }));
+    expect(await repo.latestAiAnalysis(p.id, "analyst")).toMatchObject({ inputHash: "h3", servedModel: "gpt-oss:120b" });
+  });
+});
+
+describe("MemoryRepo link checks and claim pages", () => {
+  it("keeps one link check per URL, a later save replacing it, and lists only the asked URLs", async () => {
+    const repo = new MemoryRepo();
+    const later = new Date(T0.getTime() + 86_400_000);
+    await repo.saveLinkCheck("https://claim.ink.xyz/", "unchecked", T0);
+    await repo.saveLinkCheck("https://ink-claim.io/", "different_domain", T0);
+    await repo.saveLinkCheck("https://claim.ink.xyz/", "official", later);
+
+    expect(await repo.listLinkChecks(["https://ink-claim.io/", "https://claim.ink.xyz/", "https://never.io/"])).toEqual([
+      { url: "https://claim.ink.xyz/", status: "official", checkedAt: later },
+      { url: "https://ink-claim.io/", status: "different_domain", checkedAt: T0 },
+    ]);
+    expect(await repo.listLinkChecks(["https://ink-claim.io/"])).toEqual([
+      { url: "https://ink-claim.io/", status: "different_domain", checkedAt: T0 },
+    ]);
+    expect(await repo.listLinkChecks([])).toEqual([]);
+  });
+
+  it("caches one claim page text per URL, a later save replacing it", async () => {
+    const repo = new MemoryRepo();
+    const later = new Date(T0.getTime() + 8 * 86_400_000);
+    await repo.saveClaimPage("https://claim.ink.xyz/", "Claim your INK", T0);
+    await repo.saveClaimPage("https://app.ink.xyz/", "", T0);
+    await repo.saveClaimPage("https://claim.ink.xyz/", "Claim closed", later);
+
+    expect(await repo.listClaimPages(["https://claim.ink.xyz/", "https://app.ink.xyz/", "https://never.io/"])).toEqual([
+      { url: "https://app.ink.xyz/", text: "", fetchedAt: T0 },
+      { url: "https://claim.ink.xyz/", text: "Claim closed", fetchedAt: later },
+    ]);
+    expect(await repo.listClaimPages([])).toEqual([]);
+  });
+});
+
+describe("MemoryRepo.countOfficialDomains", () => {
+  it("counts each official domain of every project once, ignoring case", async () => {
+    const repo = new MemoryRepo();
+    await repo.createProject(project({ slug: "a", nameKey: "a", officialDomains: ["inkonchain.com", "ink.xyz"] }), T0);
+    await repo.createProject(project({ slug: "b", nameKey: "b", officialDomains: ["InkOnChain.com"] }), T0);
+    await repo.createProject(project({ slug: "c", nameKey: "c", officialDomains: [] }), T0);
+    expect(await repo.countOfficialDomains()).toBe(2);
+  });
+
+  it("is 0 without a project", async () => {
+    expect(await new MemoryRepo().countOfficialDomains()).toBe(0);
   });
 });

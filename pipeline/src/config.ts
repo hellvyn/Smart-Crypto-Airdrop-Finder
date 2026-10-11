@@ -1,10 +1,42 @@
 import type { ModelConfig } from "./llm/nvidia.js";
 
+/** A VC whose portfolio page is cross-checked for `vc_backer` (curation spec §5.2). */
+export interface VcConfig {
+  id: string;
+  name: string;
+  /** Other names the VC goes by (a former name, a short form). */
+  aliases: string[];
+  tier: 1 | 2;
+  portfolioUrl: string;
+}
+
 export interface PipelineConfig {
   telegramChannels: string[];
-  defillama: { minTvl: number; excludedCategories: string[]; limit: number };
+  defillama: { minTvl: number; excludedCategories: string[]; limit: number; newWithinDays: number };
+  /**
+   * AlphaDrops collector (curation spec §15.1): at most `maxDetails` detail pages per run, `delayMs` apart.
+   * `intermediaryHosts` (exact host match) are never a project's domain: the collector drops a website link that
+   * ends there, and extraction and merge refuse them as official URLs and domains (`isNonProjectHost`).
+   * The `signals` stage then reads `llms-full.txt` and at most `maxRaisePages` raise pages (`reported_backer`, #41),
+   * also `delayMs` apart: never-cached pages first, then the oldest. 6 per run is about 42 per week at one run a
+   * day (spec §15.1: at most 40 per week). `maxRequestsPerRun` caps every AlphaDrops request of a run together: the raise part only
+   * gets what the collector left. `enabled: false` sends no AlphaDrops request at all.
+   */
+  alphadrops: {
+    enabled: boolean;
+    maxDetails: number;
+    delayMs: number;
+    intermediaryHosts: string[];
+    maxRaisePages: number;
+    maxRequestsPerRun: number;
+  };
   /** Tried in order until one returns a valid extraction. */
   models: ModelConfig[];
+  /**
+   * Tried in order until one returns a valid AI analysis (`analyze` stage only). The daily job drops models whose
+   * provider has no key (`usableModels`), so without `ANTHROPIC_API_KEY` this is `models` again.
+   */
+  analyzeModels: ModelConfig[];
   llmConcurrency: number;
   maxDocumentsPerRun: number;
   /**
@@ -12,96 +44,170 @@ export interface PipelineConfig {
    * (counted as `extract_deferred`), so merge, score and purge finish within the job's 60-minute limit.
    */
   extractBudgetMinutes: number;
+  /**
+   * GoPlus time budget, counted from the start of `score`: after it no new GoPlus request starts. With
+   * `goplusMaxConsecutiveFailures` domains in a row without an answer, the rest are not asked either. Domains not
+   * asked count as not run (`phishing_list_failed`, and `phishing_list_skipped`), so a slow or rate-limiting GoPlus
+   * cannot keep the job from saving its risk assessments within the 60-minute limit.
+   */
+  goplusBudgetMinutes: number;
+  goplusMaxConsecutiveFailures: number;
+  /**
+   * AI analysis budget per run, counted from the start of `analyze`: after it no new LLM call starts. At most
+   * `maxAnalysesPerRun` analyses start per run. Analyses not started stay as they were (counted as
+   * `ai_analyses_deferred`) and run on a later day; an unchanged input reuses the stored analysis without a call.
+   */
+  analyzeBudgetMinutes: number;
+  maxAnalysesPerRun: number;
   scoreActiveSinceDays: number;
   textRetentionDays: number;
-  email: EmailConfig;
+  /** VCs whose portfolio pages give verified `vc_backer` signals (`VC_LIST`). */
+  vcs: VcConfig[];
 }
 
 /**
- * Daily digest settings. `enabled` = a Brevo API key is configured. Digest budget per UTC day =
- * floor(dailyLimit * (1 - reserveRatio)) minus digests already sent that day; the reserve is left for Supabase
- * Auth emails sent through the same provider.
+ * VC candidates of curation plan 5 Task 4 (tier 1 as the plan sets it) that are **not used**: each one failed at
+ * least one condition of the check on 2026-10-11 (the comment above each one; details in docs/ops/pipeline.md,
+ * "Daftar VC").
+ * A VC moves to `VC_LIST` only when its page answers 200 to the pipeline's client, its outbound links are its
+ * portfolio companies (at least ~10 of them in the HTML, no JavaScript needed), and neither its robots.txt nor its
+ * terms forbid reading the page automatically (spec §5.2: a VC whose terms forbid it is struck). Re-check with
+ * `scripts/vc-portfolio-check.ts`. The `portfolioUrl` is the page that lists the portfolio where one was found.
  */
-export interface EmailConfig {
-  enabled: boolean;
-  /**
-   * True when `BREVO_API_KEY` is set but `EMAIL_FROM` or `SITE_URL` is missing or invalid. Email is then enabled
-   * but the notify stage fails (failed_step 7, exit 1) while every other stage still runs.
-   */
-  misconfigured?: boolean;
-  dailyLimit: number;
-  reserveRatio: number;
-  /** Absolute http(s) base URL of the web app, without trailing slash. Email links are built only from it. */
-  siteUrl: string;
+export const VC_CANDIDATES: VcConfig[] = [
+  // Terms forbid it: no access to or collection of data from the site by automated means.
+  { id: "paradigm", name: "Paradigm", aliases: [], tier: 1, portfolioUrl: "https://www.paradigm.xyz/investments" },
+  // 404: no portfolio page on polychain.capital (the homepage links only to job boards).
+  { id: "polychain", name: "Polychain Capital", aliases: ["Polychain"], tier: 1, portfolioUrl: "https://polychain.capital/portfolio" },
+  // JavaScript-rendered: the list is not in the HTML (only investor-portal links).
+  { id: "pantera", name: "Pantera Capital", aliases: ["Pantera"], tier: 1, portfolioUrl: "https://panteracapital.com/portfolio/" },
+  // JavaScript-rendered: no portfolio link in the HTML.
+  { id: "multicoin", name: "Multicoin Capital", aliases: ["Multicoin"], tier: 1, portfolioUrl: "https://multicoin.capital/portfolio/" },
+  // JavaScript-rendered: the portfolio section of the homepage (dragonfly.xyz moved here) has no company link in the HTML.
+  { id: "dragonfly", name: "Dragonfly", aliases: ["Dragonfly Capital"], tier: 1, portfolioUrl: "https://dragonfly.com/" },
+  // Blocked: the site's bot protection answers 403.
+  { id: "coinbase-ventures", name: "Coinbase Ventures", aliases: [], tier: 1, portfolioUrl: "https://www.coinbase.com/ventures" },
+  // 404: no portfolio page linked from the yzilabs.com homepage.
+  { id: "yzi-labs", name: "YZi Labs", aliases: ["Binance Labs"], tier: 1, portfolioUrl: "https://www.yzilabs.com/portfolio" },
+  // Terms forbid it: the site is licensed for personal, noncommercial use only, and no part may be downloaded.
+  { id: "framework", name: "Framework Ventures", aliases: ["Framework"], tier: 2, portfolioUrl: "https://framework.ventures/portfolio" },
+  // Terms forbid it: no robot, spider or other automatic means to access the site for any purpose.
+  { id: "variant", name: "Variant", aliases: ["Variant Fund"], tier: 2, portfolioUrl: "https://variant.fund/portfolio/" },
+  // Terms forbid it: no automated data collection without Electric Capital's express permission.
+  { id: "electric-capital", name: "Electric Capital", aliases: [], tier: 2, portfolioUrl: "https://www.electriccapital.com/investments/" },
+  // No company domains: the list links only to Hack VC's own detail pages (/portfolio/<company>).
+  { id: "hack-vc", name: "Hack VC", aliases: [], tier: 2, portfolioUrl: "https://www.hack.vc/portfolio" },
+  // Terms forbid it: personal, noncommercial use only; any other use needs written permission.
+  { id: "placeholder", name: "Placeholder", aliases: ["Placeholder VC"], tier: 2, portfolioUrl: "https://www.placeholder.vc/" },
+  // JavaScript-rendered: only the first 10 companies are in the HTML, the rest load with "Load More".
+  { id: "delphi-ventures", name: "Delphi Ventures", aliases: ["Delphi Digital"], tier: 2, portfolioUrl: "https://delphiventures.io/portfolio-crypto" },
+  // Terms forbid it: the site (terms on jumptrading.com) is licensed for private, non-commercial use only.
+  { id: "jump-crypto", name: "Jump Crypto", aliases: ["Jump"], tier: 2, portfolioUrl: "https://jumpcrypto.com/invest" },
+];
+
+/**
+ * Verified VCs: the only ones the pipeline fetches and trusts (`defaultConfig.vcs`), each one passed every condition
+ * above (check of 2026-10-11, docs/ops/pipeline.md "Daftar VC"), so no unverified page can give a project a verified
+ * `vc_backer`. An unreachable or link-less page of a listed VC only leaves that VC "not checked" in a run; it never
+ * removes signals from the other VCs.
+ */
+export const VC_LIST: VcConfig[] = [
+  // Page 200, 121 portfolio domains in the HTML, robots.txt allows /portfolio/. Its terms (on a16z.com) have no
+  // automation or scraping ban and no personal/noncommercial restriction, but their general clause "all content and
+  // material on the Services ... including information ... should not be used, modified, or reproduced without our
+  // prior written consent" is ambiguous for a commercial product. Owner confirmed 2026-10-11 (clause risk accepted);
+  // to remove it, move this entry back to VC_CANDIDATES. Its sister site a16z.com is in NON_PORTFOLIO_DOMAINS.
+  { id: "a16z-crypto", name: "a16z crypto", aliases: ["a16z", "Andreessen Horowitz"], tier: 1, portfolioUrl: "https://a16zcrypto.com/portfolio/" },
+];
+
+/**
+ * Model fallback order (curation spec decision #30). `max_tokens` and `temperature` are set by `streamChat`.
+ * freellm `auto` routes each request to a free model; the NVIDIA models are the fallback, behind the circuit
+ * breaker, for when the router is rate limited or down.
+ */
+export const MODELS: ModelConfig[] = [
+  { provider: "freellm", id: "auto", extraBody: {} },
+  // glm-5.3-flash first among the NVIDIA models since 2026-10-10: in the first production run kimi-k3 timed out
+  // on every call after 14:53 UTC while glm answered all 22 calls in 2-31 s.
+  { provider: "nvidia", id: "z-ai/glm-5.3-flash", extraBody: { reasoning_effort: "low" } },
+  { provider: "nvidia", id: "moonshotai/kimi-k3", extraBody: { chat_template_kwargs: { thinking: false } } },
+  { provider: "nvidia", id: "google/gemma-4-31b-it", extraBody: {} },
+];
+
+/**
+ * Model order of the AI analyses (`analyze` stage): Claude Sonnet first, then the extraction chain unchanged.
+ * Owner decision of 2026-10-11: the analyses use up a prepaid Claude API credit that expires on 2026-10-27. Any
+ * Claude failure (no credit left, invalid key, rate limit after the retries, overload, timeout, refusal, cut-off or
+ * unusable answer) moves on to freellm `auto` and NVIDIA as before. Without `ANTHROPIC_API_KEY` Claude is left out
+ * (`usableModels`); removing this entry restores the old order. Thinking depth and output budget: `claudeChat`.
+ */
+export const ANALYZE_MODELS: ModelConfig[] = [{ provider: "anthropic", id: "claude-sonnet-5-5", extraBody: {} }, ...MODELS];
+
+export interface ProviderConfig {
+  /** Without a trailing slash; `/chat/completions` is appended. */
+  baseUrl: string;
+  /** Empty means no `Authorization` header. */
+  apiKey: string;
 }
 
-/** Model fallback order (spec 4.3). `max_tokens` and `temperature` are set by `streamChat`. */
-export const MODELS: ModelConfig[] = [
-  // glm-5.3-flash first since 2026-10-10: in the first production run kimi-k3 timed out on every call
-  // after 14:53 UTC while glm answered all 22 calls in 2-31 s.
-  { id: "z-ai/glm-5.3-flash", extraBody: { reasoning_effort: "low" } },
-  { id: "moonshotai/kimi-k3", extraBody: { chat_template_kwargs: { thinking: false } } },
-  { id: "google/gemma-4-31b-it", extraBody: {} },
-];
+/** Endpoint and key of each provider. Anthropic is called through its SDK, which knows its own endpoint. */
+export interface Providers {
+  freellm: ProviderConfig;
+  nvidia: ProviderConfig;
+  /** Empty means no key: Claude models are left out of the chain (`usableModels`). */
+  anthropic: { apiKey: string };
+}
+
+const FREELLM_DEFAULT_BASE_URL = "https://freellm.hellvyn.id/v1";
+const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+
+/**
+ * Endpoint and key per provider: freellm from `LLM_BASE_URL` (empty or unset: the default URL) and `LLM_API_KEY`,
+ * NVIDIA from `NVIDIA_API_KEY`, Anthropic from `ANTHROPIC_API_KEY` (trimmed: a key pasted with a trailing newline
+ * still works, and a blank one counts as no key). A missing key is an empty string.
+ */
+export function loadProviders(env: Record<string, string | undefined>): Providers {
+  const withoutTrailingSlash = (url: string): string => url.replace(/\/+$/, "");
+  return {
+    freellm: {
+      baseUrl: withoutTrailingSlash(env.LLM_BASE_URL || FREELLM_DEFAULT_BASE_URL),
+      apiKey: env.LLM_API_KEY ?? "",
+    },
+    nvidia: { baseUrl: NVIDIA_BASE_URL, apiKey: env.NVIDIA_API_KEY ?? "" },
+    anthropic: { apiKey: (env.ANTHROPIC_API_KEY ?? "").trim() },
+  };
+}
+
+/**
+ * `models` without the ones that cannot work with these keys: a Claude model needs `ANTHROPIC_API_KEY` (freellm and
+ * NVIDIA can go without a key, e.g. behind a proxy that adds it). A model left out costs no request and no circuit
+ * breaker failure.
+ */
+export function usableModels(models: ModelConfig[], providers: Providers): ModelConfig[] {
+  return models.filter((m) => m.provider !== "anthropic" || providers.anthropic.apiKey !== "");
+}
 
 export const defaultConfig: PipelineConfig = {
   telegramChannels: ["airdrops_io"],
-  defillama: { minTvl: 10_000_000, excludedCategories: ["CEX"], limit: 50 },
+  defillama: { minTvl: 1_000_000, excludedCategories: ["CEX"], limit: 80, newWithinDays: 180 },
+  alphadrops: {
+    enabled: true,
+    maxDetails: 80,
+    delayMs: 1500,
+    intermediaryHosts: ["s.kaito.ai", "linktr.ee", "galxe.com", "app.galxe.com", "zealy.io", "layer3.xyz", "bit.ly", "t.co"],
+    maxRaisePages: 6,
+    maxRequestsPerRun: 120,
+  },
   models: MODELS,
+  analyzeModels: ANALYZE_MODELS,
   llmConcurrency: 3,
   maxDocumentsPerRun: 150,
   extractBudgetMinutes: 35,
+  goplusBudgetMinutes: 12,
+  goplusMaxConsecutiveFailures: 5,
+  analyzeBudgetMinutes: 10,
+  maxAnalysesPerRun: 60,
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
-  // Brevo Free: 300 emails per day, 20% kept for auth emails.
-  email: { enabled: false, dailyLimit: 300, reserveRatio: 0.2, siteUrl: "" },
+  vcs: VC_LIST,
 };
-
-export const DEFAULT_SENDER_NAME = "Smart Airdrop Finder";
-
-const ADDRESS = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
-
-/** Parses `EMAIL_FROM`: `"Name <addr>"` or `"addr"` (name defaults to "Smart Airdrop Finder"). Null when invalid. */
-export function parseEmailFrom(value: string): { name: string; email: string } | null {
-  const trimmed = value.trim();
-  const named = /^(.*?)\s*<([^<>]*)>$/.exec(trimmed);
-  const rawName = named ? (named[1] ?? "").trim().replace(/^"(.*)"$/, "$1").trim() : "";
-  const email = named ? (named[2] ?? "").trim() : trimmed;
-  if (!ADDRESS.test(email)) return null;
-  return { name: rawName === "" ? DEFAULT_SENDER_NAME : rawName, email };
-}
-
-/** Absolute http(s) URL without query or fragment, trailing slashes removed; null when invalid. */
-function parseSiteUrl(value: string): string | null {
-  let url: URL;
-  try {
-    url = new URL(value.trim());
-  } catch {
-    return null;
-  }
-  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.search !== "" || url.hash !== "") return null;
-  if (url.username !== "" || url.password !== "") return null;
-  return url.href.replace(/\/+$/, "");
-}
-
-export interface EmailEnv {
-  email: EmailConfig;
-  /** Sender settings; null when email is disabled or misconfigured. */
-  brevo: { apiKey: string; from: { name: string; email: string } } | null;
-}
-
-/**
- * Reads the email settings from the environment. Without `BREVO_API_KEY` email is disabled. With it,
- * `EMAIL_FROM` and `SITE_URL` are required and must be valid; otherwise email is enabled but `misconfigured`, so
- * only the notify stage fails and the rest of the run is unaffected.
- */
-export function loadEmailEnv(env: Record<string, string | undefined>): EmailEnv {
-  const apiKey = (env.BREVO_API_KEY ?? "").trim();
-  if (apiKey === "") return { email: { ...defaultConfig.email }, brevo: null };
-  const from = parseEmailFrom(env.EMAIL_FROM ?? "");
-  const siteUrl = parseSiteUrl(env.SITE_URL ?? "");
-  if (from === null || siteUrl === null) {
-    return { email: { ...defaultConfig.email, enabled: true, misconfigured: true }, brevo: null };
-  }
-  return { email: { ...defaultConfig.email, enabled: true, siteUrl }, brevo: { apiKey, from } };
-}

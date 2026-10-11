@@ -3,7 +3,6 @@
 // Usage: SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... [SUPABASE_ANON_KEY=...] pnpm --filter pipeline exec tsx scripts/repo-smoke.ts
 import assert from "node:assert/strict";
 import { createClient } from "@supabase/supabase-js";
-import { DuplicateDigestError } from "../src/store/repo.js";
 import { SupabaseRepo } from "../src/store/supabase-repo.js";
 
 const url = process.env.SUPABASE_URL;
@@ -74,9 +73,15 @@ async function main(): Promise<void> {
 
   await repo.saveExtraction(
     a.id,
-    { model: "m", httpStatus: 200, finishReason: "stop", latencyMs: 12.4, error: null, raw: "{}" },
+    { model: "freellm:auto", servedModel: "gpt-oss:120b", httpStatus: 200, finishReason: "stop", latencyMs: 12.4, error: null, raw: "{}" },
     "v1",
   );
+  const { data: savedExtractions, error: extractionReadError } = await admin
+    .from("extractions")
+    .select("model, served_model, latency_ms")
+    .eq("document_id", a.id);
+  assert.equal(extractionReadError, null);
+  assert.deepEqual(savedExtractions, [{ model: "freellm:auto", served_model: "gpt-oss:120b", latency_ms: 12 }]);
 
   // telegram
   const channel = `smoke_chan_${suffix}`;
@@ -131,8 +136,20 @@ async function main(): Promise<void> {
   await repo.deleteEvidence(p.id, b.id, "status");
   assert.deepEqual((await repo.listStatusEvidence(p.id)).map((x) => x.status), ["live"]);
 
-  await repo.replaceTasks(p.id, a.id, ["Bridge", "Swap"]);
-  await repo.replaceTasks(p.id, a.id, ["Bridge only"]);
+  await repo.replaceTasks(p.id, a.id, [
+    { text: "Bridge", cadence: "once" },
+    { text: "Swap", cadence: "daily" },
+  ]);
+  await repo.replaceTasks(p.id, a.id, [{ text: "Bridge only", cadence: "once" }]);
+  // Rows stored out of step order come back by position.
+  const outOfOrder = await admin.from("tasks").insert([
+    { project_id: p.id, document_id: b.id, description: "Vote", position: 1, cadence: "weekly" },
+    { project_id: p.id, document_id: b.id, description: "Check in", position: 0, cadence: "daily" },
+  ]);
+  assert.equal(outOfOrder.error, null);
+  // v3 facts are evidence rows; status and dangerous_ask evidence are not facts.
+  await repo.addEvidence({ ...ev, field: "key_parameter:allocation", value: "5%", quote: "5% of supply." });
+  await repo.addEvidence({ ...ev, field: "capital_min_usd", value: "1000", quote: "" });
   await repo.replaceDeadlines(p.id, a.id, [{ kind: "claim", date: "2026-11-01", precision: "exact", text: "Nov 1" }]);
   await repo.replaceDeadlines(p.id, a.id, [{ kind: "snapshot", date: null, precision: "approximate", text: "soon" }]);
   await repo.upsertLinks(p.id, [{ url: "https://smoke.test/", kind: "website", referralStripped: false }]);
@@ -140,9 +157,21 @@ async function main(): Promise<void> {
 
   const scored = (await repo.listProjectsForScoring(30, T0)).find((x) => x.id === p.id);
   assert.ok(scored);
-  assert.deepEqual(scored.tasks, ["Bridge only"]);
+  // Steps are grouped by document (document_id order), in position order within each document.
+  const stepsA = [{ text: "Bridge only", cadence: "once" }];
+  const stepsB = [
+    { text: "Check in", cadence: "daily" },
+    { text: "Vote", cadence: "weekly" },
+  ];
+  assert.deepEqual(scored.steps, a.id < b.id ? [...stepsA, ...stepsB] : [...stepsB, ...stepsA]);
+  assert.deepEqual(scored.tasks, a.id < b.id ? ["Bridge only", "Check in", "Vote"] : ["Check in", "Vote", "Bridge only"]);
+  assert.deepEqual(scored.facts, [
+    { field: "key_parameter:allocation", value: "5%", quote: "5% of supply." },
+    { field: "capital_min_usd", value: "1000", quote: "" },
+  ]);
   assert.deepEqual(scored.links, [{ url: "https://smoke.test/", kind: "claim" }]);
   assert.equal(scored.sourceCount, 1);
+  assert.deepEqual(scored.sourceKinds, ["airdrops_io"]);
   // dangerous_ask evidence comes back in insertion order; no lookalike for p, the twin names p.
   assert.deepEqual(scored.sourceAsks, [
     { code: "asks_payment", quote: "Send 0.1 ETH to claim your tokens." },
@@ -162,7 +191,7 @@ async function main(): Promise<void> {
 
   // risk
   assert.equal(await repo.latestRiskLevel(p.id), null);
-  const assessment = (level: "low" | "high") => ({ level, points: 1, reasons: [], checks: [] });
+  const assessment = (level: "low" | "high" | "critical") => ({ level, points: 1, reasons: [], checks: [] });
   await repo.saveRiskAssessment(p.id, assessment("low"), new Date(T0.getTime() + 1000));
   await repo.saveRiskAssessment(p.id, assessment("low"), new Date(T0.getTime() + 2000));
   await repo.saveRiskAssessment(p.id, assessment("high"), new Date(T0.getTime() + 3000));
@@ -184,118 +213,168 @@ async function main(): Promise<void> {
     { field: "risk_level", old_value: "high", new_value: "low" },
   ]);
 
-  // notifications (as service_role: auth admin API, profiles, watchlist, notification_log)
-  const createUser = async (label: string, confirmed: boolean): Promise<string> => {
-    const res = await admin.auth.admin.createUser({
-      email: `smoke-${label}-${suffix}@example.test`,
-      password: `pw-${suffix}-${label}-Aa1!`,
-      email_confirm: confirmed,
-    });
-    assert.equal(res.error, null, `createUser ${label}: ${res.error?.message ?? ""}`);
-    return (res.data.user as { id: string }).id;
-  };
-  const reader = await createUser("reader", true);
-  const unconfirmed = await createUser("unconfirmed", false);
-  const optedOut = await createUser("optedout", true);
-  const userIds = [reader, unconfirmed, optedOut];
-  const profileUpdates = [
-    await admin.from("profiles").update({ new_airdrops_opt_in: true }).eq("user_id", reader),
-    await admin.from("profiles").update({ digest_enabled: false }).eq("user_id", optedOut),
-    await admin.from("watchlist").insert([
-      { user_id: reader, project_id: p.id },
-      { user_id: optedOut, project_id: p.id },
-    ]),
-  ];
-  for (const r of profileUpdates) assert.equal(r.error, null, `seed failed: ${r.error?.message ?? ""}`);
-  const token = await admin.from("profiles").select("unsubscribe_token").eq("user_id", reader).single();
-  assert.equal(token.error, null);
-
-  const ours = async () => (await repo.listDigestRecipients()).filter((r) => userIds.includes(r.userId));
-  // Only the confirmed, digest-enabled user; no digest logged yet.
-  assert.deepEqual(await ours(), [
-    {
-      userId: reader,
-      email: `smoke-reader-${suffix}@example.test`,
-      newAirdropsOptIn: true,
-      unsubscribeToken: token.data?.unsubscribe_token,
-      lastDigestAt: null,
-    },
-  ]);
-
-  // Dated deadlines only, by date; the undated one from document a is left out.
-  await repo.replaceDeadlines(p.id, b.id, [
-    { kind: "claim", date: "2026-10-12", precision: "exact", text: "Claim" },
-    { kind: "snapshot", date: "2026-10-11", precision: "approximate", text: "Snapshot" },
-  ]);
-  const sinceT0 = new Date(T0.getTime() + 1500);
-  const ctx = await repo.getDigestContext(reader, sinceT0, new Date(T0.getTime() + 3600_000));
-  assert.deepEqual(ctx.lastDigestAt, sinceT0);
-  assert.deepEqual(ctx.watched, [
-    { id: p.id, slug: `smoke-${suffix}`, name: "Smoke", status: "live", riskLevel: "low", firstSeen: T0 },
-  ]);
-  assert.deepEqual(ctx.deadlines, [
-    { projectId: p.id, kind: "snapshot", date: "2026-10-11", precision: "approximate", text: "Snapshot" },
-    { projectId: p.id, kind: "claim", date: "2026-10-12", precision: "exact", text: "Claim" },
-  ]);
-  // Changes strictly after `since` (the status change at T0+1s is before it), oldest first.
+  // signals: replaced as a whole; one kind from two sources is allowed; a duplicate or a verified claim is refused.
+  await repo.replaceSignals(p.id, [
+    { kind: "tvl", value: { tvl_usd: 25_000_000 }, source: "defillama", verified: true },
+    { kind: "vc_backer", value: { investor: "Paradigm", tier: 1 }, source: "vc_portfolio", verified: true },
+  ], T0);
+  await repo.replaceSignals(p.id, [
+    { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: true },
+    { kind: "curated_source", value: { source_kind: "alphadrops" }, source: "alphadrops", verified: true },
+  ], t1);
+  const signals = await admin.from("project_signals").select("kind, source, observed_at").eq("project_id", p.id).order("source");
+  assert.equal(signals.error, null);
   assert.deepEqual(
-    ctx.changes.map((c) => [c.field, c.oldValue, c.newValue, c.changedAt.getTime() - T0.getTime()]),
-    [
-      ["risk_level", "low", "high", 3000],
-      ["risk_level", "high", "low", 3000],
-    ],
+    (signals.data ?? []).map((s) => [s.kind, s.source, new Date(s.observed_at as string).getTime()]),
+    [["curated_source", "airdrops_io", t1.getTime()], ["curated_source", "alphadrops", t1.getTime()]],
   );
-  // since = null: the 24 hours before `now`.
-  const ctxNull = await repo.getDigestContext(reader, null, new Date(T0.getTime() + 24 * 3600_000 + 2500));
-  assert.deepEqual(ctxNull.lastDigestAt, null);
-  assert.equal(ctxNull.changes.length, 2);
-  assert.deepEqual((await repo.getDigestContext(unconfirmed, null, T0)).watched, []);
-
-  // New projects: first_seen within [now - 24h, now], lookalikes left out, with latest risk.
-  const fresh = (await repo.listNewProjects(24, new Date(T0.getTime() + 3600_000), 1000)).filter((x) => [p.id, twin.id].includes(x.id));
+  const paradigm = { kind: "vc_backer" as const, value: { investor: "Paradigm" }, source: "vc_portfolio" as const, verified: true };
+  await assert.rejects(repo.replaceSignals(p.id, [paradigm, paradigm], t1));
+  await assert.rejects(
+    repo.replaceSignals(p.id, [{ kind: "claimed_backer", value: { investor: "a16z" }, source: "llm_text", verified: true }], t1),
+  );
+  // Not atomic (delete, then insert; like replaceTasks): a refused replace leaves no signals until the next run.
+  const afterRefused = await admin.from("project_signals").select("id").eq("project_id", p.id);
+  assert.deepEqual(afterRefused.data, []);
+  // Kept sources (DefiLlama not checked this run) survive a replace with their own observed_at.
+  await repo.replaceSignals(p.id, [
+    { kind: "tvl", value: { tvl_usd: 25_000_000 }, source: "defillama", verified: true },
+    { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: false },
+  ], T0);
+  await repo.replaceSignals(p.id, [
+    { kind: "curated_source", value: { source_kind: "telegram" }, source: "telegram", verified: false },
+  ], t1, ["defillama"]);
+  const kept = await admin.from("project_signals").select("kind, source, observed_at").eq("project_id", p.id).order("source");
+  assert.equal(kept.error, null);
   assert.deepEqual(
-    fresh.map((x) => [x.id, x.riskLevel]),
-    [[p.id, "low"]],
+    (kept.data ?? []).map((s) => [s.kind, s.source, new Date(s.observed_at as string).getTime()]),
+    [["tvl", "defillama", T0.getTime()], ["curated_source", "telegram", t1.getTime()]],
   );
-  assert.equal(
-    (await repo.listNewProjects(24, new Date(T0.getTime() + 25 * 3600_000), 1000)).some((x) => x.id === p.id),
-    false,
+  // Kept investors (a VC whose portfolio was not checked this run) survive; the source's other signals do not.
+  const backer = (investor: string) => ({ kind: "vc_backer" as const, value: { investor, tier: 2 }, source: "vc_portfolio" as const, verified: true });
+  const noInvestor = { kind: "vc_backer" as const, value: { tier: 1 }, source: "vc_portfolio" as const, verified: true };
+  await repo.replaceSignals(p.id, [backer("Paradigm"), backer('Odd "Name", (Fund)'), backer("Variant"), noInvestor], T0);
+  await repo.replaceSignals(p.id, [], t1, [
+    { source: "vc_portfolio", investor: 'Odd "Name", (Fund)' },
+    { source: "vc_portfolio", investor: "Variant" },
+  ]);
+  const keptBackers = await admin.from("project_signals").select("value").eq("project_id", p.id);
+  assert.equal(keptBackers.error, null);
+  assert.deepEqual(
+    (keptBackers.data ?? []).map((s) => (s.value as { investor: string }).investor).sort(),
+    ['Odd "Name", (Fund)', "Variant"],
   );
-  // Newest first, id breaks ties, capped. A random two-day slot in the 1900s keeps other rows out of the window.
-  const slot = new Date(Date.UTC(1900, 0, 2) + Math.floor(Math.random() * 18_000) * 2 * day);
-  const newOnes: { id: string; at: number }[] = [];
-  for (let i = 0; i < 12; i += 1) {
-    const at = slot.getTime() - (i === 4 ? 3 : i) * 60_000; // n3 and n4 share a first_seen
-    const row = await repo.createProject(
-      { slug: `smoke-${suffix}-n${i}`, name: `New ${i}`, nameKey: `smokenew${suffix}${i}`, tokenSymbol: null, chains: [], officialDomains: [], status: "announced", conflict: false, lookalikeOf: null },
-      new Date(at),
-    );
-    newOnes.push({ id: row.id, at });
-  }
-  await repo.createProject(
-    { slug: `smoke-${suffix}-nfake`, name: "New 0", nameKey: `smokenew${suffix}0`, tokenSymbol: null, chains: [], officialDomains: [], status: "announced", conflict: false, lookalikeOf: newOnes[0]!.id },
-    slot,
+  // A kept kind (AlphaDrops raises not checked this run) survives; the source's other kinds do not.
+  const reported = (investor: string) => ({ kind: "reported_backer" as const, value: { investor, lead: true, amount_usd: 5_000_000 }, source: "alphadrops" as const, verified: false });
+  await repo.replaceSignals(p.id, [
+    reported("Paradigm"),
+    reported("Variant"),
+    { kind: "curated_source", value: { source_kind: "alphadrops" }, source: "alphadrops", verified: false },
+    { kind: "tvl", value: { tvl_usd: 1 }, source: "defillama", verified: true },
+  ], T0);
+  await repo.replaceSignals(p.id, [
+    { kind: "curated_source", value: { source_kind: "alphadrops" }, source: "alphadrops", verified: false },
+  ], t1, [{ source: "alphadrops", kind: "reported_backer" }]);
+  const keptReported = await admin.from("project_signals").select("kind, value, observed_at").eq("project_id", p.id);
+  assert.equal(keptReported.error, null);
+  assert.deepEqual(
+    (keptReported.data ?? [])
+      .map((s) => [s.kind, (s.value as { investor?: string }).investor ?? "", new Date(s.observed_at as string).getTime()])
+      .sort(),
+    [["curated_source", "", t1.getTime()], ["reported_backer", "Paradigm", T0.getTime()], ["reported_backer", "Variant", T0.getTime()]],
   );
-  await repo.saveRiskAssessment(newOnes[1]!.id, assessment("high"), slot);
-  const expected = [...newOnes].sort((x, y) => y.at - x.at || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0)).slice(0, 10);
-  const listed = await repo.listNewProjects(24, slot, 10);
-  assert.deepEqual(listed.map((x) => x.id), expected.map((x) => x.id));
-  assert.deepEqual(listed.map((x) => x.riskLevel), expected.map((x) => (x.id === newOnes[1]!.id ? "high" : null)));
-  assert.deepEqual((await repo.listNewProjects(24, slot, 2)).map((x) => x.id), expected.slice(0, 2).map((x) => x.id));
+  await assert.rejects(
+    repo.replaceSignals(p.id, [{ ...reported("Paradigm"), verified: true }], t1),
+    "a verified reported_backer must be refused",
+  );
+  await repo.replaceSignals(p.id, [
+    { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: true },
+    { kind: "claimed_backer", value: { investor: "a16z", quote: "backed by a16z" }, source: "llm_text", verified: false },
+  ], t1);
 
-  // notification_log (service-role only table).
-  const refDate = "2026-10-10";
-  const before = await repo.countDigestsSent(refDate);
-  assert.equal(await repo.hasDigest(reader, refDate), false);
-  const sentAt = new Date(T0.getTime() + 60_000);
-  await repo.logDigest(reader, refDate, sentAt);
-  assert.equal(await repo.hasDigest(reader, refDate), true);
-  assert.equal(await repo.hasDigest(reader, "2026-10-11"), false);
-  assert.equal(await repo.countDigestsSent(refDate), before + 1);
-  await assert.rejects(repo.logDigest(reader, refDate, sentAt), DuplicateDigestError);
-  await repo.logDigest(reader, "2026-10-09", new Date(T0.getTime() - 3600_000));
-  assert.deepEqual((await ours())[0]?.lastDigestAt, sentAt);
-  console.log("notifications ok");
+  // AlphaDrops raise cache: one row per slug, a later save replacing it.
+  const raiseSlug = `smoke-raise-${suffix}`;
+  const seed = { round: "Seed", date: "2026-01-02", amountUsd: 5_000_000, lead: ["Paradigm"], others: ["Variant"], sourceUrl: null };
+  assert.equal(await repo.listAlphaRaise(raiseSlug), null);
+  await repo.saveAlphaRaise(raiseSlug, { officialDomain: "catalyst.app", rounds: [seed] }, T0);
+  await repo.saveAlphaRaise(raiseSlug, { officialDomain: null, rounds: [seed, { ...seed, round: "Series A", amountUsd: null }] }, t1);
+  assert.deepEqual(await repo.listAlphaRaise(raiseSlug), {
+    officialDomain: null,
+    rounds: [seed, { ...seed, round: "Series A", amountUsd: null }],
+    fetchedAt: t1,
+  });
+
+  // VC portfolio cache
+  const vcId = `smoke-vc-${suffix}`;
+  assert.deepEqual(await repo.listVcPortfolio(vcId), { domains: [], fetchedAt: null });
+  await repo.saveVcPortfolio(vcId, ["zora.co", "blast.io", "zora.co"], T0);
+  await repo.saveVcPortfolio(vcId, ["zora.co", "a-b.io", "ab.io"], t1);
+  // "a-b.io" sorts before "ab.io" in byte order (C collation).
+  assert.deepEqual(await repo.listVcPortfolio(vcId), { domains: ["a-b.io", "ab.io", "zora.co"], fetchedAt: t1 });
+
+  // AI analyses: latest per kind, later insert wins a created_at tie.
+  const analysis = { projectId: p.id, kind: "analyst" as const, inputHash: "h1", result: { verdict: "pantau" }, model: "router:auto", servedModel: null, promptVersion: "analyst-1", createdAt: t1 };
+  assert.equal(await repo.latestAiAnalysis(p.id, "analyst"), null);
+  await repo.saveAiAnalysis(analysis);
+  await repo.saveAiAnalysis({ ...analysis, inputHash: "h2", servedModel: "gpt-oss:120b" });
+  await repo.saveAiAnalysis({ ...analysis, kind: "contradictions", inputHash: "c1", result: { items: [] } });
+  assert.deepEqual(await repo.latestAiAnalysis(p.id, "analyst"), { ...analysis, inputHash: "h2", servedModel: "gpt-oss:120b" });
+  assert.equal(await repo.latestAiAnalysis(p.id, "scam"), null);
+
+  // curations
+  const passing = { passed: true, worthLevel: "medium" as const, worthPoints: 2, tab: "live_now" as const, statusAt: "live" as const, endedOn: null, reasons: [], coverage: { defillama: true }, coingeckoListed: false };
+  const failing = { ...passing, passed: false, worthLevel: null, worthPoints: null, tab: null, reasons: [
+    { code: "official_domain", message: "Domain resmi tercatat", kind: "pass" as const },
+    { code: "insufficient_checks", message: "Cek kunci belum lengkap", kind: "fail" as const },
+  ] };
+  assert.equal(await repo.latestCuration(p.id), null);
+  assert.equal(await repo.passedBeforeEnd(p.id), false);
+  await repo.saveCuration(p.id, passing, new Date(T0.getTime() + 10_000));
+  await repo.saveCuration(p.id, { ...passing, statusAt: "ended", tab: "ended", endedOn: "2026-10-05" }, new Date(T0.getTime() + 11_000));
+  assert.equal(await repo.passedBeforeEnd(p.id), true);
+  assert.deepEqual(await repo.latestCuration(p.id), { passed: true, endedOn: "2026-10-05" });
+  await repo.saveCuration(p.id, failing, new Date(T0.getTime() + 11_000));
+  assert.deepEqual(await repo.latestCuration(p.id), { passed: false, endedOn: null });
+  assert.equal(await repo.passedBeforeEnd(p.id), false);
+  const curated = await admin.from("project_changes").select("old_value, new_value").eq("project_id", p.id).eq("field", "curated").order("seq");
+  assert.equal(curated.error, null);
+  assert.deepEqual(curated.data, [{ old_value: null, new_value: "true" }, { old_value: "true", new_value: "false" }]);
+  const failReasons = await admin.from("curations").select("public_fail_reason").eq("project_id", p.id).order("seq");
+  assert.equal(failReasons.error, null);
+  assert.deepEqual((failReasons.data ?? []).map((r) => r.public_fail_reason), [null, null, "Cek kunci belum lengkap"]);
+
+  // An open project last seen before the window is still scored while its latest curation passed within the window.
+  const open = await repo.createProject(
+    { slug: `smoke-open-${suffix}`, name: "Smoke Open", nameKey: `smokeopen${suffix}`, tokenSymbol: null, chains: [], officialDomains: [], status: "live", conflict: false, lookalikeOf: null },
+    T0,
+  );
+  const afterDays = (n: number) => new Date(T0.getTime() + n * day);
+  const openScored = async () => (await repo.listProjectsForScoring(30, afterDays(60))).some((x) => x.id === open.id);
+  assert.equal(await openScored(), false);
+  await repo.saveCuration(open.id, passing, afterDays(50));
+  assert.equal(await openScored(), true);
+  await repo.saveCuration(open.id, failing, afterDays(55));
+  assert.equal(await openScored(), false);
+
+  // track record history (#43), on the twin: first pass (earlier insert wins a tie), latest tab, listing now, and only
+  // a high/critical risk after the first pass counts.
+  const at = (s: number) => new Date(T0.getTime() + s * 1000);
+  const historyOf = async (id: string) => (await repo.listCurationHistoryForTrackRecord()).find((h) => h.projectId === id);
+  await repo.saveCuration(twin.id, failing, at(20));
+  assert.equal(await historyOf(twin.id), undefined);
+  await repo.saveRiskAssessment(twin.id, assessment("critical"), at(21));
+  await repo.saveCuration(twin.id, { ...passing, coingeckoListed: null }, at(21));
+  await repo.saveCuration(twin.id, { ...passing, coingeckoListed: true }, at(21));
+  assert.deepEqual(await historyOf(twin.id), {
+    projectId: twin.id, firstPassAt: at(21).toISOString(), listedAtFirstPass: null, tab: "live_now", coingeckoListed: false, riskRaisedAfterPass: false,
+  });
+  await repo.saveRiskAssessment(twin.id, assessment("high"), at(22));
+  await repo.saveRiskAssessment(twin.id, assessment("low"), at(23));
+  await repo.saveCuration(twin.id, { ...passing, statusAt: "ended", tab: "ended", endedOn: "2026-10-05" }, at(23));
+  await repo.replaceSignals(twin.id, [{ kind: "coingecko_listed", value: { gecko_id: "smoke" }, source: "defillama", verified: true }], at(23));
+  assert.deepEqual(await historyOf(twin.id), {
+    projectId: twin.id, firstPassAt: at(21).toISOString(), listedAtFirstPass: null, tab: "ended", coingeckoListed: true, riskRaisedAfterPass: true,
+  });
 
   // runs
   const runId = await repo.startRun(T0);
@@ -319,7 +398,7 @@ async function main(): Promise<void> {
     const proj = await anon.from("projects").select("id").eq("id", p.id);
     assert.equal(proj.error, null);
     assert.equal(proj.data?.length, 1);
-    for (const table of ["documents", "extractions", "project_changes", "notification_log"]) {
+    for (const table of ["documents", "extractions", "project_changes"]) {
       const res = await anon.from(table).select("*").limit(1);
       assert.deepEqual(res.data ?? [], [], `${table} must not be readable by anon`);
     }
@@ -336,23 +415,37 @@ async function main(): Promise<void> {
     assert.equal(stillThere.data?.name, "Smoke");
     const noAnonRow = await admin.from("projects").select("id").eq("slug", `anon-${suffix}`);
     assert.equal(noAnonRow.data?.length, 0);
+    // Curation data over REST (#45, #54, #55): public columns yes, worth and member-only analyses no.
+    const publicCuration = await anon.from("curations").select("passed, tab, public_fail_reason").eq("project_id", p.id);
+    assert.equal(publicCuration.error, null);
+    assert.equal(publicCuration.data?.length, 3);
+    for (const column of ["worth_level", "worth_points", "reasons", "coverage", "*"]) {
+      const res = await anon.from("curations").select(column).eq("project_id", p.id);
+      assert.ok(res.error !== null && (res.data ?? []).length === 0, `anon must not read curations.${column}`);
+    }
+    const anonAnalyses = await anon.from("ai_analyses").select("kind").eq("project_id", p.id);
+    assert.equal(anonAnalyses.error, null);
+    assert.deepEqual(anonAnalyses.data, [{ kind: "contradictions" }]);
+    const anonSignals = await anon.from("project_signals").select("kind").eq("project_id", p.id);
+    assert.equal(anonSignals.error, null);
+    assert.equal(anonSignals.data?.length, 2);
+    const anonVc = await anon.from("vc_portfolios").select("domain").eq("vc_id", vcId);
+    assert.deepEqual(anonVc.data ?? [], [], "vc_portfolios must not be readable by anon");
+    const anonRaise = await anon.from("alphadrops_raises").select("slug").eq("slug", raiseSlug);
+    assert.deepEqual(anonRaise.data ?? [], [], "alphadrops_raises must not be readable by anon");
     console.log("rls ok");
   } else {
     console.log("rls checks skipped (SUPABASE_ANON_KEY not set)");
   }
 
   // cleanup (fail loudly so a broken cleanup is not silent)
-  for (const id of userIds) {
-    const res = await admin.auth.admin.deleteUser(id);
-    assert.equal(res.error, null, `deleteUser failed: ${res.error?.message ?? ""}`);
-  }
-  const leftover = await admin.from("notification_log").select("id").in("user_id", userIds);
-  assert.deepEqual(leftover.data, [], "notification_log rows must go with the user");
   const cleanup = [
-    await admin.from("projects").delete().in("id", [p.id, twin.id]),
+    await admin.from("projects").delete().in("id", [p.id, twin.id, open.id]),
     await admin.from("documents").delete().like("source_key", `%${suffix}%`),
     await admin.from("documents").delete().like("url", `https://t.me/${channel}/%`),
     await admin.from("pipeline_runs").delete().eq("id", runId),
+    await admin.from("vc_portfolios").delete().eq("vc_id", vcId),
+    await admin.from("alphadrops_raises").delete().eq("slug", raiseSlug),
   ];
   for (const r of cleanup) assert.equal(r.error, null, `cleanup failed: ${r.error?.message ?? ""}`);
   console.log("repo smoke ok");

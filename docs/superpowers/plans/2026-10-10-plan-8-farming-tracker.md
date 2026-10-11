@@ -15,7 +15,7 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 
 **Spec:** `docs/superpowers/specs/2026-10-10-curation-foundation-design.md` §14 (keputusan #35–#39)
 
-**Bergantung ke:** Plan 7 (akses member-only, halaman di `(app)`), Plan 4 Task 5 (`tasks.cadence`, `tasks.position`).
+**Bergantung ke:** Plan 7 (route akun terlindungi di `(app)`, halaman project publik), Plan 4 Task 5 (`tasks.cadence`, `tasks.position`).
 **Urutan:** 7 → 4 → **8** → 5 → 6. Migrasi `0010_farming.sql`.
 
 ## Global Constraints
@@ -26,22 +26,38 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 - Warna heatmap 4 tingkat dari persen task Harian aktif yang dicentang: `0` = 0%, `1` = 1–49%, `2` = 50–99%,
   `3` = 100%; hari tanpa task Harian aktif = `null` (abu).
 - Streak = hari berturut-turut level `3`, berakhir hari ini atau kemarin (kalau hari ini belum `3`).
+- Mockup acuan: `docs/design/airdropiq-c/CGarapan.dc.html`.
 - Rentang heatmap (spec #39): `start` = tanggal lokal `farming_projects.started_at`; `end` = deadline `snapshot` /
   `campaign_end` (presisi `exact`/`approximate`) paling awal yang ≥ `start`; tanpa deadline `end` =
   `start + 364 hari` (1 tahun). Maksimal 364 hari: kalau lebih, `start` dimajukan ke `end − 363 hari`.
-  Hari > `today` = sel `upcoming`.
+  Hari > `today` = sel `upcoming`. Project yang sudah berakhir (spec #40): kalau `endedOn` (tanggal berakhir dari
+  curation) ≥ `start` dan lebih awal dari `end`, `end = endedOn` dan `endKind = "ended"`.
+  **Revisi G3 (review menyeluruh, 2026-10-11; owner diminta konfirmasi):** jendela selalu memuat `today` selama project
+  belum berakhir. Deadline yang sudah lewat dilewati (deadline berikutnya dipakai). Kalau gak ada deadline tersisa,
+  dipakai jendela 1 tahun yang digeser maju sampai `today`. Deadline yang lebih dari setahun lagi: 364 sel yang memuat
+  `today`, sementara `endsOn` tetap tanggal deadline untuk hitung mundur. Streak dihitung dari semua check, bukan dari
+  sel yang tampil.
 - Mingguan = minggu ISO (Senin–Minggu) di zona waktu member.
 - Batas: 50 project aktif per member, 30 task aktif per project (pelanggaran → error `23514`, pesan Bahasa Indonesia di UI).
-- Teks UI Bahasa Indonesia (gaya "kamu"): "Mulai garap", "Berhenti garap", "Garapan saya", "Hari ini", "Mingguan",
-  "Minggu ini sudah", "Tambah task", "Ambil ulang langkah dari sumber", "Streak: {n} hari", "Sisa {n} hari sampai snapshot", "Sisa {n} hari sampai akhir kampanye", heatmap tooltip
-  "{tanggal}: {selesai}/{total} task harian".
-- Task awal cuma dari langkah `cadence` `daily`/`weekly`. Langkah `once` gak masuk tracker.
+- Teks UI (gaya "kamu", campur istilah Inggris yang umum, aturan gaya tulisan Plan 6): "Mulai garap", "Berhenti garap",
+  "Garapan saya", "Hari ini", "Weekly", "Minggu ini udah", "Tambah task", "Ambil ulang step dari source", "Streak: {n}
+  hari", "Sisa {n} hari sampai snapshot", "Sisa {n} hari sampai akhir campaign", "Ended {tanggal}", heatmap tooltip
+  "{tanggal}: {selesai}/{total} daily task". Label cadence "Daily" / "Weekly".
+- **Desain C (spec §16, komponen Plan 7 Task 3):** kartu project = `Ticket`/`SectionCard` bergaris 2 px tanpa sudut
+  bulat; tombol "Mulai garap" = `Button` primary. Warna sel heatmap: `null` `#E8E8E2`, level `0` `#FFFFFF` bergaris
+  `#CFCFC8`, `1` `#BFE3CC`, `2` `#5FAE80`, `3` `#1F7A45`; sel `upcoming` bergaris putus-putus `#CFCFC8` tanpa isi. Level
+  dibedakan juga dari terang-gelapnya (bukan cuma warna) dan tooltip.
+- Task awal dari **semua** langkah source (keputusan #50): `once` tampil sebagai **"Task utama"** di atas "Hari ini",
+  dicentang sekali (gak terikat hari, gak masuk heatmap, persen harian, atau streak), progres "{x}/{y} selesai";
+  `daily`/`weekly` seperti sebelumnya.
+- Task buatan member tetap ada (#37), tapi tampil sebagai link teks kecil "+ Tambah task sendiri" di bawah checklist,
+  bukan tombol utama.
 
 ## Review Focus
 
 1. **Member ganti zona waktu di Settings** → hari yang sudah lewat gak berubah warnanya (centang menyimpan tanggal
    lokal saat dicentang). Test di Task 1 dan 2.
-2. **Project tanpa langkah Harian dari sumber** → tetap bisa digarap; kartu menampilkan "Belum ada task harian. Tambah
+2. **Project tanpa langkah Harian dari sumber** → tetap bisa digarap; kartu menampilkan "Belum ada daily task. Tambah
    task sendiri." Test di Task 4.
 3. **Task diarsipkan di tengah tahun** → hari sebelum diarsipkan tetap memperhitungkan task itu, hari sesudahnya gak.
    Test di Task 2.
@@ -58,7 +74,7 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 **Interfaces:**
 - Tabel:
   - `farming_projects (user_id uuid fk auth.users cascade, project_id uuid fk projects cascade, started_at timestamptz not null default now(), archived_at timestamptz, primary key (user_id, project_id))`
-  - `farming_tasks (id uuid pk, user_id uuid fk auth.users cascade, project_id uuid, text text not null check (char_length(text) between 1 and 200), cadence text not null check (cadence in ('daily','weekly')), origin text not null check (origin in ('source','custom')), position integer not null default 0, created_at timestamptz not null default now(), archived_at timestamptz, foreign key (user_id, project_id) references farming_projects on delete cascade)`
+  - `farming_tasks (id uuid pk, user_id uuid fk auth.users cascade, project_id uuid, text text not null check (char_length(text) between 1 and 200), cadence text not null check (cadence in ('once','daily','weekly')), origin text not null check (origin in ('source','custom')), position integer not null default 0, created_at timestamptz not null default now(), archived_at timestamptz, foreign key (user_id, project_id) references farming_projects on delete cascade)`
   - `farming_checks (task_id uuid fk farming_tasks cascade, user_id uuid not null, day date not null, checked_at timestamptz not null default now(), primary key (task_id, day))`
 - RLS on semua; policy select/insert/update/delete `to authenticated using/with check (user_id = (select auth.uid()))`.
   `farming_checks`: select + delete milik sendiri; **insert hanya lewat fungsi** (gak ada grant insert ke authenticated).
@@ -66,12 +82,14 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
   - `farming_today() returns date` — `(now() at time zone coalesce(p.timezone,'UTC'))::date` untuk profil pemanggil.
   - `toggle_farming_check(p_task_id uuid, p_done boolean) returns boolean` — task harus milik pemanggil dan gak
     diarsipkan; `p_done` true → insert `(task, farming_today())` `on conflict do nothing`; false → delete baris hari ini.
-    Mengembalikan state akhir.
+    Task `once`: true → insert hari ini kalau belum ada baris sama sekali untuk task itu; false → delete **semua** baris
+    task itu (selesai sekali, gak terikat tanggal). Mengembalikan state akhir.
   - Trigger batas: insert `farming_projects` aktif ke-51 → `23514`; insert `farming_tasks` aktif ke-31 untuk project
     yang sama → `23514` (advisory lock per user seperti `enforce_wallet_limit`).
 
 - [ ] **Step 1: Test pgTAP yang gagal** — user A gak bisa select/insert tracker user B; anon ditolak; `toggle_farming_check`
-  dua kali dengan `true` → satu baris; dengan `profiles.timezone = 'Asia/Jakarta'`, tanggal yang ditulis sama
+  dua kali dengan `true` → satu baris; task `once` dicentang di dua hari berbeda tetap satu baris dan uncentang
+  menghapusnya; dengan `profiles.timezone = 'Asia/Jakarta'`, tanggal yang ditulis sama
   dengan `(now() at time zone 'Asia/Jakarta')::date`;
   task milik user lain → `42501`; task diarsipkan → `22023`; project ke-51 → `23514`; hapus `projects` → baris tracker
   ikut terhapus.
@@ -90,16 +108,20 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
 
 **Interfaces:**
 - `type HeatLevel = 0 | 1 | 2 | 3 | null`
-- `interface TrackerTask { id: string; cadence: "daily" | "weekly"; createdDay: string; archivedDay: string | null }`
+- `interface TrackerTask { id: string; cadence: "once" | "daily" | "weekly"; createdDay: string; archivedDay: string | null }`
+  (`buildHeatmap`, `streak`, dan `weeklyDone` mengabaikan task `once`)
+- `mainProgress(tasks: TrackerTask[], checks: { taskId: string; day: string }[]): { done: number; total: number }` — task
+  `once` aktif; selesai kalau punya baris check apa pun.
   (`createdDay`/`archivedDay` = tanggal lokal `YYYY-MM-DD`; task aktif di hari `d` kalau `createdDay <= d` dan
   (`archivedDay === null` atau `d < archivedDay`))
-- `heatmapRange(startedDay: string, deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[], today: string): { start: string; end: string; endKind: "snapshot" | "campaign_end" | null }`
+- `heatmapRange(startedDay: string, deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[], today: string, endedOn: string | null = null): HeatmapRange` dengan `HeatmapRange = { start: string; end: string; endKind: "snapshot" | "campaign_end" | "ended" | null; endsOn: string | null }` (`endsOn` = tanggal deadline/berakhir untuk hitung mundur; bisa beda dari `end`)
   — aturan rentang di Global Constraints.
 - `buildHeatmap(tasks: TrackerTask[], checks: { taskId: string; day: string }[], range: { start: string; end: string }, today: string): { day: string; level: HeatLevel; done: number; total: number; upcoming: boolean }[]`
   — satu sel per hari dari `start` sampai `end`; hari > `today` → `upcoming: true`, `level: null`.
-- `daysLeft(range, today): number | null` — hari dari `today` sampai `end` (inklusif), `null` kalau `endKind` null atau
-  `end` < `today`.
-- `streak(heat: { day: string; level: HeatLevel }[], today: string): number`
+- `daysLeft(range, today): number | null` — hari dari `today` sampai `endsOn` (inklusif), `null` kalau `endsOn` null atau
+  `endsOn` < `today`.
+- `streak(tasks: TrackerTask[], checks: { taskId: string; day: string }[], today: string): number` (revisi G3: gak
+  bergantung jendela tampilan)
 - `weeklyDone(tasks: TrackerTask[], checks: { taskId: string; day: string }[], today: string): Record<string, boolean>` (per task weekly)
 - `localDay(now: Date, timeZone: string): string` (pakai `Intl.DateTimeFormat`, gak butuh `@types/node`)
 
@@ -124,6 +146,11 @@ it("spans from the start day to the earliest snapshot or campaign end", () => {
 it("spans one year without an end date and caps at 364 days", () => {
   expect(heatmapRange("2026-10-08", [], "2026-10-10")).toEqual({ start: "2026-10-08", end: "2027-10-07", endKind: null });
   expect(heatmapRange("2025-01-01", [{ kind: "campaign_end", date: "2026-12-31", precision: "exact" }], "2026-10-10").start).toBe("2026-01-02");
+});
+it("stops at the day the project ended", () => {
+  expect(heatmapRange("2026-10-01", [{ kind: "campaign_end", date: "2026-11-30", precision: "exact" }], "2026-10-10", "2026-10-07"))
+    .toEqual({ start: "2026-10-01", end: "2026-10-07", endKind: "ended" });
+  expect(heatmapRange("2026-10-08", [], "2026-10-10", "2026-10-01").endKind).toBeNull(); // ended before start: ignored
 });
 it("counts days left until the end", () => {
   expect(daysLeft({ start: "2026-10-01", end: "2026-10-20", endKind: "snapshot" }, "2026-10-10")).toBe(11);
@@ -159,25 +186,30 @@ it("computes the local day in a time zone", () => {
 
 **Interfaces:**
 - `lib/farming.ts`:
-  - `startFarming(db, projectId: string): Promise<void>` — upsert `farming_projects` (hapus `archived_at` kalau ada), lalu
-    snapshot langkah sumber: `tasks` project dengan `cadence in ('daily','weekly')`, teks dari analisis AI `steps_id`
+  - `startFarming(db, projectId: string): Promise<void>` — **bukan upsert**: grant kolom di `0010` cuma kasih insert
+    `(user_id, project_id)` dan update `archived_at` (`started_at` selalu `now()` server), jadi upsert supabase-js →
+    `42501`. Baca baris `farming_projects` milik user untuk project itu: gak ada → `insert({ user_id, project_id })`
+    (`23505` dari tab lain yang menang duluan dianggap sukses); ada dan diarsipkan → `update({ archived_at: null })`;
+    ada dan aktif → gak diubah. `23514` (batas 50 project aktif) diteruskan sebagai error. Lalu
+    snapshot langkah sumber: `tasks` project dengan `cadence in ('once','daily','weekly')`, teks dari analisis AI `steps_id`
     kalau ada (setelah Plan 5; sebelum itu teks `tasks.description`), dedup teks (case-insensitive), `origin = 'source'`.
   - `stopFarming(db, projectId)` — set `archived_at = now()`.
-  - `addCustomTask(db, projectId, text: string, cadence: "daily" | "weekly")`, `archiveTask(db, taskId)`.
+  - `addCustomTask(db, projectId, text: string, cadence: "once" | "daily" | "weekly")`, `archiveTask(db, taskId)`.
   - `refreshFromSource(db, projectId): Promise<{ added: number; archived: number }>` — tambah langkah sumber baru (teks
     belum ada), arsipkan task `origin = 'source'` yang teksnya sudah gak ada di sumber.
   - `setCheck(db, taskId, done: boolean): Promise<boolean>` → RPC `toggle_farming_check`.
   - `getFarmingBoard(db, now: Date): Promise<FarmingCard[]>` — per project aktif: nama, slug, deadline terdekat, task
-    aktif (urut `position`), `checkedToday`, `range` (dari `heatmapRange` dengan deadline project), `heatmap` (`buildHeatmap` atas rentang itu),
-    `daysLeft`, `streak`, `weeklyDone`. Tanggal
+    aktif (urut `position`), `checkedToday`, `range` (dari `heatmapRange` dengan deadline project; `endedOn = null` di plan ini karena tabel `curations` baru
+    dibuat di Plan 5, disambungkan di Plan 6 Task 3), `heatmap` (`buildHeatmap` atas rentang itu),
+    `daysLeft`, `streak`, `weeklyDone`, `mainProgress`. Tanggal
     lokal dari `profiles.timezone` + `localDay`.
   - `isFarming(db, projectId): Promise<boolean>`.
 - `actions.ts` (semua `requireUser`, validasi `isUuid`, `revalidatePath("/garapan")`): `submitStartFarming`,
   `submitStopFarming`, `submitAddTask`, `submitArchiveTask`, `submitRefresh`, `submitCheck` (form action, kirim state
   yang diinginkan seperti `submitWatch`). `startFarmingAction(projectId)` diekspor untuk dipakai AI Coach (spec #38).
 
-- [ ] **Step 1: Test yang gagal** (mock Supabase client seperti test watchlist yang ada) — `startFarming` cuma
-  mengambil langkah daily/weekly dan dedup teks; `refreshFromSource` menambah 1 dan mengarsipkan 1 pada skenario yang
+- [ ] **Step 1: Test yang gagal** (mock Supabase client seperti test watchlist yang ada) — `startFarming` mengambil
+  langkah once/daily/weekly dan dedup teks; `refreshFromSource` menambah 1 dan mengarsipkan 1 pada skenario yang
   disiapkan; `addCustomTask` menolak teks kosong / > 200 karakter sebelum ke DB.
 - [ ] **Step 2–4:** gagal → implementasi → `pnpm --filter web test && pnpm --filter web typecheck` lulus.
 - [ ] **Step 5:** commit `git commit -m "feat(web): farming tracker actions and board query"`
@@ -189,8 +221,9 @@ it("computes the local day in a time zone", () => {
 **Files:**
 - Create: `apps/web/app/(app)/garapan/page.tsx`, `apps/web/components/farming/FarmingCard.tsx`,
   `apps/web/components/farming/Heatmap.tsx`, `apps/web/components/farming/FarmButton.tsx`
-- Modify: `apps/web/components/site-header.tsx` (link "Garapan saya"), `apps/web/components/ProjectDetailView.tsx`
-  (tombol di sebelah Watch), CSS global
+- Modify: `apps/web/components/site-header.tsx` (link "Garapan saya", cuma untuk user login),
+  `apps/web/components/ProjectDetailView.tsx` (tombol di sebelah Watch, cuma untuk user login; halaman project publik
+  sejak Plan 7), `apps/web/lib/routes.ts` (`PROTECTED_PREFIXES` + `"/garapan"`), CSS global
 - Test: `apps/web/test/components/farming/*.test.tsx`, `apps/web/e2e/farming.spec.ts`
 
 **Interfaces:**
@@ -198,15 +231,18 @@ it("computes the local day in a time zone", () => {
   sel `upcoming` bergaris tanpa warna, label bulan di atas,
   `aria-label`/`title` per sel sesuai teks Global Constraints; elemen grafis bukan satu-satunya informasi (ada
   ringkasan "Streak: {n} hari", "{x} dari {y} task hari ini", dan "Sisa {n} hari sampai snapshot" / "Sisa {n} hari sampai
-  akhir kampanye" kalau ada deadline).
-- `FarmingCard`: nama project (link ke detail), deadline terdekat, checklist Harian (checkbox form → `submitCheck`),
-  Mingguan dengan "Minggu ini sudah", form "Tambah task", tombol "Ambil ulang langkah dari sumber", "Berhenti garap",
-  heatmap.
+  akhir campaign" kalau ada deadline).
+- `FarmingCard` (mockup `docs/design/airdropiq-c/CGarapan.dc.html`): nama project (link ke detail), cap, hitung mundur,
+  streak; kolom kiri: "Task utama" ({x}/{y} selesai, checkbox → `submitCheck`), "Hari ini" (daily), "Weekly" dengan
+  "Minggu ini udah"/"Belum minggu ini", link teks "+ Tambah task sendiri" (membuka form kecil), tombol "Ambil ulang step
+  dari source", link "Berhenti garap"; kolom kanan: heatmap "Progres". Project ended: cap "ENDED", checklist dikunci,
+  teks "Campaign udah ended. Checklist dikunci, riwayat garapanmu tetap tersimpan di sini."
 - Kosong: "Kamu belum menggarap project apa pun. Buka sebuah airdrop dan klik Mulai garap."
 
 - [ ] **Step 1: Test yang gagal** — komponen: `Heatmap` merender satu sel per hari rentang dengan kelas level yang benar, sel `upcoming` bergaris, dan tooltip;
-  `FarmingCard` tanpa task harian menampilkan "Belum ada task harian. Tambah task sendiri."; e2e: login → buka project →
-  "Mulai garap" → `/garapan` menampilkan kartu; centang satu task → sel hari ini naik level dan teks "1 dari N task
+  `FarmingCard` tanpa task harian menampilkan "Belum ada daily task. Tambah task sendiri."; e2e: login → buka project →
+  "Mulai garap" → `/garapan` menampilkan kartu dengan "Task utama"; centang task utama → "1/N selesai" dan sel heatmap
+  hari ini gak berubah; centang satu daily task → sel hari ini naik level dan teks "1 dari N task
   hari ini"; uncentang → turun; "Berhenti garap" → kartu hilang; user lain gak melihat apa pun di `/garapan`.
 - [ ] **Step 2–4:** gagal → implementasi → `pnpm --filter web test && pnpm --filter web e2e` lulus.
 - [ ] **Step 5:** commit `git commit -m "feat(web): Garapan saya page with daily checklist and heatmap"`

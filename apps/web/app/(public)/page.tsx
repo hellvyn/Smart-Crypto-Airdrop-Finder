@@ -1,99 +1,83 @@
-import { Pagination } from "@/components/Pagination";
-import { ProjectRow } from "@/components/ProjectRow";
-import { StaleBanner } from "@/components/StaleBanner";
-import { getLastSuccessfulRunAt, listChains, listProjects } from "@/lib/queries";
+import { PlanComparison } from "@/components/landing/PlanComparison";
+import { TodayCheck } from "@/components/landing/TodayCheck";
+import { TrackRecord } from "@/components/landing/TrackRecord";
+import { Button, Stamp } from "@/components/ui";
+import { landing as copy } from "@/lib/copy";
+import { getRunSummary, getTrackRecord } from "@/lib/queries";
+import { LIST_PATH } from "@/lib/routes";
 import { createServerClient } from "@/lib/supabase/server";
-import {
-  RISK_LEVELS,
-  STATUSES,
-  parseFilters,
-  parsePage,
-  rawChainParam,
-  formatDateTime,
-  riskLabel,
-  statusLabel,
-} from "@/lib/view";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
-function many(v: string | string[] | undefined): string[] {
-  return v === undefined ? [] : Array.isArray(v) ? v : [v];
-}
-
-export default async function AirdropsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const sp = await searchParams;
-  const accountDeleted = many(sp.deleted)[0] === "1";
-  const filters = parseFilters(sp);
+/**
+ * The public landing page (mockup docs/design/airdropiq-c/CLanding.dc.html). The list itself is at /airdrops; old
+ * list links with a query (`/?status=live`) are sent there by the proxy. `/?deleted=1` is where deleting your
+ * account ends up, so that notice lives here. "Update hari ini" shows the latest run's numbers, and the track record
+ * renders once `getTrackRecord` has one (10 airdrops or more).
+ */
+export default async function LandingPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const { deleted } = await searchParams;
+  const accountDeleted = (Array.isArray(deleted) ? deleted[0] : deleted) === "1";
+  // The landing must open even when the database is down: without numbers it shows the box and no track record.
   const db = await createServerClient();
-  const now = new Date();
-  const page = parsePage(many(sp.page)[0]);
-  const [{ items, total, pageSize }, lastRunAt, chains] = await Promise.all([
-    listProjects(db, filters, page),
-    getLastSuccessfulRunAt(db),
-    listChains(db),
+  const [summary, trackRecord] = await Promise.all([
+    getRunSummary(db).catch(() => null),
+    getTrackRecord(db).catch(() => null),
   ]);
-  // An invalid chain value applies no filter but is still shown, as text only, in the form.
-  const selectedChain = rawChainParam(sp);
-  const hasFilters = !!(filters.status?.length || filters.risk?.length || selectedChain);
 
   return (
-    <>
-      <h1>Airdrops</h1>
+    <div className="landing">
       {accountDeleted ? (
-        <p role="status" className="form-message">
-          Your account was deleted.
-        </p>
-      ) : null}
-      <StaleBanner lastRunAt={lastRunAt} now={now} />
-      <p className="muted">
-        Last updated: {lastRunAt ? formatDateTime(lastRunAt) : "never"}. {total} {total === 1 ? "airdrop" : "airdrops"}. Nearest deadline first, then most recently seen.
-      </p>
-
-      <form method="get" className="filters" aria-label="Filters">
-        <fieldset>
-          <legend>Status</legend>
-          {STATUSES.map((s) => (
-            <label key={s}>
-              <input type="checkbox" name="status" value={s} defaultChecked={filters.status?.includes(s)} /> {statusLabel(s)}
-            </label>
-          ))}
-        </fieldset>
-        <fieldset>
-          <legend>Risk level</legend>
-          {RISK_LEVELS.map((r) => (
-            <label key={r}>
-              <input type="checkbox" name="risk" value={r} defaultChecked={filters.risk?.includes(r)} /> {riskLabel(r)}
-            </label>
-          ))}
-        </fieldset>
-        <label>
-          Chain
-          <select name="chain" defaultValue={selectedChain ?? ""}>
-            <option value="">All chains</option>
-            {selectedChain && !chains.includes(selectedChain) ? (
-              <option value={selectedChain}>{selectedChain} (no matches)</option>
-            ) : null}
-            {chains.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit">Apply filters</button>
-        {hasFilters ? <a href="/">Clear filters</a> : null}
-      </form>
-
-      {items.length === 0 ? (
-        <p>{page > 1 ? "No airdrops on this page." : hasFilters ? "No airdrops match these filters." : "No airdrops yet."}</p>
-      ) : (
-        <div className="project-list">
-          {items.map((item) => (
-            <ProjectRow key={item.slug} item={item} />
-          ))}
+        <div className="landing-wrap">
+          <p role="status" className="landing-notice">
+            {copy.deleted}
+          </p>
         </div>
-      )}
-      <Pagination page={page} pageSize={pageSize} total={total} filters={filters} />
-    </>
+      ) : null}
+
+      <section className="landing-section landing-hero">
+        <div className="landing-wrap landing-hero-grid">
+          <div className="landing-hero-copy">
+            <h1 className="ui-display landing-h1">{copy.heroTitle}</h1>
+            <p className="landing-lead">{copy.heroLead}</p>
+            <div className="landing-actions">
+              <Button variant="primary" href={LIST_PATH}>
+                {copy.seeAirdrops}
+              </Button>
+              <Button variant="secondary" href="#cara">
+                {copy.why}
+              </Button>
+            </div>
+          </div>
+          <TodayCheck summary={summary} />
+        </div>
+      </section>
+
+      <section id="cara" className="landing-section">
+        <div className="landing-wrap landing-cara">
+          <div className="landing-cara-head">
+            <span className="landing-badge">{copy.recheckBadge}</span>
+            <h2 className="ui-display landing-h2 landing-h2-big">{copy.whyTitle}</h2>
+            <Stamp top={copy.stampTop} bottom={copy.stampBottom} note={copy.stampNote} tone="pass" size="lg" rotate={-8} />
+          </div>
+          <div className="landing-cara-body">
+            {copy.whyBody.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <TrackRecord record={trackRecord} />
+
+      <PlanComparison />
+
+      <footer className="landing-footer">
+        <div className="landing-wrap landing-footer-row">
+          <span>{copy.copyright}</span>
+          <span>{copy.footer}</span>
+        </div>
+      </footer>
+    </div>
   );
 }

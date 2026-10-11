@@ -1,27 +1,42 @@
 import { randomUUID } from "node:crypto";
-import type { DigestProject, ExtractedDeadline, RiskAssessment, RiskLevel, Status, StatusEvidence } from "@saf/core";
-import type { CollectedDocument } from "../collectors/types.js";
-import type { ExtractionAttempt } from "../llm/extract.js";
-import { DuplicateDigestError } from "./repo.js";
 import type {
-  DigestContext,
-  DigestRecipient,
+  AiKind,
+  CurationRecord,
+  ExtractedDeadline,
+  LinkCheckStatus,
+  NewSignal,
+  RiskAssessment,
+  RiskLevel,
+  Status,
+  StatusEvidence,
+  TrackRecordProject,
+} from "@saf/core";
+import type { CollectedDocument, SourceKind } from "../collectors/types.js";
+import type { RaisePage } from "../enrich/alphadrops-raises.js";
+import type { ExtractionAttempt } from "../llm/extract.js";
+import { FACT_FIELDS, curatedChange, endedScoringSince, publicFailReason } from "./repo.js";
+import type {
+  ClaimPage,
   ExtractionStatus,
+  LinkCheck,
+  NewAiAnalysis,
   NewEvidence,
   NewProject,
   PipelineRepo,
   ProjectForScoring,
   ProjectRow,
   RunStats,
+  SignalKeep,
+  Step,
+  StoredAiAnalysis,
   StoredDocument,
 } from "./repo.js";
 
 const DAY_MS = 86_400_000;
-const HOUR_MS = 3_600_000;
 
 export interface ProjectChange {
   projectId: string;
-  field: "status" | "risk_level";
+  field: "status" | "risk_level" | "curated";
   oldValue: string | null;
   newValue: string;
   changedAt: Date;
@@ -41,6 +56,9 @@ interface TaskRow {
   projectId: string;
   documentId: string;
   description: string;
+  position: number;
+  cadence: Step["cadence"];
+  textId: string | null;
 }
 
 interface LinkRow {
@@ -66,26 +84,26 @@ interface RunRow {
   stats: RunStats;
 }
 
-/** An auth user plus their profile (the two are joined by user id in Postgres). */
-interface UserRow {
-  userId: string;
-  email: string;
-  emailConfirmed: boolean;
-  digestEnabled: boolean;
-  newAirdropsOptIn: boolean;
-  unsubscribeToken: string;
-}
-
-export interface NotificationLogRow {
-  userId: string;
-  kind: "digest";
-  refDate: string;
-  sentAt: Date;
-}
-
 interface ExtractionRow extends ExtractionAttempt {
   documentId: string;
   promptVersion: string;
+}
+
+interface SignalRow extends NewSignal {
+  projectId: string;
+  observedAt: Date;
+}
+
+interface CurationRow extends CurationRecord {
+  projectId: string;
+  publicFailReason: string | null;
+  computedAt: Date;
+}
+
+interface VcPortfolioRow {
+  vcId: string;
+  domain: string;
+  fetchedAt: Date;
 }
 
 /** In-memory `PipelineRepo` with the same semantics as `SupabaseRepo`. Used as the fake in orchestrator tests. */
@@ -95,46 +113,19 @@ export class MemoryRepo implements PipelineRepo {
   readonly deadlines: DeadlineRow[] = [];
   readonly riskAssessments: RiskRow[] = [];
   readonly runs: RunRow[] = [];
-  readonly notificationLog: NotificationLogRow[] = [];
+  readonly signals: SignalRow[] = [];
+  readonly curations: CurationRow[] = [];
+  readonly aiAnalyses: StoredAiAnalysis[] = [];
 
   private readonly documents = new Map<string, StoredDocument>();
   private readonly projects = new Map<string, ProjectRow>();
   private readonly evidence: EvidenceRow[] = [];
   private readonly tasks: TaskRow[] = [];
   private readonly links: LinkRow[] = [];
-  private readonly users: UserRow[] = [];
-  private readonly watchlist: { userId: string; projectId: string }[] = [];
-
-  /**
-   * Test-only: adds an auth user with a profile (in Postgres the signup trigger creates the profile). Defaults:
-   * email confirmed, digest on, new airdrops off, random unsubscribe token. Returns the user id.
-   */
-  seedTestUser(u: {
-    email: string;
-    emailConfirmed?: boolean;
-    digestEnabled?: boolean;
-    newAirdropsOptIn?: boolean;
-    unsubscribeToken?: string;
-  }): string {
-    const userId = randomUUID();
-    this.users.push({
-      userId,
-      email: u.email,
-      emailConfirmed: u.emailConfirmed ?? true,
-      digestEnabled: u.digestEnabled ?? true,
-      newAirdropsOptIn: u.newAirdropsOptIn ?? false,
-      unsubscribeToken: u.unsubscribeToken ?? randomUUID(),
-    });
-    return userId;
-  }
-
-  /** Test-only: adds a project to a user's watchlist (ignored when already watched). */
-  seedTestWatch(userId: string, projectId: string): void {
-    if (!this.users.some((u) => u.userId === userId)) throw new Error("unknown user");
-    if (!this.projects.has(projectId)) throw new Error("unknown project");
-    if (this.watchlist.some((w) => w.userId === userId && w.projectId === projectId)) return;
-    this.watchlist.push({ userId, projectId });
-  }
+  private readonly vcPortfolios: VcPortfolioRow[] = [];
+  private readonly alphaRaises = new Map<string, RaisePage & { fetchedAt: Date }>();
+  readonly linkChecks = new Map<string, LinkCheck>();
+  readonly claimPages = new Map<string, ClaimPage>();
 
   /** Snapshot of every stored document (test helper). */
   allDocuments(): StoredDocument[] {
@@ -266,9 +257,31 @@ export class MemoryRepo implements PipelineRepo {
     for (const d of ds) this.deadlines.push({ ...d, projectId, documentId });
   }
 
-  async replaceTasks(projectId: string, documentId: string, tasks: string[]): Promise<void> {
+  async replaceTasks(projectId: string, documentId: string, steps: Step[]): Promise<void> {
     removeWhere(this.tasks, (t) => t.projectId === projectId && t.documentId === documentId);
-    for (const description of tasks) this.tasks.push({ projectId, documentId, description });
+    steps.forEach((step, position) =>
+      this.tasks.push({ projectId, documentId, description: step.text, position, cadence: step.cadence, textId: null }),
+    );
+  }
+
+  /** The project's tasks in step order (document id, position). */
+  private projectTasks(projectId: string): TaskRow[] {
+    return this.tasks
+      .filter((t) => t.projectId === projectId)
+      .sort((a, b) => compareText(a.documentId, b.documentId) || a.position - b.position);
+  }
+
+  async saveStepTranslations(projectId: string, texts: string[]): Promise<void> {
+    const tasks = this.projectTasks(projectId);
+    if (tasks.length !== texts.length) return;
+    tasks.forEach((t, i) => {
+      t.textId = texts[i] ?? null;
+    });
+  }
+
+  /** `text_id` of the project's tasks in step order (test helper). */
+  stepTextIds(projectId: string): (string | null)[] {
+    return this.projectTasks(projectId).map((t) => t.textId);
   }
 
   async upsertLinks(
@@ -284,30 +297,59 @@ export class MemoryRepo implements PipelineRepo {
 
   async listProjectsForScoring(activeSinceDays: number, now: Date): Promise<ProjectForScoring[]> {
     const cutoff = now.getTime() - activeSinceDays * DAY_MS;
+    const endedSince = endedScoringSince(now);
     const result: ProjectForScoring[] = [];
     for (const p of this.projects.values()) {
-      if (p.lastSeen.getTime() < cutoff) continue;
+      if (p.lastSeen.getTime() < cutoff && !(await this.scoredOutsideWindow(p, cutoff, endedSince))) continue;
       const sourceKeys = new Set<string>();
+      const sourceKinds = new Set<SourceKind>();
       for (const e of this.evidence) {
         if (e.projectId !== p.id) continue;
         const d = this.documents.get(e.documentId);
-        if (d) sourceKeys.add(d.sourceKey);
+        if (d) {
+          sourceKeys.add(d.sourceKey);
+          sourceKinds.add(d.sourceKind);
+        }
       }
       const other = p.lookalikeOf === null ? undefined : this.projects.get(p.lookalikeOf);
+      // Order: document_id, position (same as SupabaseRepo).
+      const steps = this.projectTasks(p.id).map((t) => ({ text: t.description, cadence: t.cadence }));
       result.push({
         ...cloneProject(p),
-        tasks: this.tasks.filter((t) => t.projectId === p.id).map((t) => t.description),
+        tasks: steps.map((s) => s.text),
+        steps,
+        // Insertion order, same as SupabaseRepo's evidence.seq.
+        facts: this.evidence
+          .filter((e) => e.projectId === p.id && FACT_FIELDS.includes(e.field))
+          .map((e) => ({ field: e.field, value: e.value, quote: e.quote })),
+        deadlines: this.deadlines
+          .filter((d) => d.projectId === p.id)
+          .map((d) => ({ kind: d.kind, date: d.date, precision: d.precision })),
         links: this.links.filter((l) => l.projectId === p.id).map((l) => ({ url: l.url, kind: l.kind })),
         sourceCount: sourceKeys.size,
+        sourceKinds: [...sourceKinds].sort(compareText),
         lookalikeOfName: other?.name ?? null,
         lookalikeOfDomains: other ? [...other.officialDomains] : [],
         // Insertion order, same as SupabaseRepo's evidence.seq.
         sourceAsks: this.evidence
           .filter((e) => e.projectId === p.id && e.field === "dangerous_ask")
           .map((e) => ({ code: e.value, quote: e.quote })),
+        signals: this.signals
+          .filter((s) => s.projectId === p.id)
+          .map(({ kind, value, source, verified, observedAt }) => ({
+            kind,
+            value: structuredClone(value),
+            source,
+            verified,
+            observedAt,
+          })),
       });
     }
     return result;
+  }
+
+  async countOfficialDomains(): Promise<number> {
+    return new Set([...this.projects.values()].flatMap((p) => p.officialDomains.map((d) => d.toLowerCase()))).size;
   }
 
   async latestRiskLevel(projectId: string): Promise<RiskLevel | null> {
@@ -365,87 +407,190 @@ export class MemoryRepo implements PipelineRepo {
     return purged;
   }
 
-  async listDigestRecipients(): Promise<DigestRecipient[]> {
-    return this.users
-      .filter((u) => u.emailConfirmed && u.digestEnabled)
-      .sort((a, b) => compareText(a.userId, b.userId))
-      .map((u) => {
-        let lastDigestAt: Date | null = null;
-        for (const l of this.notificationLog) {
-          if (l.userId !== u.userId || l.kind !== "digest") continue;
-          if (lastDigestAt === null || l.sentAt.getTime() > lastDigestAt.getTime()) lastDigestAt = l.sentAt;
-        }
-        return {
-          userId: u.userId,
-          email: u.email,
-          newAirdropsOptIn: u.newAirdropsOptIn,
-          unsubscribeToken: u.unsubscribeToken,
-          lastDigestAt,
-        };
+  async replaceSignals(
+    projectId: string,
+    signals: NewSignal[],
+    at: Date,
+    keep: readonly SignalKeep[] = [],
+  ): Promise<void> {
+    const kept = (s: SignalRow): boolean =>
+      keep.some((k) => {
+        if (typeof k === "string") return k === s.source;
+        if (k.source !== s.source) return false;
+        return "kind" in k ? s.kind === k.kind : s.value.investor === k.investor;
       });
+    // Delete first, as SupabaseRepo does: a refused insert leaves the project with only the kept signals.
+    removeWhere(this.signals, (s) => s.projectId === projectId && !kept(s));
+    // Same rules as the project_signals check constraint and unique index.
+    const keyOf = (s: NewSignal) => JSON.stringify([s.kind, s.source, investorKey(s.value)]);
+    const keys = new Set(this.signals.filter((s) => s.projectId === projectId).map(keyOf));
+    for (const s of signals) {
+      if ((s.kind === "claimed_backer" || s.kind === "reported_backer") && s.verified) {
+        throw new Error("verified backer claim");
+      }
+      const key = keyOf(s);
+      if (keys.has(key)) throw new Error("duplicate signal");
+      keys.add(key);
+    }
+    for (const s of signals) this.signals.push({ ...s, projectId, observedAt: at });
   }
 
-  private async digestProject(p: ProjectRow): Promise<DigestProject> {
+  async listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }> {
+    const rows = this.vcPortfolios.filter((r) => r.vcId === vcId);
     return {
-      id: p.id,
-      slug: p.slug,
-      name: p.name,
-      status: p.status,
-      riskLevel: await this.latestRiskLevel(p.id),
-      firstSeen: p.firstSeen,
+      domains: rows.map((r) => r.domain).sort(compareText),
+      fetchedAt: rows.reduce<Date | null>((min, r) => (min === null || r.fetchedAt < min ? r.fetchedAt : min), null),
     };
   }
 
-  async getDigestContext(userId: string, since: Date | null, now: Date): Promise<DigestContext> {
-    const ids = new Set(this.watchlist.filter((w) => w.userId === userId).map((w) => w.projectId));
-    const projects = [...this.projects.values()]
-      .filter((p) => ids.has(p.id))
-      .sort((a, b) => compareText(a.id, b.id));
-    const watched: DigestProject[] = [];
-    for (const p of projects) watched.push(await this.digestProject(p));
+  async saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void> {
+    removeWhere(this.vcPortfolios, (r) => r.vcId === vcId);
+    for (const domain of new Set(domains)) this.vcPortfolios.push({ vcId, domain, fetchedAt: at });
+  }
 
-    const deadlines: DigestContext["deadlines"] = [];
-    for (const d of this.deadlines) {
-      if (!ids.has(d.projectId) || d.date === null) continue;
-      deadlines.push({ projectId: d.projectId, kind: d.kind, date: d.date, precision: d.precision, text: d.text });
-    }
-    deadlines.sort(
-      (a, b) => compareText(a.date, b.date) || compareText(a.projectId, b.projectId) || compareText(a.kind, b.kind),
+  async listAlphaRaise(slug: string): Promise<(RaisePage & { fetchedAt: Date }) | null> {
+    const row = this.alphaRaises.get(slug);
+    // A deep copy, as a database read would give.
+    return row === undefined ? null : structuredClone(row);
+  }
+
+  async saveAlphaRaise(slug: string, page: RaisePage, at: Date): Promise<void> {
+    this.alphaRaises.set(slug, structuredClone({ officialDomain: page.officialDomain, rounds: page.rounds, fetchedAt: at }));
+  }
+
+  async listProjectSourceTexts(projectId: string): Promise<{ url: string; text: string }[]> {
+    const documentIds = new Set(this.evidence.filter((e) => e.projectId === projectId).map((e) => e.documentId));
+    return [...documentIds]
+      .flatMap((id) => {
+        const d = this.documents.get(id);
+        return d && d.text !== "" ? [{ url: d.url, text: d.text }] : [];
+      })
+      .sort((a, b) => compareText(a.url, b.url));
+  }
+
+  async latestAiAnalysis(projectId: string, kind: AiKind): Promise<StoredAiAnalysis | null> {
+    const latest = latestBy(
+      this.aiAnalyses.filter((a) => a.projectId === projectId && a.kind === kind),
+      (a) => a.createdAt,
     );
-
-    const cutoff = (since ?? new Date(now.getTime() - 24 * HOUR_MS)).getTime();
-    // changed_at, then insertion order (stable sort), same as SupabaseRepo's changed_at, seq.
-    const changes = this.projectChanges
-      .filter((c) => ids.has(c.projectId) && c.changedAt.getTime() > cutoff)
-      .sort((a, b) => a.changedAt.getTime() - b.changedAt.getTime())
-      .map((c) => ({ ...c }));
-
-    return { lastDigestAt: since, watched, deadlines, changes };
+    return latest ? { ...latest } : null;
   }
 
-  async listNewProjects(sinceHours: number, now: Date, limit: number): Promise<DigestProject[]> {
-    const cutoff = now.getTime() - sinceHours * HOUR_MS;
-    const projects = [...this.projects.values()]
-      .filter((p) => p.lookalikeOf === null && p.firstSeen.getTime() >= cutoff && p.firstSeen.getTime() <= now.getTime())
-      .sort((a, b) => b.firstSeen.getTime() - a.firstSeen.getTime() || compareText(a.id, b.id))
-      .slice(0, limit);
-    const out: DigestProject[] = [];
-    for (const p of projects) out.push(await this.digestProject(p));
-    return out;
+  async saveAiAnalysis(a: NewAiAnalysis): Promise<void> {
+    this.aiAnalyses.push({ ...a });
   }
 
-  async countDigestsSent(refDate: string): Promise<number> {
-    return this.notificationLog.filter((l) => l.kind === "digest" && l.refDate === refDate).length;
+  /**
+   * A project last seen before the active window is still scored when its latest curation passed and either it is
+   * `ended` with an `ended_on` since `endedSince`, or it is open (no `ended_on`) and has a passing open curation
+   * computed in the window (same candidates as SupabaseRepo).
+   */
+  private async scoredOutsideWindow(p: ProjectRow, cutoff: number, endedSince: string): Promise<boolean> {
+    const latest = await this.latestCuration(p.id);
+    if (!latest?.passed) return false;
+    if (latest.endedOn !== null) return p.status === "ended" && latest.endedOn >= endedSince;
+    return this.curations.some(
+      (c) => c.projectId === p.id && c.passed && c.statusAt !== "ended" && c.computedAt.getTime() >= cutoff,
+    );
   }
 
-  async hasDigest(userId: string, refDate: string): Promise<boolean> {
-    return this.notificationLog.some((l) => l.userId === userId && l.kind === "digest" && l.refDate === refDate);
+  async latestCuration(projectId: string): Promise<{ passed: boolean; endedOn: string | null } | null> {
+    const latest = latestBy(
+      this.curations.filter((c) => c.projectId === projectId),
+      (c) => c.computedAt,
+    );
+    return latest ? { passed: latest.passed, endedOn: latest.endedOn } : null;
   }
 
-  async logDigest(userId: string, refDate: string, at: Date): Promise<void> {
-    if (await this.hasDigest(userId, refDate)) throw new DuplicateDigestError();
-    this.notificationLog.push({ userId, kind: "digest", refDate, sentAt: at });
+  async passedBeforeEnd(projectId: string): Promise<boolean> {
+    const latest = latestBy(
+      this.curations.filter((c) => c.projectId === projectId && c.statusAt !== "ended"),
+      (c) => c.computedAt,
+    );
+    return latest?.passed ?? false;
   }
+
+  async saveCuration(projectId: string, c: CurationRecord, at: Date): Promise<void> {
+    const previous = await this.latestCuration(projectId);
+    this.curations.push({
+      projectId,
+      passed: c.passed,
+      worthLevel: c.worthLevel,
+      worthPoints: c.worthPoints,
+      tab: c.tab,
+      statusAt: c.statusAt,
+      endedOn: c.endedOn,
+      reasons: c.reasons,
+      coverage: c.coverage,
+      coingeckoListed: c.coingeckoListed,
+      publicFailReason: publicFailReason(c.passed, c.reasons),
+      computedAt: at,
+    });
+    const change = curatedChange(previous?.passed ?? null, c.passed);
+    if (change) this.projectChanges.push({ projectId, field: "curated", ...change, changedAt: at });
+  }
+
+  async listCurationHistoryForTrackRecord(): Promise<(TrackRecordProject & { projectId: string })[]> {
+    const projectIds = new Set(this.curations.filter((c) => c.passed).map((c) => c.projectId));
+    return [...projectIds].map((projectId) => {
+      const curations = this.curations.filter((c) => c.projectId === projectId);
+      // The first passing row: earliest computedAt, the earlier insert wins ties (Postgres: seq).
+      const firstPass = curations.filter((c) => c.passed).reduce((first, c) => (c.computedAt < first.computedAt ? c : first));
+      const latest = latestBy(curations, (c) => c.computedAt);
+      return {
+        projectId,
+        firstPassAt: firstPass.computedAt.toISOString(),
+        listedAtFirstPass: firstPass.coingeckoListed,
+        tab: latest?.tab ?? null,
+        coingeckoListed: this.signals.some((s) => s.projectId === projectId && s.kind === "coingecko_listed" && s.verified),
+        riskRaisedAfterPass: this.riskAssessments.some(
+          (r) => r.projectId === projectId && (r.level === "high" || r.level === "critical") && r.computedAt > firstPass.computedAt,
+        ),
+      };
+    });
+  }
+
+  async saveLinkCheck(url: string, status: LinkCheckStatus, at: Date): Promise<void> {
+    this.linkChecks.set(url, { url, status, checkedAt: at });
+  }
+
+  async listLinkChecks(urls: string[]): Promise<LinkCheck[]> {
+    return rowsOf(this.linkChecks, urls);
+  }
+
+  async saveClaimPage(url: string, text: string, at: Date): Promise<void> {
+    this.claimPages.set(url, { url, text, fetchedAt: at });
+  }
+
+  async listClaimPages(urls: string[]): Promise<ClaimPage[]> {
+    return rowsOf(this.claimPages, urls);
+  }
+}
+
+/** Copies of the rows stored under `urls` (missing ones left out), ordered by url. */
+function rowsOf<T extends { url: string }>(rows: ReadonlyMap<string, T>, urls: string[]): T[] {
+  return [...new Set(urls)]
+    .flatMap((url) => {
+      const row = rows.get(url);
+      return row === undefined ? [] : [{ ...row }];
+    })
+    .sort((a, b) => compareText(a.url, b.url));
+}
+
+/** `coalesce(value->>'investor', '')`, the investor part of the project_signals unique index. */
+function investorKey(value: Record<string, unknown>): string {
+  const investor = value.investor;
+  if (investor === undefined || investor === null) return "";
+  return typeof investor === "string" ? investor : JSON.stringify(investor);
+}
+
+/** Row with the greatest date; a later row wins ties (insertion order, like the `seq` tie-break in Postgres). */
+function latestBy<T>(rows: T[], date: (row: T) => Date): T | null {
+  let latest: T | null = null;
+  for (const row of rows) {
+    if (latest === null || date(row).getTime() >= date(latest).getTime()) latest = row;
+  }
+  return latest;
 }
 
 function cloneProject(p: ProjectRow): ProjectRow {

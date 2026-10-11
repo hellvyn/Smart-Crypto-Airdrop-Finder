@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireUser } from "./auth";
 import { LIST_COLUMNS, toListItem } from "./queries";
 import { isUuid } from "./uuid";
-import type { ProjectListItem } from "./view";
+import { notCuratedReason, type WatchedItem } from "./view";
 
 function throwIf(error: { message: string } | null, what: string): void {
   if (error) throw new Error(`Failed to ${what}: ${error.message}`);
@@ -44,20 +44,37 @@ export async function setWatching(db: SupabaseClient, projectId: string, desired
   return watching;
 }
 
-/** The user's watched projects from the `project_list` view, ordered like the airdrop list. */
-export async function getWatchlist(db: SupabaseClient): Promise<ProjectListItem[]> {
+/**
+ * The user's watched projects from the `project_list` view, ordered like the airdrop list, each with why it is not on
+ * the curated list (#55: the public reason only). The latest curation of all of them is one query on
+ * `latest_curations`; a project without a row there has not been rated.
+ */
+export async function getWatchlist(db: SupabaseClient): Promise<WatchedItem[]> {
   const user = await requireUser();
   const watched = await db.from("watchlist").select("project_id").eq("user_id", user.id);
   throwIf(watched.error, "load the watchlist");
   const ids = ((watched.data ?? []) as { project_id: unknown }[]).map((r) => String(r.project_id));
   if (ids.length === 0) return [];
-  const { data, error } = await db
-    .from("project_list")
-    .select(LIST_COLUMNS)
-    .in("id", ids)
-    .order("next_deadline_date", { ascending: true, nullsFirst: false })
-    .order("last_seen", { ascending: false })
-    .order("id", { ascending: true });
-  throwIf(error, "load the watched projects");
-  return ((data ?? []) as unknown as Record<string, unknown>[]).map(toListItem);
+  const [projects, curations] = await Promise.all([
+    db
+      .from("project_list")
+      .select(LIST_COLUMNS)
+      .in("id", ids)
+      .order("next_deadline_date", { ascending: true, nullsFirst: false })
+      .order("last_seen", { ascending: false })
+      .order("id", { ascending: true }),
+    db.from("latest_curations").select("project_id, passed, public_fail_reason").in("project_id", ids),
+  ]);
+  throwIf(projects.error, "load the watched projects");
+  throwIf(curations.error, "load the watched projects' curation");
+  const latest = new Map(
+    ((curations.data ?? []) as { project_id: unknown; passed: unknown; public_fail_reason: unknown }[]).map((r) => [
+      String(r.project_id),
+      { passed: r.passed === true, publicFailReason: typeof r.public_fail_reason === "string" ? r.public_fail_reason : null },
+    ]),
+  );
+  return ((projects.data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
+    ...toListItem(row),
+    notCuratedReason: notCuratedReason(latest.get(String(row.id)) ?? null),
+  }));
 }

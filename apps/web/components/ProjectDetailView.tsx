@@ -1,162 +1,154 @@
+import { KEY_CHECKS } from "@saf/core";
 import { ExternalLink } from "./ExternalLink";
-import { RiskLine } from "./RiskLine";
 import { StatusBadge } from "./StatusBadge";
+import { AiDecision } from "./detail/AiDecision";
+import { Contradictions } from "./detail/Contradictions";
+import { EffortBox } from "./detail/EffortBox";
+import { LatestUpdate } from "./detail/LatestUpdate";
+import { SafetyBox } from "./detail/SafetyBox";
+import { StepsList } from "./detail/StepsList";
+import { WhyListed } from "./detail/WhyListed";
+import { Stamp, Tag, WorthBadge } from "@/components/ui";
+import { detail as copy, labels, landing, list } from "@/lib/copy";
+import { formatCalendarDay, isCheckedKind, sourceName, wibStampDay } from "@/lib/detail";
 import {
-  coverageLine,
+  checkedLabel,
   deadlineKindLabel,
-  evidenceFieldLabel,
-  formatDay,
+  endedLabel,
+  isCheckFrozen,
+  isCheckStale,
+  notCuratedReason,
   precisionLabel,
+  riskLabel,
   safeHttpUrl,
   type ProjectDetail,
 } from "@/lib/view";
 
-type Evidence = ProjectDetail["evidence"][number];
-
-const SEVERITY_LABELS: Record<string, string> = {
-  critical: "Critical",
-  high: "High",
-  medium: "Medium",
-  info: "Info",
-};
-
-function hostOf(url: string): string {
-  const safe = safeHttpUrl(url);
-  return safe ? new URL(safe).hostname : url;
-}
-
-function EvidenceItem({ e }: { e: Evidence }) {
+/** "Ringkasan" (side box): chain, deadlines, the project's own links and the key parameters a source states. */
+function Summary({ project }: { project: ProjectDetail }) {
+  const s = copy.summary;
+  const ownLinks = project.links.filter((l) => !isCheckedKind(l.kind));
+  const keyParameters = project.facts.filter((f) => f.field.startsWith("key_parameter:"));
   return (
-    <li>
-      <p className="evidence-meta">
-        <strong>{evidenceFieldLabel(e.field)}</strong> <span className="muted">· {e.value}</span>
-      </p>
-      <blockquote>{e.quote}</blockquote>
-      <p className="muted">
-        <ExternalLink href={e.sourceUrl}>{hostOf(e.sourceUrl)}</ExternalLink> · <time>{formatDay(e.at)}</time>
-      </p>
-    </li>
+    <section className="detail-side-box" aria-labelledby="summary-title">
+      <h2 id="summary-title" className="detail-side-title">
+        {copy.sections.summary}
+      </h2>
+      <ul className="detail-summary">
+        <li>{project.chains.length > 0 ? copy.chains(project.chains) : copy.chainUnknown}</li>
+        {project.deadlines.map((d, i) => (
+          <li key={`d-${i}`}>
+            {s.deadline(deadlineKindLabel(d.kind), d.date ? formatCalendarDay(d.date) : s.dateUnknown, precisionLabel(d.precision))}
+          </li>
+        ))}
+        {ownLinks.map((l) => {
+          const safe = safeHttpUrl(l.url);
+          return (
+            <li key={l.url}>
+              <ExternalLink href={l.url}>{safe ? sourceName(safe) : l.url}</ExternalLink>
+            </li>
+          );
+        })}
+        {keyParameters.map((f, i) => {
+          const name = f.field.slice("key_parameter:".length);
+          return (
+            <li key={`k-${i}`}>
+              {s.keyParameter(Object.hasOwn(s.keyParameters, name) ? s.keyParameters[name]! : name, f.value)}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
-export function ProjectDetailView({ project }: { project: ProjectDetail }) {
-  // A claim URL that is not http(s) is not linkable: RiskLine hides the "Official checker" label, and the URL is
-  // listed as plain text under Links instead.
-  const otherLinks = project.links.filter((l) => l.kind !== "claim");
-  const unsafeClaimLinks = project.links.filter((l) => l.kind === "claim" && safeHttpUrl(l.url) === null);
-  const conflictEvidence = project.conflict ? project.evidence.filter((e) => e.field === "status") : [];
-  const otherEvidence = project.conflict ? project.evidence.filter((e) => e.field !== "status") : project.evidence;
+/**
+ * The project page (Plan 6 Task 5, spec §7.2, mockup CProject): the head, then 01 AI verdict, 02 sources that
+ * disagree, 03 steps, 04 security check, 05 effort, 06 why it is listed, and the side boxes "Ringkasan" and "Update
+ * terbaru". A visitor (#45) gets no worth level and "Member only" in the AI verdict and effort boxes; their data is
+ * never queried for a visitor (lib/queries.ts). Every AI text is plain text. Steps are `project.steps` for every
+ * reader (the grounded `tasks.text_id`, else the source step), never the Analyst's raw `steps_id` (G5 C1).
+ */
+export function ProjectDetailView({ project, member, now }: { project: ProjectDetail; member: boolean; now: Date }) {
+  const { risk, curation } = project;
+  const keyChecksRan = risk ? risk.checks.filter((c) => c.ran && (KEY_CHECKS as readonly string[]).includes(c.id)).length : 0;
+  const checkedAt = curation ? new Date(curation.checkedAt) : null;
+  const frozen = curation?.tab ? isCheckFrozen(curation.tab, curation.endedOn, now) : false;
+  const level = risk?.level ?? project.riskLevel;
 
   return (
-    <article>
-      <h1>
-        {project.name}
-        {project.tokenSymbol ? <span className="muted"> ({project.tokenSymbol})</span> : null}
-      </h1>
+    <article className="detail">
+      <header className="detail-head">
+        <div className="detail-head-text">
+          <h1 className="ui-display detail-title">
+            {project.name}
+            {project.tokenSymbol ? <span className="muted"> ({project.tokenSymbol})</span> : null}
+          </h1>
+          <p className="badges">
+            <StatusBadge status={project.status} />
+            {curation?.tab === "ended" && curation.endedOn ? (
+              <span className="detail-ended" data-testid="ended-on">
+                {endedLabel(curation.endedOn)}
+              </span>
+            ) : null}
+            <span className="detail-risk" data-testid="risk-head" data-level={level ?? "none"}>
+              {copy.riskHead(riskLabel(level))}
+            </span>
+            {project.claimOpenChecked ? <Tag tone="claimOpen">{list.claimOpen}</Tag> : null}
+            {checkedAt ? (
+              <span
+                className="detail-checked"
+                data-testid="checked"
+                data-tone={!frozen && isCheckStale(checkedAt, now) ? "warn" : undefined}
+              >
+                {checkedLabel(checkedAt, now, frozen)}
+              </span>
+            ) : null}
+            {member && curation?.worthLevel ? <WorthBadge level={curation.worthLevel} /> : null}
+          </p>
+          {risk ? <p className="muted">{labels.keyChecks(keyChecksRan)}</p> : null}
+        </div>
+        {curation?.passed && keyChecksRan === 4 ? (
+          <Stamp
+            top={landing.stampTop}
+            bottom={landing.stampBottom}
+            note={wibStampDay(curation.checkedAt)}
+            tone="pass"
+            size="lg"
+            rotate={-9}
+          />
+        ) : null}
+      </header>
 
-      <RiskLine level={project.risk?.level ?? project.riskLevel} links={project.links} testId="risk-line" />
-      <p className="badges">
-        <StatusBadge status={project.status} />
-      </p>
-
-      <p className="muted">
-        {project.chains.length > 0 ? `Chains: ${project.chains.join(", ")}` : "Chain unknown"}
-      </p>
-
-      <section aria-labelledby="risk-heading">
-        <h2 id="risk-heading">Risk</h2>
-        {project.risk ? (
-          <>
-            <p className="muted">{coverageLine(project.risk.checks)}</p>
-            {project.risk.reasons.length > 0 ? (
-              <ul aria-label="Risk reasons">
-                {project.risk.reasons.map((r, i) => (
-                  <li key={`${r.code}-${i}`}>
-                    <strong>{SEVERITY_LABELS[r.severity] ?? r.severity} severity</strong>: <span>{r.message}</span>{" "}
-                    <span className="muted">({r.source})</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="muted">No risk reasons were recorded.</p>
-            )}
-            <p className="muted">Assessed {formatDay(project.risk.computedAt)}</p>
-          </>
-        ) : (
-          <p className="muted">This project has not been assessed yet.</p>
-        )}
-      </section>
-
-      {project.conflict ? (
-        <section aria-labelledby="conflict-heading" className="banner banner-conflict">
-          <h2 id="conflict-heading">Conflicting sources</h2>
-          <p>Sources disagree about this airdrop&apos;s status. Treat it as unconfirmed.</p>
-          <ul aria-label="Conflicting status quotes">
-            {conflictEvidence.map((e, i) => (
-              <EvidenceItem key={`${e.sourceUrl}-${i}`} e={e} />
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <section aria-labelledby="deadlines-heading">
-        <h2 id="deadlines-heading">Deadlines</h2>
-        {project.deadlines.length > 0 ? (
-          <ul>
-            {project.deadlines.map((d, i) => (
-              <li key={i}>
-                <strong>{deadlineKindLabel(d.kind)}</strong>:{" "}
-                {d.date ? `${formatDay(d.date)} (${precisionLabel(d.precision)})` : `date unknown (${precisionLabel(d.precision)})`}
-                {d.text ? <span className="muted"> · {d.text}</span> : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted">No deadlines found.</p>
-        )}
-      </section>
-
-      <section aria-labelledby="tasks-heading">
-        <h2 id="tasks-heading">Tasks</h2>
-        {project.tasks.length > 0 ? (
-          <ul>
-            {project.tasks.map((t, i) => (
-              <li key={i}>{t}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted">No tasks found.</p>
-        )}
-      </section>
-
-      <section aria-labelledby="links-heading">
-        <h2 id="links-heading">Links</h2>
-        {otherLinks.length + unsafeClaimLinks.length > 0 ? (
-          <ul>
-            {[...otherLinks, ...unsafeClaimLinks].map((l) => (
-              <li key={l.url}>
-                <span className="muted">{l.kind}: </span>
-                <ExternalLink href={l.url}>{l.url}</ExternalLink>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted">No other links found.</p>
-        )}
-      </section>
-
-      <section aria-labelledby="evidence-heading">
-        <h2 id="evidence-heading">Evidence</h2>
-        {otherEvidence.length > 0 ? (
-          <ul aria-label="Evidence">
-            {otherEvidence.map((e, i) => (
-              <EvidenceItem key={`${e.sourceUrl}-${e.field}-${i}`} e={e} />
-            ))}
-          </ul>
-        ) : (
-          <p className="muted">{project.conflict ? "See the conflicting quotes above." : "No evidence recorded."}</p>
-        )}
-      </section>
+      <div className="detail-layout">
+        <div className="detail-main">
+          <AiDecision member={member} analyst={member ? project.analyst : null} sourceUrls={project.sourceUrls} />
+          <Contradictions
+            items={project.contradictions}
+            statusQuotes={project.conflict ? project.evidence.filter((e) => e.field === "status") : []}
+            sourceUrls={project.sourceUrls}
+          />
+          <StepsList steps={project.steps} links={project.links} />
+          <SafetyBox
+            risk={risk}
+            links={project.links}
+            member={member}
+            scamFlags={member ? project.scamFlags : null}
+          />
+          <EffortBox member={member} analyst={member ? project.analyst : null} facts={project.facts} />
+          <WhyListed
+            passed={curation?.passed === true}
+            signals={project.signals}
+            facts={project.facts}
+            reasons={member ? (curation?.reasons ?? null) : null}
+            failReason={notCuratedReason(curation)}
+          />
+        </div>
+        <aside className="detail-aside">
+          <Summary project={project} />
+          <LatestUpdate facts={project.facts} sourceUrls={project.sourceUrls} />
+        </aside>
+      </div>
     </article>
   );
 }

@@ -1,7 +1,7 @@
 import type { CollectedDocument } from "../collectors/types.js";
 import type { ChatMessage } from "./nvidia.js";
 
-export const PROMPT_VERSION = "2026-10-10.2";
+export const PROMPT_VERSION = "2026-10-10.3";
 
 const SYSTEM = `You extract crypto airdrop information from a text. Output ONLY one JSON object, no markdown, no commentary.
 Schema:
@@ -20,7 +20,14 @@ Schema:
      "text": string
    }],
    "official_urls": [string],
-   "confidence": number
+   "confidence": number,
+   "steps": [{"text": string, "cadence": "once"|"daily"|"weekly"}],
+   "key_parameters": [{"name": "allocation"|"distribution"|"tge", "value": string, "quote": string}],
+   "source_ratings": [{"name": "difficulty"|"cost", "value": string, "quote": string}],
+   "latest_update": {"text": string, "date": "YYYY-MM-DD"|null}|null,
+   "claimed_backers": [{"investor": string, "quote": string}],
+   "capital_required": "none"|"low"|"high"|"unknown",
+   "capital_min_usd": number|null
  }]}
 Definitions:
 - live: the team confirmed a token/airdrop AND claiming or the qualifying campaign is open now.
@@ -37,6 +44,14 @@ Rules:
 - deadlines: list every dated event the text states, one entry per event, [] if there is none. "text" is the original wording from the text. Set "date" only if an absolute date is stated or can be computed exactly from a stated date; otherwise null. When the text gives a date without a year (for example "Jan 3"), resolve it relative to the Published date: choose the earliest year that puts the date on or after the Published date (if the Published date is unknown, use null). Use precision "approximate" whenever the wording is approximate; for month or quarter precision, use the first day of that period as "date" or null.
 - status_evidence: a short quote from the text.
 - confidence: 0..1, your confidence in the status.
+- "quote" fields and latest_update.text: copy the original sentence or phrase word for word from the text. An entry whose quote is not in the text is discarded.
+- steps: the ordered steps to take part, one entry per step. Set cadence "daily" or "weekly" only when the text says the step repeats ("check in daily", "every week"); otherwise "once".
+- key_parameters: only when the text states the airdrop allocation (allocation), the distribution method (distribution), or the TGE date or timing (tge). "value" is a short summary of the stated fact.
+- source_ratings: only ratings the source itself writes, such as "Difficulty: Easy" (difficulty) or "Cost to earn: Medium" (cost). "value" is the rating as written.
+- latest_update: the most recent update the source marks as an update (for example "Latest Update: ..."), with its date if stated; null if there is none.
+- claimed_backers: investors the text says back the project; "quote" is the original sentence. Never guess an investor.
+- capital_required: "high" if the text states a minimum deposit or capital of $500 or more (or the equivalent), "low" if the stated minimum is below that or only gas fees are needed, "none" if taking part is free, "unknown" if the text does not say.
+- capital_min_usd: the minimum deposit or capital in USD when the text states the exact amount (USDC/USDT count 1:1), otherwise null. Never convert from ETH or another token, never guess.
 - If the text is not about an airdrop/points/testnet reward opportunity, return {"is_airdrop_content": false, "projects": []}.`;
 
 export function buildMessages(doc: Pick<CollectedDocument, "url" | "publishedAt" | "text">): ChatMessage[] {
