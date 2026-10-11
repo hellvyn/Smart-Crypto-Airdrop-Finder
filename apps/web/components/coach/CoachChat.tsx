@@ -118,7 +118,7 @@ export function CoachChat({
         <span>{copy.disclaimer}</span>
       </p>
       {turns.length > 0 ? (
-        <ol className="coach-turns">
+        <ol className="coach-turns" aria-live="polite" aria-busy={busy}>
           {turns.map((turn, i) => (
             <li key={i} className="coach-turn" data-role={turn.role}>
               <span className="coach-turn-who">{turn.role === "user" ? copy.you : copy.coach}</span>

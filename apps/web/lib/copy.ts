@@ -563,7 +563,7 @@ export const coach = {
     quota: "Jatah 100 pesan hari ini habis, reset jam 00.00 WIB.",
     unavailable: "Coach lagi gak bisa jawab, coba lagi sebentar.",
     bad_input: "Isiannya belum lengkap, atau pesannya kepanjangan (maksimal 1000 karakter). Cek lagi, lalu coba lagi.",
-    not_member: "Percakapan ini gak ketemu di akun kamu. Login lagi, atau mulai percakapan baru dari halaman Coach.",
+    not_member: "Percakapan ini gak ketemu di akun kamu. Login lagi, atau mulai percakapan baru dari halaman AI Coach.",
     secret: "Jangan pernah kirim seed phrase atau private key ke siapa pun, termasuk ke Coach. Pesan ini gak dikirim.",
   },
   empty: {
@@ -571,7 +571,7 @@ export const coach = {
       "Belum ada project yang cocok sama profil kamu sekarang. Coba ubah modal atau level di profil, atau cek lagi besok. Pesan ini gak memotong jatah kamu.",
     noPlan: "Coach belum bisa bikin rencana, coba lagi.",
     /** Tanya AI about a project that is no longer on the list (the profile never filters that chat). */
-    projectGone: "Project ini lagi gak ada di list yang lolos check, jadi Coach belum bisa bahas. Pesan ini gak memotong jatah kamu.",
+    projectGone: "Coach belum punya cukup data soal project ini (belum lolos check, atau belum ada poin dan langkah dari analisis), jadi belum bisa bahas. Coba lagi besok. Pesan ini gak memotong jatah kamu.",
   },
   /** Stored as the member's message of a plan request (it shows in the history). */
   planRequest: "Bikinin rencana garapan buat aku.",
@@ -638,17 +638,17 @@ export const coach = {
     openGarapan: "Buka Garapan saya",
   },
   chat: {
-    title: "Tanya Coach",
+    title: "Tanya AI",
     remaining: (left: number) => `Sisa ${left}/100 pesan hari ini`,
     disclaimer: "Bukan nasihat keuangan. Tetap DYOR.",
     label: "Pertanyaan kamu",
     send: "Kirim",
-    sending: "Coach lagi nulis...",
+    sending: "AI Coach lagi nulis...",
     you: "Kamu",
-    coach: "Coach",
+    coach: "AI Coach",
   },
   project: {
-    title: (name: string) => `Tanya Coach soal ${name}`,
+    title: (name: string) => `Tanya AI soal ${name}`,
     intro: "Coach cuma bahas project ini, berdasarkan data yang udah lolos check.",
     endedReason: "udah ended",
     notListedNote: "Karena itu Coach gak nyaranin buat digarap, dan rencana garapan gak dibikin.",
@@ -659,8 +659,8 @@ export const coach = {
   explain: {
     button: "Jelasin langkah ini",
     loading: "Coach lagi nulis...",
-    needProfile: "Langkah ini belum bisa dijelasin. Biasanya karena profil kamu belum diisi, jadi lengkapi dulu di halaman Coach.",
-    toCoach: "Buka Coach",
+    needProfile: "Langkah ini belum bisa dijelasin. Biasanya karena profil kamu belum diisi, jadi lengkapi dulu di halaman AI Coach.",
+    toCoach: "Buka AI Coach",
   },
   threads: {
     title: "Riwayat 30 hari terakhir",

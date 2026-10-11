@@ -112,10 +112,11 @@ export async function getThread(db: SupabaseClient, threadId: string): Promise<T
     .from("coach_messages")
     .select("id, role, kind, reply_to, content, created_at")
     .eq("thread_id", threadId)
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(200);
   throwIf(messages.error, "the thread messages");
-  const all = (messages.data ?? []) as unknown as { id: string; role: string; kind: string; reply_to: string | null; content: string }[];
+  // The newest 200 rows, back in order: reopening an old thread shows its latest answers, not its first ones.
+  const all = ((messages.data ?? []) as unknown as { id: string; role: string; kind: string; reply_to: string | null; content: string }[]).reverse();
   const answered = new Set(all.filter((m) => m.role === "assistant" && m.reply_to).map((m) => m.reply_to));
   const chatIds = new Set(all.filter((m) => m.role === "user" && m.kind === "chat" && answered.has(m.id)).map((m) => m.id));
   return {

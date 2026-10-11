@@ -530,7 +530,7 @@ test("Tanya AI on a project that passed opens a chat about that project alone, w
   await page.goto(`/projects/${coachProject.slug}`);
   await page.getByRole("link", { name: "Tanya AI" }).click();
   await expect(page).toHaveURL(new RegExp(`/coach\\?project=${coachProject.id}$`));
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Tanya Coach soal ${coachProject.name}`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Tanya AI soal ${coachProject.name}`);
   await expect(page.getByRole("button", { name: "Mulai garap" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Rencana garapan kamu" })).toHaveCount(0);
   await page.getByLabel("Pertanyaan kamu").fill("Apa yang harus aku kerjain dulu?");

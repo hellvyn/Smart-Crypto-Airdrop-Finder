@@ -9,6 +9,7 @@ import {
   createStreamSanitizer,
   getCoachProfile,
   isCoachCandidate,
+  loadHistory,
   loadCandidates,
   remainingQuota,
   saveCoachProfile,
@@ -384,5 +385,25 @@ describe("createStreamSanitizer, plain text", () => {
     const s = createStreamSanitizer("");
     const out = s.push("TGE itu **Token Generation Event**.\n{\n  \"tasks\": [\n") + s.push("  ],\n}\nSelesai.\n") + s.flush();
     expect(out).toBe("TGE itu Token Generation Event.\nSelesai.\n");
+  });
+});
+
+describe("loadHistory", () => {
+  it("keeps the newest answered turns of a long thread, oldest first, and skips an unanswered question", async () => {
+    const T = "22222222-2222-4222-8222-222222222222";
+    const rows: Record<string, unknown>[] = [];
+    // 150 answered exchanges, the first one oldest. Each pair is one minute apart.
+    for (let i = 0; i < 150; i++) {
+      const t = new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString();
+      rows.push({ id: `u${i}`, thread_id: T, role: "user", reply_to: null, content: `tanya ${i}`, created_at: t });
+      rows.push({ id: `a${i}`, thread_id: T, role: "assistant", reply_to: `u${i}`, content: `jawab ${i}`, created_at: new Date(Date.UTC(2026, 9, 1, 0, i, 30)).toISOString() });
+    }
+    rows.push({ id: "uX", thread_id: T, role: "user", reply_to: null, content: "gagal", created_at: new Date(Date.UTC(2026, 9, 1, 5)).toISOString() });
+    const { db } = fakeCoachDb({ tables: { coach_messages: rows } });
+    const history = await loadHistory(db, T);
+    expect(history).toHaveLength(20);
+    expect(history.at(-1)).toEqual({ role: "assistant", content: "jawab 149" });
+    expect(history[0]).toEqual({ role: "user", content: "tanya 140" });
+    expect(history.map((m) => m.content)).not.toContain("gagal");
   });
 });

@@ -1,6 +1,7 @@
 import { createServerClient as createSsrServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { supabaseAnonKey, supabaseUrl } from "../env";
+import { sessionCookieOptions } from "./cookie-options";
 
 /**
  * Supabase client for Server Components, Server Actions and Route Handlers. Reads and writes the session
@@ -9,6 +10,7 @@ import { supabaseAnonKey, supabaseUrl } from "../env";
 export async function createServerClient() {
   const cookieStore = await cookies();
   return createSsrServerClient(supabaseUrl(), supabaseAnonKey(), {
+    cookieOptions: sessionCookieOptions(),
     cookies: {
       getAll() {
         return cookieStore.getAll();

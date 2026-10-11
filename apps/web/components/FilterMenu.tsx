@@ -23,7 +23,7 @@ export function FilterMenu({
         {legend}
       </span>
       <details className="filter-menu">
-        <summary>{list.filterSummary(pickedLabels)}</summary>
+        <summary aria-label={`${legend}: ${list.filterSummary(pickedLabels)}`}>{list.filterSummary(pickedLabels)}</summary>
         <fieldset>
           <legend className="visually-hidden">{legend}</legend>
           {options.map(([value, label]) => (

@@ -209,7 +209,7 @@ export function FarmingCard({
           {ended ? <Stamp top={copy.endedStamp} bottom="" tone="ended" size="sm" rotate={-4} /> : null}
           <div>
             <h2 id={titleId} className="ui-display farm-name">
-              <Link href={`/projects/${card.slug}`}>{card.name}</Link>
+              <Link href={`/projects/${encodeURIComponent(card.slug)}`}>{card.name}</Link>
             </h2>
             {deadline ? <span className="farm-meta">{deadline}</span> : null}
           </div>

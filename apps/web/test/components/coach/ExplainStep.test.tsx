@@ -61,11 +61,11 @@ describe("ExplainStep", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Jatah 100 pesan hari ini habis, reset jam 00.00 WIB.");
   });
 
-  it("sends a member without a profile to the Coach page", async () => {
+  it("shows the route's own message for a bad request, with no detour to a profile that is not needed", async () => {
     fetchMock.mockResolvedValue(Response.json({ error: "bad_input", message: "Isiannya belum lengkap." }, { status: 400 }));
     render(<ExplainStep projectId={PROJECT} stepId={STEP} />);
     click();
-    expect((await screen.findByRole("alert")).textContent).toContain("profil kamu belum diisi");
-    expect(screen.getByRole("link", { name: "Buka Coach" }).getAttribute("href")).toBe("/coach");
+    expect((await screen.findByRole("alert")).textContent).toBe("Isiannya belum lengkap.");
+    expect(screen.queryByRole("link", { name: "Buka AI Coach" })).toBeNull();
   });
 });

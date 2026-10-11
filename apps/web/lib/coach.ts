@@ -37,6 +37,8 @@ export const MAX_MESSAGE_CHARS = 1000;
 export const CHAT_MAX_TOKENS = 3000;
 /** Earlier answered exchanges of a thread that the chat prompt carries. */
 const HISTORY_MESSAGES = 20;
+/** Rows read to find the last HISTORY_MESSAGES answered ones (unanswered and failed rows are skipped). */
+const HISTORY_FETCH = 80;
 /** A sentence longer than this is released at a space without waiting for its end. */
 const MAX_HELD_CHARS = 1500;
 /** How long a chat model may take to send its first text before the next model is tried. */
@@ -377,10 +379,11 @@ export async function loadHistory(db: SupabaseClient, threadId: string): Promise
     .from("coach_messages")
     .select("id, role, reply_to, content, created_at")
     .eq("thread_id", threadId)
-    .order("created_at", { ascending: true })
-    .limit(500);
+    .order("created_at", { ascending: false })
+    .limit(HISTORY_FETCH);
   throwIf(error, "the thread messages");
-  const rows = (data ?? []) as unknown as { id: string; role: string; reply_to: string | null; content: string }[];
+  // The newest rows, put back in order: a long thread keeps feeding the model its latest turns.
+  const rows = ((data ?? []) as unknown as { id: string; role: string; reply_to: string | null; content: string }[]).reverse();
   const answered = new Set(rows.filter((r) => r.role === "assistant" && r.reply_to).map((r) => r.reply_to));
   return rows
     .filter((r) => (r.role === "assistant" ? r.reply_to !== null : r.role === "user" && answered.has(r.id)))
