@@ -1004,6 +1004,7 @@ describe("SupabaseRepo briefing and coach retention", () => {
       { table: "coach_threads", filters: [["created_at", "lt.2026-09-10T23:00:00.000Z"]] },
       { table: "briefings", filters: [["day", "lt.2026-09-10"]] },
       { table: "coach_usage", filters: [["created_at", "lt.2026-10-08T23:00:00.000Z"]] },
+      { table: "login_attempts", filters: [["created_at", "lt.2026-10-08T23:00:00.000Z"]] },
     ]);
     expect(old).toEqual({ threads: 2, briefings: 2 });
     expect(usage).toBe(2);

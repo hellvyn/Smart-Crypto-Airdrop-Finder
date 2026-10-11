@@ -1158,6 +1158,9 @@ export class SupabaseRepo implements PipelineRepo {
   async purgeCoachUsage(olderThan: Date): Promise<number> {
     const usage = await this.db.from("coach_usage").delete({ count: "exact" }).lt("created_at", olderThan.toISOString());
     check("purgeCoach.usage", usage);
+    // The login throttle's failures (0019) only matter for 15 minutes; they go with the usage ledger's purge.
+    const attempts = await this.db.from("login_attempts").delete().lt("created_at", olderThan.toISOString());
+    check("purgeCoach.login_attempts", attempts);
     return usage.count ?? 0;
   }
 

@@ -33,7 +33,7 @@ as $$
           where a.kind = 'ip' and a.key = p_ip_key and a.created_at > now() - interval '15 minutes') < 30);
 $$;
 
--- Records one failed attempt under each valid key, and drops rows older than a day.
+-- Records one failed attempt under each valid key. Rows older than a day are removed by the daily pipeline purge.
 create function public.login_throttle_fail(p_email_key text, p_ip_key text) returns void
   language plpgsql
   security definer
@@ -46,7 +46,6 @@ begin
   if p_ip_key ~ '^[0-9a-f]{64}$' then
     insert into public.login_attempts (kind, key) values ('ip', p_ip_key);
   end if;
-  delete from public.login_attempts where created_at < now() - interval '1 day';
 end;
 $$;
 
