@@ -6,7 +6,7 @@ import { SupabaseRepo } from "../src/store/supabase-repo.js";
  * Records every insert and every delete filter; answers like PostgREST does for an insert or delete without
  * `.select()`.
  */
-function recordingClient(): {
+function recordingClient(selectRows: Record<string, unknown> = {}): {
   client: SupabaseClient;
   inserts: { table: string; row: unknown }[];
   deletes: { table: string; filters: [string, unknown][] }[];
@@ -16,6 +16,17 @@ function recordingClient(): {
   const ok = { data: null, error: null, count: null, status: 204, statusText: "No Content" };
   const client = {
     from: (table: string) => ({
+      // A read answers `selectRows[table]` (or no row) whatever its filters, ordering or limit.
+      select: () => {
+        const result = { ...ok, data: selectRows[table] ?? null, status: 200, statusText: "OK" };
+        const query: Record<string, unknown> = {
+          then: (resolve: (value: typeof result) => unknown) => resolve(result),
+        };
+        for (const method of ["eq", "neq", "order", "limit", "returns", "maybeSingle", "single"]) {
+          query[method] = () => query;
+        }
+        return query;
+      },
       insert: async (row: unknown) => {
         inserts.push({ table, row });
         return { ...ok, status: 201, statusText: "Created" };
@@ -119,6 +130,187 @@ describe("SupabaseRepo.saveExtraction", () => {
           finish_reason: null,
           latency_ms: 180000,
           error: "http_0",
+        },
+      },
+    ]);
+  });
+});
+
+describe("SupabaseRepo.replaceSignals", () => {
+  it("deletes every signal of the project, then inserts the new ones observed at the run time", async () => {
+    const { client, inserts, deletes } = recordingClient();
+    const repo = new SupabaseRepo(client);
+    const at = new Date("2026-10-10T03:00:00Z");
+
+    await repo.replaceSignals(
+      "p-1",
+      [
+        { kind: "tvl", value: { tvl_usd: 25000000 }, source: "defillama", verified: true },
+        { kind: "claimed_backer", value: { investor: "a16z", quote: "backed by a16z" }, source: "llm_text", verified: false },
+      ],
+      at,
+    );
+    await repo.replaceSignals("p-2", [], at);
+
+    expect(deletes).toEqual([
+      { table: "project_signals", filters: [["project_id", "p-1"]] },
+      { table: "project_signals", filters: [["project_id", "p-2"]] },
+    ]);
+    expect(inserts).toEqual([
+      {
+        table: "project_signals",
+        row: [
+          {
+            project_id: "p-1",
+            kind: "tvl",
+            value: { tvl_usd: 25000000 },
+            source: "defillama",
+            verified: true,
+            observed_at: "2026-10-10T03:00:00.000Z",
+          },
+          {
+            project_id: "p-1",
+            kind: "claimed_backer",
+            value: { investor: "a16z", quote: "backed by a16z" },
+            source: "llm_text",
+            verified: false,
+            observed_at: "2026-10-10T03:00:00.000Z",
+          },
+        ],
+      },
+    ]);
+  });
+});
+
+describe("SupabaseRepo.saveCuration", () => {
+  it("stores the first fail message as public_fail_reason and logs a passed flip as a curated change", async () => {
+    const { client, inserts } = recordingClient({ curations: { passed: true, ended_on: null } });
+    const repo = new SupabaseRepo(client);
+    const at = new Date("2026-10-10T03:00:00Z");
+
+    await repo.saveCuration(
+      "p-1",
+      {
+        passed: false,
+        worthLevel: null,
+        tab: null,
+        statusAt: "live",
+        endedOn: null,
+        reasons: [
+          { code: "official_domain", message: "Domain resmi tercatat", kind: "pass" },
+          { code: "insufficient_checks", message: "Cek kunci belum lengkap", kind: "fail" },
+          { code: "risk_high", message: "Risiko tinggi", kind: "fail" },
+        ],
+        coverage: { defillama: false },
+      },
+      at,
+    );
+
+    expect(inserts).toEqual([
+      {
+        table: "curations",
+        row: {
+          project_id: "p-1",
+          passed: false,
+          worth_level: null,
+          tab: null,
+          status_at: "live",
+          ended_on: null,
+          reasons: [
+            { code: "official_domain", message: "Domain resmi tercatat", kind: "pass" },
+            { code: "insufficient_checks", message: "Cek kunci belum lengkap", kind: "fail" },
+            { code: "risk_high", message: "Risiko tinggi", kind: "fail" },
+          ],
+          coverage: { defillama: false },
+          public_fail_reason: "Cek kunci belum lengkap",
+          computed_at: "2026-10-10T03:00:00.000Z",
+        },
+      },
+      {
+        table: "project_changes",
+        row: {
+          project_id: "p-1",
+          field: "curated",
+          old_value: "true",
+          new_value: "false",
+          changed_at: "2026-10-10T03:00:00.000Z",
+        },
+      },
+    ]);
+  });
+
+  it("writes a null public_fail_reason and no change when a passing curation follows a passing one", async () => {
+    const { client, inserts } = recordingClient({ curations: { passed: true, ended_on: null } });
+    const repo = new SupabaseRepo(client);
+
+    await repo.saveCuration(
+      "p-1",
+      {
+        passed: true,
+        worthLevel: "high",
+        tab: "ended",
+        statusAt: "ended",
+        endedOn: "2026-10-05",
+        reasons: [{ code: "ended_after_curation", message: "Berakhir setelah lolos kurasi", kind: "pass" }],
+        coverage: {},
+      },
+      new Date("2026-10-10T03:00:00Z"),
+    );
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      table: "curations",
+      row: { worth_level: "high", tab: "ended", status_at: "ended", ended_on: "2026-10-05", public_fail_reason: null },
+    });
+  });
+});
+
+describe("SupabaseRepo VC portfolios and AI analyses", () => {
+  it("replaces one VC's cached domains, each domain once", async () => {
+    const { client, inserts, deletes } = recordingClient();
+    const repo = new SupabaseRepo(client);
+
+    await repo.saveVcPortfolio("paradigm", ["blast.io", "zora.co", "blast.io"], new Date("2026-10-10T03:00:00Z"));
+
+    expect(deletes).toEqual([{ table: "vc_portfolios", filters: [["vc_id", "paradigm"]] }]);
+    expect(inserts).toEqual([
+      {
+        table: "vc_portfolios",
+        row: [
+          { vc_id: "paradigm", domain: "blast.io", fetched_at: "2026-10-10T03:00:00.000Z" },
+          { vc_id: "paradigm", domain: "zora.co", fetched_at: "2026-10-10T03:00:00.000Z" },
+        ],
+      },
+    ]);
+  });
+
+  it("stores an AI analysis with its model, served model, prompt version and creation time", async () => {
+    const { client, inserts } = recordingClient();
+    const repo = new SupabaseRepo(client);
+
+    await repo.saveAiAnalysis({
+      projectId: "p-1",
+      kind: "contradictions",
+      inputHash: "abc",
+      result: { items: [] },
+      model: "router:auto",
+      servedModel: "gpt-oss:120b",
+      promptVersion: "contradictions-1",
+      createdAt: new Date("2026-10-10T03:00:00Z"),
+    });
+
+    expect(inserts).toEqual([
+      {
+        table: "ai_analyses",
+        row: {
+          project_id: "p-1",
+          kind: "contradictions",
+          input_hash: "abc",
+          result: { items: [] },
+          model: "router:auto",
+          served_model: "gpt-oss:120b",
+          prompt_version: "contradictions-1",
+          created_at: "2026-10-10T03:00:00.000Z",
         },
       },
     ]);
