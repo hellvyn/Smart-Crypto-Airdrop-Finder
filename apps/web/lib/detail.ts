@@ -59,6 +59,28 @@ export function formatCalendarDay(day: string): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(day) ? calendarDay.format(new Date(`${day}T00:00:00Z`)) : day;
 }
 
+const EN_MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+
+/**
+ * A key parameter's value for the "Ringkasan" box: a value that is only a date ("October 20, 2026", "20 October 2026",
+ * "2026-10-20") is shown in the site's Indonesian date style; anything else is shown as the source wrote it.
+ */
+export function keyParameterValue(value: string): string {
+  const text = value.trim();
+  let match = /^([A-Za-z]+)\.? (\d{1,2}),? (\d{4})$/.exec(text);
+  let month = match ? EN_MONTHS.findIndex((m) => m.startsWith((match![1] ?? "").toLowerCase().slice(0, 3)) && (match![1] ?? "").length >= 3) : -1;
+  let day = match?.[2];
+  let year = match?.[3];
+  if (month < 0) {
+    match = /^(\d{1,2}) ([A-Za-z]+)\.?,? (\d{4})$/.exec(text);
+    month = match ? EN_MONTHS.findIndex((m) => m.startsWith((match![2] ?? "").toLowerCase().slice(0, 3)) && (match![2] ?? "").length >= 3) : -1;
+    day = match?.[1];
+    year = match?.[3];
+  }
+  if (month >= 0 && day && year) return formatCalendarDay(`${year}-${String(month + 1).padStart(2, "0")}-${day.padStart(2, "0")}`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? formatCalendarDay(text) : value;
+}
+
 const wibTime = new Intl.DateTimeFormat("en-GB", { timeZone: WIB, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const wibDay = new Intl.DateTimeFormat("en-GB", { timeZone: WIB, day: "2-digit", month: "2-digit", year: "numeric" });
 
@@ -145,15 +167,29 @@ const HOST_LABELS: Record<string, string> = {
   "medium.com": "Medium",
 };
 
-/** The project's own links for the "Ringkasan" box: one per site (host), named when it is a well-known one. */
-export function summaryLinks(links: DetailLink[]): { url: string; label: string }[] {
+/** A link as shown: host and path without the scheme, "www." or a trailing slash (x.com/proj). */
+function shortUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.replace(/\/+$/, "");
+    return `${u.hostname.replace(/^www\./, "")}${path}`;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * The project's own links for the "Ringkasan" box: one per site (host), with what kind of link it is ("X", "Telegram",
+ * "Discord", "GitHub", "Medium", else "Website") and the short address to show.
+ */
+export function summaryLinks(links: DetailLink[]): { url: string; label: string; text: string }[] {
   const seen = new Set<string>();
-  const out: { url: string; label: string }[] = [];
+  const out: { url: string; label: string; text: string }[] = [];
   for (const link of links) {
     const host = sourceName(link.url);
     if (seen.has(host)) continue;
     seen.add(host);
-    out.push({ url: link.url, label: HOST_LABELS[host] ?? host });
+    out.push({ url: link.url, label: HOST_LABELS[host] ?? "Website", text: shortUrl(link.url) });
   }
   return out;
 }

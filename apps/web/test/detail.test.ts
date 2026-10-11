@@ -1,6 +1,6 @@
 // Pure helpers of the project page (lib/detail.ts).
 import { describe, expect, it } from "vitest";
-import { claimOpenChecked, domainAge, registeredOn, sourceName, summaryDeadlines, summaryLinks } from "@/lib/detail";
+import { claimOpenChecked, domainAge, formatCalendarDay, registeredOn, keyParameterValue, sourceName, summaryDeadlines, summaryLinks } from "@/lib/detail";
 
 describe("claimOpenChecked (#42)", () => {
   const today = "2026-10-10";
@@ -69,17 +69,32 @@ describe("summaryDeadlines", () => {
 });
 
 describe("summaryLinks", () => {
-  it("keeps one link per site and names the well-known ones", () => {
+  it("keeps one link per site, says what kind it is and shows a short address", () => {
     const link = (url: string) => ({ url, kind: "website" }) as never;
     const out = summaryLinks([
       link("https://mint.io/a"),
       link("https://www.mint.io/b"),
-      link("https://x.com/proj"),
+      link("https://x.com/proj/"),
       link("https://t.me/proj"),
       link("https://nft.getminted.io/"),
-      link("https://getminted.io/"),
     ]);
-    expect(out.map((l) => l.label)).toEqual(["mint.io", "X", "Telegram", "nft.getminted.io", "getminted.io"]);
+    expect(out.map((l) => [l.label, l.text])).toEqual([
+      ["Website", "mint.io/a"],
+      ["X", "x.com/proj"],
+      ["Telegram", "t.me/proj"],
+      ["Website", "nft.getminted.io"],
+    ]);
+  });
+});
+
+describe("keyParameterValue", () => {
+  it("shows a value that is only a date in Indonesian style and leaves other text alone", () => {
+    const id = formatCalendarDay("2026-10-20");
+    expect(keyParameterValue("October 20, 2026")).toBe(id);
+    expect(keyParameterValue("20 Oct 2026")).toBe(id);
+    expect(keyParameterValue("2026-10-20")).toBe(id);
+    expect(keyParameterValue("Season 1 XP leaderboard, snapshot based")).toBe("Season 1 XP leaderboard, snapshot based");
+    expect(keyParameterValue("10% of supply")).toBe("10% of supply");
   });
 });
 

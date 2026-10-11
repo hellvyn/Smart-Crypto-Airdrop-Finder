@@ -10,7 +10,7 @@ import { StepsList } from "./detail/StepsList";
 import { WhyListed } from "./detail/WhyListed";
 import { Stamp, Tag, WorthBadge } from "@/components/ui";
 import { detail as copy, labels, landing, list } from "@/lib/copy";
-import { formatCalendarDay, isCheckedKind, summaryDeadlines, summaryLinks, wibStampDay } from "@/lib/detail";
+import { formatCalendarDay, isCheckedKind, keyParameterValue, summaryDeadlines, summaryLinks, wibStampDay } from "@/lib/detail";
 import {
   checkedLabel,
   deadlineKindLabel,
@@ -47,14 +47,14 @@ function Summary({ project }: { project: ProjectDetail }) {
         ))}
         {ownLinks.map((l) => (
           <li key={l.url}>
-            <ExternalLink href={l.url}>{safeHttpUrl(l.url) ? l.label : l.url}</ExternalLink>
+            {l.label}: <ExternalLink href={l.url}>{safeHttpUrl(l.url) ? l.text : l.url}</ExternalLink>
           </li>
         ))}
         {keyParameters.map((f, i) => {
           const name = f.field.slice("key_parameter:".length);
           return (
             <li key={`k-${i}`}>
-              {s.keyParameter(Object.hasOwn(s.keyParameters, name) ? s.keyParameters[name]! : name, f.value)}
+              {s.keyParameter(Object.hasOwn(s.keyParameters, name) ? s.keyParameters[name]! : name, keyParameterValue(f.value))}
             </li>
           );
         })}
