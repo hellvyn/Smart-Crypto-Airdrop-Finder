@@ -194,37 +194,37 @@ describe("selectSpeculativeCandidates", () => {
 });
 
 describe("parseProtocols", () => {
-  it("keeps every protocol, tokened ones included, with url, TVL and CoinGecko id", () => {
+  it("keeps every protocol, tokened ones included, with url, TVL, CoinGecko id and logo URL", () => {
     const raw = [
-      { ...base, name: "Speculative", slug: "speculative", url: "https://spec.xyz", tvl: 2_000_000 },
+      { ...base, name: "Speculative", slug: "speculative", url: "https://spec.xyz", tvl: 2_000_000, logo: "https://icons.llama.fi/speculative.png" },
       { ...base, name: "Tokened", slug: "tokened", url: "https://tok.xyz", tvl: 9e8, gecko_id: "tokened", symbol: "TOK" },
       { ...base, name: "Exchange", slug: "exchange", category: "CEX", url: "https://cex.com", rugged: true },
     ];
     expect(parseProtocols(raw)).toEqual([
-      { name: "Speculative", url: "https://spec.xyz", tvl: 2_000_000, geckoId: null },
-      { name: "Tokened", url: "https://tok.xyz", tvl: 9e8, geckoId: "tokened" },
-      { name: "Exchange", url: "https://cex.com", tvl: 50_000_000, geckoId: null },
+      { name: "Speculative", url: "https://spec.xyz", tvl: 2_000_000, geckoId: null, logo: "https://icons.llama.fi/speculative.png" },
+      { name: "Tokened", url: "https://tok.xyz", tvl: 9e8, geckoId: "tokened", logo: null },
+      { name: "Exchange", url: "https://cex.com", tvl: 50_000_000, geckoId: null, logo: null },
     ]);
   });
 
   it("turns missing, empty or non-finite fields into null", () => {
     const raw = [
-      { name: "NoUrl", url: "", tvl: null, gecko_id: "" },
+      { name: "NoUrl", url: "", tvl: null, gecko_id: "", logo: "" },
       { name: "Missing" },
-      { name: "WrongTypes", url: 7, tvl: "12", gecko_id: 3 },
+      { name: "WrongTypes", url: 7, tvl: "12", gecko_id: 3, logo: 5 },
       { name: "Infinite", url: "https://inf.xyz", tvl: Number.POSITIVE_INFINITY, gecko_id: null },
     ];
     expect(parseProtocols(raw)).toEqual([
-      { name: "NoUrl", url: null, tvl: null, geckoId: null },
-      { name: "Missing", url: null, tvl: null, geckoId: null },
-      { name: "WrongTypes", url: null, tvl: null, geckoId: null },
-      { name: "Infinite", url: "https://inf.xyz", tvl: null, geckoId: null },
+      { name: "NoUrl", url: null, tvl: null, geckoId: null, logo: null },
+      { name: "Missing", url: null, tvl: null, geckoId: null, logo: null },
+      { name: "WrongTypes", url: null, tvl: null, geckoId: null, logo: null },
+      { name: "Infinite", url: "https://inf.xyz", tvl: null, geckoId: null, logo: null },
     ]);
   });
 
   it("skips entries without a name, and returns [] for anything but an array", () => {
     expect(parseProtocols([null, "x", { url: "https://a.xyz" }, { name: "" }, { name: "Ok" }])).toEqual([
-      { name: "Ok", url: null, tvl: null, geckoId: null },
+      { name: "Ok", url: null, tvl: null, geckoId: null, logo: null },
     ]);
     expect(parseProtocols({ protocols: [] })).toEqual([]);
     expect(parseProtocols(null)).toEqual([]);

@@ -7,6 +7,8 @@ import {
   endedLabel,
   isCheckFrozen,
   isCheckStale,
+  logoLetter,
+  logoTone,
   notCuratedReason,
   parseCuratedFilters,
   coverageLine,
@@ -374,5 +376,30 @@ describe("notCuratedReason", () => {
   it("does not claim belum dinilai for a failed curation without a stored reason", () => {
     expect(notCuratedReason({ passed: false, publicFailReason: null })).toBe("alasannya belum tercatat");
     expect(notCuratedReason({ passed: false, publicFailReason: "   " })).toBe("alasannya belum tercatat");
+  });
+});
+
+describe("logo fallback tile", () => {
+  it.each([
+    ["Demo Protocol", "D"],
+    ["  zkSync Era", "Z"],
+    ["$PUMP", "P"],
+    ["1inch", "1"],
+    ["éclair", "É"],
+    ["🚀 Rocket", "R"],
+    ["$$$", "$"],
+    ["", "?"],
+  ])("letter of %j is %s", (name, letter) => {
+    expect(logoLetter(name)).toBe(letter);
+  });
+
+  it("picks the tile colour from the slug: the same slug always gets the same one, and slugs spread over all six", () => {
+    // Sum of the UTF-16 code units modulo 6: "a" = 97 -> 1, "ab" = 195 -> 3, "" -> 0.
+    expect(logoTone("")).toBe("ink");
+    expect(logoTone("a")).toBe("pass");
+    expect(logoTone("ab")).toBe("caution");
+    expect(logoTone("demo")).toBe(logoTone("demo"));
+    const tones = new Set(["a", "b", "c", "d", "e", "f"].map(logoTone));
+    expect(tones).toEqual(new Set(["ink", "pass", "ended", "caution", "accent", "ink-2"]));
   });
 });

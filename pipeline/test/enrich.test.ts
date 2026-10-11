@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Http } from "../src/collectors/types.js";
 import { checkPhishingSite } from "../src/enrich/goplus.js";
 import { firstCertificateAgeDays } from "../src/enrich/crtsh.js";
-import { domainAgeDays } from "../src/enrich/rdap.js";
+import { pacedHttp } from "../src/enrich/paced.js";
+import { RDAP_MIN_INTERVAL_MS, RDAP_RETRY_MS, rdapDomainAge } from "../src/enrich/rdap.js";
 import { countHacks, fetchHacks } from "../src/enrich/hacks.js";
 
 function fakeHttp(status: number, body: string, calls: string[] = []): Http {
@@ -19,7 +20,7 @@ function fakeHttp(status: number, body: string, calls: string[] = []): Http {
 
 const json = (v: unknown): string => JSON.stringify(v);
 
-type Reply = { status: number; body: string };
+type Reply = { status: number; body: string; headers?: Record<string, string> };
 
 /** Answers by exact URL; unknown URLs get 404. */
 function routedHttp(routes: Record<string, Reply>, calls: string[] = []): Http {
@@ -239,43 +240,176 @@ describe("firstCertificateAgeDays", () => {
   });
 });
 
-describe("domainAgeDays", () => {
+describe("rdapDomainAge", () => {
   const now = new Date("2026-10-10T00:00:00Z");
   const rdap = (eventDate: string) =>
     json({ events: [{ eventAction: "last changed", eventDate: "2026-10-05T00:00:00Z" }, { eventAction: "registration", eventDate }] });
+  const days = async (http: Http, domain = "example.org"): Promise<number | null> => (await rdapDomainAge(http, domain, now, noSleep)).days;
 
   it("returns whole days since registration", async () => {
-    expect(await domainAgeDays(fakeHttp(200, rdap("2026-10-01T00:00:00Z")), "example.org", now)).toBe(9);
+    expect(await rdapDomainAge(fakeHttp(200, rdap("2026-10-01T00:00:00Z")), "example.org", now, noSleep)).toEqual({ outcome: "age", days: 9 });
   });
 
   it("floors partial days", async () => {
-    expect(await domainAgeDays(fakeHttp(200, rdap("2026-10-01T12:00:00Z")), "example.org", now)).toBe(8);
+    expect(await days(fakeHttp(200, rdap("2026-10-01T12:00:00Z")))).toBe(8);
   });
 
   it("clamps a future registration date to 0", async () => {
-    expect(await domainAgeDays(fakeHttp(200, rdap("2026-10-20T00:00:00Z")), "example.org", now)).toBe(0);
+    expect(await days(fakeHttp(200, rdap("2026-10-20T00:00:00Z")))).toBe(0);
   });
 
   it("lowercases and encodes the domain in the request", async () => {
     const calls: string[] = [];
-    await domainAgeDays(fakeHttp(200, rdap("2026-10-01T00:00:00Z"), calls), "Example.ORG", now);
+    await days(fakeHttp(200, rdap("2026-10-01T00:00:00Z"), calls), "Example.ORG");
     expect(calls).toEqual(["https://rdap.org/domain/example.org"]);
   });
 
-  it("returns null on 404", async () => {
-    expect(await domainAgeDays(fakeHttp(404, "not found"), "example.org", now)).toBeNull();
+  it("reports a 404 as no RDAP service, without a retry", async () => {
+    const calls: string[] = [];
+    const sleep = vi.fn(async () => {});
+    expect(await rdapDomainAge(fakeHttp(404, "not found", calls), "a.io", now, sleep)).toEqual({ outcome: "no_rdap", days: null });
+    expect(calls).toHaveLength(1);
+    expect(sleep).not.toHaveBeenCalled();
   });
 
-  it("returns null without a registration event", async () => {
+  it("reports a 200 without a registration event as no date", async () => {
     const body = json({ events: [{ eventAction: "expiration", eventDate: "2030-01-01T00:00:00Z" }] });
-    expect(await domainAgeDays(fakeHttp(200, body), "example.org", now)).toBeNull();
+    expect(await rdapDomainAge(fakeHttp(200, body), "example.org", now, noSleep)).toEqual({ outcome: "no_date", days: null });
   });
 
-  it("returns null on unparseable date, invalid JSON or bad shape", async () => {
-    expect(await domainAgeDays(fakeHttp(200, rdap("not-a-date")), "example.org", now)).toBeNull();
-    expect(await domainAgeDays(fakeHttp(200, "nope"), "example.org", now)).toBeNull();
-    expect(await domainAgeDays(fakeHttp(200, json({ events: "x" })), "example.org", now)).toBeNull();
-    expect(await domainAgeDays(fakeHttp(200, json({})), "example.org", now)).toBeNull();
+  it("reports an unparseable date, invalid JSON or bad shape on a 200 as no date", async () => {
+    for (const body of [rdap("not-a-date"), "nope", json({ events: "x" }), json({})]) {
+      expect(await rdapDomainAge(fakeHttp(200, body), "example.org", now, noSleep)).toEqual({ outcome: "no_date", days: null });
+    }
+  });
+
+  it("reports a timeout as failed, without a retry", async () => {
+    const calls: string[] = [];
+    expect(await rdapDomainAge(fakeHttp(0, "", calls), "example.org", now, noSleep)).toEqual({ outcome: "failed", days: null });
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe("rdapDomainAge retry", () => {
+  const now = new Date("2026-10-10T00:00:00Z");
+  const OK: Reply = { status: 200, body: json({ events: [{ eventAction: "registration", eventDate: "2026-10-01T00:00:00Z" }] }) };
+
+  it("retries once after a 429, waiting 3 s, and uses the age of the second answer", async () => {
+    const calls: string[] = [];
+    const sleep = vi.fn(async () => {});
+    const http = sequenceHttp([{ status: 429, body: "" }, OK], calls);
+    expect(await rdapDomainAge(http, "a.com", now, sleep)).toEqual({ outcome: "age", days: 9 });
+    expect(calls).toHaveLength(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(RDAP_RETRY_MS);
+    expect(RDAP_RETRY_MS).toBe(3000);
+  });
+
+  it("gives up as rate limited after a second 429 and makes no third request", async () => {
+    const calls: string[] = [];
+    const sleep = vi.fn(async () => {});
+    const http = sequenceHttp([{ status: 429, body: "" }], calls);
+    expect(await rdapDomainAge(http, "a.com", now, sleep)).toEqual({ outcome: "rate_limited", days: null });
+    expect(calls).toHaveLength(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits the Retry-After of a 503 (2 s) before the retry", async () => {
+    const calls: string[] = [];
+    const sleep = vi.fn(async () => {});
+    const http = sequenceHttp([{ status: 503, body: "", headers: { "retry-after": "2" } }, OK], calls);
+    expect(await rdapDomainAge(http, "a.com", now, sleep)).toEqual({ outcome: "age", days: 9 });
+    expect(calls).toHaveLength(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(2000);
+  });
+
+  it("caps a long Retry-After at 10 s", async () => {
+    const sleep = vi.fn(async () => {});
+    const http = sequenceHttp([{ status: 429, body: "", headers: { "retry-after": "120" } }, OK]);
+    await rdapDomainAge(http, "a.com", now, sleep);
+    expect(sleep).toHaveBeenCalledWith(10_000);
+  });
+
+  it("reads a Retry-After given as an HTTP date against the clock", async () => {
+    const sleep = vi.fn(async () => {});
+    const clock = (): number => Date.parse("2026-10-10T00:00:00Z");
+    const http = sequenceHttp([{ status: 429, body: "", headers: { "retry-after": "Sat, 10 Oct 2026 00:00:04 GMT" } }, OK]);
+    await rdapDomainAge(http, "a.com", now, sleep, clock);
+    expect(sleep).toHaveBeenCalledWith(4000);
+  });
+
+  it("waits 3 s when Retry-After cannot be read", async () => {
+    const sleep = vi.fn(async () => {});
+    const http = sequenceHttp([{ status: 502, body: "", headers: { "retry-after": "soon" } }, OK]);
+    await rdapDomainAge(http, "a.com", now, sleep);
+    expect(sleep).toHaveBeenCalledWith(3000);
+  });
+
+  it("reports a 5xx that persists as failed, not rate limited", async () => {
+    const calls: string[] = [];
+    const http = sequenceHttp([{ status: 503, body: "" }], calls);
+    expect(await rdapDomainAge(http, "a.com", now, noSleep)).toEqual({ outcome: "failed", days: null });
+    expect(calls).toHaveLength(2);
+  });
+});
+
+describe("pacedHttp", () => {
+  /** A fake clock that only the fake sleep moves. */
+  function fakeTime() {
+    let t = 1_000_000;
+    return { clock: () => t, sleep: async (ms: number) => void (t += ms) };
+  }
+
+  it("leaves at least the interval between request starts, with no pause before the first", async () => {
+    const { clock, sleep } = fakeTime();
+    const starts: number[] = [];
+    const base: Http = {
+      async get() {
+        starts.push(clock());
+        return { status: 200, body: "" };
+      },
+      async resolveRedirect() {
+        return null;
+      },
+    };
+    const http = pacedHttp(base, RDAP_MIN_INTERVAL_MS, clock, sleep);
+    const t0 = clock();
+    for (let i = 0; i < 5; i++) await http.get(`https://rdap.org/domain/d${i}.com`);
+    expect(starts[0]).toBe(t0);
+    for (let i = 1; i < starts.length; i++) expect((starts[i] as number) - (starts[i - 1] as number)).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("does not wait when the interval has already passed", async () => {
+    const { clock, sleep } = fakeTime();
+    const sleeps: number[] = [];
+    const base = fakeHttp(200, "");
+    const http = pacedHttp(base, 1000, clock, async (ms) => {
+      sleeps.push(ms);
+      await sleep(ms);
+    });
+    await http.get("https://x/1");
+    await sleep(5000);
+    await http.get("https://x/2");
+    expect(sleeps).toEqual([]);
+  });
+
+  it("paces the retry of a rate-limited RDAP answer too", async () => {
+    const { clock, sleep } = fakeTime();
+    const starts: number[] = [];
+    const base: Http = {
+      async get() {
+        starts.push(clock());
+        return { status: 429, body: "", headers: { "retry-after": "0" } };
+      },
+      async resolveRedirect() {
+        return null;
+      },
+    };
+    const http = pacedHttp(base, RDAP_MIN_INTERVAL_MS, clock, sleep);
+    await rdapDomainAge(http, "a.com", NOW, sleep, clock);
+    expect(starts).toHaveLength(2);
+    expect((starts[1] as number) - (starts[0] as number)).toBeGreaterThanOrEqual(1000);
   });
 });
 

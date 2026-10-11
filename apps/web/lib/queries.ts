@@ -13,7 +13,9 @@ import {
   type ChangeProject,
 } from "./changes";
 import { claimOpenChecked, isCheckedKind, isFlagged } from "./detail";
+import { isUuid } from "./uuid";
 import {
+  LOGO_SOURCES,
   RISK_LEVELS,
   SIGNAL_KINDS,
   STATUSES,
@@ -35,6 +37,7 @@ import {
   type DetailCuration,
   type EvidenceRow,
   type ListFilters,
+  type LogoSource,
   type ProjectDetail,
   type ProjectListItem,
   type Tab,
@@ -162,7 +165,8 @@ export interface CuratedPage {
 }
 
 const CURATED_COLUMNS =
-  `${LIST_COLUMNS}, tab, ended_on, checked_at, signals, claim_open_checked, capital, capital_min_usd, key_checks_ran`;
+  `${LIST_COLUMNS}, tab, ended_on, checked_at, signals, claim_open_checked, capital, capital_min_usd, key_checks_ran, ` +
+  "logo_source";
 const CAPITALS: readonly Capital[] = ["free", "deposit", "unknown"];
 
 function asSignals(v: unknown): CuratedSignal[] {
@@ -189,6 +193,7 @@ function asNumber(v: unknown): number | null {
 /** A `public_list` / `curated_list` row. `worthLevel` is read only for members. */
 export function toCuratedItem(row: Record<string, unknown>, member: boolean): CuratedItem {
   return {
+    id: String(row.id),
     ...toListItem(row),
     tab: parseTab(typeof row.tab === "string" ? row.tab : undefined),
     endedOn: typeof row.ended_on === "string" ? row.ended_on : null,
@@ -199,6 +204,9 @@ export function toCuratedItem(row: Record<string, unknown>, member: boolean): Cu
     capitalMinUsd: asNumber(row.capital_min_usd),
     keyChecksRan: Math.min(4, Math.max(0, Math.trunc(asNumber(row.key_checks_ran) ?? 0))),
     worthLevel: member && WORTH_LEVELS.includes(row.worth_level as WorthLevel) ? (row.worth_level as WorthLevel) : null,
+    // A logo is only linked for a project id the logo route accepts.
+    logoSource:
+      isUuid(row.id) && LOGO_SOURCES.includes(row.logo_source as LogoSource) ? (row.logo_source as LogoSource) : null,
   };
 }
 

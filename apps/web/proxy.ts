@@ -6,6 +6,7 @@ export async function proxy(request: NextRequest) {
   return updateSession(request);
 }
 
+// Not on /logo/{id}: a logo is cached publicly, and a session refresh here would put a Set-Cookie on it.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Http } from "../collectors/types.js";
+import { defaultSleep } from "./time.js";
 
 const responseSchema = z.object({
   code: z.number(),
@@ -21,8 +22,6 @@ export const GOPLUS_RETRY_MS = 5000;
  * 1.5 s keeps a margin over the 1 s that was measured to be safe.
  */
 export const GOPLUS_MIN_INTERVAL_MS = 1500;
-
-export const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 function bodyCode(body: string): unknown {
   try {

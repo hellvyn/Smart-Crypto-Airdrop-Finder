@@ -580,3 +580,71 @@ export async function seedProjectPage(): Promise<ProjectPageSeed> {
   );
   return seed;
 }
+
+export interface CardGridSeed {
+  /** A chain only these projects are on: `/airdrops?chain=<chain>` lists exactly them. */
+  chain: string;
+  /** In list order ("Baru dicek": index 0 checked last). */
+  slugs: string[];
+  names: string[];
+  ids: string[];
+  /** The 1x1 PNG stored as the logo of index 0 (source defillama). */
+  png: Buffer;
+}
+
+/** A 1x1 transparent PNG. */
+const PNG_1X1 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+/**
+ * `count` live projects that passed curation on one unique chain, for the card grid (owner request 2026-10-11).
+ * Index 0 has a stored PNG logo (DefiLlama), index 1 an X avatar (the unavatar.io credit), the others none (letter tile).
+ */
+export async function seedCardGrid(count: number): Promise<CardGridSeed> {
+  const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const chain = `cg${tag}`;
+  const base = Date.now();
+  const rows = Array.from({ length: count }, (_, i) => ({
+    slug: `e2e-card-${tag}-${i}`,
+    // A different first letter per card, so each tile shows its own.
+    name: `${String.fromCharCode(75 + i)}ard ${tag} ${i}`,
+    name_key: `e2ecard${tag}${i}`,
+    chains: [chain],
+    status: "live",
+    first_seen: new Date(base - 1000).toISOString(),
+    last_seen: new Date(base - i * 60_000).toISOString(),
+  }));
+  const data = must(await adminClient().from("projects").insert(rows).select("id, slug"), "card projects");
+  const idOf = new Map((data as { id: string; slug: string }[]).map((r) => [r.slug, r.id]));
+  const ids = rows.map((r) => idOf.get(r.slug)!);
+  projectIds.push(...ids);
+  must(
+    await adminClient()
+      .from("curations")
+      .insert(
+        rows.map((r, i) => ({
+          project_id: idOf.get(r.slug),
+          passed: true,
+          worth_level: "medium",
+          tab: "live_now",
+          status_at: "live",
+          computed_at: new Date(base - i * 60_000).toISOString(),
+        })),
+      )
+      .select("id"),
+    "card curations",
+  );
+  must(
+    await adminClient()
+      .from("project_logos")
+      .insert([
+        { project_id: ids[0], source: "defillama", mime: "image/png", data_b64: PNG_1X1.toString("base64"), fetched_at: new Date().toISOString() },
+        { project_id: ids[1], source: "x_avatar", mime: "image/png", data_b64: PNG_1X1.toString("base64"), fetched_at: new Date().toISOString() },
+      ])
+      .select("project_id"),
+    "card logos",
+  );
+  return { chain, slugs: rows.map((r) => r.slug), names: rows.map((r) => r.name), ids, png: PNG_1X1 };
+}

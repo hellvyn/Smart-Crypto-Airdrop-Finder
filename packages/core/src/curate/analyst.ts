@@ -1,6 +1,7 @@
 // AI Analyst (curation spec §13 A1 and A6): verdict, effort estimate and Indonesian steps for one project. This module
 // holds the answer contract and its post-processing; the prompt lives in the pipeline.
 import { z } from "zod";
+import { groundedAgainst } from "../coach/guard.js";
 import { quoteInSource } from "../schema/extraction.js";
 import { replaceEmDash } from "./ai-style.js";
 
@@ -45,46 +46,14 @@ export const storedAnalystSchema = analystSchema.extend({ points: z.array(pointS
 export type StoredAnalyst = z.infer<typeof storedAnalystSchema>;
 export type AnalystVerdict = AnalystAnswer["verdict"];
 
-const HOST_RE = /\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b/gi;
-const HANDLE_RE = /@[a-z0-9_]{2,}/gi;
-const ADDRESS_RE = /\b0x[0-9a-fA-F]{6,}\b|\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
-const NUMBER_RE = /\d+(?:[.,]\d+)*/g;
-const SECRET_TERM_RE = /seed phrase|recovery phrase|secret phrase|mnemonic|private key|kunci (?:privat|pribadi|rahasia)|frasa (?:seed|pemulihan|rahasia)/i;
-const PAYMENT_TERM_RE = /\b(?:send|transfer|pay|deposit|kirim|bayar|setor)/i;
-
-/** A number as its digits only, so "0.01" and "0,01" or "1,000" and "1.000" compare equal. */
-const digitsOf = (n: string): string => n.replace(/\D/g, "");
-
-/**
- * The hosts, `@handles` and addresses in `text`, normalised for exact comparison: hosts, handles and `0x` addresses
- * lowercased (they are case-insensitive), base58 addresses untouched (case-sensitive: a case change names another
- * address). Each token is prefixed with its kind so one kind never grounds another.
- */
-function tokensOf(text: string): string[] {
-  const hosts = (text.match(HOST_RE) ?? []).map((h) => `host:${h.toLowerCase()}`);
-  const handles = (text.match(HANDLE_RE) ?? []).map((h) => `handle:${h.toLowerCase()}`);
-  const addresses = (text.match(ADDRESS_RE) ?? []).map((a) => `addr:${a.startsWith("0x") ? a.toLowerCase() : a}`);
-  return [...hosts, ...handles, ...addresses];
-}
-
 /**
  * Whether an AI translation of one step adds nothing the step does not say that could send a reader somewhere or make
- * them pay or give away a secret (curation spec §13: source text is data, the AI never adds trust). Every host or URL,
- * `@handle`, `0x`/base58 address and number in `translation` must be one of those the same patterns find in `step`
- * (whole tokens, not substrings; `0x` addresses, hosts and handles ignoring case, base58 addresses exact; numbers
- * compared by digits), and a secret term (seed phrase, private key, kunci privat, ...) or a payment verb (send, pay,
- * kirim, bayar, ...) may appear only when the step has one too. Built for refusal: a reworded but harmless
- * translation can be refused, never the other way round.
+ * them pay or give away a secret (curation spec §13: source text is data, the AI never adds trust). The rule is
+ * `groundedAgainst` with the step as the context: see there for the tokens it compares. Built for refusal: a reworded
+ * but harmless translation can be refused, never the other way round.
  */
 export function stepTranslationGrounded(step: string, translation: string): boolean {
-  const stepTokens = new Set(tokensOf(step));
-  if (tokensOf(translation).some((token) => !stepTokens.has(token))) return false;
-  const stepNumbers = new Set((step.match(NUMBER_RE) ?? []).map(digitsOf));
-  if ((translation.match(NUMBER_RE) ?? []).some((n) => !stepNumbers.has(digitsOf(n)))) return false;
-  for (const term of [SECRET_TERM_RE, PAYMENT_TERM_RE]) {
-    if (term.test(translation) && !term.test(step)) return false;
-  }
-  return true;
+  return groundedAgainst(translation, step);
 }
 
 /**

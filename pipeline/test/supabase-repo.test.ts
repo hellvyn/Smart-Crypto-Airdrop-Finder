@@ -878,3 +878,97 @@ describe("SupabaseRepo.listProjectsForScoring ended curated projects", () => {
     expect(reads[0]?.columns).toContain("project_signals(kind, value, source, verified, observed_at)");
   });
 });
+
+describe("SupabaseRepo project logos", () => {
+  const at = new Date("2026-10-11T03:00:00Z");
+
+  it("upserts a project's logo by project id", async () => {
+    const { client, upserts } = recordingClient();
+
+    await new SupabaseRepo(client).saveProjectLogo("p-1", { source: "x_avatar", mime: "image/png", dataB64: "iVBORw0KGgo=" }, at);
+
+    expect(upserts).toEqual([
+      {
+        table: "project_logos",
+        row: { project_id: "p-1", source: "x_avatar", mime: "image/png", data_b64: "iVBORw0KGgo=", fetched_at: "2026-10-11T03:00:00.000Z" },
+        options: { onConflict: "project_id" },
+      },
+    ]);
+  });
+
+  it("reads when each asked project's logo was fetched and from where, never the bytes", async () => {
+    const stored = [{ project_id: "p-1", source: "defillama", fetched_at: "2026-10-11T03:00:00+00:00" }];
+    const { client, reads } = recordingClient({ project_logos: stored });
+
+    expect(await new SupabaseRepo(client).listProjectLogos(["p-1", "p-2"])).toEqual([
+      { projectId: "p-1", source: "defillama", fetchedAt: at },
+    ]);
+    expect(reads).toEqual([
+      { table: "project_logos", columns: "project_id, source, fetched_at", filters: [["project_id", ["p-1", "p-2"]]], orders: [] },
+    ]);
+  });
+
+  it("reads many projects in chunks of 100 and reads nothing for none", async () => {
+    const { client, reads } = recordingClient();
+    const ids = Array.from({ length: 150 }, (_, i) => `p-${i}`);
+
+    await new SupabaseRepo(client).listProjectLogos(ids);
+    await new SupabaseRepo(client).listProjectLogos([]);
+
+    expect(reads.map((r) => [r.table, (r.filters[0]?.[1] as string[]).length])).toEqual([
+      ["project_logos", 100],
+      ["project_logos", 50],
+    ]);
+  });
+});
+
+describe("SupabaseRepo logo attempts and listed projects", () => {
+  const at = new Date("2026-10-11T03:00:00Z");
+
+  it("upserts a project's logo attempt by project id", async () => {
+    const { client, upserts } = recordingClient();
+    await new SupabaseRepo(client).saveLogoAttempt("p-1", "failed", at);
+    expect(upserts).toEqual([
+      {
+        table: "project_logo_attempts",
+        row: { project_id: "p-1", outcome: "failed", attempted_at: "2026-10-11T03:00:00.000Z" },
+        options: { onConflict: "project_id" },
+      },
+    ]);
+  });
+
+  it("reads the attempts of the asked projects", async () => {
+    const stored = [{ project_id: "p-1", outcome: "failed", attempted_at: "2026-10-11T03:00:00+00:00" }];
+    const { client, reads } = recordingClient({ project_logo_attempts: stored });
+    expect(await new SupabaseRepo(client).listLogoAttempts(["p-1", "p-2"])).toEqual([
+      { projectId: "p-1", outcome: "failed", attemptedAt: at },
+    ]);
+    expect(reads).toEqual([
+      { table: "project_logo_attempts", columns: "project_id, outcome, attempted_at", filters: [["project_id", ["p-1", "p-2"]]], orders: [] },
+    ]);
+  });
+
+  it("reads attempts and listed projects in chunks of 100, and nothing for no project", async () => {
+    const { client, reads } = recordingClient();
+    const ids = Array.from({ length: 150 }, (_, i) => `p-${i}`);
+    const repo = new SupabaseRepo(client);
+    await repo.listLogoAttempts(ids);
+    await repo.listListedProjects(ids);
+    await repo.listLogoAttempts([]);
+    await repo.listListedProjects([]);
+    expect(reads.map((r) => [r.table, (r.filters[0]?.[1] as string[]).length])).toEqual([
+      ["project_logo_attempts", 100],
+      ["project_logo_attempts", 50],
+      ["latest_curations", 100],
+      ["latest_curations", 50],
+    ]);
+  });
+
+  it("lists the asked projects whose latest curation passed, from latest_curations", async () => {
+    const { client, reads } = recordingClient({ latest_curations: [{ project_id: "p-1" }, { project_id: "p-3" }] });
+    expect(await new SupabaseRepo(client).listListedProjects(["p-3", "p-1", "p-2"])).toEqual(["p-1", "p-3"]);
+    expect(reads).toEqual([
+      { table: "latest_curations", columns: "project_id", filters: [["project_id", ["p-3", "p-1", "p-2"]], ["passed", true]], orders: [] },
+    ]);
+  });
+});

@@ -461,3 +461,24 @@ Ruling: T4 wires `getRunSummary` and `getTrackRecord` into the landing — P7.T4
   - New stat `ai_models_tripped`. `daily.yml` passes `ANTHROPIC_API_KEY`.
   - Not tested against the live API (no key in the container). Cost per run is an estimate and an upper bound.
 - G5 complete. Gates on the merged head: core 536, pipeline 727, web 698 unit · typecheck ok · pgTAP 453 · e2e 98/98.
+- Deploy 2026-10-11 (owner said "gas", chose PR + merge):
+  - Signup off, confirmed by the owner.
+  - Migrations applied through the Supabase connector: 0008, 0009, 0010, 0011, 0012, 0013, 0014 (no backfill) and 0015. The connector refuses DROP and mass UPDATE, so the owner ran 0007 and the 0014 backfill in the SQL editor; the history records them as `0007_manual_membership` and `0014b_changes_seen_backfill`.
+  - The combined release script was first tested on a local mirror (0001–0006 + 0008 + 0009): it applied cleanly and pgTAP passed 453/453.
+  - PR hellvyn/Smart-Airdrop-Finder#3 merged right after 0013 (merge commit cdf43f3); the production deploy follows from main.
+  - `daily.yml` dispatched once on main.
+- List cards with logos (owner request 2026-10-11): complete (commits 3e23e16, 30b56af, 8c08297, 6848600, 7b95fb0 fix round 1; review opus with a security focus, re-review sonnet).
+  - Data and pipeline:
+    - 0016: `project_logos` (raster mime + magic bytes + ≤64 KB checked in SQL, public read) and `project_logo_attempts` (service-role only). `logo_source` is added to `public_list`/`curated_list` (0012 body verbatim; `curated_list` lists its columns explicitly).
+    - A pipeline `logos` stage picks from DefiLlama icons, then X avatar via unavatar.io (≤20 per run), then favicon (clean official domain only), then a letter tile. Listed projects go first, a failed attempt waits 7 days, and a reached cap falls through to favicon.
+  - Web:
+    - `/logo/[id]` serves cookie-less with nosniff and a sandbox CSP.
+    - Cards are 3/2/1 columns.
+    - The landing shows "Segera" on Morning briefing and Farming Coach.
+  - Also merged: the duplicate claimed-backer row fix (e42b4cf).
+  - Gates: core 536, pipeline 810, web 738 · pgTAP 502 · e2e 105/105.
+- List cards: minor (deferred):
+  - A storage failure records no failed attempt.
+  - A thrown `stored`-attempt write double-counts `logos_failed`.
+  - The DNS/private-IP gap was judged acceptable (TLS + raster-only + ephemeral runner).
+- List cards: OPEN owner decision: unavatar's free plan asks for a followable link, while the cards show plain text "Logo: unavatar.io".

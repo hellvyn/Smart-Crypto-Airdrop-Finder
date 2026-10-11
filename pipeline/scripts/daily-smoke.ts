@@ -90,7 +90,14 @@ async function count(table: string): Promise<number> {
 
 async function main(): Promise<void> {
   // No claim portal is linked in this data; a request for one would be a 404.
-  const deps = { repo, chat, sleep: async () => {}, fetchUntrusted: async () => ({ status: 404, body: "" }) };
+  // No logo is downloaded either: every logo source answers as unavailable.
+  const deps = {
+    repo,
+    chat,
+    sleep: async () => {},
+    fetchUntrusted: async () => ({ status: 404, body: "" }),
+    fetchImage: async () => null,
+  };
   const first = await runDaily({ ...deps, http: fakeHttp(telegram("")), now: () => T0 }, defaultConfig);
   console.log(JSON.stringify(first));
   const second = await runDaily({ ...deps, http: fakeHttp(telegram(endedPost)), now: () => T1 }, defaultConfig);

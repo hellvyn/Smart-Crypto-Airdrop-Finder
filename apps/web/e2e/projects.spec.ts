@@ -29,7 +29,7 @@ test.afterAll(async () => {
 /** A tab of the list, scoped to the tab bar (a project named "... Ended ..." is a link too). */
 const tabLink = (page: Page, name: string) =>
   page.getByRole("navigation", { name: "Tab daftar" }).getByRole("link", { name, exact: true });
-const rowFor = (page: Page, slug: string) => page.locator(`[data-testid="project-row"][data-slug="${slug}"]`);
+const rowFor = (page: Page, slug: string) => page.locator(`[data-testid="project-card"][data-slug="${slug}"]`);
 
 async function signIn(page: Page): Promise<void> {
   const email = uniqueEmail("list");
@@ -87,9 +87,9 @@ test("Early and Ended tabs show their own project; Ended carries the end date an
 test("a project whose latest curation failed is in no tab, and every row says when it was checked", async ({ page }) => {
   for (const tab of ["live_now", "early_bets", "ended"]) {
     await page.goto(`/airdrops?tab=${tab}`);
-    await expect(page.getByTestId("project-row").first()).toBeVisible();
+    await expect(page.getByTestId("project-card").first()).toBeVisible();
     await expect(rowFor(page, curated.failed.slug)).toHaveCount(0);
-    const rows = page.getByTestId("project-row");
+    const rows = page.getByTestId("project-card");
     const n = await rows.count();
     for (let i = 0; i < n; i++) await expect(rows.nth(i).getByTestId("checked")).toHaveText(/^(Dicek|Belum dicek lagi sejak|Last check) /);
   }

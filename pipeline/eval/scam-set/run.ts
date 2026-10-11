@@ -4,9 +4,10 @@ import { fileURLToPath } from "node:url";
 import pLimit from "p-limit";
 import { assessRisk, curate } from "@saf/core";
 import type { CurateResult, RiskAssessment, RiskInput, RiskLevel } from "@saf/core";
-import { firstCertificateAgeDays } from "../../src/enrich/crtsh.js";
+import { CRTSH_MIN_INTERVAL_MS, firstCertificateAgeDays } from "../../src/enrich/crtsh.js";
 import { checkPhishingSite } from "../../src/enrich/goplus.js";
-import { domainAgeDays } from "../../src/enrich/rdap.js";
+import { pacedHttp } from "../../src/enrich/paced.js";
+import { RDAP_MIN_INTERVAL_MS, rdapDomainAge } from "../../src/enrich/rdap.js";
 import type { Http } from "../../src/collectors/types.js";
 import { createHttp } from "../../src/http.js";
 import { indexLegit, readLegit, toRiskInput } from "./build.js";
@@ -142,6 +143,8 @@ async function run(): Promise<void> {
   const cases: EvalCase[] = [...scams, ...legit.map((l) => ({ kind: "legit" as const, ...l }))];
 
   const http = createHttp();
+  const rdapHttp = pacedHttp(http, RDAP_MIN_INTERVAL_MS, Date.now, sleep);
+  const crtshHttp = pacedHttp(http, CRTSH_MIN_INTERVAL_MS, Date.now, sleep);
   const domains = [...new Set(cases.flatMap(caseDomains))];
   const enrich: Enrichment = { domainAgeDays: {}, phishingFlags: {} };
   const fromCrtsh = new Set<string>();
@@ -154,9 +157,11 @@ async function run(): Promise<void> {
         enrich.phishingFlags[domain] = await phishingWithBackoff(http, domain, goplusFirstTryFailed);
       }),
       limit(async () => {
-        let age = await domainAgeDays(http, domain, new Date());
-        if (age === null) {
-          age = await firstCertificateAgeDays(http, domain, new Date());
+        const rdap = await rdapDomainAge(rdapHttp, domain, new Date(), sleep);
+        let age = rdap.days;
+        // Like the pipeline: crt.sh only when the TLD has no RDAP service or RDAP has no registration date.
+        if (rdap.outcome === "no_rdap" || rdap.outcome === "no_date") {
+          age = await firstCertificateAgeDays(crtshHttp, domain, new Date());
           if (age !== null) fromCrtsh.add(domain);
         }
         enrich.domainAgeDays[domain] = age;

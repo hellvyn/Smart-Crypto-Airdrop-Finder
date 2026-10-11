@@ -12,7 +12,7 @@ test.afterAll(async () => {
   await cleanupSeed();
 });
 
-const rows = (page: import("@playwright/test").Page) => page.getByTestId("project-row");
+const rows = (page: import("@playwright/test").Page) => page.getByTestId("project-card");
 
 test("the list is paged 50 per page, and filters survive paging", async ({ page }) => {
   await page.goto(`/airdrops?status=live&chain=${chain}`);

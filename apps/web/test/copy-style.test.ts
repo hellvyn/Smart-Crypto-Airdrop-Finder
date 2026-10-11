@@ -2,39 +2,13 @@
 // It reads the string literals of the web copy module and of the core message sources, plus the Plan 6 glossary.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { BANNED_WORDS } from "@saf/core";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
 
-/** Banned words and phrases, matched as whole words, case-insensitive. */
-const BANNED = [
-  "delve",
-  "testament",
-  "realm",
-  "crucial",
-  "multifaceted",
-  "in conclusion",
-  "furthermore",
-  "krusial",
-  "esensial",
-  "komprehensif",
-  "holistik",
-  "inovatif",
-  "revolusioner",
-  "seamless",
-  "selain itu",
-  "lebih lanjut",
-  "kesimpulannya",
-  "di era",
-  "mari kita",
-  "tak hanya",
-  "aman",
-  "safe",
-  "dijamin",
-  "pasti untung",
-];
-const BANNED_PATTERN = new RegExp(`\\b(${BANNED.map((w) => w.replace(" ", "\\s+")).join("|")})\\b`, "i");
+const BANNED_PATTERN = new RegExp(`\\b(${BANNED_WORDS.map((w) => w.replace(" ", "\\s+")).join("|")})\\b`, "i");
 const FORBIDDEN_CHARS: [string, string][] = [
   ["—", "em dash"],
   ["“", "curly quote"],

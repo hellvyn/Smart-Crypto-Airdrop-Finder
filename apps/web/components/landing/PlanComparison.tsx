@@ -1,9 +1,13 @@
+import { Tag } from "@/components/ui";
 import { landing } from "@/lib/copy";
 
 const copy = landing.compare;
 
-/** What a visitor gets for free and what is member only (spec 15.5). No price and no signup (#46). */
-const ROWS: readonly { title: string; note: string; free: boolean }[] = copy.rows;
+/**
+ * What a visitor gets for free and what is member only (spec 15.5). No price and no signup (#46). `soon`: a member
+ * feature that does not exist yet; it is tagged "Segera" and never shown as included.
+ */
+const ROWS: readonly { title: string; note: string; free: boolean; soon?: boolean }[] = copy.rows;
 
 function Included() {
   return (
@@ -44,13 +48,18 @@ export function PlanComparison() {
               {ROWS.map((row) => (
                 <tr key={row.title}>
                   <th scope="row">
-                    <span className="landing-feature">{row.title}</span>
+                    <span className="landing-feature-title">
+                      <span className="landing-feature">{row.title}</span>
+                      {row.soon ? (
+                        <Tag tone="reported" data-soon="">
+                          {copy.soon}
+                        </Tag>
+                      ) : null}
+                    </span>
                     <span className="landing-feature-note">{row.note}</span>
                   </th>
                   <td>{row.free ? <Included /> : <NotIncluded />}</td>
-                  <td data-member="">
-                    <Included />
-                  </td>
+                  <td data-member="">{row.soon ? <span className="landing-soon">{copy.soon}</span> : <Included />}</td>
                 </tr>
               ))}
             </tbody>

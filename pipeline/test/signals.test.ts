@@ -47,7 +47,7 @@ function project(overrides: Partial<ProjectForScoring> = {}): ProjectForScoring 
 
 const kinds = (r: { signals: NewSignal[] }): string[] => r.signals.map((s) => s.kind);
 
-const ARCUS: DefillamaProtocol = { name: "Arcus", url: "https://arcus.xyz", tvl: 45_000_000, geckoId: null };
+const ARCUS: DefillamaProtocol = { name: "Arcus", url: "https://arcus.xyz", tvl: 45_000_000, geckoId: null, logo: null };
 
 type VcEntry = { vcId: string; name: string; tier: 1 | 2 };
 const PARADIGM_ENTRY: VcEntry = { vcId: "paradigm", name: "Paradigm", tier: 1 };
@@ -60,7 +60,7 @@ function index(byDomain: Record<string, VcEntry[]>): VcIndex {
 
 describe("buildSignals", () => {
   it("gives TVL only to the project whose domain matches, not to a same-name lookalike", () => {
-    const protocols = [{ name: "Arcus", url: "https://arcus.xyz", tvl: 45_000_000, geckoId: null }];
+    const protocols = [{ name: "Arcus", url: "https://arcus.xyz", tvl: 45_000_000, geckoId: null, logo: null }];
     expect(kinds(buildSignals(project({ name: "Arcus", officialDomains: ["arcus.xyz"] }), { protocols, vc: null }))).toContain("tvl");
     expect(kinds(buildSignals(project({ name: "Arcus", officialDomains: ["arcus-claim.io"] }), { protocols, vc: null }))).not.toContain("tvl");
   });
@@ -93,10 +93,10 @@ describe("buildSignals", () => {
 
   it("takes the highest TVL and the CoinGecko id of the biggest listed protocol when several match", () => {
     const protocols: DefillamaProtocol[] = [
-      { name: "Arcus V1", url: "https://arcus.xyz/v1", tvl: 3_000_000, geckoId: "arcus-old" },
-      { name: "Arcus V2", url: "https://v2.arcus.xyz", tvl: 80_000_000, geckoId: null },
-      { name: "Arcus Perps", url: "https://perps.arcus.xyz", tvl: 12_000_000, geckoId: "arcus" },
-      { name: "Unrelated", url: "https://other.xyz", tvl: 9e9, geckoId: "other" },
+      { name: "Arcus V1", url: "https://arcus.xyz/v1", tvl: 3_000_000, geckoId: "arcus-old", logo: null },
+      { name: "Arcus V2", url: "https://v2.arcus.xyz", tvl: 80_000_000, geckoId: null, logo: null },
+      { name: "Arcus Perps", url: "https://perps.arcus.xyz", tvl: 12_000_000, geckoId: "arcus", logo: null },
+      { name: "Unrelated", url: "https://other.xyz", tvl: 9e9, geckoId: "other", logo: null },
     ];
     expect(buildSignals(project(), { protocols, vc: null }).signals).toEqual([
       { kind: "tvl", value: { tvl_usd: 80_000_000 }, source: "defillama", verified: true },

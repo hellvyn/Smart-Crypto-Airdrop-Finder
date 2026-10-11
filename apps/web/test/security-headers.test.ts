@@ -17,3 +17,15 @@ describe("security headers (next.config.ts)", () => {
     expect(Object.fromEntries(all!.headers.map((h) => [h.key, h.value]))).toEqual(EXPECTED);
   });
 });
+
+describe("logo route headers (next.config.ts)", () => {
+  it("replaces the page CSP with a sandboxing one on /logo/{id}, after the every-path rule so it wins", async () => {
+    const rules = await nextConfig.headers!();
+    const all = rules.findIndex((r) => r.source === "/:path*");
+    const logo = rules.findIndex((r) => r.source === "/logo/:projectId");
+    expect(logo).toBeGreaterThan(all);
+    expect(Object.fromEntries(rules[logo]!.headers.map((h) => [h.key, h.value]))).toEqual({
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+    });
+  });
+});

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ChangesSinceLastVisit } from "@/components/ChangesSinceLastVisit";
 import { Pagination } from "@/components/Pagination";
-import { ProjectRow } from "@/components/ProjectRow";
+import { ProjectCard } from "@/components/ProjectCard";
 import { StaleBanner } from "@/components/StaleBanner";
 import { TabBar } from "@/components/ui";
 import { getUser } from "@/lib/auth";
@@ -44,7 +44,8 @@ function first(v: string | string[] | undefined): string | undefined {
 
 /**
  * The curated list (Plan 6 Task 4; mockup docs/design/airdropiq-c/CList.dc.html): the latest run's summary, the track
- * record once there is one, three tabs (`?tab=`), the "Modal:" sub-filter (`?modal=`), the filters, and the rows.
+ * record once there is one, three tabs (`?tab=`), the "Modal:" sub-filter (`?modal=`), the filters, and the projects
+ * as a grid of cards (owner request 2026-10-11: 3 per row on desktop, 2 on tablet, 1 on phone, each with its logo).
  * Visitors read `public_list` in the "Baru dicek" order: their `?worth=` is dropped and there is no `?sort=` to
  * pick, so nothing reveals the worth order (#45). Members also get the worth level, its filter and the "Paling worth
  * it" order, and "Perubahan sejak kunjungan terakhir" for their watched projects above the list.
@@ -74,6 +75,8 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
   // The "Modal:" option is not one of these: it has its own row, and "Hapus filter" keeps it.
   const hasFilters = !!(filters.status?.length || filters.risk?.length || selectedChain || filters.worth?.length);
   const sort = tab === "ended" ? list.sort.ended : member ? list.sort.member : list.sort.visitor;
+  // The unavatar.io free plan needs a followable link, so the credit is a plain link below the grid, not a card line.
+  const hasXAvatarLogo = items.some((item) => item.logoSource === "x_avatar");
 
   return (
     <>
@@ -180,12 +183,20 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
       {items.length === 0 ? (
         <p>{page > 1 ? list.emptyPage : hasFilters ? list.emptyFiltered : list.emptyTab}</p>
       ) : (
-        <div className="project-list">
+        <div className="project-cards" data-testid="project-cards">
           {items.map((item) => (
-            <ProjectRow key={item.slug} item={item} member={member} now={now} />
+            <ProjectCard key={item.slug} item={item} member={member} now={now} />
           ))}
         </div>
       )}
+      {hasXAvatarLogo ? (
+        <p className="muted" data-testid="unavatar-attribution">
+          {list.logoXPrefix}
+          <a href="https://unavatar.io" target="_blank" rel="noopener">
+            {list.logoXLink}
+          </a>
+        </p>
+      ) : null}
       <Pagination page={page} pageSize={pageSize} total={total} tab={tab} filters={filters} />
     </>
   );

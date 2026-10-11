@@ -53,6 +53,17 @@ export interface PipelineConfig {
   goplusBudgetMinutes: number;
   goplusMaxConsecutiveFailures: number;
   /**
+   * RDAP time budget, counted from the start of `score`: after it no new RDAP request starts, and the domains not
+   * asked count as not run (`domain_age_rdap_skipped`). RDAP runs one request at a time, alongside the GoPlus queue.
+   */
+  rdapBudgetMinutes: number;
+  /**
+   * crt.sh time budget, counting only the time crt.sh is busy (pacing waits and requests), not the time it waits for
+   * RDAP to find a domain without a date: once it is used up no new crt.sh request starts (`domain_age_crtsh_skipped`).
+   * Worst case crt.sh ends about 3.4 minutes after RDAP (about 10.2 minutes into `score`), inside the GoPlus 12.
+   */
+  crtshBudgetMinutes: number;
+  /**
    * AI analysis budget per run, counted from the start of `analyze`: after it no new LLM call starts. At most
    * `maxAnalysesPerRun` analyses start per run. Analyses not started stay as they were (counted as
    * `ai_analyses_deferred`) and run on a later day; an unchanged input reuses the stored analysis without a call.
@@ -63,6 +74,13 @@ export interface PipelineConfig {
   textRetentionDays: number;
   /** VCs whose portfolio pages give verified `vc_backer` signals (`VC_LIST`). */
   vcs: VcConfig[];
+  /**
+   * Logo stage (owner request 2026-10-11): no project starts after `budgetMinutes` (counted from the start of the
+   * stage), `concurrency` projects at a time, and at most `maxXAvatarsPerRun` unavatar.io requests per run (its free
+   * plan allows 25 to 50 avatars per day per IP; the docs and other sources disagree). Projects left over wait for the
+   * next run.
+   */
+  logos: { budgetMinutes: number; concurrency: number; maxXAvatarsPerRun: number };
 }
 
 /**
@@ -205,9 +223,12 @@ export const defaultConfig: PipelineConfig = {
   extractBudgetMinutes: 35,
   goplusBudgetMinutes: 12,
   goplusMaxConsecutiveFailures: 5,
+  rdapBudgetMinutes: 6,
+  crtshBudgetMinutes: 3,
   analyzeBudgetMinutes: 10,
   maxAnalysesPerRun: 60,
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
   vcs: VC_LIST,
+  logos: { budgetMinutes: 2, concurrency: 3, maxXAvatarsPerRun: 20 },
 };

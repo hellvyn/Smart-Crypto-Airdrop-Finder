@@ -328,32 +328,150 @@ button:disabled {
   margin: 0.25rem 0;
 }
 
-/* Curated list (Plan 6 Task 4, mockup CList): the row's worth column sits on the right from 640 px up. */
-.project-row:has(.project-row-worth) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px 24px;
-}
-
-@media (min-width: 640px) {
-  .project-row:has(.project-row-worth) {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-  }
-}
-
 .project-row-main {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.project-row-checked[data-tone="warn"] {
+/*
+ * Curated list as cards (owner request 2026-10-11; replaces the CList row on /airdrops): 1 column on phones, 2 from
+ * 640 px, 3 from 1024 px. Cards of one row are equally tall (the grid stretches them, the link fills its card). Ruled
+ * like a design C ticket: 2 px ink border, square corners.
+ */
+.project-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin: 16px 0;
+}
+
+@media (min-width: 640px) {
+  .project-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .project-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.project-card {
+  display: flex;
+  min-width: 0;
+}
+
+.project-card-link {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.project-card-link:hover {
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.project-card-link:focus-visible {
+  outline: 3px solid var(--accent-text);
+  outline-offset: 3px;
+}
+
+.project-card-link p {
+  margin: 0;
+}
+
+.project-card-head {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.project-card-name {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.25;
+}
+
+.project-card-link:hover .project-card-name {
+  color: var(--accent-text);
+}
+
+.project-card-worth {
+  grid-column: 1 / -1;
+}
+
+.project-card-worth:empty {
+  display: none;
+}
+
+.project-logo {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  object-fit: contain;
+}
+
+/* Letter tile: white on a token colour, every pair at least 4.5:1 (--accent itself is too light, so --accent-text). */
+.project-logo-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--surface);
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.project-logo-tile[data-tone="ink"] {
+  background: var(--ink);
+}
+
+.project-logo-tile[data-tone="ink-2"] {
+  background: var(--ink-2);
+}
+
+.project-logo-tile[data-tone="pass"] {
+  background: var(--pass);
+}
+
+.project-logo-tile[data-tone="ended"] {
+  background: var(--ended);
+}
+
+.project-logo-tile[data-tone="caution"] {
+  background: var(--caution);
+}
+
+.project-logo-tile[data-tone="accent"] {
+  background: var(--accent-text);
+}
+
+.project-card-credit {
+  margin-top: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-card-checked[data-tone="warn"] {
   padding: 1px 6px;
   background: var(--warn-fill);
   font-weight: 700;
 }
 
-.project-row-member-only {
+.project-card-member-only {
   display: inline-flex;
   padding: 6px 10px;
   border: 2px dashed var(--ink);
@@ -1162,6 +1280,22 @@ blockquote {
   display: block;
   font-size: 17px;
   font-weight: 700;
+}
+
+/* A feature that is not there yet: its title with a "Segera" tag, and "Segera" in the member column. */
+.landing-feature-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.landing-soon {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .landing-feature-note {

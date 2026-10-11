@@ -50,16 +50,25 @@ const CURATED_SOURCES: Partial<Record<SourceKind, SignalSource>> = {
 };
 
 /**
+ * The DefiLlama protocols whose URL matches one of the project's official domains (`domainMatches`; a name match never
+ * counts, so a project without official domains has none), highest TVL first. The `tvl` signal and the logo stage use
+ * this one match.
+ */
+export function matchingProtocols(project: ProjectForScoring, protocols: DefillamaProtocol[]): DefillamaProtocol[] {
+  if (project.officialDomains.length === 0) return [];
+  return protocols
+    .filter((p) => p.url !== null && domainMatches(project.officialDomains, p.url))
+    .sort((a, b) => (b.tvl ?? -1) - (a.tvl ?? -1));
+}
+
+/**
  * `tvl` and `coingecko_listed` from the DefiLlama protocols whose URL matches one of the project's official domains
  * (`domainMatches`; a name match never counts, so a project without official domains gets neither). When several
  * protocols match (versions or products of one project), the highest TVL is taken, and the CoinGecko id of the
  * matching protocol with the highest TVL that has one.
  */
 function defillamaSignals(project: ProjectForScoring, protocols: DefillamaProtocol[]): NewSignal[] {
-  if (project.officialDomains.length === 0) return [];
-  const matches = protocols
-    .filter((p) => p.url !== null && domainMatches(project.officialDomains, p.url))
-    .sort((a, b) => (b.tvl ?? -1) - (a.tvl ?? -1));
+  const matches = matchingProtocols(project, protocols);
   const signals: NewSignal[] = [];
   const tvl = matches.find((p) => p.tvl !== null)?.tvl;
   if (tvl !== undefined && tvl !== null) {

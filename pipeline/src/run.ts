@@ -5,7 +5,7 @@ import type { PipelineConfig } from "./config.js";
 import { countAlphaDropsRequests, loadRaises } from "./enrich/alphadrops-raises.js";
 import { refreshPortfolios } from "./enrich/vc-portfolios.js";
 import type { ChatFn } from "./llm/extract.js";
-import type { FetchUntrusted } from "./http.js";
+import type { FetchImage, FetchUntrusted } from "./http.js";
 import { ANALYZERS, claimPageSources, runAnalyses } from "./steps/analyze.js";
 import type { Analyzer, SourceText } from "./steps/analyze.js";
 import { collectSources } from "./steps/collect.js";
@@ -16,6 +16,7 @@ import { readClaimPages } from "./steps/link-checks.js";
 import { mergeDocument } from "./steps/merge.js";
 import type { ProjectInput } from "./steps/merge.js";
 import { purgeOldText } from "./steps/purge.js";
+import { refreshLogos } from "./steps/logos.js";
 import { scoreProjects } from "./steps/score.js";
 import { refreshSignals } from "./steps/signals.js";
 import type { SignalCoverage } from "./steps/signals.js";
@@ -30,6 +31,8 @@ export interface PipelineDeps {
   http: Http;
   /** Fetch for pages an unknown party wrote: the claim portals the AI Scam Analyst reads (`createFetchUntrusted`). */
   fetchUntrusted: FetchUntrusted;
+  /** Download of project logos (`createFetchImage`): https, 5 s, 64 KB, magic bytes, allowed hosts only. */
+  fetchImage: FetchImage;
   /** `streamChat` with its transport deps bound. */
   chat: ChatFn;
   sleep: (ms: number) => Promise<void>;
@@ -44,9 +47,10 @@ export interface PipelineDeps {
  * Stage numbers reported in `failed_step` for the first stage-level error. Merging runs inside the extract
  * stage (each document is merged as soon as it is extracted), so 3 is no longer reported. 7 was a stage that
  * no longer exists; the numbers of the other stages stay as they were. New stages get new numbers: `signals` (8)
- * runs between `speculative` and `analyze`, and `analyze` (9) runs after `signals` and before `score`.
+ * runs between `speculative` and `analyze`, `analyze` (9) runs after `signals` and before `score`, and `logos` (10)
+ * runs after `score` (it needs that run's phishing answers) and before `purge`.
  */
-const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6, signals: 8, analyze: 9 } as const;
+const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6, signals: 8, analyze: 9, logos: 10 } as const;
 
 type ExtractedProject = ExtractionResult["projects"][number];
 
@@ -113,7 +117,7 @@ function speculativeInput(c: SpeculativeCandidate): ProjectInput {
 
 /**
  * One daily pipeline run: collect, extract (each document merged right after its extraction), DefiLlama
- * speculative merge, signals, AI analyses, score, purge.
+ * speculative merge, signals, AI analyses, score, logos, purge.
  *
  * Merges go through a single-slot queue: they run one at a time, in the order extractions finish, while
  * other extractions continue. The extract stage waits for the queue to drain, even when it fails.
@@ -124,7 +128,8 @@ function speculativeInput(c: SpeculativeCandidate): ProjectInput {
  * analysis) are counted (`merge_failed`, `signals_failed`, `score_failed`, `extract_failed`, `ai_analyses_failed`)
  * and never stop the run. A stage-level failure is recorded as `run_error: 1` plus `failed_step` (the first failing
  * stage); the remaining stages still run, so scoring and purging always happen. The run row is always finished, and a stage-level error is
- * rethrown at the end. Stats are numeric counters only.
+ * rethrown at the end. Stats are numeric counters only; `stage_seconds_<stage>` gives each stage's duration on
+ * `deps.now()`.
  */
 export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Promise<DailyStats> {
   const { repo } = deps;
@@ -133,7 +138,9 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   const runId = await repo.startRun(now);
   const failure: { failed: boolean; error?: unknown } = { failed: false };
 
-  const stage = async <T>(step: number, fallback: T, fn: () => Promise<T>): Promise<T> => {
+  /** Runs one stage, records its duration in `stage_seconds_<name>` (also when it throws) and catches its error. */
+  const stage = async <T>(name: keyof typeof STEP, fallback: T, fn: () => Promise<T>): Promise<T> => {
+    const startedAt = deps.now().getTime();
     try {
       return await fn();
     } catch (error) {
@@ -141,9 +148,11 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
         failure.failed = true;
         failure.error = error;
         stats.run_error = 1;
-        stats.failed_step = step;
+        stats.failed_step = STEP[name];
       }
       return fallback;
+    } finally {
+      stats[`stage_seconds_${name}`] = Math.round((deps.now().getTime() - startedAt) / 100) / 10;
     }
   };
 
@@ -165,7 +174,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   // Every AlphaDrops request of the run goes through this counter (collector and raise pages share one budget).
   const alphaDrops = countAlphaDropsRequests(deps.http);
   const collected = await stage(
-    STEP.collect,
+    "collect",
     { speculative: [] as SpeculativeItem[], protocols: null as DefillamaProtocol[] | null },
     () => collectSources({ ...deps, http: alphaDrops.http }, config, now, stats),
   );
@@ -174,7 +183,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   const enqueueMerge = (document: StoredDocument, result: ExtractionResult): void => {
     mergeTail = mergeTail.then(() => mergeOne(document, extractionInputs(result), true));
   };
-  await stage(STEP.extract, undefined, async () => {
+  await stage("extract", undefined, async () => {
     try {
       await extractPending(deps, config, stats, enqueueMerge);
     } finally {
@@ -182,7 +191,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     }
   });
 
-  await stage(STEP.speculative, undefined, async () => {
+  await stage("speculative", undefined, async () => {
     for (const { document, candidate } of collected.speculative) {
       await mergeOne(document, [speculativeInput(candidate)], false);
     }
@@ -190,7 +199,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
 
   // Which signal sources each project had checked this run; a project missing here had none checked.
   let coverage = new Map<string, SignalCoverage>();
-  await stage(STEP.signals, undefined, async () => {
+  await stage("signals", undefined, async () => {
     // A failed VC page only leaves that VC "not checked"; refreshPortfolios does not throw for one VC.
     const vc = await refreshPortfolios(deps, config.vcs, now);
     stats.vc_portfolios_failed += vc.failed.size;
@@ -212,7 +221,7 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     coverage = await refreshSignals(deps, config, now, stats, { protocols: collected.protocols, vc, raises }, projects);
   });
   const analyzers = deps.analyzers ?? ANALYZERS;
-  await stage(STEP.analyze, undefined, async () => {
+  await stage("analyze", undefined, async () => {
     if (analyzers.length === 0) return;
     const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
     // Claim portal pages are read here, before the scam analyst, so it sees them in this run (#56).
@@ -222,8 +231,15 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     await runAnalyses({ ...deps, analyzers, extraSources: claimPageSources(claimPages) }, config, projects, stats);
   });
 
-  await stage(STEP.score, undefined, () => scoreProjects(deps, config, now, stats, coverage));
-  await stage(STEP.purge, undefined, () => purgeOldText(repo, config.textRetentionDays, now, stats));
+  // A failed `score` leaves no phishing answer, so the logos stage then asks no favicon.
+  const phishing = await stage("score", new Map<string, boolean | null>(), () =>
+    scoreProjects(deps, config, now, stats, coverage),
+  );
+  await stage("logos", undefined, async () => {
+    const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
+    await refreshLogos(deps, config, projects, { protocols: collected.protocols, phishing }, now, stats);
+  });
+  await stage("purge", undefined, () => purgeOldText(repo, config.textRetentionDays, now, stats));
 
   if (failure.failed) {
     try {
