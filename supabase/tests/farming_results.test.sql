@@ -254,7 +254,8 @@ reset role;
 -- 36-37. Rounding to 2 significant figures, on p3 (5 shared results of B..F, set up as the owner).
 insert into farming_projects (user_id, project_id)
 select u.id, 'abababab-0000-0000-0000-000000000003'::uuid
-from auth.users u where u.email in ('rb@example.test', 'rc@example.test', 'rd@example.test', 're@example.test', 'rf@example.test');
+from auth.users u
+where u.email in ('rb@example.test', 'rc@example.test', 'rd@example.test', 're@example.test', 'rf@example.test');
 insert into farming_results (user_id, project_id, amount, usd_at_claim, share_anonymous)
 select u.id, 'abababab-0000-0000-0000-000000000003'::uuid, 1, v.usd, true
 from auth.users u
@@ -271,7 +272,8 @@ select results_eq(
 reset role;
 update farming_results set usd_at_claim = v.usd
 from auth.users u
-join (values ('rc@example.test', 3.4), ('rd@example.test', 3.468), ('re@example.test', 3.5)) v(email, usd) on v.email = u.email
+join (values ('rc@example.test', 3.4), ('rd@example.test', 3.468), ('re@example.test', 3.5)) v(email, usd)
+  on v.email = u.email
 where farming_results.user_id = u.id and farming_results.project_id = 'abababab-0000-0000-0000-000000000003';
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"81818181-8181-8181-8181-818181818181","role":"authenticated"}';

@@ -109,9 +109,9 @@ revoke execute on function public.farming_result_stats(uuid) from public, anon;
 grant execute on function public.farming_result_stats(uuid) to authenticated;
 
 -- archived_at is the server's now() whenever it is set or changed (controller ruling, Plan 8 wave review M3), and an
--- update that leaves it alone keeps it. Clearing it is allowed for a farming project (resume, "Garap lagi") but not
--- for a task: an archived task stays archived (check_violation), since the web offers no restore and bringing one
--- back would change past days. Applies to every writer.
+-- update that leaves it alone keeps it. Clearing it is allowed for a farming project (resume through "Mulai garap")
+-- but not for a task: an archived task stays archived (check_violation), since the web offers no restore and bringing
+-- one back would change past days. Applies to every writer.
 create function public.stamp_archived_at() returns trigger
   language plpgsql
   set search_path = ''

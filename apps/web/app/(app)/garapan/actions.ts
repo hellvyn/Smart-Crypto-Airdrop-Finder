@@ -117,7 +117,9 @@ export async function submitResult(projectId: string, input: ResultInput): Promi
   await requireUser();
   if (!isUuid(projectId)) throw new Error("Invalid projectId");
   if (typeof input?.noReward !== "boolean") throw new Error("Invalid noReward");
-  if (input.shareAnonymous !== undefined && typeof input.shareAnonymous !== "boolean") throw new Error("Invalid shareAnonymous");
+  if (input.shareAnonymous !== undefined && typeof input.shareAnonymous !== "boolean") {
+    throw new Error("Invalid shareAnonymous");
+  }
   return attempt((db) => saveResult(db, projectId, input, new Date()));
 }
 
