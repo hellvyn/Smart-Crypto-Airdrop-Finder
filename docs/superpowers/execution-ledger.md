@@ -439,3 +439,25 @@ Ruling: T4 wires `getRunSummary` and `getTrackRecord` into the landing — P7.T4
 - P6 Task 7: minor (deferred): long `.in()` URLs for big watchlists; no index on `recorded_at`; a 500-row cap; the 48 h window is day-granular (up to about 72 h); `getChangeFeed` hides failures silently (by design, no logging).
 - P6 Task 6: complete (commits 00a81a2, d97c38b fix round 1; review opus, re-review sonnet). "Gak masuk list: {alasan}" banner sits right after the back link, before the actions. The reason is always `public_fail_reason`, "belum dinilai" when there is no curation, or "alasannya belum tercatat" when a failed curation stored no public reason (new copy, owner to sign off). `noindex` comes from `generateMetadata`, sharing the page's `cache()`d read. A pass in the ended tab is not failed. The watchlist label is one `latest_curations` query. Section 06 reads "Kenapa gak lolos" for failed or unrated projects. The head shows "Ended {tanggal}". Gates: core 531, pipeline 678, web 680 unit · typecheck ok · pgTAP 449 · e2e 98/98.
 - G5: all tasks complete (FX9, FX10, P6 T1–T8). Wave review next (opus, range 1e83f7b..d97c38b).
+- G5 wave review (opus, 1e83f7b..530357c): with fixes. The DB-level public/member split holds across 0012–0015 (no anon combination reaches worth, reasons or scam quotes; the definer objects are hardened the same way).
+  - C1: members saw `analyst.steps_id`, including translations the FX9 grounding guard refused, so a prompt injection could reach "03 · Step garap". Ruling: everyone sees grounded `tasks.text_id`, and `postProcessAnalyst` stores `steps_id: []` when any translation fails grounding. This overrides Plan 6 line 261 (plan amended), because spec §13 and the G4 I3/FX9 security fix win. If wrong, members lose the AI translation of steps but still get the grounded one.
+  - I1: the stored `domain_age`/`phishing_list` `ran` now equals what `curate()` used.
+  - I2: deploy docs cover 0015, with an ordered checklist: signup off → repair → db push → web immediately → secrets → daily.yml → check /airdrops.
+  - I3: the 8 T8 items. `usd_at_claim ≤ 1e13`. The average is trimmed (one high and one low dropped) and rounded to 2 significant figures in SQL. A task restore is refused with 23514. 42501 maps only on "task not found". "1.250" is refused. "Ubah" pre-fills a plain decimal. Playwright sets `COINGECKO_API_KEY ""`. Boolean checks.
+  - M2: one backer helper. M3: a16z docs. M4: id-ID row dates. M5: the public reason comes first in section 06. M1 accepted.
+  - Fix commits b2de05d..fcae762. Scoped re-review (opus): all addressed, no new Critical or Important findings.
+- G5 residual minors (parked):
+  - A stored 3-decimal amount (e.g. 12.345) pre-fills "Ubah" and is then refused as ambiguous.
+  - amount × price > 1e13 fails the whole save with a misleading message (unrealistic values).
+  - The 0010 "restore past 30 active" test now reaches 23514 through the new 0015 guard (its description is stale).
+  - The stored risk `level` still counts claim-domain answers in `ranCount` (curation already hides these projects).
+  - Old `ai_analyses` rows may hold ungrounded `steps_id` until their inputs change (never rendered; a prompt-version bump would clear them).
+- Post-G5: Claude provider (owner decision 2026-10-11).
+  - Commits: 8113eff, and b219e1f follow-up; merged after the G5 fix wave.
+  - Review (opus): approved, no Critical or Important findings.
+  - Behaviour: `claude-sonnet-5-5` is the first model for the analyze step only, using the official `@anthropic-ai/sdk` with streaming, adaptive thinking at `effort: low` and `max_tokens` 16000.
+  - Fallback to freellm and then NVIDIA on any failure. An empty key skips Claude.
+  - The client ignores `ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_BASE_URL`.
+  - New stat `ai_models_tripped`. `daily.yml` passes `ANTHROPIC_API_KEY`.
+  - Not tested against the live API (no key in the container). Cost per run is an estimate and an upper bound.
+- G5 complete. Gates on the merged head: core 536, pipeline 727, web 698 unit · typecheck ok · pgTAP 453 · e2e 98/98.

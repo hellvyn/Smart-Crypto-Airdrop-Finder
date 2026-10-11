@@ -258,8 +258,8 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   dari `tasks` urut `position`), `facts` (evidence v3: key_parameter, source_rating, latest_update, claimed_backer,
   capital_required).
 - Urutan bagian sesuai spec §7.2 untuk yang datanya tersedia di sub-proyek ini: Kepala → Keputusan AI (label "Analisis
-  AI", verdict, keyakinan, poin + link sumber) → Kontradiksi → Langkah (pakai `analyst.steps_id` kalau ada, kalau gak
-  pakai `steps`; dikelompokkan Daily/Weekly/Sekali) → Keamanan (alasan risiko + flag scam AI + status cek tiap
+  AI", verdict, keyakinan, poin + link sumber) → Kontradiksi → Langkah (pakai `steps` yang sudah lolos grounding, yaitu `tasks.text_id` lalu `tasks.text`, untuk semua
+  pembaca; `analyst.steps_id` gak pernah dirender, amandemen G5 C1; dikelompokkan Daily/Weekly/Sekali) → Keamanan (alasan risiko + flag scam AI + status cek tiap
   link) → Effort (estimasi AI disandingkan dengan `source_rating` sumber, mis. "airdrops.io: Easy") → Update terbaru →
   Kenapa masuk list (sinyal + label sumber). Bagian Progress per wallet, Timeline perubahan, dan Tanya AI **belum**
   ada di sub-proyek ini (sub-proyek checklist, #3, #4).
