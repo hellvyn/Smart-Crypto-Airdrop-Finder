@@ -41,7 +41,6 @@ export const PLAN_BUDGET_MS = 50_000;
 
 const QUOTA_RESET_OFFSET_MS = 7 * 3_600_000; // WIB = UTC+7, no DST
 const DAY_MS = 86_400_000;
-const UNANSWERED_GRACE_MS = 2 * 60_000;
 const CANDIDATE_TABS = ["live_now", "early_bets"] as const;
 const CADENCES = ["once", "daily", "weekly"] as const;
 const ID_CHUNK = 25;
@@ -307,25 +306,17 @@ export function wibDayStart(now: Date): Date {
 }
 
 /**
- * Messages the member has left today, for "Sisa X/20 pesan hari ini". Counted from the member's own `coach_messages`
- * (RLS shows them only their own) by the rule of `coach_begin`: a user message of today counts while it has a reply or
- * is under 2 minutes old. The authority is the ledger `coach_usage`, which the member cannot read; it also keeps
- * counting messages of deleted threads, so this number can be higher than the real one after a deletion. Null when the
- * messages cannot be read: the route then leaves `remaining` out.
+ * Messages the member has left today, for "Sisa X/20 pesan hari ini": the `coach_quota_remaining` RPC, which counts
+ * from the same ledger (`coach_usage`) and WIB day as `coach_begin`, so a deleted thread never makes the page promise
+ * more than the server allows. Null when the RPC fails: the route then leaves `remaining` out.
  */
-export async function remainingQuota(db: SupabaseClient, now: Date): Promise<number | null> {
-  const { data, error } = await db
-    .from("coach_messages")
-    .select("id, role, reply_to, created_at")
-    .gte("created_at", wibDayStart(now).toISOString())
-    .limit(1000);
-  if (error) return null;
-  const rows = (data ?? []) as unknown as { id: string; role: string; reply_to: string | null; created_at: string }[];
-  const answered = new Set(rows.filter((r) => r.role === "assistant" && r.reply_to).map((r) => r.reply_to));
-  const used = rows.filter(
-    (r) => r.role === "user" && (answered.has(r.id) || now.getTime() - Date.parse(r.created_at) < UNANSWERED_GRACE_MS),
-  ).length;
-  return Math.max(0, DAILY_QUOTA - used);
+export async function remainingQuota(db: SupabaseClient): Promise<number | null> {
+  try {
+    const { data, error } = await db.rpc("coach_quota_remaining");
+    return error || typeof data !== "number" ? null : data;
+  } catch {
+    return null;
+  }
 }
 
 // ---- Threads ----

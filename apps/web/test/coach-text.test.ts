@@ -88,6 +88,15 @@ describe("parseLinksHeader", () => {
 });
 
 describe("linkify", () => {
+  it("links a name only as a whole word, never inside another word", () => {
+    const links = [{ name: "Sei", href: "/projects/sei" }];
+    expect(linkify("Seiring waktu, coba Sei. Modern Sei2 bukan.", links)).toEqual([
+      { text: "Seiring waktu, coba " },
+      { text: "Sei", href: "/projects/sei" },
+      { text: ". Modern Sei2 bukan." },
+    ]);
+  });
+
   const links = [
     { name: "Base", href: "/projects/base" },
     { name: "Base Swap", href: "/projects/base-swap" },

@@ -216,34 +216,23 @@ describe("wibDayStart", () => {
 });
 
 describe("remainingQuota", () => {
-  const at = (iso: string) => iso;
-  it("counts the day's user messages that have a reply or are under 2 minutes old", async () => {
-    const rows = [
-      { id: "m1", role: "user", reply_to: null, created_at: at("2026-10-11T01:00:00Z") },
-      { id: "r1", role: "assistant", reply_to: "m1", created_at: at("2026-10-11T01:00:05Z") },
-      // Never answered and old: stopped counting.
-      { id: "m2", role: "user", reply_to: null, created_at: at("2026-10-11T02:00:00Z") },
-      // Never answered but still inside its 2 minutes.
-      { id: "m3", role: "user", reply_to: null, created_at: at("2026-10-11T04:59:00Z") },
-      // Before the WIB day started.
-      { id: "m0", role: "user", reply_to: null, created_at: at("2026-10-10T16:00:00Z") },
-    ];
-    const { db } = fakeCoachDb({ tables: { coach_messages: rows } });
-    expect(await remainingQuota(db, NOW)).toBe(DAILY_QUOTA - 2);
+  it("is what coach_quota_remaining returns (the ledger coach_begin counts from)", async () => {
+    const { db, rpcCalls } = fakeCoachDb({ rpc: { coach_quota_remaining: () => ({ data: 7, error: null }) } });
+    expect(await remainingQuota(db)).toBe(7);
+    expect(rpcCalls.map((c) => c.name)).toEqual(["coach_quota_remaining"]);
   });
 
-  it("never goes below zero", async () => {
-    const rows = Array.from({ length: 25 }, (_, i) => [
-      { id: `m${i}`, role: "user", reply_to: null, created_at: "2026-10-11T01:00:00Z" },
-      { id: `r${i}`, role: "assistant", reply_to: `m${i}`, created_at: "2026-10-11T01:00:05Z" },
-    ]).flat();
-    const { db } = fakeCoachDb({ tables: { coach_messages: rows } });
-    expect(await remainingQuota(db, NOW)).toBe(0);
-  });
-
-  it("is null when the messages cannot be read", async () => {
-    const { db } = fakeCoachDb({ tableErrors: { coach_messages: { message: "down" } } });
-    expect(await remainingQuota(db, NOW)).toBeNull();
+  it("is null when the RPC fails or throws", async () => {
+    const failing = fakeCoachDb({ rpc: { coach_quota_remaining: () => ({ data: null, error: { message: "down" } }) } });
+    expect(await remainingQuota(failing.db)).toBeNull();
+    const throwing = fakeCoachDb({
+      rpc: {
+        coach_quota_remaining: () => {
+          throw new Error("network");
+        },
+      },
+    });
+    expect(await remainingQuota(throwing.db)).toBeNull();
   });
 });
 

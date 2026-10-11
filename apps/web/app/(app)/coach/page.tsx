@@ -30,7 +30,7 @@ export default async function CoachPage({ searchParams }: { searchParams: Promis
     getCoachProfile(db, user.id),
     listChains(db),
     listThreads(db, now),
-    remainingQuota(db, now),
+    remainingQuota(db),
     first(params.thread) ? getThread(db, first(params.thread)!) : Promise.resolve(null),
   ]);
 

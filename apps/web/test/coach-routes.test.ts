@@ -51,6 +51,7 @@ function setup({ rpc = {}, tables = {} }: Setup = {}): FakeDb {
       coach_mark_used: () => ok,
       coach_save_plan: () => ok,
       coach_finish: () => ({ data: "55555555-5555-4555-8555-555555555555", error: null }),
+      coach_quota_remaining: () => ({ data: 19, error: null }),
       ...rpc,
     },
   });
@@ -67,7 +68,9 @@ const post = (route: typeof planPOST, body: unknown, init: { type?: string; sign
     }),
   );
 
-const rpcNames = () => fake.rpcCalls.map((c) => c.name);
+// coach_quota_remaining is a read for the counter, not a step of the flow; the order checks leave it out.
+const flowCalls = () => fake.rpcCalls.filter((c) => c.name !== "coach_quota_remaining");
+const rpcNames = () => flowCalls().map((c) => c.name);
 
 beforeEach(() => {
   getUser.mockReset().mockResolvedValue(USER);
@@ -108,7 +111,7 @@ describe("POST /api/coach/plan", () => {
     const res = await post(planPOST, {});
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "unauthorized" });
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(rpcNames()).toHaveLength(0);
     expect(fake.reads).toHaveLength(0);
     expect(callStructured).not.toHaveBeenCalled();
   });
@@ -122,7 +125,7 @@ describe("POST /api/coach/plan", () => {
     const res = await post(planPOST, body, { type });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "bad_input", message: coach.errors.bad_input });
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(rpcNames()).toHaveLength(0);
   });
 
   it("is 400 bad_input when the member has no profile yet, without any RPC", async () => {
@@ -130,7 +133,7 @@ describe("POST /api/coach/plan", () => {
     const res = await post(planPOST, {});
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe("bad_input");
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(rpcNames()).toHaveLength(0);
     expect(callStructured).not.toHaveBeenCalled();
   });
 
@@ -140,7 +143,7 @@ describe("POST /api/coach/plan", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({ state: "no_candidates", threadId: null, recommendations: [], message: coach.empty.noCandidates });
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(rpcNames()).toHaveLength(0);
     expect(callStructured).not.toHaveBeenCalled();
   });
 
@@ -154,7 +157,7 @@ describe("POST /api/coach/plan", () => {
     });
     const res = await post(planPOST, {});
     expect((await res.json()).state).toBe("no_candidates");
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(rpcNames()).toHaveLength(0);
   });
 
   it("runs the RPCs in order and returns the validated plan with the thread and the remaining quota", async () => {
@@ -270,7 +273,7 @@ describe("POST /api/coach/plan", () => {
     expect((await res.json()).recommendations).toHaveLength(3);
   });
 
-  it("omits remaining when the member's messages cannot be read", async () => {
+  it("omits remaining when the quota cannot be read", async () => {
     callStructured.mockResolvedValue(GOOD());
     setup();
     fake = fakeCoachDb({
@@ -278,8 +281,11 @@ describe("POST /api/coach/plan", () => {
         coach_profiles: [{ user_id: USER.id, ...PROFILE }],
         ...candidateTables([{ id: P1, name: "Alpha" }, { id: P2, name: "Beta" }, { id: P3, name: "Gamma" }]),
       },
-      tableErrors: { coach_messages: { message: "down" } },
-      rpc: { coach_new_thread: () => ({ data: THREAD, error: null }), coach_begin: () => ({ data: MSG, error: null }) },
+      rpc: {
+        coach_new_thread: () => ({ data: THREAD, error: null }),
+        coach_begin: () => ({ data: MSG, error: null }),
+        coach_quota_remaining: () => ({ data: null, error: { message: "down" } }),
+      },
     });
     const res = await post(planPOST, {});
     expect(res.status).toBe(200);
@@ -361,7 +367,7 @@ describe("POST /api/coach/chat: input", () => {
     const res = await post(chatPOST, chatBody());
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "unauthorized" });
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(rpcNames()).toHaveLength(0);
     expect(streamText).not.toHaveBeenCalled();
   });
 
@@ -378,7 +384,7 @@ describe("POST /api/coach/chat: input", () => {
     const res = await post(chatPOST, body);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "bad_input", message: coach.errors.bad_input });
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(rpcNames()).toHaveLength(0);
     expect(streamText).not.toHaveBeenCalled();
   });
 
@@ -400,7 +406,7 @@ describe("POST /api/coach/chat: input", () => {
     setup({ tables: { coach_profiles: [] } });
     const res = await post(chatPOST, chatBody());
     expect(res.status).toBe(400);
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(rpcNames()).toHaveLength(0);
   });
 
   it("is 403 not_member for a thread that is not the member's, before counting any quota", async () => {
@@ -408,7 +414,7 @@ describe("POST /api/coach/chat: input", () => {
     const res = await post(chatPOST, chatBody());
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "not_member", message: coach.errors.not_member });
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(rpcNames()).toHaveLength(0);
   });
 
   it("is 429 with the quota copy when coach_begin says quota, and calls no model", async () => {
@@ -476,9 +482,9 @@ describe("POST /api/coach/chat: streaming", () => {
     expect(order.indexOf("mark_used")).toBeLessThan(order.indexOf("delta1"));
     expect(order.at(-1)).toBe("finish");
     expect(rpcNames()).toEqual(["coach_begin", "coach_mark_used", "coach_finish"]);
-    expect(fake.rpcCalls[0]?.args).toEqual({ p_thread_id: THREAD, p_kind: "chat", p_content: "Mulai dari mana?" });
-    expect(fake.rpcCalls[1]?.args).toEqual({ p_user_message_id: MSG });
-    expect(fake.rpcCalls[2]?.args).toEqual({
+    expect(flowCalls()[0]?.args).toEqual({ p_thread_id: THREAD, p_kind: "chat", p_content: "Mulai dari mana?" });
+    expect(flowCalls()[1]?.args).toEqual({ p_user_message_id: MSG });
+    expect(flowCalls()[2]?.args).toEqual({
       p_user_message_id: MSG,
       p_content: "Mulai dari Alpha. Itu paling ringan.\n",
       p_model: "anthropic:claude-sonnet-5-5",
@@ -675,7 +681,7 @@ describe("POST /api/coach/chat: explain_step and project threads", () => {
     expect(last.role).toBe("user");
     expect(last.content).toContain("Bridge sedikit ETH ke Base lalu swap di Alpha");
     expect(last.content).toContain("Jelasin langkah ini");
-    expect(fake.rpcCalls[0]?.args).toEqual({ p_thread_id: THREAD, p_kind: "explain_step", p_content: "Jelasin langkah ini" });
+    expect(flowCalls()[0]?.args).toEqual({ p_thread_id: THREAD, p_kind: "explain_step", p_content: "Jelasin langkah ini" });
   });
 
   it("falls back to the step's description when it has no text_id", async () => {
@@ -691,7 +697,7 @@ describe("POST /api/coach/chat: explain_step and project threads", () => {
     setup({ tables: { tasks: [{ ...STEP_ROW, project_id: OUTSIDER }] } });
     const foreign = await post(chatPOST, chatBody({ kind: "explain_step", stepId: STEP_ID }));
     expect(foreign.status).toBe(400);
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(rpcNames()).toHaveLength(0);
   });
 
   it("narrows the candidates to the thread's project", async () => {

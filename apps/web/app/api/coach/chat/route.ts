@@ -75,7 +75,7 @@ export async function POST(request: Request): Promise<Response> {
     const begin = await db.rpc("coach_begin", { p_thread_id: input.threadId, p_kind: input.kind, p_content: input.message });
     if (begin.error || typeof begin.data !== "string") return coachErrorResponse(coachErrorFrom(begin.error));
     const messageId = begin.data;
-    const remaining = await remainingQuota(db, now);
+    const remaining = await remainingQuota(db);
 
     const llm = coachLlm();
     const own = new AbortController();

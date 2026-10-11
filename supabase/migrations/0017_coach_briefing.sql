@@ -369,6 +369,33 @@ $$;
 revoke execute on function public.coach_mark_used(uuid) from public, anon;
 grant execute on function public.coach_mark_used(uuid) to authenticated;
 
+-- How many of today's 20 messages (WIB day) the caller has left, counted from the same ledger coach_begin uses, so the
+-- page never shows more than coach_begin will allow (a deleted thread takes its coach_messages along, not its usage).
+create function public.coach_quota_remaining() returns integer
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_used integer;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated' using errcode = '42501';
+  end if;
+  select count(*) into v_used
+  from public.coach_usage u
+  where u.user_id = v_uid
+    and u.kind = 'message'
+    and u.created_at >= date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta'
+    and (u.replied or u.created_at > now() - interval '2 minutes');
+  return greatest(0, 20 - v_used);
+end;
+$$;
+revoke execute on function public.coach_quota_remaining() from public, anon;
+grant execute on function public.coach_quota_remaining() to authenticated;
+
 -- Store the server-validated plan on the caller's thread. P0001 'thread' for a thread that is not the caller's. The
 -- plan must be a JSON object of at most 100,000 characters (the server validates its content; this bounds what a
 -- member who calls the RPC directly can store).

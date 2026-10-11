@@ -19,6 +19,11 @@ export interface TextSegment {
 }
 
 const PROJECT_HREF = /^\/projects\/[A-Za-z0-9._~%-]+$/;
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+function isWordChar(ch: string | undefined): boolean {
+  return ch !== undefined && WORD_CHAR.test(ch);
+}
 
 /** The links of the `X-Coach-Links` header. Anything that is not an internal project link is dropped. */
 export function parseLinksHeader(value: string | null): CoachLink[] {
@@ -39,7 +44,8 @@ export function parseLinksHeader(value: string | null): CoachLink[] {
 }
 
 /**
- * `text` cut into plain pieces and project-name pieces. A name is matched exactly (case sensitive) and the longest
+ * `text` cut into plain pieces and project-name pieces. A name is matched exactly (case sensitive), only as a whole
+ * word (no letter or digit right before or after it, so a project "Sei" never links inside "Seiring"), and the longest
  * name wins, so "Base Swap" is not split by a project called "Base". The text itself is never altered.
  */
 export function linkify(text: string, links: CoachLink[]): TextSegment[] {
@@ -52,7 +58,7 @@ export function linkify(text: string, links: CoachLink[]): TextSegment[] {
   let plain = "";
   let i = 0;
   while (i < text.length) {
-    const name = names.find((n) => text.startsWith(n, i));
+    const name = names.find((n) => text.startsWith(n, i) && !isWordChar(text[i - 1]) && !isWordChar(text[i + n.length]));
     if (name === undefined) {
       plain += text[i];
       i += 1;

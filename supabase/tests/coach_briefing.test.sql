@@ -8,7 +8,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(124);
+select plan(126);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS).
 -- A: ca.., B: cb.. (the other member), C: default timezone, D: Pacific/Kiritimati, E: Pacific/Pago_Pago,
@@ -618,6 +618,15 @@ select throws_ok(
 select lives_ok(
   format($$ select coach_finish(%L, 'masih boleh', 'm', 1, 1, null, null) $$, (select id from m_ids where n = 2)),
   'coach_finish on an old message that was marked still works');
+reset role;
+
+-- coach_quota_remaining reads the same ledger: H deleted a thread after 20 counted messages and still has 0 left.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c5000000-0000-4000-8000-000000000001","role":"authenticated"}';
+select is(coach_quota_remaining(), 19, 'quota_remaining counts the marked old message and ignores the expired one');
+set local role anon;
+set local request.jwt.claims = '{}';
+select throws_ok($$ select coach_quota_remaining() $$, '42501', null, 'anon cannot call coach_quota_remaining');
 reset role;
 
 -- L: a message that failed (past its 2 minutes, unmarked) stays uncounted when its thread is deleted afterwards.

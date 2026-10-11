@@ -82,6 +82,12 @@ describe("CoachChat", () => {
     expect((screen.getByRole("button", { name: "Kirim" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("tells a member who opens the page with nothing left why the chat is closed", () => {
+    render(<CoachChat threadId={THREAD} projectId={null} remaining={0} />);
+    expect(screen.getByRole("status").textContent).toBe("Jatah 20 pesan hari ini habis, reset jam 00.00 WIB.");
+    expect((screen.getByRole("button", { name: "Kirim" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("shows the unavailable copy, not a half answer, when the stream breaks", async () => {
     fetchMock.mockResolvedValue(streamed(["Setengah jawaban."], {}, true));
     render(<CoachChat threadId={THREAD} projectId={null} remaining={5} />);

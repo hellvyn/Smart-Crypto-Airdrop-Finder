@@ -51,7 +51,7 @@ export async function POST(request: Request): Promise<Response> {
     const candidates = selectCandidates(await loadCandidates(db, now), profile);
     if (candidates.length === 0) {
       return coachJson(
-        { state: "no_candidates", threadId: null, recommendations: [], remaining: await remainingQuota(db, now), message: coach.empty.noCandidates },
+        { state: "no_candidates", threadId: null, recommendations: [], remaining: await remainingQuota(db), message: coach.empty.noCandidates },
         200,
       );
     }
@@ -81,7 +81,7 @@ export async function POST(request: Request): Promise<Response> {
     const { recommendations } = validatePlan(outcome.value, candidates, profile);
     if (recommendations.length === 0) {
       return coachJson(
-        { state: "no_plan", threadId, recommendations: [], remaining: await remainingQuota(db, now), message: coach.empty.noPlan },
+        { state: "no_plan", threadId, recommendations: [], remaining: await remainingQuota(db), message: coach.empty.noPlan },
         200,
       );
     }
@@ -103,7 +103,7 @@ export async function POST(request: Request): Promise<Response> {
       p_cache_write: null,
     });
 
-    return coachJson({ threadId, recommendations: plan, remaining: await remainingQuota(db, new Date()) }, 200);
+    return coachJson({ threadId, recommendations: plan, remaining: await remainingQuota(db) }, 200);
   } catch {
     return coachErrorResponse("unavailable");
   }

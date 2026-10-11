@@ -134,6 +134,10 @@ export function CoachChat({
         <p role="alert" className="form-error">
           {error}
         </p>
+      ) : spent ? (
+        <p role="status" className="form-error">
+          {coach.errors.quota}
+        </p>
       ) : null}
       <form className="coach-chat-form" onSubmit={send}>
         <label htmlFor="coach-message">{copy.label}</label>
