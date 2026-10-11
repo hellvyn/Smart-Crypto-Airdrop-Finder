@@ -60,35 +60,52 @@ export interface PipelineConfig {
 }
 
 /**
- * VC candidates of curation plan 5 Task 4 (tier 1 as the plan sets it), **not verified**: none of these pages could
- * be fetched from the development environment (every host refused by its proxy), so their HTML structure and terms
- * are unknown and their `portfolioUrl`s are unconfirmed. A candidate gives no `vc_backer` until it is verified: run
- * `scripts/vc-portfolio-check.ts` where the pages are reachable, then move each VC whose page lists its portfolio
- * companies as outbound links in its HTML (and whose terms allow reading it) to `VC_LIST`, and strike the others
- * (docs/ops/pipeline.md, "Daftar VC").
+ * VC candidates of curation plan 5 Task 4 (tier 1 as the plan sets it) that are **not used**: each one failed at
+ * least one condition of the check on 2026-10-11 (the comment above each one; details in docs/ops/pipeline.md,
+ * "Daftar VC").
+ * A VC moves to `VC_LIST` only when its page answers 200 to the pipeline's client, its outbound links are its
+ * portfolio companies (at least ~10 of them in the HTML, no JavaScript needed), and neither its robots.txt nor its
+ * terms forbid reading the page automatically (spec §5.2: a VC whose terms forbid it is struck). Re-check with
+ * `scripts/vc-portfolio-check.ts`. The `portfolioUrl` is the page that lists the portfolio where one was found.
  */
 export const VC_CANDIDATES: VcConfig[] = [
+  // Terms not checked: the terms of use are on a16z.com, which the egress proxy refuses (CONNECT 403).
   { id: "a16z-crypto", name: "a16z crypto", aliases: ["a16z", "Andreessen Horowitz"], tier: 1, portfolioUrl: "https://a16zcrypto.com/portfolio/" },
-  { id: "paradigm", name: "Paradigm", aliases: [], tier: 1, portfolioUrl: "https://www.paradigm.xyz/portfolio" },
+  // Terms forbid it: no access to or collection of data from the site by automated means.
+  { id: "paradigm", name: "Paradigm", aliases: [], tier: 1, portfolioUrl: "https://www.paradigm.xyz/investments" },
+  // 404: no portfolio page on polychain.capital (the homepage links only to job boards).
   { id: "polychain", name: "Polychain Capital", aliases: ["Polychain"], tier: 1, portfolioUrl: "https://polychain.capital/portfolio" },
+  // JavaScript-rendered: the list is not in the HTML (only investor-portal links).
   { id: "pantera", name: "Pantera Capital", aliases: ["Pantera"], tier: 1, portfolioUrl: "https://panteracapital.com/portfolio/" },
+  // JavaScript-rendered: no portfolio link in the HTML.
   { id: "multicoin", name: "Multicoin Capital", aliases: ["Multicoin"], tier: 1, portfolioUrl: "https://multicoin.capital/portfolio/" },
-  { id: "dragonfly", name: "Dragonfly", aliases: ["Dragonfly Capital"], tier: 1, portfolioUrl: "https://www.dragonfly.xyz/portfolio" },
+  // JavaScript-rendered: the portfolio section of the homepage (dragonfly.xyz moved here) has no company link in the HTML.
+  { id: "dragonfly", name: "Dragonfly", aliases: ["Dragonfly Capital"], tier: 1, portfolioUrl: "https://dragonfly.com/" },
+  // Blocked: the site's bot protection answers 403.
   { id: "coinbase-ventures", name: "Coinbase Ventures", aliases: [], tier: 1, portfolioUrl: "https://www.coinbase.com/ventures" },
+  // 404: no portfolio page linked from the yzilabs.com homepage.
   { id: "yzi-labs", name: "YZi Labs", aliases: ["Binance Labs"], tier: 1, portfolioUrl: "https://www.yzilabs.com/portfolio" },
+  // Terms forbid it: the site is licensed for personal, noncommercial use only, and no part may be downloaded.
   { id: "framework", name: "Framework Ventures", aliases: ["Framework"], tier: 2, portfolioUrl: "https://framework.ventures/portfolio" },
+  // Terms forbid it: no robot, spider or other automatic means to access the site for any purpose.
   { id: "variant", name: "Variant", aliases: ["Variant Fund"], tier: 2, portfolioUrl: "https://variant.fund/portfolio/" },
-  { id: "electric-capital", name: "Electric Capital", aliases: [], tier: 2, portfolioUrl: "https://www.electriccapital.com/portfolio" },
-  { id: "hack-vc", name: "Hack VC", aliases: [], tier: 2, portfolioUrl: "https://hack.vc/portfolio" },
-  { id: "placeholder", name: "Placeholder", aliases: ["Placeholder VC"], tier: 2, portfolioUrl: "https://www.placeholder.vc/portfolio" },
-  { id: "delphi-ventures", name: "Delphi Ventures", aliases: ["Delphi Digital"], tier: 2, portfolioUrl: "https://delphiventures.io/" },
-  { id: "jump-crypto", name: "Jump Crypto", aliases: ["Jump"], tier: 2, portfolioUrl: "https://jumpcrypto.com/portfolio/" },
+  // Terms forbid it: no automated data collection without Electric Capital's express permission.
+  { id: "electric-capital", name: "Electric Capital", aliases: [], tier: 2, portfolioUrl: "https://www.electriccapital.com/investments/" },
+  // No company domains: the list links only to Hack VC's own detail pages (/portfolio/<company>).
+  { id: "hack-vc", name: "Hack VC", aliases: [], tier: 2, portfolioUrl: "https://www.hack.vc/portfolio" },
+  // Terms forbid it: personal, noncommercial use only; any other use needs written permission.
+  { id: "placeholder", name: "Placeholder", aliases: ["Placeholder VC"], tier: 2, portfolioUrl: "https://www.placeholder.vc/" },
+  // JavaScript-rendered: only the first 10 companies are in the HTML, the rest load with "Load More".
+  { id: "delphi-ventures", name: "Delphi Ventures", aliases: ["Delphi Digital"], tier: 2, portfolioUrl: "https://delphiventures.io/portfolio-crypto" },
+  // Terms not checked: the terms of use are on jumptrading.com, which the egress proxy refuses (CONNECT 403).
+  { id: "jump-crypto", name: "Jump Crypto", aliases: ["Jump"], tier: 2, portfolioUrl: "https://jumpcrypto.com/invest" },
 ];
 
 /**
- * Verified VCs: the only ones the pipeline fetches and trusts (`defaultConfig.vcs`). Empty until the candidates above
- * are checked, so no unverified page can give a project a verified `vc_backer`. An unreachable or link-less page of a
- * listed VC only leaves that VC "not checked" in a run; it never removes signals from the other VCs.
+ * Verified VCs: the only ones the pipeline fetches and trusts (`defaultConfig.vcs`). Empty after the check of
+ * 2026-10-11 (no candidate passed every condition), so no unverified page can give a project a verified `vc_backer`.
+ * An unreachable or link-less page of a listed VC only leaves that VC "not checked" in a run; it never removes signals
+ * from the other VCs.
  */
 export const VC_LIST: VcConfig[] = [];
 
