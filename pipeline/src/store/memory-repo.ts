@@ -10,6 +10,7 @@ import type {
   StatusEvidence,
 } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
+import type { RaisePage } from "../enrich/alphadrops-raises.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 import { FACT_FIELDS, curatedChange, publicFailReason } from "./repo.js";
 import type {
@@ -118,6 +119,7 @@ export class MemoryRepo implements PipelineRepo {
   private readonly tasks: TaskRow[] = [];
   private readonly links: LinkRow[] = [];
   private readonly vcPortfolios: VcPortfolioRow[] = [];
+  private readonly alphaRaises = new Map<string, RaisePage & { fetchedAt: Date }>();
 
   /** Snapshot of every stored document (test helper). */
   allDocuments(): StoredDocument[] {
@@ -392,9 +394,11 @@ export class MemoryRepo implements PipelineRepo {
     keep: readonly SignalKeep[] = [],
   ): Promise<void> {
     const kept = (s: SignalRow): boolean =>
-      keep.some((k) =>
-        typeof k === "string" ? k === s.source : k.source === s.source && s.value.investor === k.investor,
-      );
+      keep.some((k) => {
+        if (typeof k === "string") return k === s.source;
+        if (k.source !== s.source) return false;
+        return "kind" in k ? s.kind === k.kind : s.value.investor === k.investor;
+      });
     // Delete first, as SupabaseRepo does: a refused insert leaves the project with only the kept signals.
     removeWhere(this.signals, (s) => s.projectId === projectId && !kept(s));
     // Same rules as the project_signals check constraint and unique index.
@@ -422,6 +426,16 @@ export class MemoryRepo implements PipelineRepo {
   async saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void> {
     removeWhere(this.vcPortfolios, (r) => r.vcId === vcId);
     for (const domain of new Set(domains)) this.vcPortfolios.push({ vcId, domain, fetchedAt: at });
+  }
+
+  async listAlphaRaise(slug: string): Promise<(RaisePage & { fetchedAt: Date }) | null> {
+    const row = this.alphaRaises.get(slug);
+    // A deep copy, as a database read would give.
+    return row === undefined ? null : structuredClone(row);
+  }
+
+  async saveAlphaRaise(slug: string, page: RaisePage, at: Date): Promise<void> {
+    this.alphaRaises.set(slug, structuredClone({ officialDomain: page.officialDomain, rounds: page.rounds, fetchedAt: at }));
   }
 
   async listProjectSourceTexts(projectId: string): Promise<{ url: string; text: string }[]> {

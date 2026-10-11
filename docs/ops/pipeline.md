@@ -104,6 +104,44 @@ hosts never become a project's official domain (`isNonProjectHost` in `pipeline/
 A changed listing (no Next.js payload, no items) or a connection that breaks during the detail pages counts in
 `source_failed`; the documents built before the break are still stored and the other sources run as usual.
 
+### AlphaDrops raises ("Menurut AlphaDrops", `reported_backer`)
+
+The `signals` stage gives a project one `reported_backer` per investor (`{investor, lead, amount_usd, round,
+round_date, source_url}`, source `alphadrops`, **always `verified = false`**) from the AlphaDrops fundraising data
+(`pipeline/src/enrich/alphadrops-raises.ts`):
+
+1. It reads `https://alphadrops.net/llms-full.txt` once per run and takes the "All tracked fundraising projects"
+   section (name and slug of about 880 projects).
+2. A project with an official domain whose normalized name equals an entry's name gets that entry's page
+   `/raises/<slug>`. The name **only chooses which page to read**.
+3. A page cached in `alphadrops_raises` (service role only) at most 7 days ago is used as it is. Other pages are
+   fetched: never-cached pages first, then the oldest, at most `maxRaisePages` (40) per run. A fetched page with at
+   least one round replaces the cache.
+4. The rounds of a page become signals only when the registrable domain of the page's "Official Website" link equals
+   one of the project's official domains (`domainMatches`). A scam using the name of a project in the fundraising list
+   gets nothing: its domain differs. `amount_usd` is the total of the page's disclosed rounds (worth +1 at $5M or more,
+   never added to a verified `vc_backer`); `lead` is true when the investor led any round; `round`, `round_date` and
+   `source_url` (the round's "Announcement Source") are those of the newest round the investor is in.
+
+"Not checked" is never "none": when `llms-full.txt` fails or lists nothing, when AlphaDrops is disabled
+(`alphadrops.enabled: false`), or for a project whose page is neither fresh in the cache nor fetched this run (not
+reached, failed, or stale and not refreshed), the project's earlier `reported_backer` rows stay with their own
+`observed_at`; its AlphaDrops `curated_source` is still rewritten. A broken connection or HTTP 429 stops the raise
+fetching for the run.
+
+**Request budget.** All AlphaDrops requests of a run share `maxRequestsPerRun` (120): the collector's listing and
+detail pages come first (at most 1 + 80 = 81), and the raise part gets what is left (at most `llms-full.txt` + 38
+pages on a day with 80 detail pages; 40 pages when fewer detail pages were fetched). Every AlphaDrops request goes out
+with the same User-Agent and a 1.5 s pause (`delayMs`) before it.
+
+**Job time.** Measured on 2026-10-11 from the development container (apex `alphadrops.net`): `llms-full.txt`
+(94 KB) answered in 0.5 s, raise pages (about 130 KB, rendered on request) in about 2.5 s. So a raise page costs about
+4 s with its pause, and the raise part at most about 2 s + 38 x 4 s = 2.6 minutes on top of the collector's 2 to 3
+minutes. Most days fetch far fewer pages: each page is fetched again only after 7 days. A broken connection or 429
+stops the part at once (worst case one 20 s timeout). There is no time budget for an AlphaDrops that answers every
+request slowly: at the 20 s timeout per request that would be 39 x 21.5 s = 14 minutes for the raise part. If runs
+come close to the job limit (`finished_at` - `started_at` in `pipeline_runs`), lower `maxRaisePages`.
+
 ### Daftar VC (VC portfolio cross-check)
 
 The `signals` stage gives a project a verified `vc_backer` (`{investor, tier}`, source `vc_portfolio`) when the
@@ -171,6 +209,9 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `phishing_list_skipped` | of those, domains never asked because the GoPlus time budget ran out or 5 domains in a row had no answer |
 | `signals_vc_backer` | projects that got at least one verified `vc_backer` this run (official domain in a checked VC portfolio) |
 | `vc_portfolios_failed` | VC portfolio pages that had to be fetched and failed (not 200 or no portfolio link), or whose cache could not be read; see "Daftar VC" |
+| `raises_fetched` | AlphaDrops raise pages fetched this run with at least one round (stored in `alphadrops_raises`) |
+| `raises_matched` | projects that got at least one `reported_backer` this run (raise page's official website matched by domain) |
+| `raises_failed` | AlphaDrops raise requests that failed: `llms-full.txt` (not 200 or no fundraising entry) and raise pages (not 200, broken connection, or no round on the page) |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
@@ -197,6 +238,9 @@ What to do:
   normal days with `phishing_list_rate_limited` near 0, the domain count has outgrown `goplusBudgetMinutes`.
 - `vc_portfolios_failed` > 0 on several runs: a VC page moved or changed; run `scripts/vc-portfolio-check.ts`
   ("Daftar VC") and fix its `portfolioUrl` or strike it. After 14 days without a good fetch that VC is "not checked".
+- `raises_failed` > 0 on several runs with `raises_fetched` = 0: AlphaDrops changed `llms-full.txt` or its raise page
+  layout ("Funding Rounds History", "Official Website"); update `alphadrops-raises.ts` and the fixture
+  `pipeline/test/fixtures/alphadrops-raise.html`. Until then the earlier `reported_backer` rows stay.
 - `llm_models_tripped` > 0: a model endpoint failed repeatedly (see `extractions.error`, e.g. `http_0` = 180 s
   timeout). The run continues on the remaining models; if it repeats for days, reorder or replace the model in
   `pipeline/src/config.ts`.

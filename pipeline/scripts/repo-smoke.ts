@@ -264,10 +264,45 @@ async function main(): Promise<void> {
     (keptBackers.data ?? []).map((s) => (s.value as { investor: string }).investor).sort(),
     ['Odd "Name", (Fund)', "Variant"],
   );
+  // A kept kind (AlphaDrops raises not checked this run) survives; the source's other kinds do not.
+  const reported = (investor: string) => ({ kind: "reported_backer" as const, value: { investor, lead: true, amount_usd: 5_000_000 }, source: "alphadrops" as const, verified: false });
+  await repo.replaceSignals(p.id, [
+    reported("Paradigm"),
+    reported("Variant"),
+    { kind: "curated_source", value: { source_kind: "alphadrops" }, source: "alphadrops", verified: false },
+    { kind: "tvl", value: { tvl_usd: 1 }, source: "defillama", verified: true },
+  ], T0);
+  await repo.replaceSignals(p.id, [
+    { kind: "curated_source", value: { source_kind: "alphadrops" }, source: "alphadrops", verified: false },
+  ], t1, [{ source: "alphadrops", kind: "reported_backer" }]);
+  const keptReported = await admin.from("project_signals").select("kind, value, observed_at").eq("project_id", p.id);
+  assert.equal(keptReported.error, null);
+  assert.deepEqual(
+    (keptReported.data ?? [])
+      .map((s) => [s.kind, (s.value as { investor?: string }).investor ?? "", new Date(s.observed_at as string).getTime()])
+      .sort(),
+    [["curated_source", "", t1.getTime()], ["reported_backer", "Paradigm", T0.getTime()], ["reported_backer", "Variant", T0.getTime()]],
+  );
+  await assert.rejects(
+    repo.replaceSignals(p.id, [{ ...reported("Paradigm"), verified: true }], t1),
+    "a verified reported_backer must be refused",
+  );
   await repo.replaceSignals(p.id, [
     { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: true },
     { kind: "claimed_backer", value: { investor: "a16z", quote: "backed by a16z" }, source: "llm_text", verified: false },
   ], t1);
+
+  // AlphaDrops raise cache: one row per slug, a later save replacing it.
+  const raiseSlug = `smoke-raise-${suffix}`;
+  const seed = { round: "Seed", date: "2026-01-02", amountUsd: 5_000_000, lead: ["Paradigm"], others: ["Variant"], sourceUrl: null };
+  assert.equal(await repo.listAlphaRaise(raiseSlug), null);
+  await repo.saveAlphaRaise(raiseSlug, { officialDomain: "catalyst.app", rounds: [seed] }, T0);
+  await repo.saveAlphaRaise(raiseSlug, { officialDomain: null, rounds: [seed, { ...seed, round: "Series A", amountUsd: null }] }, t1);
+  assert.deepEqual(await repo.listAlphaRaise(raiseSlug), {
+    officialDomain: null,
+    rounds: [seed, { ...seed, round: "Series A", amountUsd: null }],
+    fetchedAt: t1,
+  });
 
   // VC portfolio cache
   const vcId = `smoke-vc-${suffix}`;
@@ -363,6 +398,8 @@ async function main(): Promise<void> {
     assert.equal(anonSignals.data?.length, 2);
     const anonVc = await anon.from("vc_portfolios").select("domain").eq("vc_id", vcId);
     assert.deepEqual(anonVc.data ?? [], [], "vc_portfolios must not be readable by anon");
+    const anonRaise = await anon.from("alphadrops_raises").select("slug").eq("slug", raiseSlug);
+    assert.deepEqual(anonRaise.data ?? [], [], "alphadrops_raises must not be readable by anon");
     console.log("rls ok");
   } else {
     console.log("rls checks skipped (SUPABASE_ANON_KEY not set)");
@@ -375,6 +412,7 @@ async function main(): Promise<void> {
     await admin.from("documents").delete().like("url", `https://t.me/${channel}/%`),
     await admin.from("pipeline_runs").delete().eq("id", runId),
     await admin.from("vc_portfolios").delete().eq("vc_id", vcId),
+    await admin.from("alphadrops_raises").delete().eq("slug", raiseSlug),
   ];
   for (const r of cleanup) assert.equal(r.error, null, `cleanup failed: ${r.error?.message ?? ""}`);
   console.log("repo smoke ok");

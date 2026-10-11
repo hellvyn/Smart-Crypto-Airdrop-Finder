@@ -744,6 +744,23 @@ describe("MemoryRepo signals", () => {
     expect(repo.signals).toEqual([{ projectId: p.id, ...variant, observedAt: T0 }]);
   });
 
+  it("keeps only the kept kind's signals of a source kept by kind", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const reported: NewSignal = { kind: "reported_backer", value: { investor: "Paradigm" }, source: "alphadrops", verified: false };
+    const curated: NewSignal = { kind: "curated_source", value: { source_kind: "alphadrops" }, source: "alphadrops", verified: false };
+    const claim: NewSignal = { kind: "claimed_backer", value: { investor: "Paradigm", quote: "q" }, source: "llm_text", verified: false };
+    await repo.replaceSignals(p.id, [reported, curated, claim], T0);
+    const later = new Date(T0.getTime() + 86_400_000);
+
+    await repo.replaceSignals(p.id, [curated], later, [{ source: "alphadrops", kind: "reported_backer" }]);
+
+    expect(repo.signals).toEqual([
+      { projectId: p.id, ...reported, observedAt: T0 },
+      { projectId: p.id, ...curated, observedAt: later },
+    ]);
+  });
+
   it("accepts one kind from two sources but rejects a duplicate (kind, source, investor), like the unique index", async () => {
     const repo = new MemoryRepo();
     const p = await repo.createProject(project(), T0);
@@ -779,6 +796,23 @@ describe("MemoryRepo VC portfolios and AI analyses", () => {
     await repo.saveVcPortfolio("paradigm", ["zora.co", "blast.io"], later);
     expect(await repo.listVcPortfolio("paradigm")).toEqual({ domains: ["blast.io", "zora.co"], fetchedAt: later });
     expect(await repo.listVcPortfolio("a16z")).toEqual({ domains: ["eigenlayer.xyz"], fetchedAt: T0 });
+  });
+
+  it("caches one AlphaDrops raise page per slug, a later save replacing it", async () => {
+    const repo = new MemoryRepo();
+    const seed = { round: "Seed", date: "2026-01-02", amountUsd: 5_000_000, lead: ["Paradigm"], others: ["Variant"], sourceUrl: null };
+    expect(await repo.listAlphaRaise("catalyst")).toBeNull();
+    await repo.saveAlphaRaise("catalyst", { officialDomain: "catalyst.app", rounds: [seed] }, T0);
+    await repo.saveAlphaRaise("meanwhile", { officialDomain: null, rounds: [] }, T0);
+    const later = new Date(T0.getTime() + 8 * 86_400_000);
+    await repo.saveAlphaRaise("catalyst", { officialDomain: "catalyst.xyz", rounds: [seed, { ...seed, round: "Series A" }] }, later);
+
+    expect(await repo.listAlphaRaise("catalyst")).toEqual({
+      officialDomain: "catalyst.xyz",
+      rounds: [seed, { ...seed, round: "Series A" }],
+      fetchedAt: later,
+    });
+    expect(await repo.listAlphaRaise("meanwhile")).toEqual({ officialDomain: null, rounds: [], fetchedAt: T0 });
   });
 
   it("stores a domain listed twice on a portfolio page once (vc_id, domain is the primary key)", async () => {

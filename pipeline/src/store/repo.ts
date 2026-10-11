@@ -9,11 +9,13 @@ import type {
   NewSignal,
   RiskAssessment,
   RiskLevel,
+  SignalKind,
   SignalSource,
   Status,
   StatusEvidence,
 } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
+import type { RaisePage } from "../enrich/alphadrops-raises.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 
 /** `merge_failed`: extracted, but merging threw; it goes back to `pending` only when its hash changes. */
@@ -48,10 +50,14 @@ export interface RunStats {
 export type NewProject = Omit<ProjectRow, "id" | "firstSeen" | "lastSeen">;
 
 /**
- * Signals a `replaceSignals` leaves in place: every signal of a source, or the signals of a source whose
- * `value.investor` is the given name (e.g. the `vc_backer` of a VC whose portfolio was not checked this run).
+ * Signals a `replaceSignals` leaves in place: every signal of a source, the signals of a source whose
+ * `value.investor` is the given name (e.g. the `vc_backer` of a VC whose portfolio was not checked this run), or the
+ * signals of one kind from a source (e.g. AlphaDrops `reported_backer`, while its `curated_source` is rewritten).
  */
-export type SignalKeep = SignalSource | { source: SignalSource; investor: string };
+export type SignalKeep =
+  | SignalSource
+  | { source: SignalSource; investor: string }
+  | { source: SignalSource; kind: SignalKind };
 
 /** One extracted step (`tasks` row): done once, or repeated daily or weekly. */
 export interface Step {
@@ -227,6 +233,10 @@ export interface PipelineRepo {
   listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }>;
   /** Replaces the VC's cached domains, all fetched at `at`. */
   saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void>;
+  /** The cached AlphaDrops raise page of one slug (`alphadrops_raises`) and when it was fetched; null when none. */
+  listAlphaRaise(slug: string): Promise<(RaisePage & { fetchedAt: Date }) | null>;
+  /** Inserts or replaces the cached raise page of one slug, fetched at `at`. */
+  saveAlphaRaise(slug: string, page: RaisePage, at: Date): Promise<void>;
   /**
    * The AI analysis sources of a project: every document that gave the project evidence and whose text is not purged,
    * each once, ordered by url.

@@ -29,6 +29,8 @@ const PROTOCOLS = "https://api.llama.fi/protocols";
 const LLAMA_DOC = "https://defillama.com/protocol/hyperdrive-lend";
 const ALPHA_LISTING = "https://alphadrops.net/airdrops";
 const alphaPage = (slug: string): string => `https://alphadrops.net/airdrops/${slug}`;
+const ALPHA_LLMS_FULL = "https://alphadrops.net/llms-full.txt";
+const raisePage = (slug: string): string => `https://alphadrops.net/raises/${slug}`;
 
 /** An AlphaDrops listing page whose Next.js payload holds `items` (each merged over an active item). */
 function alphaListing(items: Record<string, unknown>[]): string {
@@ -1466,7 +1468,9 @@ describe("runDaily AlphaDrops", () => {
 
     // Collection runs first, so the AlphaDrops requests and their pauses open the log (GoPlus pauses come later).
     expect(log.slice(0, 5)).toEqual([ALPHA_LISTING, "sleep:1500", ZETA, "sleep:1500", alphaPage("eta")]);
-    expect(log.filter((e) => e.startsWith("https://"))).toEqual([ALPHA_LISTING, ZETA, alphaPage("eta")]);
+    // The signals stage then reads the fundraising index (absent here, so no raise page follows), after a pause too.
+    expect(log.filter((e) => e.startsWith("https://"))).toEqual([ALPHA_LISTING, ZETA, alphaPage("eta"), ALPHA_LLMS_FULL]);
+    expect(log[log.indexOf(ALPHA_LLMS_FULL) - 1]).toBe("sleep:1500");
   });
 
   it("sends no request to AlphaDrops when the collector is disabled", async () => {
@@ -1516,7 +1520,9 @@ describe("runDaily GoPlus pacing", () => {
 
   it("leaves a pause of at least 1500 ms between consecutive GoPlus requests, and none before the first", async () => {
     const { http, sleep, log } = logged();
-    const { deps, config } = setup();
+    // Without AlphaDrops, whose requests (in the signals stage too) have their own 1500 ms pauses.
+    const config = { ...defaultConfig, alphadrops: { ...defaultConfig.alphadrops, enabled: false } };
+    const { deps } = setup({ config });
     await runDaily({ ...deps, http, sleep }, config);
 
     const goplusLog = log.filter((e) => e === "goplus" || e.startsWith("sleep:1500"));
@@ -1935,6 +1941,105 @@ describe("runDaily signals", () => {
     expect(repo.runs[0]?.stats.failed_step).toBe(8);
     expect(repo.runs[0]?.stats.assessed).toBe(3);
     expect(purgeCalls).toBe(1);
+  });
+});
+
+describe("runDaily AlphaDrops reported backers", () => {
+  /** llms-full.txt whose fundraising section lists `entries` ([name, slug]). */
+  const llmsFull = (entries: [string, string][]): string =>
+    [
+      "# Alpha Drops — Full Index for AI Assistants",
+      "## All tracked fundraising projects",
+      ...entries.map(([name, slug]) => `- ${name} — $12M raised: ${raisePage(slug)}`),
+    ].join("\n");
+  /** A raise page with one $12M round led by `lead`, whose Official Website is `website`. */
+  const raiseHtml = (website: string, lead: string): string =>
+    `<main><h1>x</h1><section><h2>Funding Rounds History</h2><div><div><div><h3>Series A</h3><p>Sep 1, 2026</p></div>
+<div><p>$12M</p></div><div><p>Lead Investors</p><div><div>${lead}</div></div></div></div></div></section>
+<aside><a href="${website}"><span>Official Website</span></a></aside></main>`;
+  const reportedOf = async (repo: MemoryRepo, nameKey: string) => {
+    const id = (await repo.findProjectsByNameKey(nameKey))[0]?.id;
+    return repo.signals.filter((s) => s.projectId === id && s.kind === "reported_backer");
+  };
+
+  it("adds reported backers only to the project whose domain matches the raise page, never by name", async () => {
+    const pages = basePages();
+    pages[ALPHA_LLMS_FULL] = { status: 200, body: llmsFull([["DeepBook", "deepbook"], ["Ink", "ink"]]) };
+    pages[raisePage("deepbook")] = { status: 200, body: raiseHtml("https://deepbook.tech/", "Paradigm") };
+    // A raise page for a project named like Ink, on another domain.
+    pages[raisePage("ink")] = { status: 200, body: raiseHtml("https://ink-chain.finance/", "Scam Ventures") };
+    const { repo, deps, config } = setup({ pages });
+
+    const stats = await runDaily(deps, config);
+
+    expect((await reportedOf(repo, "deepbook")).map(({ value, source, verified }) => ({ value, source, verified }))).toEqual([
+      {
+        value: { investor: "Paradigm", lead: true, amount_usd: 12_000_000, round: "Series A", round_date: "2026-09-01", source_url: null },
+        source: "alphadrops",
+        verified: false,
+      },
+    ]);
+    expect(await reportedOf(repo, "ink")).toEqual([]);
+    expect(stats).toMatchObject({ raises_fetched: 2, raises_matched: 1, raises_failed: 0, signals_failed: 0 });
+    expect(stats.run_error).toBeUndefined();
+  });
+
+  it("keeps the earlier reported backers when AlphaDrops cannot be reached the next day", async () => {
+    const pages = basePages();
+    pages[ALPHA_LLMS_FULL] = { status: 200, body: llmsFull([["DeepBook", "deepbook"]]) };
+    pages[raisePage("deepbook")] = { status: 200, body: raiseHtml("https://deepbook.tech/", "Paradigm") };
+    const { repo, deps, config } = setup({ pages });
+    await runDaily(deps, config);
+
+    const down = basePages();
+    down[ALPHA_LLMS_FULL] = { status: 0, body: "" };
+    const stats = await runDaily({ ...deps, http: fakeHttp(down), now: () => new Date(NOW.getTime() + DAY) }, config);
+
+    expect((await reportedOf(repo, "deepbook")).map((s) => [s.value.investor, s.observedAt])).toEqual([["Paradigm", NOW]]);
+    expect(stats).toMatchObject({ raises_fetched: 0, raises_failed: 1, raises_matched: 0, signals_failed: 0 });
+  });
+
+  it("caps all AlphaDrops requests of a run, the raise pages yielding to the detail pages", async () => {
+    const pages = basePages();
+    pages[ALPHA_LISTING] = {
+      status: 200,
+      body: alphaListing([
+        { slug: "zeta", name: "Zeta" },
+        { slug: "eta", name: "Eta" },
+        { slug: "theta", name: "Theta" },
+      ]),
+    };
+    pages[ALPHA_LLMS_FULL] = { status: 200, body: llmsFull([["DeepBook", "deepbook"], ["Ink", "ink"]]) };
+    pages[raisePage("deepbook")] = { status: 200, body: raiseHtml("https://deepbook.tech/", "Paradigm") };
+    pages[raisePage("ink")] = { status: 200, body: raiseHtml("https://inkonchain.com/", "Kraken") };
+    const config = { ...defaultConfig, alphadrops: { ...defaultConfig.alphadrops, maxDetails: 2, maxRequestsPerRun: 5 } };
+    const { http, deps } = setup({ pages, config });
+
+    await runDaily(deps, config);
+
+    // Listing and 2 detail pages leave 2 of the 5 requests: llms-full.txt and one raise page.
+    expect(http.gets.filter((u) => u.startsWith("https://alphadrops.net/"))).toEqual([
+      ALPHA_LISTING,
+      alphaPage("zeta"),
+      alphaPage("eta"),
+      ALPHA_LLMS_FULL,
+      raisePage("deepbook"),
+    ]);
+  });
+
+  it("sends no raise request when the AlphaDrops source is disabled, and keeps the earlier reported backers", async () => {
+    const pages = basePages();
+    pages[ALPHA_LLMS_FULL] = { status: 200, body: llmsFull([["DeepBook", "deepbook"]]) };
+    pages[raisePage("deepbook")] = { status: 200, body: raiseHtml("https://deepbook.tech/", "Paradigm") };
+    const { repo, http, deps, config } = setup({ pages });
+    await runDaily(deps, config);
+    const gets = http.gets.length;
+
+    const disabled = { ...config, alphadrops: { ...config.alphadrops, enabled: false } };
+    await runDaily({ ...deps, now: () => new Date(NOW.getTime() + DAY) }, disabled);
+
+    expect(http.gets.slice(gets).filter((u) => u.startsWith("https://alphadrops.net/"))).toEqual([]);
+    expect((await reportedOf(repo, "deepbook")).map((s) => s.observedAt)).toEqual([NOW]);
   });
 });
 

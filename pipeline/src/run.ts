@@ -2,6 +2,7 @@ import { cleanUrl } from "@saf/core";
 import type { DefillamaProtocol, SpeculativeCandidate } from "./collectors/defillama.js";
 import type { Http } from "./collectors/types.js";
 import type { PipelineConfig } from "./config.js";
+import { countAlphaDropsRequests, loadRaises } from "./enrich/alphadrops-raises.js";
 import { refreshPortfolios } from "./enrich/vc-portfolios.js";
 import type { ChatFn } from "./llm/extract.js";
 import { ANALYZERS, runAnalyses } from "./steps/analyze.js";
@@ -156,10 +157,12 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     }
   };
 
+  // Every AlphaDrops request of the run goes through this counter (collector and raise pages share one budget).
+  const alphaDrops = countAlphaDropsRequests(deps.http);
   const collected = await stage(
     STEP.collect,
     { speculative: [] as SpeculativeItem[], protocols: null as DefillamaProtocol[] | null },
-    () => collectSources(deps, config, now, stats),
+    () => collectSources({ ...deps, http: alphaDrops.http }, config, now, stats),
   );
   // Single-slot merge queue: each merge starts after the previous one settled. mergeOne never rejects.
   let mergeTail: Promise<void> = Promise.resolve();
@@ -184,7 +187,22 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     // A failed VC page only leaves that VC "not checked"; refreshPortfolios does not throw for one VC.
     const vc = await refreshPortfolios(deps, config.vcs, now);
     stats.vc_portfolios_failed += vc.failed.size;
-    await refreshSignals(deps, config, now, stats, { protocols: collected.protocols, vc });
+    const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
+    // The raise pages get the AlphaDrops requests the collector left (maxRequestsPerRun is for both together).
+    const raises = config.alphadrops.enabled
+      ? await loadRaises(
+          { repo, http: alphaDrops.http, sleep: deps.sleep },
+          projects,
+          {
+            maxPages: config.alphadrops.maxRaisePages,
+            maxRequests: config.alphadrops.maxRequestsPerRun - alphaDrops.count(),
+            delayMs: config.alphadrops.delayMs,
+          },
+          now,
+          stats,
+        )
+      : null;
+    await refreshSignals(deps, config, now, stats, { protocols: collected.protocols, vc, raises }, projects);
   });
   const analyzers = deps.analyzers ?? ANALYZERS;
   await stage(STEP.analyze, undefined, async () => {

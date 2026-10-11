@@ -41,6 +41,15 @@ export interface DailyStats extends RunStats {
    * could not be read. Such a VC still counts as checked when its cache is at most 14 days old.
    */
   vc_portfolios_failed: number;
+  /** AlphaDrops raise pages fetched and usable this run (stored in the `alphadrops_raises` cache). */
+  raises_fetched: number;
+  /** Projects that got at least one `reported_backer` this run (official website of a raise page matched by domain). */
+  raises_matched: number;
+  /**
+   * AlphaDrops raise requests that failed: `llms-full.txt` (not 200, or no fundraising entry) and raise pages (not
+   * 200, a broken connection, or no funding round on the page). The run does not fail.
+   */
+  raises_failed: number;
   /** Projects whose signals could not be built or stored; they keep no signals until a later run succeeds. */
   signals_failed: number;
   /** AI analyses made and stored this run. */
@@ -88,6 +97,9 @@ export function emptyStats(): DailyStats {
     signals_coingecko: 0,
     signals_vc_backer: 0,
     vc_portfolios_failed: 0,
+    raises_fetched: 0,
+    raises_matched: 0,
+    raises_failed: 0,
     signals_failed: 0,
     ai_analyses_run: 0,
     ai_analyses_cached: 0,

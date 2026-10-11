@@ -12,8 +12,10 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
   deletes: { table: string; filters: [string, unknown][] }[];
   updates: { table: string; row: unknown; filters: [string, unknown][] }[];
   reads: { table: string; columns: string; filters: [string, unknown][]; orders: string[] }[];
+  upserts: { table: string; row: unknown; options: unknown }[];
 } {
   const inserts: { table: string; row: unknown }[] = [];
+  const upserts: { table: string; row: unknown; options: unknown }[] = [];
   const deletes: { table: string; filters: [string, unknown][] }[] = [];
   const updates: { table: string; row: unknown; filters: [string, unknown][] }[] = [];
   const reads: { table: string; columns: string; filters: [string, unknown][]; orders: string[] }[] = [];
@@ -57,6 +59,10 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
         inserts.push({ table, row });
         return { ...ok, status: 201, statusText: "Created" };
       },
+      upsert: async (row: unknown, options: unknown) => {
+        upserts.push({ table, row, options });
+        return { ...ok, status: 201, statusText: "Created" };
+      },
       delete: () => {
         const filters: [string, unknown][] = [];
         deletes.push({ table, filters });
@@ -79,7 +85,7 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
       },
     }),
   } as unknown as SupabaseClient;
-  return { client, inserts, deletes, updates, reads };
+  return { client, inserts, deletes, updates, reads, upserts };
 }
 
 describe("SupabaseRepo.replaceTasks", () => {
@@ -274,6 +280,85 @@ describe("SupabaseRepo.replaceSignals", () => {
         ],
       },
     ]);
+  });
+
+  it("deletes the signals of a source kept by kind except the kept kinds'", async () => {
+    const { client, deletes } = recordingClient();
+    const repo = new SupabaseRepo(client);
+    const at = new Date("2026-10-10T03:00:00Z");
+
+    await repo.replaceSignals("p-1", [], at, ["defillama", { source: "alphadrops", kind: "reported_backer" }]);
+
+    expect(deletes).toEqual([
+      { table: "project_signals", filters: [["project_id", "p-1"], ["source", "not.in.(defillama,alphadrops)"]] },
+      {
+        table: "project_signals",
+        filters: [["project_id", "p-1"], ["source", "alphadrops"], ["kind", "not.in.(reported_backer)"]],
+      },
+    ]);
+  });
+
+  it("keeps a signal of a source kept by both kind and investor when either keep matches it", async () => {
+    const { client, deletes } = recordingClient();
+    const repo = new SupabaseRepo(client);
+
+    await repo.replaceSignals("p-1", [], new Date("2026-10-10T03:00:00Z"), [
+      { source: "alphadrops", kind: "reported_backer" },
+      { source: "alphadrops", investor: "Paradigm" },
+    ]);
+
+    expect(deletes[1]).toEqual({
+      table: "project_signals",
+      filters: [
+        ["project_id", "p-1"],
+        ["source", "alphadrops"],
+        ["or", 'value->>investor.is.null,value->>investor.not.in.("Paradigm")'],
+        ["kind", "not.in.(reported_backer)"],
+      ],
+    });
+  });
+});
+
+describe("SupabaseRepo AlphaDrops raises", () => {
+  const seed = { round: "Seed", date: "2026-01-02", amountUsd: 5_000_000, lead: ["Paradigm"], others: ["Variant"], sourceUrl: "https://x.test/a" };
+
+  it("upserts the raise page of one slug with its rounds in snake case", async () => {
+    const { client, upserts } = recordingClient();
+    const repo = new SupabaseRepo(client);
+
+    await repo.saveAlphaRaise("catalyst", { officialDomain: "catalyst.app", rounds: [seed] }, new Date("2026-10-10T03:00:00Z"));
+
+    expect(upserts).toEqual([
+      {
+        table: "alphadrops_raises",
+        row: {
+          slug: "catalyst",
+          official_domain: "catalyst.app",
+          rounds: [{ round: "Seed", date: "2026-01-02", amount_usd: 5_000_000, lead: ["Paradigm"], others: ["Variant"], source_url: "https://x.test/a" }],
+          fetched_at: "2026-10-10T03:00:00.000Z",
+        },
+        options: { onConflict: "slug" },
+      },
+    ]);
+  });
+
+  it("reads the cached raise page of one slug, or null", async () => {
+    const stored = {
+      official_domain: "catalyst.app",
+      rounds: [{ round: "Seed", date: "2026-01-02", amount_usd: 5_000_000, lead: ["Paradigm"], others: ["Variant"], source_url: "https://x.test/a" }],
+      fetched_at: "2026-10-10T03:00:00+00:00",
+    };
+    const { client, reads } = recordingClient({ alphadrops_raises: stored });
+
+    expect(await new SupabaseRepo(client).listAlphaRaise("catalyst")).toEqual({
+      officialDomain: "catalyst.app",
+      rounds: [seed],
+      fetchedAt: new Date("2026-10-10T03:00:00Z"),
+    });
+    expect(reads).toEqual([
+      { table: "alphadrops_raises", columns: "official_domain, rounds, fetched_at", filters: [["slug", "catalyst"]], orders: [] },
+    ]);
+    expect(await new SupabaseRepo(recordingClient().client).listAlphaRaise("catalyst")).toBeNull();
   });
 });
 

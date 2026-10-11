@@ -13,6 +13,7 @@ import type {
   StatusEvidence,
 } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
+import type { RaisePage } from "../enrich/alphadrops-raises.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
 import { FACT_FIELDS, curatedChange, publicFailReason } from "./repo.js";
 import type {
@@ -59,6 +60,16 @@ interface ProjectDb {
   lookalike_of: string | null;
   first_seen: string;
   last_seen: string;
+}
+
+/** One round in `alphadrops_raises.rounds` (jsonb, snake case like the other jsonb values). */
+interface RaiseRoundDb {
+  round: string;
+  date: string | null;
+  amount_usd: number | null;
+  lead: string[];
+  others: string[];
+  source_url: string | null;
 }
 
 const PROJECT_COLUMNS =
@@ -568,30 +579,31 @@ export class SupabaseRepo implements PipelineRepo {
     keep: readonly SignalKeep[] = [],
   ): Promise<void> {
     const wholeSources = keep.filter((k): k is SignalSource => typeof k === "string");
-    const keptInvestors = new Map<SignalSource, string[]>();
+    const partial = new Map<SignalSource, { investors: string[]; kinds: string[] }>();
     for (const k of keep) {
       if (typeof k === "string" || wholeSources.includes(k.source)) continue;
-      keptInvestors.set(k.source, [...(keptInvestors.get(k.source) ?? []), k.investor]);
+      const entry = partial.get(k.source) ?? { investors: [], kinds: [] };
+      if ("kind" in k) entry.kinds.push(k.kind);
+      else entry.investors.push(k.investor);
+      partial.set(k.source, entry);
     }
-    // First every source kept in whole or by investor is left alone, then each source kept by investor loses the
-    // signals of the other investors. Source values are plain identifiers (check constraint) and need no quoting.
-    const untouched = [...wholeSources, ...keptInvestors.keys()];
+    // First every source kept in whole or in part is left alone, then each source kept in part loses the signals
+    // that match none of its keeps (another investor and another kind). Source and kind values are plain identifiers
+    // (check constraints) and need no quoting.
+    const untouched = [...wholeSources, ...partial.keys()];
     const remove = this.db.from("project_signals").delete().eq("project_id", projectId);
     check(
       "replaceSignals.delete",
       await (untouched.length === 0 ? remove : remove.not("source", "in", `(${untouched.join(",")})`)),
     );
-    for (const [source, investors] of keptInvestors) {
-      check(
-        "replaceSignals.deleteInvestors",
-        await this.db
-          .from("project_signals")
-          .delete()
-          .eq("project_id", projectId)
-          .eq("source", source)
-          // A signal without an investor is never a kept one (as in MemoryRepo); `not in` alone would skip it.
-          .or(`value->>investor.is.null,value->>investor.not.in.(${investors.map(postgrestQuote).join(",")})`),
-      );
+    for (const [source, { investors, kinds }] of partial) {
+      let query = this.db.from("project_signals").delete().eq("project_id", projectId).eq("source", source);
+      if (investors.length > 0) {
+        // A signal without an investor is never a kept one (as in MemoryRepo); `not in` alone would skip it.
+        query = query.or(`value->>investor.is.null,value->>investor.not.in.(${investors.map(postgrestQuote).join(",")})`);
+      }
+      if (kinds.length > 0) query = query.not("kind", "in", `(${kinds.join(",")})`);
+      check("replaceSignals.deletePartial", await query);
     }
     if (signals.length === 0) return;
     check(
@@ -634,6 +646,50 @@ export class SupabaseRepo implements PipelineRepo {
       await this.db
         .from("vc_portfolios")
         .insert([...new Set(domains)].map((domain) => ({ vc_id: vcId, domain, fetched_at: at.toISOString() }))),
+    );
+  }
+
+  async listAlphaRaise(slug: string): Promise<(RaisePage & { fetchedAt: Date }) | null> {
+    const row = check(
+      "listAlphaRaise",
+      await this.db
+        .from("alphadrops_raises")
+        .select("official_domain, rounds, fetched_at")
+        .eq("slug", slug)
+        .maybeSingle<{ official_domain: string | null; rounds: RaiseRoundDb[]; fetched_at: string }>(),
+    );
+    if (row === null) return null;
+    return {
+      officialDomain: row.official_domain,
+      rounds: row.rounds.map((r) => ({
+        round: r.round,
+        date: r.date,
+        amountUsd: r.amount_usd,
+        lead: r.lead,
+        others: r.others,
+        sourceUrl: r.source_url,
+      })),
+      fetchedAt: new Date(row.fetched_at),
+    };
+  }
+
+  async saveAlphaRaise(slug: string, page: RaisePage, at: Date): Promise<void> {
+    const rounds: RaiseRoundDb[] = page.rounds.map((r) => ({
+      round: r.round,
+      date: r.date,
+      amount_usd: r.amountUsd,
+      lead: r.lead,
+      others: r.others,
+      source_url: r.sourceUrl,
+    }));
+    check(
+      "saveAlphaRaise",
+      await this.db
+        .from("alphadrops_raises")
+        .upsert(
+          { slug, official_domain: page.officialDomain, rounds, fetched_at: at.toISOString() },
+          { onConflict: "slug" },
+        ),
     );
   }
 
