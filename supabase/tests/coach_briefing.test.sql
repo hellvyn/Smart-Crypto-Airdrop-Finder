@@ -8,7 +8,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(126);
+select plan(129);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS).
 -- A: ca.., B: cb.. (the other member), C: default timezone, D: Pacific/Kiritimati, E: Pacific/Pago_Pago,
@@ -26,7 +26,8 @@ insert into auth.users (id, email) values
   ('c3000000-0000-4000-8000-000000000001', 'coach-k@example.test'),
   ('c4000000-0000-4000-8000-000000000001', 'coach-l@example.test'),
   ('c5000000-0000-4000-8000-000000000001', 'coach-m@example.test'),
-  ('c6000000-0000-4000-8000-000000000001', 'coach-n@example.test');
+  ('c6000000-0000-4000-8000-000000000001', 'coach-n@example.test'),
+  ('c7000000-0000-4000-8000-000000000001', 'coach-o@example.test');
 
 insert into projects (id, slug, name, name_key, status, chains, first_seen, last_seen) values
   ('ca100000-0000-4000-8000-000000000001', 'coach-proj', 'Coach Proj', 'coachproj', 'live', '{}', now(), now());
@@ -681,6 +682,21 @@ select lives_ok($$ delete from auth.users where id = 'c6000000-0000-4000-8000-00
   'deleting a member and their fresh messages in one transaction succeeds');
 select is((select count(*)::int from coach_usage where user_id = 'c6000000-0000-4000-8000-000000000001'), 0,
   'the member''s ledger rows went with them');
+
+-- O: the attempts cap. 60 unanswered begins older than 2 minutes count for nothing toward the 20, yet the 61st attempt of
+-- the day raises quota (a member who aborts before the first text must not get unlimited paid calls).
+insert into coach_threads (id, user_id, project_id) values
+  ('c7200000-0000-4000-8000-0000000000f7', 'c7000000-0000-4000-8000-000000000001', null);
+select pg_temp.seed('c7000000-0000-4000-8000-000000000001', 'c7200000-0000-4000-8000-0000000000f7', 60, now() - interval '3 minutes', false);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c7000000-0000-4000-8000-000000000001","role":"authenticated"}';
+select is(coach_quota_remaining(), 20, '60 expired unanswered begins leave the counted quota at 20 left');
+select throws_ok(
+  $$ select coach_begin('c7200000-0000-4000-8000-0000000000f7', 'chat', 'ke-61') $$, 'P0001', 'quota',
+  'the 61st begin of the day raises quota although 20 counted messages are left');
+reset role;
+select is((select count(*)::int from coach_usage where user_id = 'c7000000-0000-4000-8000-000000000001' and kind = 'message'), 60,
+  'the refused begin left no ledger row');
 
 -- I again: the thread cap is the WIB day. The 50 rows from today are backdated to just before today started: the cap is clear.
 update coach_usage set created_at = (date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta') - interval '1 second'

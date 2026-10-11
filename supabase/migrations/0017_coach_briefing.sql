@@ -270,6 +270,13 @@ begin
     raise exception 'quota' using errcode = 'P0001';
   end if;
 
+  -- Attempts cap: every begin since 00:00 WIB, answered or not, expired or not. A member who aborts before the first
+  -- text costs a paid model call that never counts above, so the attempts themselves are capped (3 times the quota).
+  if (select count(*) from public.coach_usage u
+      where u.user_id = v_uid and u.kind = 'message' and u.created_at >= v_start) >= 60 then
+    raise exception 'quota' using errcode = 'P0001';
+  end if;
+
   -- Both rows or neither (a check failure on the message, such as a blank text, rolls the ledger row back too).
   insert into public.coach_usage (id, kind, user_id) values (v_id, 'message', v_uid);
   insert into public.coach_messages (id, thread_id, user_id, role, kind, content)
