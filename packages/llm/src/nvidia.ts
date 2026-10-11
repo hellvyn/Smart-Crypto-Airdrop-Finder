@@ -35,6 +35,14 @@ export interface ChatResult {
    * freellm `auto` picks a different model per request. Null when the request failed or no chunk named a model.
    */
   servedModel: string | null;
+  /** Tokens the provider reported for this request; absent when the transport returned none (or the request failed). */
+  usage?: TokenUsage;
+}
+
+/** Tokens of one request as the provider reports them (for Claude, cache reads and writes are counted as input). */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
 }
 
 /**
@@ -165,7 +173,11 @@ export async function streamChat(
     let content = "";
     let finishReason: string | null = null;
     let servedModel: string | null = null;
+    let inputTokens: number | null = null;
+    let outputTokens: number | null = null;
     for await (const chunk of readSseChunks(response.body)) {
+      if (typeof chunk.usage?.prompt_tokens === "number") inputTokens = chunk.usage.prompt_tokens;
+      if (typeof chunk.usage?.completion_tokens === "number") outputTokens = chunk.usage.completion_tokens;
       if (servedModel === null && typeof chunk.model === "string" && chunk.model !== "") servedModel = chunk.model;
       const choice = chunk.choices?.[0];
       if (!choice) continue;
@@ -174,7 +186,9 @@ export async function streamChat(
       if (typeof choice.finish_reason === "string") finishReason = choice.finish_reason;
     }
 
-    return { content, finishReason, latencyMs: Date.now() - started, httpStatus: response.status, servedModel };
+    const result: ChatResult = { content, finishReason, latencyMs: Date.now() - started, httpStatus: response.status, servedModel };
+    if (inputTokens !== null && outputTokens !== null) result.usage = { inputTokens, outputTokens };
+    return result;
   } catch {
     return failed(0);
   }

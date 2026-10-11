@@ -50,6 +50,20 @@ function scripted(replies: ChatResult[]): { chat: ChatFn; calls: string[]; messa
 const noSleep = async (): Promise<void> => {};
 
 describe("callStructured", () => {
+  it("records the transport's token usage on the attempt, and leaves it out when there is none", async () => {
+    const { chat } = scripted([
+      reply({ content: "not json", usage: { inputTokens: 10, outputTokens: 3 } }),
+      reply({ usage: { inputTokens: 12, outputTokens: 4 } }),
+    ]);
+    const out = await callStructured(MESSAGES, schema, MODELS, { chat, sleep: noSleep });
+    expect(out.attempts.map((a) => a.usage)).toEqual([
+      { inputTokens: 10, outputTokens: 3 },
+      { inputTokens: 12, outputTokens: 4 },
+    ]);
+    const bare = await callStructured(MESSAGES, schema, MODELS, { chat: scripted([reply()]).chat, sleep: noSleep });
+    expect("usage" in (bare.attempts[0] ?? {})).toBe(false);
+  });
+
   it("returns the schema-valid value with the configured and the served model", async () => {
     const { chat, messages } = scripted([reply({ servedModel: "gpt-oss:120b" })]);
     const out = await callStructured(MESSAGES, schema, MODELS, { chat, sleep: noSleep });

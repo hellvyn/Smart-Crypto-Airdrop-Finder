@@ -1,0 +1,63 @@
+name: Model comparison
+
+# Manual only. Runs the AI Analyst once per project per model (Claude Sonnet 5.5, Claude Haiku 5.5, freellm auto,
+# NVIDIA glm-5.3-flash) so the owner can pick the model for the AI analyses after the prepaid Claude credit expires
+# (2026-10-27). Read-only on the database: nothing is written to Supabase. The report is the artifact "model-compare".
+on:
+  workflow_dispatch:
+    inputs:
+      projects:
+        description: "Number of projects to analyze (1-60, default 15)"
+        required: false
+        default: "15"
+      models:
+        description: "Models, comma separated: sonnet, haiku, freellm, glm (default: all four)"
+        required: false
+        default: "sonnet,haiku,freellm,glm"
+
+permissions:
+  contents: read
+
+# Its own group: never blocks or is blocked by the daily pipeline.
+concurrency:
+  group: model-compare
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # Install without secrets in the environment (dependency install scripts never see them).
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Compare models
+        env:
+          # The inputs go through the environment, never into the shell command line.
+          PROJECTS: ${{ inputs.projects }}
+          MODELS: ${{ inputs.models }}
+          # Anthropic Claude (Sonnet and Haiku). Without a key those models are skipped, not failed.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # freellm (`auto`). LLM_API_KEY may be empty; an empty LLM_BASE_URL falls back to the default URL.
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          # NVIDIA (glm-5.3-flash).
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          # Read only: the comparison reads projects, source texts and caches, and writes nothing.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: pnpm --silent --filter pipeline exec tsx eval/model-compare.ts --projects "$PROJECTS" --models "$MODELS"
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-compare
+          path: pipeline/eval/cases/model-compare/
+          retention-days: 7
+          if-no-files-found: ignore

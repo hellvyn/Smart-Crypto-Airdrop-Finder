@@ -116,12 +116,21 @@ export async function claudeChat(
       .filter((block): block is Anthropic.TextBlock => block.type === "text")
       .map((block) => block.text)
       .join("");
+    const u = message.usage;
     return {
       content,
       finishReason: message.stop_reason === "end_turn" ? "stop" : message.stop_reason,
       latencyMs: Date.now() - started,
       httpStatus: 200,
       servedModel: message.model,
+      ...(u === undefined || u === null
+        ? {}
+        : {
+            usage: {
+              inputTokens: u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+              outputTokens: u.output_tokens,
+            },
+          }),
     };
   } catch (error) {
     const failed: ChatResult = { content: "", finishReason: null, latencyMs: Date.now() - started, httpStatus: 0, servedModel: null };

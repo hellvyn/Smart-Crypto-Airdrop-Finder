@@ -231,3 +231,63 @@ Set the two variables on the same command line as above, e.g. `SUPABASE_URL=<pro
   holds source quotes): verdict, points with quotes and source URL, the model that answered, and the forbidden style
   phrases found, with a line for the owner's rating. It prints only the count and the path. G11 needs at least 80% of 20
   or more samples rated sensible; G13 is the owner's rating of the Indonesian.
+
+## Model comparison for the AI Analyst (`model-compare.ts`)
+
+Decides which model runs the AI analyses after the prepaid Claude credit expires on 2026-10-27. It runs the AI Analyst
+once per project per model, each call with **exactly one model** (no fallback, so no mixing), and compares success,
+grounding, style, speed and tokens. Models: `sonnet` (`claude-sonnet-5-5`), `haiku` (`claude-haiku-5-5`), `freellm`
+(`auto`, the free router) and `glm` (NVIDIA `z-ai/glm-5.3-flash`, with its production request options).
+
+### Running it from the Actions tab
+
+1. Actions, workflow **Model comparison**, **Run workflow**.
+2. Inputs: `projects` (1 to 60, default 15) and `models` (comma separated, default `sonnet,haiku,freellm,glm`).
+3. When it finishes (about 5 to 15 minutes for 15 projects), open the run and download the artifact **model-compare**
+   (kept 7 days): `model-compare-<date>-<time>.md` (the report to read) and `.json` (everything).
+
+Locally: `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... ANTHROPIC_API_KEY=... LLM_API_KEY=... NVIDIA_API_KEY=... pnpm --filter pipeline exec tsx eval/model-compare.ts --projects 15 --models sonnet,haiku,freellm,glm`.
+The output goes to `eval/cases/model-compare/` (git-ignored, like all of `cases/`). A model whose key is missing
+(`ANTHROPIC_API_KEY` for Sonnet and Haiku) is skipped with a notice, not failed. Exit code 2 for a bad argument or a
+missing Supabase variable.
+
+### What it reads and what it guarantees
+
+- **Projects:** the listed ones (latest curation passed) that have Analyst input. About two thirds are projects with rich
+  sources (airdrops.io, Telegram, AlphaDrops, official site text), the rest are DefiLlama-only; each group is spread over
+  its size range, not only the biggest. The choice is deterministic.
+- **Sources:** built by the analyze stage's own code: the project's source texts (`listProjectSourceTexts`) plus the
+  Analyst's `extraSources`, official site text (`loadOfficialSites`, cache only) and DefiLlama detail lines
+  (`defillamaDetailSources`). Prompt, schema and post-processing are the Analyst's own (`analystAnalyzer`), not copies.
+  The cached official-site and DefiLlama texts are used up to 14 days old, as in the daily job, so a project whose cache
+  is older has fewer sources than it had on its last real analysis.
+- **Read-only:** the repository is wrapped so that any method but a read throws, and no page is fetched from the web.
+  Nothing is written to Supabase. Keys are never printed.
+- **stdout:** the summary table only. Never source text, model output or project names. The Markdown and JSON files hold
+  the project names, the Indonesian points and their quotes (the JSON also the source URLs), so treat them like
+  `ai-samples.md`: the Analyst output is member-only content and its quotes are third-party text.
+- **Budget:** no new call starts after 22 minutes (the workflow limit is 30), 3 calls run at once; calls not started are
+  counted in the JSON (`callsSkippedForBudget`) and shown as "not run" in the report.
+
+### Reading the report
+
+Part 1 is the summary table, one row per model:
+
+| Column | Meaning |
+|---|---|
+| Success | Calls that returned an answer the Analyst schema accepted, of all calls (`ok/calls`). |
+| Schema/parse fail | Answers that were not JSON (`json_parse`) or did not match the schema (`schema`), e.g. an English verdict. |
+| Other fail | HTTP errors (`http_<status>`, a 429 is retried twice first), timeouts (`http_0`), cut-off (`finish_length`), empty answers, refusals. The code of each is in the JSON (`failure`). |
+| Mean points kept | Points left after `postProcess` (grounding), averaged over successful calls. The model must return 1 to 5. |
+| % dropped | Returned points whose `quote` is not found in the source they name, dropped by `postProcess`, as a share of all returned points (with the counts). A model that invents quotes scores high here. |
+| Style | Successful calls whose kept Indonesian prose (points, effort note, step translations) uses a forbidden phrase (`FORBIDDEN_PHRASES`). Prose that was dropped does not count, as in production. |
+| p50 / p95 s | Request time per call in seconds (nearest rank), the retries of a 429 included, the waits between them not. |
+| Tokens in / out | Summed over the calls whose provider reported usage; `n=` is how many did. Claude counts cache reads and writes as input. freellm may report none (the count is then lower or 0, not guessed). |
+
+Part 2 is one table per project with the four answers side by side: verdict and confidence, the kept points (with how
+many of the returned ones were kept), the effort note, forbidden words, and time. Grounding says only that a quote exists
+in the source; whether the verdict is sensible and the Indonesian reads naturally (G11 and G13) is for the owner to
+judge here. A failed call shows `FAILED: <code>`.
+
+One run is one sample per model and project: the free models vary between runs (`auto` routes to a different model per
+request), so run it twice before relying on a small difference.
