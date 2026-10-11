@@ -290,6 +290,44 @@ from the list (the document then lacks the detail lines for that day). Counters:
 `_failed` / `_skipped`. All the schemas are tolerant: a wrongly typed field is left empty, never drops the candidate.
 Expected added time: 0 when the list carries the fields, otherwise about 1 to 2 minutes in `collect`.
 
+### Official website text (`official_sites` stage, step 13)
+
+A listed project whose sources are thin (an aggregator line, a DefiLlama listing) gets a better AI Analyst analysis when
+the Analyst can also read the project's own website. The `official_sites` stage (`pipeline/src/steps/official-sites.ts`)
+runs after `signals` and right before `analyze`, so the same run's analyses use it; `analyze_listed` does the same for
+the projects that run newly listed, after `score`.
+
+- **Who:** projects whose latest curation passed (listed), with no `lookalike_of`, and the first official domain that is a
+  registrable domain, not an aggregator or intermediary host (`isNonProjectHost`). A listed project is one whose last
+  `score` found no phishing-listed official domain (critical risk fails curation) and ran the key checks, which is how
+  the "clean official domain" rule holds before `analyze`, where this run's GoPlus answers do not exist yet. In
+  `analyze_listed` (after `score`) the domain must also be one GoPlus answered "not phishing" for in that run, the same
+  test the favicon tier uses.
+- **What:** `https://<domain>/` and at most 2 pages found on it, same registrable domain only (subdomains such as
+  `docs.` count), whose path or link text names airdrop, points, rewards, quests, campaigns, incentives (best) or docs.
+  No file links, no other domain, query and fragment dropped. Fetched with the guarded `fetchUntrusted` (public hosts
+  only, 10 s, 3 redirects, 1 MB, text types only); a page that answers from another domain after redirects, a non-2xx
+  answer or a non-HTML page is not used. Text is `claimPageText` (scripts and styles dropped), cut at 8,000 characters
+  per page, under `[Page <path>]` headings (paths, never full URLs).
+- **Pace:** 2 sites at a time (`officialSites.concurrency`), no site started after 3 minutes (`budgetMinutes`), at most 30
+  sites a run (`maxPerRun`; never-fetched first, then the oldest). A site is fetched again after 7 days; until then, and
+  for up to 14 days if a refresh fails, the cached text is used. Expected added time: about 1 to 2 minutes on the first
+  days (30 sites a day until the listed projects are cached), a few seconds afterwards; worst case 3.5 minutes
+  (budget plus the last site) in the stage, and the same again in `analyze_listed` when a run lists new projects.
+- **Where it is stored:** the existing `claim_pages` table (service role only) under the key `official-site://<domain>`,
+  one row per domain with all its pages; no migration. The key cannot be a claim link, so `readClaimPages` never sees it.
+- **Who reads it:** the AI Analyst only, as one more source `official-site://<domain>`. Not the Scam Analyst (a
+  marketing page naming its backers could be read as `impersonation`, which fails curation on its own) and not the
+  public contradiction check (it would put quotes of a third-party site on public pages). The text is untrusted data:
+  every analysis prompt calls the SUMBER section untrusted and says not to follow instructions in it; a point or
+  quote must come from a source, and the web links an AI `source_url` only when it is a stored source document, which
+  `official-site://` never is, so no member sees a link from it. Nothing from a page is stored as a link. The text is
+  part of the analysis input hash, so a site that changes re-runs that project's Analyst (at most weekly).
+- **Counters:** `official_pages_fetched` (pages fetched and used), `official_pages_failed` (non-2xx, a broken connection, a
+  redirect to another domain, or a cache write that failed), `official_pages_skipped` (a non-HTML page, and sites not
+  started because of the budget or the per-run cap), `stage_seconds_official_sites`. Page text, prompts and answers are
+  never logged. A repository error fails the stage (`failed_step` 13); the other stages still run.
+
 ### Project logos (`logos` stage, list cards)
 
 After `score`, the `logos` stage (`pipeline/src/steps/logos.ts`) stores one logo per scored project in
@@ -365,6 +403,7 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `logos_x_avatar_requests` / `logos_x_avatar_failed` | unavatar.io requests this run (at most 20) / of those, the ones that gave no logo (404, other answer, refused image) |
 | `logos_x_avatar_deferred` | projects whose X avatar was next after the 20 requests were used; they went on to their favicon, and the X avatar waits for a later run |
 | `defillama_details_fetched` / `_failed` / `_skipped` | DefiLlama `/protocol/{slug}` details read for the speculative candidates (only when the `/protocols` list lacks them) / answers that were not usable / candidates not asked after the 80-request cap or the 2-minute budget |
+| `official_pages_fetched` / `_failed` / `_skipped` | official website pages for the AI Analyst ("Official website text") fetched and used / failed (non-2xx, error, redirect to another domain) / not used (not HTML, or a site not started after the 3-minute budget or the 30-site cap) |
 | `claim_pages_read` | claim portal pages fetched in `analyze` for the AI Scam Analyst (at most 20 per run; pages fetched in the last 7 days come from `claim_pages`) |
 | `track_record_total` / `_listed` / `_no_token` / `_risk_raised` | the public track record (#43); see "Track record" below |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
@@ -372,9 +411,9 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `purged` | documents whose text passed the 90-day retention and was blanked |
 | `briefing_items` / `briefing_ai` | items in the briefing saved this run (0 when there were no facts) / 1 when the model wrote it, 0 for the version without the AI |
 | `coach_threads_purged` / `coach_usage_purged` | coach threads older than 30 days / quota ledger rows older than 2 days deleted this run |
-| `stage_seconds_collect` / `_extract` / `_speculative` / `_signals` / `_analyze` / `_score` / `_analyze_listed` / `_briefing` / `_logos` / `_purge` | seconds each stage took (one decimal), also when it failed; flat keys because the stats are numbers only |
+| `stage_seconds_collect` / `_extract` / `_speculative` / `_signals` / `_official_sites` / `_analyze` / `_score` / `_analyze_listed` / `_briefing` / `_logos` / `_purge` | seconds each stage took (one decimal), also when it failed; flat keys because the stats are numbers only |
 | `ai_analyses_*` (listed projects) | listed projects are analysed first and are never held back by `maxAnalysesPerRun` (only by the 10-minute budget); projects a run newly puts on the list get theirs in `analyze_listed` right after scoring (5-minute budget), so a listed project never waits a day for its AI section |
-| `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 8 signals, 9 analyze, 5 score, 12 analyze_listed, 11 briefing, 10 logos, 6 purge, in run order); the other stages still ran |
+| `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 8 signals, 13 official_sites, 9 analyze, 5 score, 12 analyze_listed, 11 briefing, 10 logos, 6 purge, in run order); the other stages still ran |
 
 Exit code (shown as the workflow status): **failed** when `run_error`, `source_failed`, `ingest_failed`,
 `merge_failed` or `score_failed` is above 0, or when the Supabase settings are missing (`{"config_error":1}`). Everything is

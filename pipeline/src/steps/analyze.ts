@@ -90,6 +90,24 @@ export function claimPageSources(
 }
 
 /**
+ * The run's official website texts (`loadOfficialSites`, by project id) go to the AI Analyst only. Not to the public
+ * contradiction check (it would put quotes of a third-party site on public pages), and not to the Scam Analyst (a
+ * marketing page that names its backers would risk a false `impersonation`, which fails curation on its own).
+ */
+export function officialSiteSources(
+  pages: ReadonlyMap<string, SourceText[]>,
+): NonNullable<AnalyzeDeps["extraSources"]> {
+  return async (project, kind) => (kind === "analyst" ? (pages.get(project.id) ?? []) : []);
+}
+
+/** An `extraSources` that gives each analyzer the sources of all of `parts`, in order. */
+export function combineExtraSources(
+  ...parts: NonNullable<AnalyzeDeps["extraSources"]>[]
+): NonNullable<AnalyzeDeps["extraSources"]> {
+  return async (project, kind) => (await Promise.all(parts.map((part) => part(project, kind)))).flat();
+}
+
+/**
  * sha256 (hex) of what an analysis reads: the source texts, the project's name, steps (in order), facts and status.
  * Sources and facts are sorted first, so the order the database returns them in does not matter.
  */

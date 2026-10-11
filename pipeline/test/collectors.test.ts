@@ -109,7 +109,11 @@ describe("createFetchUntrusted", () => {
   it("sends the project User-Agent without cookies, with a timeout, following no redirect by itself", async () => {
     const { fetchImpl, calls } = recordingFetch(() => html("<p>Claim</p>"));
 
-    expect(await createFetchUntrusted(fetchImpl)("https://claim.a.test/")).toEqual({ status: 200, body: "<p>Claim</p>" });
+    expect(await createFetchUntrusted(fetchImpl)("https://claim.a.test/")).toEqual({
+      status: 200,
+      body: "<p>Claim</p>",
+      finalUrl: "https://claim.a.test/",
+    });
 
     expect(calls).toHaveLength(1);
     const init = calls[0]?.init;
@@ -126,7 +130,11 @@ describe("createFetchUntrusted", () => {
       "http://c.test/y": "/z",
     };
     const three = recordingFetch((url) => (hops[url] ? redirect(hops[url]) : html("landed")));
-    expect(await createFetchUntrusted(three.fetchImpl)("https://a.test/")).toEqual({ status: 200, body: "landed" });
+    expect(await createFetchUntrusted(three.fetchImpl)("https://a.test/")).toEqual({
+      status: 200,
+      body: "landed",
+      finalUrl: "http://c.test/z",
+    });
     expect(three.calls.map((c) => c.url)).toEqual(["https://a.test/", "https://b.test/x", "http://c.test/y", "http://c.test/z"]);
 
     const four = recordingFetch((url) => redirect(`${url}r`));
@@ -180,7 +188,11 @@ describe("createFetchUntrusted", () => {
 
   it("gives an empty body for a response that is not text", async () => {
     const { fetchImpl } = recordingFetch(() => new Response("%PDF-1.7", { status: 200, headers: { "content-type": "application/pdf" } }));
-    expect(await createFetchUntrusted(fetchImpl)("https://claim.a.test/")).toEqual({ status: 200, body: "" });
+    expect(await createFetchUntrusted(fetchImpl)("https://claim.a.test/")).toEqual({
+      status: 200,
+      body: "",
+      finalUrl: "https://claim.a.test/",
+    });
   });
 
   it("turns a network error into status 0", async () => {

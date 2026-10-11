@@ -97,6 +97,12 @@ export interface PipelineConfig {
    * next run.
    */
   logos: { budgetMinutes: number; concurrency: number; maxXAvatarsPerRun: number };
+  /**
+   * Official website text for the AI Analyst (owner request 2026-10-11, `official_sites` stage): listed projects only,
+   * `concurrency` sites at a time, no site started after `budgetMinutes` from the start of the stage, at most
+   * `maxPerRun` sites a run (never-fetched first, then the oldest). A site is fetched again after 7 days.
+   */
+  officialSites: { concurrency: number; budgetMinutes: number; maxPerRun: number };
 }
 
 /**
@@ -182,4 +188,5 @@ export const defaultConfig: PipelineConfig = {
   textRetentionDays: 90,
   vcs: VC_LIST,
   logos: { budgetMinutes: 2, concurrency: 3, maxXAvatarsPerRun: 20 },
+  officialSites: { concurrency: 2, budgetMinutes: 3, maxPerRun: 30 },
 };

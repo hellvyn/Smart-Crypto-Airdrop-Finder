@@ -556,11 +556,11 @@ describe("runDaily", () => {
     const repo = new MemoryRepo();
     const list = repo.listProjectsForScoring.bind(repo);
     let calls = 0;
-    // The signals (1st) and analyze (2nd) stages list projects and succeed; only the score stage's listing fails. The
-    // analyze_listed (4th) and logos (5th) stages list them again after it, and succeed.
+    // The signals (1st), official_sites (2nd) and analyze (3rd) stages list projects and succeed; only the score stage's
+    // listing fails. The analyze_listed (5th) and logos (6th) stages list them again after it, and succeed.
     repo.listProjectsForScoring = async (days, now) => {
       calls += 1;
-      if (calls === 3) throw new Error("db down");
+      if (calls === 4) throw new Error("db down");
       return list(days, now);
     };
     let purgeCalls = 0;
@@ -574,7 +574,7 @@ describe("runDaily", () => {
     expect(purgeCalls).toBe(1);
     expect(repo.runs).toHaveLength(1);
     expect(repo.runs[0]?.stats.run_error).toBe(1);
-    expect(calls).toBe(5);
+    expect(calls).toBe(6);
     expect(repo.runs[0]?.stats.failed_step).toBe(5);
     // Scoring failed at stage level: nothing was assessed.
     expect(repo.runs[0]?.stats.assessed).toBe(0);
@@ -3098,10 +3098,11 @@ describe("runDaily AI analyses", () => {
     const repo = new MemoryRepo();
     const list = repo.listProjectsForScoring.bind(repo);
     let listCalls = 0;
-    // The signals stage (8) lists projects first; the analyze stage's listing is the second call.
+    // The signals stage (8) lists projects first, the official_sites stage (13) second; the analyze stage's listing is
+    // the third call.
     repo.listProjectsForScoring = async (days, now) => {
       listCalls += 1;
-      if (listCalls === 2) throw new Error("db down");
+      if (listCalls === 3) throw new Error("db down");
       return list(days, now);
     };
     const { deps, config } = setup({ repo, chat: withAnalysis(answer).chat });
@@ -3470,7 +3471,8 @@ describe("runDaily curation", () => {
 
       const stats = await runDaily(deps, config);
 
-      expect(untrusted.requested).toEqual([CLAIM]);
+      // analyze_listed then reads the official sites of the three projects this run listed (the fake answers 404).
+      expect(untrusted.requested).toEqual([CLAIM, "https://deepbook.tech/", "https://hyperdrive.fi/", "https://inkonchain.com/"]);
       expect(stats.claim_pages_read).toBe(1);
       expect(scamInputs).toHaveLength(1);
       expect(scamInputs[0]).toContain(`${CLAIM} ---\nDeepBook claim\n\nOnly 2 hours left to claim!`);
@@ -3509,6 +3511,96 @@ describe("runDaily curation", () => {
 
       expect(untrusted.requested).toEqual([]);
       expect(stats.claim_pages_read).toBe(0);
+    });
+  });
+
+  describe("official website text for the AI Analyst", () => {
+    const SITE = "https://deepbook.tech/";
+    const SITE_HTML =
+      '<html><head><title>DeepBook</title><script>steal()</script></head><body><a href="/airdrop">Airdrop</a><h1>DeepBook</h1><p>Trade on the Sui order book.</p></body></html>';
+    const siteSetup = (extra: Pages = {}) => {
+      const pages = basePages();
+      pages[SITE] = { status: 200, body: SITE_HTML };
+      pages["https://deepbook.tech/airdrop"] = { status: 200, body: "<p>Points season one is live.</p>" };
+      Object.assign(pages, extra);
+      const base = fakeChat();
+      const prompts: { system: string; user: string }[] = [];
+      const chat: FakeChat = {
+        ...base,
+        chat: async (model, messages) => {
+          prompts.push({ system: messages[0]?.content ?? "", user: messages[1]?.content ?? "" });
+          return base.chat(model, messages);
+        },
+      };
+      return { ...setup({ pages, chat }), prompts, pages };
+    };
+    const analystPrompts = (prompts: { system: string; user: string }[]) =>
+      prompts.filter((p) => p.system.includes('"verdict"') && p.user.includes("PROJECT: DeepBook"));
+
+    it("reads the site of a project listed by the previous run before the analyses, so the same run's Analyst sees it", async () => {
+      const { deps, config, prompts, untrusted, repo, pages } = siteSetup();
+      await runDaily(deps, config);
+      // A week later the cache of the first run (taken in analyze_listed) is due again, and the site has changed.
+      pages[SITE] = { status: 200, body: SITE_HTML.replace("Trade on the Sui order book.", "Trade on the Sui order book, now with v2.") };
+      const nextDay = new Date(NOW.getTime() + 8 * DAY);
+      untrusted.requested.length = 0;
+      prompts.length = 0;
+
+      const stats = await runDaily({ ...deps, now: () => nextDay }, config);
+
+      expect(untrusted.requested.filter((u) => u.startsWith("https://deepbook.tech"))).toEqual([SITE, "https://deepbook.tech/airdrop"]);
+      // DeepBook's 2 pages; the other two listed projects' sites answer 404 in this fake.
+      expect(stats).toMatchObject({ official_pages_fetched: 2, official_pages_failed: 2 });
+      expect(typeof stats.stage_seconds_official_sites).toBe("number");
+      const [analyst] = analystPrompts(prompts);
+      expect(analyst?.user).toContain("official-site://deepbook.tech ---\n[Page /]\nDeepBook");
+      expect(analyst?.user).toContain("Trade on the Sui order book, now with v2.");
+      expect(analyst?.user).toContain("[Page /airdrop]\nPoints season one is live.");
+      expect(analyst?.user).not.toContain("steal()");
+      // Data for the Analyst only: the other analyses never get it.
+      expect(prompts.filter((p) => p.user.includes("official-site://")).map((p) => p.system.includes('"verdict"'))).toEqual([true]);
+      expect(repo.claimPages.get("official-site://deepbook.tech")?.fetchedAt).toEqual(nextDay);
+    });
+
+    it("gives a project this run lists its site text in analyze_listed, once GoPlus found its domain clean", async () => {
+      const { deps, config, prompts, untrusted } = siteSetup();
+
+      const stats = await runDaily(deps, config);
+
+      // First run: nobody was listed before scoring, so the stage before analyze fetched nothing; analyze_listed did.
+      expect(untrusted.requested.filter((u) => u.startsWith("https://deepbook.tech"))).toEqual([SITE, "https://deepbook.tech/airdrop"]);
+      expect(stats.official_pages_fetched).toBe(2);
+      expect(analystPrompts(prompts).some((p) => p.user.includes("Points season one is live."))).toBe(true);
+    });
+
+    it("fetches nothing for a domain GoPlus lists as phishing (not listed), nor when no Analyst runs", async () => {
+      const phished = siteSetup();
+      await runDaily({ ...phished.deps, http: phishingFor(phished.http, "deepbook.tech") }, phished.config);
+      expect(phished.untrusted.requested.filter((u) => u.startsWith("https://deepbook.tech"))).toEqual([]);
+
+      const none = siteSetup();
+      const stats = await runDaily({ ...none.deps, analyzers: [] }, none.config);
+      expect(none.untrusted.requested).toEqual([]);
+      expect(stats.official_pages_fetched).toBe(0);
+    });
+
+    it("reports a failing official_sites stage as failed_step 13 and still analyzes and scores", async () => {
+      const repo = new MemoryRepo();
+      const list = repo.listClaimPages.bind(repo);
+      let down = false;
+      repo.listClaimPages = async (urls) => {
+        if (down && urls.some((u) => u.startsWith("official-site://"))) throw new Error("db down");
+        return list(urls);
+      };
+      const { deps, config } = siteSetup();
+      const failing = { ...deps, repo };
+      await runDaily(failing, config); // first run: nobody listed yet, nothing to read
+      down = true;
+      await expect(runDaily({ ...failing, now: () => new Date(NOW.getTime() + DAY) }, config)).rejects.toThrow("db down");
+
+      const last = repo.runs[repo.runs.length - 1];
+      expect(last?.stats.failed_step).toBe(13);
+      expect(last?.stats.assessed).toBe(3);
     });
   });
 

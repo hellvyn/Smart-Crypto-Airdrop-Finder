@@ -6,13 +6,14 @@ import { countAlphaDropsRequests, loadRaises } from "./enrich/alphadrops-raises.
 import { refreshPortfolios } from "./enrich/vc-portfolios.js";
 import type { ChatFn } from "./llm/extract.js";
 import type { FetchImage, FetchUntrusted } from "./http.js";
-import { ANALYZERS, claimPageSources, listedFirst, runAnalyses } from "./steps/analyze.js";
+import { ANALYZERS, claimPageSources, combineExtraSources, listedFirst, officialSiteSources, runAnalyses } from "./steps/analyze.js";
 import type { Analyzer, SourceText } from "./steps/analyze.js";
 import { collectSources } from "./steps/collect.js";
 import type { SpeculativeItem } from "./steps/collect.js";
 import type { ExtractionResult } from "@saf/core";
 import { extractPending } from "./steps/extract.js";
 import { readClaimPages } from "./steps/link-checks.js";
+import { loadOfficialSites } from "./steps/official-sites.js";
 import { mergeDocument } from "./steps/merge.js";
 import type { ProjectInput } from "./steps/merge.js";
 import { purgeCoach, purgeOldText } from "./steps/purge.js";
@@ -50,7 +51,8 @@ export interface PipelineDeps {
  * no longer exists; the numbers of the other stages stay as they were. New stages get new numbers: `signals` (8)
  * runs between `speculative` and `analyze`, `analyze` (9) runs after `signals` and before `score`, and `logos` (10)
  * runs after `score` (it needs that run's phishing answers) and before `purge`, and `briefing` (11) runs after `score`
- * (it reads the changes and curations that run wrote) and before `logos`.
+ * (it reads the changes and curations that run wrote) and before `logos`. `official_sites` (13) reads the listed
+ * projects' official websites for the Analyst, so it runs after `signals` and right before `analyze`.
  */
 const STEP = {
   collect: 1,
@@ -63,6 +65,7 @@ const STEP = {
   logos: 10,
   briefing: 11,
   analyze_listed: 12,
+  official_sites: 13,
 } as const;
 
 type ExtractedProject = ExtractionResult["projects"][number];
@@ -234,6 +237,15 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     coverage = await refreshSignals(deps, config, now, stats, { protocols: collected.protocols, vc, raises }, projects);
   });
   const analyzers = deps.analyzers ?? ANALYZERS;
+  // Official website text of the listed projects (the Analyst's extra source), by project id; analyze_listed adds to it.
+  const officialPages = new Map<string, SourceText[]>();
+  const readsOfficialSites = analyzers.some((a) => a.kind === "analyst");
+  await stage("official_sites", undefined, async () => {
+    if (!readsOfficialSites) return;
+    const all = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
+    const pages = await loadOfficialSites(deps, config, all, now, stats);
+    for (const [id, sources] of pages) officialPages.set(id, sources);
+  });
   let claimPages = new Map<string, SourceText[]>();
   // The projects the analyze stage already treated as listed (uncapped); analyze_listed takes only the others.
   let analyzedAsListed = new Set<string>();
@@ -249,7 +261,12 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
       claimPages = await readClaimPages({ repo, fetchUntrusted: deps.fetchUntrusted }, projects, now, stats);
     }
     await runAnalyses(
-      { ...deps, analyzers, extraSources: claimPageSources(claimPages), uncapped: new Set(listedIds) },
+      {
+        ...deps,
+        analyzers,
+        extraSources: combineExtraSources(claimPageSources(claimPages), officialSiteSources(officialPages)),
+        uncapped: new Set(listedIds),
+      },
       config,
       projects,
       stats,
@@ -273,8 +290,18 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     // not counted again. (If one that failed there runs here, deferred goes down instead of failed: a rare,
     // count-only inaccuracy.)
     const catchUp = emptyStats();
+    if (readsOfficialSites) {
+      // Their domains must now also be GoPlus-clean in this run, as for the favicon. Page counts go to the run's stats.
+      const pages = await loadOfficialSites(deps, config, newlyListed, now, stats, { phishing });
+      for (const [id, sources] of pages) officialPages.set(id, sources);
+    }
     await runAnalyses(
-      { ...deps, analyzers, extraSources: claimPageSources(claimPages), uncapped: listed },
+      {
+        ...deps,
+        analyzers,
+        extraSources: combineExtraSources(claimPageSources(claimPages), officialSiteSources(officialPages)),
+        uncapped: listed,
+      },
       { ...config, analyzeBudgetMinutes: config.analyzeListedBudgetMinutes },
       newlyListed,
       catchUp,
