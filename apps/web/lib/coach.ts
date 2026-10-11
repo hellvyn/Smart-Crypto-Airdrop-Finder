@@ -294,10 +294,9 @@ function withoutUrls(text: string): string {
  * does not matter, "Tanya AI" never filters by it. False on any failure: the project page then simply offers no
  * "Jelasin langkah ini".
  */
-export async function isCoachCandidate(db: SupabaseClient, userId: string, projectId: string, now: Date): Promise<boolean> {
+export async function isCoachCandidate(db: SupabaseClient, projectId: string, now: Date): Promise<boolean> {
   try {
-    const profile = await getCoachProfile(db, userId);
-    return askedProject(await loadCandidates(db, now, projectId), profile, projectId) !== null;
+    return askedProject(await loadCandidates(db, now, projectId), null, projectId) !== null;
   } catch {
     return false;
   }

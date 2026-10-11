@@ -69,7 +69,8 @@ export async function POST(request: Request): Promise<Response> {
     // A plan thread needs the profile; "Tanya AI" about one project does not (owner 2026-10-11).
     if (!profile && !thread.projectId) return coachErrorResponse("bad_input");
 
-    const all = await loadCandidates(db, now);
+    // A project thread needs that one project only (the whole list could also miss it past its row limit).
+    const all = await loadCandidates(db, now, thread.projectId ?? undefined);
     // "Tanya AI": that one listed project, whatever the profile says. The profile never filters it out; a project that
     // does not fit it is still answered about, with the reason as context.
     let candidates: Candidate[] = [];
@@ -91,13 +92,12 @@ export async function POST(request: Request): Promise<Response> {
       turn = explainStepTurn(step.text, input.message);
     }
     // Nothing to talk about (a general thread the profile filters every project out of, or a project no longer listed):
-    // the empty state, as a normal answer. No
-    // coach_begin and no model call, so it costs no quota and no money.
+    // the empty state, as a normal answer. No coach_begin and no model call, so it costs no quota and no money.
     if (candidates.length === 0) {
       const remaining = await remainingQuota(db);
       const headers: Record<string, string> = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
       if (remaining !== null) headers["X-Coach-Remaining"] = String(remaining);
-      return new Response(coach.empty.noCandidates, { status: 200, headers });
+      return new Response(thread.projectId ? coach.empty.projectGone : coach.empty.noCandidates, { status: 200, headers });
     }
     const history = await loadHistory(db, input.threadId);
 

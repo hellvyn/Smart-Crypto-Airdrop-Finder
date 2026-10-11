@@ -570,6 +570,8 @@ export const coach = {
     noCandidates:
       "Belum ada project yang cocok sama profil kamu sekarang. Coba ubah modal atau level di profil, atau cek lagi besok. Pesan ini gak memotong jatah kamu.",
     noPlan: "Coach belum bisa bikin rencana, coba lagi.",
+    /** Tanya AI about a project that is no longer on the list (the profile never filters that chat). */
+    projectGone: "Project ini lagi gak ada di list yang lolos check, jadi Coach belum bisa bahas. Pesan ini gak memotong jatah kamu.",
   },
   /** Stored as the member's message of a plan request (it shows in the history). */
   planRequest: "Bikinin rencana garapan buat aku.",
@@ -605,7 +607,6 @@ export const coach = {
     goal: { legend: "Tujuan", quick: "Cuan cepat", long_term: "Jangka panjang", learn: "Belajar dulu" },
     chains: { legend: "Chain favorit (boleh kosong)" },
     submit: "Simpan dan bikin rencana",
-    submitOnly: "Simpan profil",
     errors: {
       level: "Pilih level kamu.",
       capital: "Pilih modal yang siap kamu pakai.",
