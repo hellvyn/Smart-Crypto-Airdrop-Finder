@@ -1,5 +1,15 @@
 import type { ModelConfig, ProviderId } from "./llm/nvidia.js";
 
+/** A VC whose portfolio page is cross-checked for `vc_backer` (curation spec §5.2). */
+export interface VcConfig {
+  id: string;
+  name: string;
+  /** Other names the VC goes by (a former name, a short form). */
+  aliases: string[];
+  tier: 1 | 2;
+  portfolioUrl: string;
+}
+
 export interface PipelineConfig {
   telegramChannels: string[];
   defillama: { minTvl: number; excludedCategories: string[]; limit: number; newWithinDays: number };
@@ -35,7 +45,34 @@ export interface PipelineConfig {
   maxAnalysesPerRun: number;
   scoreActiveSinceDays: number;
   textRetentionDays: number;
+  /** VCs whose portfolio pages give verified `vc_backer` signals (`VC_LIST`). */
+  vcs: VcConfig[];
 }
+
+/**
+ * VC candidates of curation plan 5 Task 4 (tier 1 as the plan sets it). None of these pages could be fetched from
+ * the development environment (every host refused by its proxy), so none is verified yet: run
+ * `scripts/vc-portfolio-check.ts` where they are reachable and strike every VC whose page has no portfolio links in
+ * its HTML or whose terms forbid reading it (docs/ops/pipeline.md, "Daftar VC"). An unreachable or link-less page
+ * only leaves that VC "not checked" in a run; it never removes signals from the other VCs.
+ */
+export const VC_LIST: VcConfig[] = [
+  { id: "a16z-crypto", name: "a16z crypto", aliases: ["a16z", "Andreessen Horowitz"], tier: 1, portfolioUrl: "https://a16zcrypto.com/portfolio/" },
+  { id: "paradigm", name: "Paradigm", aliases: [], tier: 1, portfolioUrl: "https://www.paradigm.xyz/portfolio" },
+  { id: "polychain", name: "Polychain Capital", aliases: ["Polychain"], tier: 1, portfolioUrl: "https://polychain.capital/portfolio" },
+  { id: "pantera", name: "Pantera Capital", aliases: ["Pantera"], tier: 1, portfolioUrl: "https://panteracapital.com/portfolio/" },
+  { id: "multicoin", name: "Multicoin Capital", aliases: ["Multicoin"], tier: 1, portfolioUrl: "https://multicoin.capital/portfolio/" },
+  { id: "dragonfly", name: "Dragonfly", aliases: ["Dragonfly Capital"], tier: 1, portfolioUrl: "https://www.dragonfly.xyz/portfolio" },
+  { id: "coinbase-ventures", name: "Coinbase Ventures", aliases: [], tier: 1, portfolioUrl: "https://www.coinbase.com/ventures" },
+  { id: "yzi-labs", name: "YZi Labs", aliases: ["Binance Labs"], tier: 1, portfolioUrl: "https://www.yzilabs.com/portfolio" },
+  { id: "framework", name: "Framework Ventures", aliases: ["Framework"], tier: 2, portfolioUrl: "https://framework.ventures/portfolio" },
+  { id: "variant", name: "Variant", aliases: ["Variant Fund"], tier: 2, portfolioUrl: "https://variant.fund/portfolio/" },
+  { id: "electric-capital", name: "Electric Capital", aliases: [], tier: 2, portfolioUrl: "https://www.electriccapital.com/portfolio" },
+  { id: "hack-vc", name: "Hack VC", aliases: [], tier: 2, portfolioUrl: "https://hack.vc/portfolio" },
+  { id: "placeholder", name: "Placeholder", aliases: ["Placeholder VC"], tier: 2, portfolioUrl: "https://www.placeholder.vc/portfolio" },
+  { id: "delphi-ventures", name: "Delphi Ventures", aliases: ["Delphi Digital"], tier: 2, portfolioUrl: "https://delphiventures.io/" },
+  { id: "jump-crypto", name: "Jump Crypto", aliases: ["Jump"], tier: 2, portfolioUrl: "https://jumpcrypto.com/portfolio/" },
+];
 
 /**
  * Model fallback order (curation spec decision #30). `max_tokens` and `temperature` are set by `streamChat`.
@@ -95,4 +132,5 @@ export const defaultConfig: PipelineConfig = {
   maxAnalysesPerRun: 60,
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
+  vcs: VC_LIST,
 };

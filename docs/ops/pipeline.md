@@ -104,6 +104,44 @@ hosts never become a project's official domain (`isNonProjectHost` in `pipeline/
 A changed listing (no Next.js payload, no items) or a connection that breaks during the detail pages counts in
 `source_failed`; the documents built before the break are still stored and the other sources run as usual.
 
+### Daftar VC (VC portfolio cross-check)
+
+The `signals` stage gives a project a verified `vc_backer` (`{investor, tier}`, source `vc_portfolio`) when the
+registrable domain of one of its official domains is linked from the portfolio page of a VC in `VC_LIST`
+(`pipeline/src/config.ts`). A name match or a "backed by" claim never counts. The page's outbound `<a href>` links are
+reduced to registrable domains (`parsePortfolioDomains` in `pipeline/src/enrich/vc-portfolios.ts`; the VC's own
+domain and social, hiring and aggregator hosts are left out) and only the domains are cached in `vc_portfolios`.
+
+- A cache up to 7 days old is used without a request, so each page is fetched about once a week (about 15 requests).
+- A page that fails (not 200, or no portfolio link in its HTML, e.g. rendered by JavaScript) never overwrites the
+  cache: a cache up to 14 days old is still used; with an older or no cache that VC is "not checked". Its earlier
+  `vc_backer` signals stay with their own `observed_at`, while the signals of the VCs that were checked are rewritten.
+  Each failed page counts once in `vc_portfolios_failed`; the run does not fail.
+
+Candidates (curation plan 5 Task 4; tier 1: a16z crypto, Paradigm, Polychain, Pantera, Multicoin, Dragonfly,
+Coinbase Ventures, YZi Labs; tier 2: Framework Ventures, Variant, Electric Capital, Hack VC, Placeholder, Delphi
+Ventures, Jump Crypto). **Status on 2026-10-11: none verified, none struck.** Every page was unreachable from the
+development container: `curl` got `curl: (56) CONNECT tunnel failed, response 403` from the egress proxy for all 15
+URLs in `VC_LIST` (the same proxy answered 200 for `airdrops.io` and `api.llama.fi`), so neither the HTML structure
+nor the terms of any page could be checked. The portfolio URLs are the candidates' known portfolio paths, not
+confirmed ones.
+
+Before trusting `vc_backer` in production, run where the pages are reachable (a GitHub Actions runner or a local
+machine):
+
+```
+pnpm --filter pipeline exec tsx scripts/vc-portfolio-check.ts
+```
+
+It prints each VC's HTTP status, the number of portfolio domains in its HTML and the domains. Strike a VC from
+`VC_LIST` (and record it below with the reason) when its status is not 200, it has 0 domains (JavaScript-rendered),
+its domains are not its portfolio companies (footer or article links), or its terms forbid automated reading. Add a
+host to `NON_PORTFOLIO_DOMAINS` in `vc-portfolios.ts` when a page links to it outside its portfolio.
+
+| VC | Status | Reason |
+|---|---|---|
+| all 15 candidates | unverified | page unreachable from the development container (proxy CONNECT 403) |
+
 ## 4. Read the result
 
 The job log contains exactly one JSON line of numeric counters (never URLs, text, names, emails or wallets).
@@ -125,6 +163,8 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `phishing_list_failed` | domains the GoPlus check gave no answer for, after one retry (429, HTTP 200 with code 4029, or 5xx; 5 s pause) |
 | `phishing_list_rate_limited` | of those, domains GoPlus still rate-limited (429 or code 4029) after the retry |
 | `phishing_list_skipped` | of those, domains never asked because the GoPlus time budget ran out or 5 domains in a row had no answer |
+| `signals_vc_backer` | projects that got at least one verified `vc_backer` this run (official domain in a checked VC portfolio) |
+| `vc_portfolios_failed` | VC portfolio pages that had to be fetched and failed (not 200 or no portfolio link), or whose cache could not be read; see "Daftar VC" |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
@@ -149,6 +189,8 @@ What to do:
   `pipeline/src/enrich/goplus.ts`; if it is 0, the failures are timeouts or errors, not the rate limit.
   `phishing_list_skipped` > 0: the GoPlus queue was stopped early (budget or 5 failures in a row). If it happens on
   normal days with `phishing_list_rate_limited` near 0, the domain count has outgrown `goplusBudgetMinutes`.
+- `vc_portfolios_failed` > 0 on several runs: a VC page moved or changed; run `scripts/vc-portfolio-check.ts`
+  ("Daftar VC") and fix its `portfolioUrl` or strike it. After 14 days without a good fetch that VC is "not checked".
 - `llm_models_tripped` > 0: a model endpoint failed repeatedly (see `extractions.error`, e.g. `http_0` = 180 s
   timeout). The run continues on the remaining models; if it repeats for days, reorder or replace the model in
   `pipeline/src/config.ts`.

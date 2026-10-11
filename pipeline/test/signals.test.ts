@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { NewSignal } from "@saf/core";
 import type { DefillamaProtocol } from "../src/collectors/defillama.js";
 import { defaultConfig } from "../src/config.js";
+import type { PipelineConfig, VcConfig } from "../src/config.js";
 import { emptyStats } from "../src/stats.js";
 import { buildSignals, refreshSignals } from "../src/steps/signals.js";
 import type { VcIndex } from "../src/steps/signals.js";
@@ -41,6 +42,15 @@ function project(overrides: Partial<ProjectForScoring> = {}): ProjectForScoring 
 const kinds = (r: { signals: NewSignal[] }): string[] => r.signals.map((s) => s.kind);
 
 const ARCUS: DefillamaProtocol = { name: "Arcus", url: "https://arcus.xyz", tvl: 45_000_000, geckoId: null };
+
+type VcEntry = { vcId: string; name: string; tier: 1 | 2 };
+const PARADIGM_ENTRY: VcEntry = { vcId: "paradigm", name: "Paradigm", tier: 1 };
+
+/** A VC index of these portfolio domains; every VC in it counts as checked. */
+function index(byDomain: Record<string, VcEntry[]>): VcIndex {
+  const entries = Object.values(byDomain).flat();
+  return { byDomain: new Map(Object.entries(byDomain)), checked: new Set(entries.map((e) => e.vcId)), failed: new Set() };
+}
 
 describe("buildSignals", () => {
   it("gives TVL only to the project whose domain matches, not to a same-name lookalike", () => {
@@ -121,6 +131,42 @@ describe("buildSignals", () => {
     expect(buildSignals(project({ facts }), { protocols: [], vc: null }).signals).toEqual([
       { kind: "claimed_backer", value: { investor: "Paradigm", quote: "backed by Paradigm" }, source: "llm_text", verified: false },
       { kind: "claimed_backer", value: { investor: "a16z crypto", quote: "and a16z crypto" }, source: "llm_text", verified: false },
+    ]);
+  });
+
+  it("adds a verified vc_backer when the project domain is in a portfolio", () => {
+    const vc = index({ "arcus.xyz": [{ vcId: "paradigm", name: "Paradigm", tier: 1 }] });
+    expect(buildSignals(project({ officialDomains: ["arcus.xyz"] }), { protocols: [], vc }).signals)
+      .toContainEqual({ kind: "vc_backer", value: { investor: "Paradigm", tier: 1 }, source: "vc_portfolio", verified: true });
+  });
+
+  it("gives a VC backer only to the project whose domain matches, not to a same-name lookalike or a name claim", () => {
+    const vc = index({ "arcus.xyz": [PARADIGM_ENTRY] });
+    const claim = [{ field: "claimed_backer", value: "Paradigm", quote: "backed by Paradigm" }];
+    const fake = buildSignals(project({ name: "Arcus", officialDomains: ["arcus-claim.io"], facts: claim }), { protocols: [], vc });
+    expect(fake.signals.filter((s) => s.kind === "vc_backer")).toEqual([]);
+    expect(buildSignals(project({ officialDomains: [] }), { protocols: [], vc }).signals).toEqual([]);
+  });
+
+  it("matches a portfolio domain on the registrable domain of an official subdomain", () => {
+    const vc = index({ "arcus.xyz": [PARADIGM_ENTRY] });
+    expect(kinds(buildSignals(project({ officialDomains: ["app.arcus.xyz"] }), { protocols: [], vc }))).toEqual(["vc_backer"]);
+  });
+
+  it("never matches a platform host, even when a portfolio cache holds it", () => {
+    const vc = index({ "github.com": [PARADIGM_ENTRY], "notion.site": [PARADIGM_ENTRY] });
+    const result = buildSignals(project({ officialDomains: ["github.com", "arcus.notion.site"] }), { protocols: [], vc });
+    expect(result.signals).toEqual([]);
+  });
+
+  it("adds one vc_backer per VC, however many official domains are in its portfolio", () => {
+    const vc = index({
+      "arcus.xyz": [PARADIGM_ENTRY, { vcId: "variant", name: "Variant", tier: 2 }],
+      "arcus.finance": [PARADIGM_ENTRY],
+    });
+    expect(buildSignals(project({ officialDomains: ["arcus.xyz", "arcus.finance"] }), { protocols: [], vc }).signals).toEqual([
+      { kind: "vc_backer", value: { investor: "Paradigm", tier: 1 }, source: "vc_portfolio", verified: true },
+      { kind: "vc_backer", value: { investor: "Variant", tier: 2 }, source: "vc_portfolio", verified: true },
     ]);
   });
 
@@ -208,6 +254,78 @@ describe("refreshSignals", () => {
       { projectId: arcus.id, kind: "curated_source", value: { source_kind: "telegram" }, source: "telegram", verified: false, observedAt: NOW },
     ]);
     expect(stats).toMatchObject({ signals_tvl: 0, signals_coingecko: 0, signals_failed: 0 });
+  });
+
+  describe("VC backers", () => {
+    const vcConfig = (id: string, name: string, tier: 1 | 2): VcConfig => ({
+      id,
+      name,
+      aliases: [],
+      tier,
+      portfolioUrl: `https://${id}.test/portfolio`,
+    });
+    const config: PipelineConfig = {
+      ...defaultConfig,
+      vcs: [vcConfig("paradigm", "Paradigm", 1), vcConfig("variant", "Variant", 2), vcConfig("polychain", "Polychain", 1)],
+    };
+    const backer = (investor: string, tier: 1 | 2): NewSignal => ({
+      kind: "vc_backer",
+      value: { investor, tier },
+      source: "vc_portfolio",
+      verified: true,
+    });
+    const earlier = new Date(NOW.getTime() - 86_400_000);
+
+    async function arcusWithBackers(repo: MemoryRepo): Promise<string> {
+      const arcus = await repo.createProject(newProject("Arcus", ["arcus.xyz"]), NOW);
+      await repo.replaceSignals(arcus.id, [backer("Paradigm", 1), backer("Variant", 2), backer("Polychain", 1)], earlier);
+      return arcus.id;
+    }
+
+    it("keeps the backers of a VC that was not checked when another VC was, and drops those no longer listed", async () => {
+      const repo = new MemoryRepo();
+      const arcusId = await arcusWithBackers(repo);
+      const stats = emptyStats();
+      // Paradigm still lists Arcus; Polychain was checked and no longer does; Variant's page failed without a cache.
+      const vc: VcIndex = {
+        byDomain: new Map([["arcus.xyz", [{ vcId: "paradigm", name: "Paradigm", tier: 1 }]]]),
+        checked: new Set(["paradigm", "polychain"]),
+        failed: new Set(["variant"]),
+      };
+
+      await refreshSignals({ repo }, config, NOW, stats, { protocols: [], vc });
+
+      expect(repo.signals.filter((s) => s.projectId === arcusId)).toEqual([
+        { projectId: arcusId, ...backer("Variant", 2), observedAt: earlier },
+        { projectId: arcusId, ...backer("Paradigm", 1), observedAt: NOW },
+      ]);
+      expect(stats).toMatchObject({ signals_vc_backer: 1, signals_failed: 0 });
+    });
+
+    it("keeps every VC backer when the portfolios could not be loaded at all", async () => {
+      const repo = new MemoryRepo();
+      const arcusId = await arcusWithBackers(repo);
+      const stats = emptyStats();
+
+      await refreshSignals({ repo }, config, NOW, stats, { protocols: [], vc: null });
+
+      expect(repo.signals.filter((s) => s.projectId === arcusId).map((s) => [s.value.investor, s.observedAt])).toEqual([
+        ["Paradigm", earlier],
+        ["Variant", earlier],
+        ["Polychain", earlier],
+      ]);
+      expect(stats.signals_vc_backer).toBe(0);
+    });
+
+    it("drops the backers of a VC that is no longer in the list", async () => {
+      const repo = new MemoryRepo();
+      const arcusId = await arcusWithBackers(repo);
+      const vc: VcIndex = { byDomain: new Map(), checked: new Set(["paradigm", "variant"]), failed: new Set() };
+
+      await refreshSignals({ repo }, { ...config, vcs: config.vcs.slice(0, 2) }, NOW, emptyStats(), { protocols: [], vc });
+
+      expect(repo.signals.filter((s) => s.projectId === arcusId)).toEqual([]);
+    });
   });
 
   it("skips projects not seen within scoreActiveSinceDays", async () => {

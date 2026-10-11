@@ -1768,6 +1768,34 @@ describe("runDaily signals", () => {
       .map(({ kind, value, source, verified }) => ({ kind, value, source, verified }));
   };
 
+  it("adds verified VC backers from portfolio pages, counts failed pages and reuses the weekly cache", async () => {
+    const paradigm = { id: "paradigm", name: "Paradigm", aliases: [], tier: 1 as const, portfolioUrl: "https://paradigm.test/portfolio" };
+    const variant = { id: "variant", name: "Variant", aliases: [], tier: 2 as const, portfolioUrl: "https://variant.test/portfolio" };
+    const pages = basePages();
+    // Lists DeepBook's domain and a lookalike of Ink's name on another domain; Variant's page is down (404).
+    pages[paradigm.portfolioUrl] = {
+      status: 200,
+      body: '<a href="https://deepbook.tech/">DeepBook</a><a href="https://ink-chain.finance/">Ink Chain</a>',
+    };
+    const { repo, deps, http } = setup({ pages });
+    const config = { ...defaultConfig, vcs: [paradigm, variant] };
+
+    const stats = await runDaily(deps, config);
+
+    expect((await signalsOf(repo, "deepbook")).filter((s) => s.kind === "vc_backer")).toEqual([
+      { kind: "vc_backer", value: { investor: "Paradigm", tier: 1 }, source: "vc_portfolio", verified: true },
+    ]);
+    expect((await signalsOf(repo, "ink")).filter((s) => s.kind === "vc_backer")).toEqual([]);
+    expect(stats).toMatchObject({ signals_vc_backer: 1, vc_portfolios_failed: 1, signals_failed: 0 });
+    expect(stats.run_error).toBeUndefined();
+
+    const gets = http.gets.length;
+    const next = await runDaily({ ...deps, now: () => new Date(NOW.getTime() + DAY) }, config);
+    // Paradigm comes from the cache; only Variant, which has none, is asked again.
+    expect(http.gets.slice(gets).filter((u) => u.endsWith("/portfolio"))).toEqual([variant.portfolioUrl]);
+    expect(next).toMatchObject({ signals_vc_backer: 1, vc_portfolios_failed: 1 });
+  });
+
   it("stores domain-matched DefiLlama signals and curated sources for every project, speculative ones included", async () => {
     const { repo, deps, config } = setup({ pages: withProtocols(LLAMA_DEEPBOOK, LLAMA_FAKE_INK) });
     const stats = await runDaily(deps, config);

@@ -2,6 +2,7 @@ import { cleanUrl } from "@saf/core";
 import type { DefillamaProtocol, SpeculativeCandidate } from "./collectors/defillama.js";
 import type { Http } from "./collectors/types.js";
 import type { PipelineConfig } from "./config.js";
+import { refreshPortfolios } from "./enrich/vc-portfolios.js";
 import type { ChatFn } from "./llm/extract.js";
 import { ANALYZERS, runAnalyses } from "./steps/analyze.js";
 import type { Analyzer } from "./steps/analyze.js";
@@ -177,10 +178,12 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     }
   });
 
-  // VC portfolios are not loaded yet: vc_backer is "not checked".
-  await stage(STEP.signals, undefined, () =>
-    refreshSignals(deps, config, now, stats, { protocols: collected.protocols, vc: null }),
-  );
+  await stage(STEP.signals, undefined, async () => {
+    // A failed VC page only leaves that VC "not checked"; refreshPortfolios does not throw for one VC.
+    const vc = await refreshPortfolios(deps, config.vcs, now);
+    stats.vc_portfolios_failed += vc.failed.size;
+    await refreshSignals(deps, config, now, stats, { protocols: collected.protocols, vc });
+  });
   const analyzers = deps.analyzers ?? ANALYZERS;
   await stage(STEP.analyze, undefined, async () => {
     if (analyzers.length === 0) return;

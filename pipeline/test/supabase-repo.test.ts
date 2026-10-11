@@ -43,6 +43,10 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
             filters.push([column, `not.${operator}.${String(value)}`]);
             return query;
           },
+          or: (conditions: string) => {
+            filters.push(["or", conditions]);
+            return query;
+          },
           then: (resolve: (value: typeof ok) => unknown) => resolve(ok),
         };
         return query;
@@ -196,6 +200,30 @@ describe("SupabaseRepo.replaceSignals", () => {
       { table: "project_signals", filters: [["project_id", "p-1"], ["source", "not.in.(defillama,vc_portfolio)"]] },
     ]);
     expect(inserts).toEqual([]);
+  });
+
+  it("deletes the signals of a source kept by investor except the kept investors', quoting their names", async () => {
+    const { client, deletes } = recordingClient();
+    const repo = new SupabaseRepo(client);
+    const at = new Date("2026-10-10T03:00:00Z");
+
+    await repo.replaceSignals("p-1", [], at, [
+      "defillama",
+      { source: "vc_portfolio", investor: "a16z crypto" },
+      { source: "vc_portfolio", investor: 'Odd "Name", (Fund)\\' },
+    ]);
+
+    expect(deletes).toEqual([
+      { table: "project_signals", filters: [["project_id", "p-1"], ["source", "not.in.(defillama,vc_portfolio)"]] },
+      {
+        table: "project_signals",
+        filters: [
+          ["project_id", "p-1"],
+          ["source", "vc_portfolio"],
+          ["or", 'value->>investor.is.null,value->>investor.not.in.("a16z crypto","Odd \\"Name\\", (Fund)\\\\")'],
+        ],
+      },
+    ]);
   });
 });
 

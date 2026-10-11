@@ -34,6 +34,13 @@ export interface DailyStats extends RunStats {
   signals_tvl: number;
   /** Projects that got a verified `coingecko_listed` signal (domain-matched DefiLlama protocol with a CoinGecko id). */
   signals_coingecko: number;
+  /** Projects that got at least one verified `vc_backer` this run (domain in a checked VC portfolio). */
+  signals_vc_backer: number;
+  /**
+   * VCs whose portfolio page had to be fetched and failed (not 200, or no portfolio link in its HTML), or whose cache
+   * could not be read. Such a VC still counts as checked when its cache is at most 14 days old.
+   */
+  vc_portfolios_failed: number;
   /** Projects whose signals could not be built or stored; they keep no signals until a later run succeeds. */
   signals_failed: number;
   /** AI analyses made and stored this run. */
@@ -74,6 +81,8 @@ export function emptyStats(): DailyStats {
     phishing_list_skipped: 0,
     signals_tvl: 0,
     signals_coingecko: 0,
+    signals_vc_backer: 0,
+    vc_portfolios_failed: 0,
     signals_failed: 0,
     ai_analyses_run: 0,
     ai_analyses_cached: 0,

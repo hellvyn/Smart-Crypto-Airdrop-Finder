@@ -678,6 +678,22 @@ describe("MemoryRepo signals", () => {
     await expect(repo.replaceSignals(p.id, [tvl], later, ["defillama"])).rejects.toThrow("duplicate signal");
   });
 
+  it("keeps only the kept investors' signals of a source kept by investor", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const variant: NewSignal = { ...paradigm, value: { investor: "Variant", tier: 2 } };
+    const claim: NewSignal = { kind: "claimed_backer", value: { investor: "Variant", quote: "q" }, source: "llm_text", verified: false };
+    const noInvestor: NewSignal = { ...paradigm, value: { tier: 1 } };
+    await repo.replaceSignals(p.id, [tvl, paradigm, variant, claim, noInvestor], T0);
+    const later = new Date(T0.getTime() + 86_400_000);
+
+    await repo.replaceSignals(p.id, [], later, [{ source: "vc_portfolio", investor: "Variant" }]);
+
+    // The kept investor counts for its source only: Variant's claimed backer (llm_text) is replaced like the rest,
+    // and so is a signal of the source without an investor.
+    expect(repo.signals).toEqual([{ projectId: p.id, ...variant, observedAt: T0 }]);
+  });
+
   it("accepts one kind from two sources but rejects a duplicate (kind, source, investor), like the unique index", async () => {
     const repo = new MemoryRepo();
     const p = await repo.createProject(project(), T0);

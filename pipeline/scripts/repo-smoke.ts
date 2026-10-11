@@ -250,6 +250,20 @@ async function main(): Promise<void> {
     (kept.data ?? []).map((s) => [s.kind, s.source, new Date(s.observed_at as string).getTime()]),
     [["tvl", "defillama", T0.getTime()], ["curated_source", "telegram", t1.getTime()]],
   );
+  // Kept investors (a VC whose portfolio was not checked this run) survive; the source's other signals do not.
+  const backer = (investor: string) => ({ kind: "vc_backer" as const, value: { investor, tier: 2 }, source: "vc_portfolio" as const, verified: true });
+  const noInvestor = { kind: "vc_backer" as const, value: { tier: 1 }, source: "vc_portfolio" as const, verified: true };
+  await repo.replaceSignals(p.id, [backer("Paradigm"), backer('Odd "Name", (Fund)'), backer("Variant"), noInvestor], T0);
+  await repo.replaceSignals(p.id, [], t1, [
+    { source: "vc_portfolio", investor: 'Odd "Name", (Fund)' },
+    { source: "vc_portfolio", investor: "Variant" },
+  ]);
+  const keptBackers = await admin.from("project_signals").select("value").eq("project_id", p.id);
+  assert.equal(keptBackers.error, null);
+  assert.deepEqual(
+    (keptBackers.data ?? []).map((s) => (s.value as { investor: string }).investor).sort(),
+    ['Odd "Name", (Fund)', "Variant"],
+  );
   await repo.replaceSignals(p.id, [
     { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: true },
     { kind: "claimed_backer", value: { investor: "a16z", quote: "backed by a16z" }, source: "llm_text", verified: false },

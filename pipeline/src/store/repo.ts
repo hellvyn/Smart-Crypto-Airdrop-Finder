@@ -47,6 +47,12 @@ export interface RunStats {
 
 export type NewProject = Omit<ProjectRow, "id" | "firstSeen" | "lastSeen">;
 
+/**
+ * Signals a `replaceSignals` leaves in place: every signal of a source, or the signals of a source whose
+ * `value.investor` is the given name (e.g. the `vc_backer` of a VC whose portfolio was not checked this run).
+ */
+export type SignalKeep = SignalSource | { source: SignalSource; investor: string };
+
 /** One extracted step (`tasks` row): done once, or repeated daily or weekly. */
 export interface Step {
   text: string;
@@ -201,13 +207,13 @@ export interface PipelineRepo {
   /** Blanks the text of documents fetched more than `olderThanDays` ago (hash stays). Returns how many were blanked. */
   purgeDocumentText(olderThanDays: number, now: Date): Promise<number>;
   /**
-   * Deletes every signal of the project except those from `keepSources` (a source not checked this run: its last
-   * signals stay, with their own `observed_at`), then stores `signals` with `observed_at` = `at`. Throws on two
-   * signals with the same (kind, source, investor), kept ones included, or a verified `claimed_backer`/
-   * `reported_backer`; not atomic, so the project is then left with only the kept signals until the next successful
-   * replace.
+   * Deletes every signal of the project except the kept ones (from a source, or an investor of a source, not checked
+   * this run: its last signals stay, with their own `observed_at`), then stores `signals` with `observed_at` = `at`.
+   * Throws on two signals with the same (kind, source, investor), kept ones included, or a verified
+   * `claimed_backer`/`reported_backer`; not atomic, so the project is then left with only the kept signals until the
+   * next successful replace.
    */
-  replaceSignals(projectId: string, signals: NewSignal[], at: Date, keepSources?: readonly SignalSource[]): Promise<void>;
+  replaceSignals(projectId: string, signals: NewSignal[], at: Date, keep?: readonly SignalKeep[]): Promise<void>;
   /** Cached portfolio domains of one VC (sorted) and when they were fetched; `fetchedAt` null when none are cached. */
   listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }>;
   /** Replaces the VC's cached domains, all fetched at `at`. */

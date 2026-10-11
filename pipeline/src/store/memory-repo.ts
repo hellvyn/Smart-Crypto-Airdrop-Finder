@@ -6,7 +6,6 @@ import type {
   NewSignal,
   RiskAssessment,
   RiskLevel,
-  SignalSource,
   Status,
   StatusEvidence,
 } from "@saf/core";
@@ -22,6 +21,7 @@ import type {
   ProjectForScoring,
   ProjectRow,
   RunStats,
+  SignalKeep,
   Step,
   StoredAiAnalysis,
   StoredDocument,
@@ -371,10 +371,14 @@ export class MemoryRepo implements PipelineRepo {
     projectId: string,
     signals: NewSignal[],
     at: Date,
-    keepSources: readonly SignalSource[] = [],
+    keep: readonly SignalKeep[] = [],
   ): Promise<void> {
+    const kept = (s: SignalRow): boolean =>
+      keep.some((k) =>
+        typeof k === "string" ? k === s.source : k.source === s.source && s.value.investor === k.investor,
+      );
     // Delete first, as SupabaseRepo does: a refused insert leaves the project with only the kept signals.
-    removeWhere(this.signals, (s) => s.projectId === projectId && !keepSources.includes(s.source));
+    removeWhere(this.signals, (s) => s.projectId === projectId && !kept(s));
     // Same rules as the project_signals check constraint and unique index.
     const keyOf = (s: NewSignal) => JSON.stringify([s.kind, s.source, investorKey(s.value)]);
     const keys = new Set(this.signals.filter((s) => s.projectId === projectId).map(keyOf));

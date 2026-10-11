@@ -24,6 +24,7 @@ import type {
   ProjectForScoring,
   ProjectRow,
   RunStats,
+  SignalKeep,
   Step,
   StoredAiAnalysis,
   StoredDocument,
@@ -65,6 +66,9 @@ const PROJECT_COLUMNS =
 
 const toDate = (value: string | null): Date | null => (value === null ? null : new Date(value));
 const toIso = (value: Date | null): string | null => (value === null ? null : value.toISOString());
+
+/** A value inside a PostgREST `in.(...)` list: double-quoted, with `\` and `"` escaped by a backslash. */
+const postgrestQuote = (value: string): string => `"${value.replace(/[\\"]/g, (c) => `\\${c}`)}"`;
 
 function toDocument(r: DocumentDb): StoredDocument {
   return {
@@ -539,14 +543,34 @@ export class SupabaseRepo implements PipelineRepo {
     projectId: string,
     signals: NewSignal[],
     at: Date,
-    keepSources: readonly SignalSource[] = [],
+    keep: readonly SignalKeep[] = [],
   ): Promise<void> {
+    const wholeSources = keep.filter((k): k is SignalSource => typeof k === "string");
+    const keptInvestors = new Map<SignalSource, string[]>();
+    for (const k of keep) {
+      if (typeof k === "string" || wholeSources.includes(k.source)) continue;
+      keptInvestors.set(k.source, [...(keptInvestors.get(k.source) ?? []), k.investor]);
+    }
+    // First every source kept in whole or by investor is left alone, then each source kept by investor loses the
+    // signals of the other investors. Source values are plain identifiers (check constraint) and need no quoting.
+    const untouched = [...wholeSources, ...keptInvestors.keys()];
     const remove = this.db.from("project_signals").delete().eq("project_id", projectId);
-    // Source values are plain identifiers (check constraint), so the PostgREST list needs no quoting.
     check(
       "replaceSignals.delete",
-      await (keepSources.length === 0 ? remove : remove.not("source", "in", `(${keepSources.join(",")})`)),
+      await (untouched.length === 0 ? remove : remove.not("source", "in", `(${untouched.join(",")})`)),
     );
+    for (const [source, investors] of keptInvestors) {
+      check(
+        "replaceSignals.deleteInvestors",
+        await this.db
+          .from("project_signals")
+          .delete()
+          .eq("project_id", projectId)
+          .eq("source", source)
+          // A signal without an investor is never a kept one (as in MemoryRepo); `not in` alone would skip it.
+          .or(`value->>investor.is.null,value->>investor.not.in.(${investors.map(postgrestQuote).join(",")})`),
+      );
+    }
     if (signals.length === 0) return;
     check(
       "replaceSignals.insert",

@@ -1,10 +1,10 @@
-import { domainMatches } from "@saf/core";
+import { domainMatches, registrableDomain } from "@saf/core";
 import type { NewSignal, SignalSource } from "@saf/core";
 import type { DefillamaProtocol } from "../collectors/defillama.js";
 import type { SourceKind } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
 import type { DailyStats } from "../stats.js";
-import type { PipelineRepo, ProjectForScoring } from "../store/repo.js";
+import type { PipelineRepo, ProjectForScoring, SignalKeep } from "../store/repo.js";
 
 /**
  * Cached VC portfolios by registrable domain (loaded by the VC portfolio refresh). `checked` holds the ids of VCs
@@ -59,6 +59,31 @@ function defillamaSignals(project: ProjectForScoring, protocols: DefillamaProtoc
   return signals;
 }
 
+/**
+ * One verified `vc_backer` per VC whose cached portfolio holds the registrable domain of one of the project's
+ * official domains. The lookup key is only a shortcut: each hit is confirmed with `domainMatches` (the trust
+ * boundary, which also refuses platform hosts), so a name match or a claim never counts.
+ */
+function vcBackers(project: ProjectForScoring, vc: VcIndex): NewSignal[] {
+  const signals: NewSignal[] = [];
+  const seen = new Set<string>();
+  for (const official of project.officialDomains) {
+    const key = registrableDomain(`https://${official}`);
+    if (key === null || !domainMatches(project.officialDomains, key)) continue;
+    for (const entry of vc.byDomain.get(key) ?? []) {
+      if (seen.has(entry.vcId)) continue;
+      seen.add(entry.vcId);
+      signals.push({
+        kind: "vc_backer",
+        value: { investor: entry.name, tier: entry.tier },
+        source: "vc_portfolio",
+        verified: true,
+      });
+    }
+  }
+  return signals;
+}
+
 /** One `claimed_backer` per investor (trimmed, compared case-insensitively; the first quote wins). Never verified. */
 function claimedBackers(project: ProjectForScoring): NewSignal[] {
   const seen = new Set<string>();
@@ -75,9 +100,9 @@ function claimedBackers(project: ProjectForScoring): NewSignal[] {
 }
 
 /**
- * The signals of one project for this run (curation spec §5.2): verified DefiLlama `tvl`/`coingecko_listed` by
- * domain match, one `curated_source` per curated source kind among its documents, and its claimed backers.
- * `coverage` says which independent sources were checked.
+ * The signals of one project for this run (curation spec §5.2): verified DefiLlama `tvl`/`coingecko_listed` and
+ * `vc_backer` by domain match, one `curated_source` per curated source kind among its documents, and its claimed
+ * backers. `coverage` says which independent sources were checked.
  */
 export function buildSignals(
   project: ProjectForScoring,
@@ -85,6 +110,7 @@ export function buildSignals(
 ): { signals: NewSignal[]; coverage: SignalCoverage } {
   const signals: NewSignal[] = [];
   if (ctx.protocols !== null) signals.push(...defillamaSignals(project, ctx.protocols));
+  if (ctx.vc !== null) signals.push(...vcBackers(project, ctx.vc));
   for (const kind of project.sourceKinds) {
     const source = CURATED_SOURCES[kind];
     if (source !== undefined) {
@@ -99,10 +125,21 @@ export function buildSignals(
 }
 
 /**
+ * The `vc_backer` signals a run must leave in place: all of them when no portfolio was loaded, otherwise those of
+ * each listed VC whose portfolio was not checked (its page failed and its cache is over 14 days old). "Not checked"
+ * is per VC: the backers of the checked VCs are rewritten, those of a VC no longer in the list are dropped.
+ */
+function keptVcBackers(vcs: PipelineConfig["vcs"], vc: VcIndex | null): SignalKeep[] {
+  if (vc === null) return ["vc_portfolio"];
+  return vcs.filter((v) => !vc.checked.has(v.id)).map((v) => ({ source: "vc_portfolio", investor: v.name }));
+}
+
+/**
  * The `signals` stage: rewrites the signals of every project seen within `scoreActiveSinceDays`, all observed at
- * `now`. When DefiLlama was not checked this run (spec §9: "not checked", never "none"), the project's earlier
- * `defillama` signals are kept with their own `observed_at` instead of being deleted. A project whose signals cannot
- * be built or stored counts as `signals_failed`; the others continue.
+ * `now`. A source not checked this run (spec §9: "not checked", never "none") keeps the project's earlier signals
+ * with their own `observed_at` instead of deleting them: all `defillama` signals when DefiLlama was not fetched, and
+ * the `vc_backer` of each VC whose portfolio was not checked. A project whose signals cannot be built or stored
+ * counts as `signals_failed`; the others continue.
  */
 export async function refreshSignals(
   deps: { repo: PipelineRepo },
@@ -112,12 +149,15 @@ export async function refreshSignals(
   ctx: SignalContext,
 ): Promise<void> {
   const projects = await deps.repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
+  const keepVc = keptVcBackers(config.vcs, ctx.vc);
   for (const project of projects) {
     try {
       const { signals, coverage } = buildSignals(project, ctx);
-      await deps.repo.replaceSignals(project.id, signals, now, coverage.defillama ? [] : ["defillama"]);
+      const keep: SignalKeep[] = coverage.defillama ? keepVc : ["defillama", ...keepVc];
+      await deps.repo.replaceSignals(project.id, signals, now, keep);
       stats.signals_tvl += signals.filter((s) => s.kind === "tvl").length;
       stats.signals_coingecko += signals.filter((s) => s.kind === "coingecko_listed").length;
+      if (signals.some((s) => s.kind === "vc_backer")) stats.signals_vc_backer += 1;
     } catch {
       stats.signals_failed += 1;
     }
