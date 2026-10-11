@@ -277,6 +277,64 @@ export async function seedManyProjects(count: number): Promise<{ chain: string; 
   return { chain, slugs: rows.map((r) => r.slug) };
 }
 
+export interface CoachSeedProject {
+  id: string;
+  slug: string;
+  name: string;
+  /** The text of its first step, which the stub model quotes. */
+  step: string;
+  /** The id of that step (`tasks.id`), for "Jelasin langkah ini". */
+  stepId: string;
+}
+
+/**
+ * Projects the Coach may recommend (Plan 9 Task 6): each is live, free (its source says no capital), has a low risk
+ * assessment, passed curation in the Live sekarang tab with worth "high", and has two steps. Cleaned up by `cleanupSeed`.
+ */
+export async function seedCoachProjects(count = 3): Promise<CoachSeedProject[]> {
+  const db = adminClient();
+  const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const now = new Date().toISOString();
+  const out: CoachSeedProject[] = [];
+  for (let i = 0; i < count; i++) {
+    const slug = `e2e-coach-${tag}-${i}`;
+    const name = `E2E Coach ${tag.toUpperCase()} ${String.fromCharCode(65 + i)}`;
+    const doc = await insertDocument(`https://source.example/${slug}`);
+    const id = await insertProject({ slug, name, name_key: slug, chains: ["base"], status: "live" });
+    const step = `Bridge sedikit ETH ke Base lalu swap di ${name}`;
+    const tasks = must(
+      await db
+        .from("tasks")
+        .insert([
+          { project_id: id, document_id: doc, description: step, cadence: "weekly", position: 0 },
+          { project_id: id, document_id: doc, description: `Cek halaman points ${name} tiap minggu`, cadence: "weekly", position: 1 },
+        ])
+        .select("id, position"),
+      "coach tasks",
+    ) as { id: string; position: number }[];
+    must(
+      await db.from("evidence").insert({ project_id: id, document_id: doc, field: "capital_required", value: "none", quote: "", at: now }).select("id"),
+      "coach capital",
+    );
+    must(
+      await db
+        .from("risk_assessments")
+        .insert({ project_id: id, level: "low", points: 0, reasons: [], checks: [], computed_at: now })
+        .select("id"),
+      "coach risk",
+    );
+    must(
+      await db
+        .from("curations")
+        .insert({ project_id: id, reasons: [], passed: true, worth_level: "high", tab: "live_now", status_at: "live", computed_at: now })
+        .select("id"),
+      "coach curation",
+    );
+    out.push({ id, slug, name, step, stepId: tasks.find((t) => t.position === 0)!.id });
+  }
+  return out;
+}
+
 export interface CuratedSeed {
   /** live_now, free, worth low, every key check ran, VC + AlphaDrops + curated source, open claim with an official link. */
   live: SeededProject;

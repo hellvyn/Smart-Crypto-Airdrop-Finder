@@ -17,7 +17,7 @@ describe("SiteHeader (design C)", () => {
     render(await SiteHeader());
     expect(screen.getByRole("link", { name: "AirdropIQ" }).getAttribute("href")).toBe("/");
     expect(screen.getByRole("link", { name: "Login" }).getAttribute("href")).toBe("/login");
-    for (const name of ["Garapan saya", "Watchlist", "Wallet", "Akun"]) {
+    for (const name of ["Garapan saya", "Coach", "Watchlist", "Wallet", "Akun"]) {
       expect(screen.queryByRole("link", { name })).toBeNull();
     }
     expect(screen.queryByRole("button", { name: "Logout" })).toBeNull();
@@ -35,6 +35,7 @@ describe("SiteHeader (design C)", () => {
     getUser.mockResolvedValue({ id: "u1", email: "someone@example.test" });
     render(await SiteHeader());
     expect(screen.getByRole("link", { name: "Garapan saya" }).getAttribute("href")).toBe("/garapan");
+    expect(screen.getByRole("link", { name: "Coach" }).getAttribute("href")).toBe("/coach");
     expect(screen.getByRole("link", { name: "Watchlist" }).getAttribute("href")).toBe("/watchlist");
     expect(screen.getByRole("link", { name: "Wallet" }).getAttribute("href")).toBe("/wallets");
     expect(screen.getByRole("link", { name: "Akun" }).getAttribute("href")).toBe("/settings");

@@ -2417,3 +2417,291 @@ blockquote {
 .detail-why [data-verified="true"] {
   color: var(--pass);
 }
+
+/* Farming Coach (/coach): profile form, plan cards, chat and history. */
+
+.coach {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.coach-title {
+  margin: 0;
+}
+
+.coach p {
+  margin: 0;
+}
+
+.coach-section-title {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+
+.coach-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 44rem;
+}
+
+.coach-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+.coach-field legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+.coach-field input[type="number"] {
+  width: 6rem;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+.coach-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.coach-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+
+.coach-option input {
+  padding: 0;
+}
+
+.coach-hint {
+  margin: 0;
+}
+
+.coach-profile-actions,
+.coach-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.coach-security,
+.coach-notice {
+  margin: 0 0 12px;
+}
+
+.coach-security h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.coach-langkah-nol {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 2px solid var(--ink);
+  background: var(--member-fill);
+  font-weight: 700;
+}
+
+.coach-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+@media (min-width: 900px) {
+  .coach-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.coach-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+.coach-card-head {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.coach-card-name {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.25;
+}
+
+.coach-card-name a {
+  color: var(--ink);
+}
+
+.coach-minutes {
+  font-weight: 700;
+}
+
+.coach-reasons h4 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+}
+
+.coach-reasons ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.coach-quote {
+  margin: 4px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.coach-started {
+  color: var(--pass);
+  font-weight: 700;
+}
+
+.coach-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 44rem;
+}
+
+.coach-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.coach-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+.coach-turn[data-role="user"] {
+  background: var(--member-fill);
+}
+
+.coach-turn-who {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.coach-turn-text {
+  white-space: pre-wrap;
+}
+
+.coach-chat-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.coach-chat-form textarea,
+.coach-chat-form label {
+  width: 100%;
+}
+
+.coach-chat-form textarea {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  background: var(--surface);
+  color: inherit;
+  resize: vertical;
+}
+
+.coach-threads {
+  margin-top: 28px;
+}
+
+.coach-thread-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.coach-thread-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 8px 0;
+  border-bottom: 2px dashed var(--line-soft);
+}
+
+.coach-thread-label {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.coach-thread-list form {
+  margin: 0;
+}
+
+/* "Jelasin langkah ini" under a step of the project page. */
+
+.explain-step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.explain-step-button {
+  padding: 2px 8px;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.explain-step-answer {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--member-fill);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

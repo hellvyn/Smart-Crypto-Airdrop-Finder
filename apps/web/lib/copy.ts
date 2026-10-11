@@ -34,6 +34,7 @@ export const header = {
   why: "Kenapa AirdropIQ",
   trackRecord: "Track record",
   garapan: "Garapan saya",
+  coach: "Coach",
   watchlist: "Watchlist",
   wallets: "Wallet",
   account: "Akun",
@@ -538,7 +539,7 @@ export const garapan = {
   },
 };
 
-/** Coach (plan and chat routes; the pages come later). Texts of spec §5.7. */
+/** Coach: texts of the plan and chat routes (spec §5.7) and of the /coach page (spec §5.1 to §5.5). */
 export const coach = {
   errors: {
     quota: "Jatah 20 pesan hari ini habis, reset jam 00.00 WIB.",
@@ -553,6 +554,96 @@ export const coach = {
   },
   /** Stored as the member's message of a plan request (it shows in the history). */
   planRequest: "Bikinin rencana garapan buat aku.",
+  title: "Coach",
+  heading: "Coach garapan",
+  intro:
+    "Jawab beberapa pertanyaan, nanti Coach pilihin airdrop dari list yang udah lolos check, sesuai modal dan waktu kamu.",
+  /** The member's own message when they ask the Coach to explain a step on a project page. */
+  explainRequest: "Jelasin langkah ini dong.",
+  form: {
+    privacy: "Kami gak minta email, alamat wallet, atau saldo kamu.",
+    level: { legend: "Level kamu", beginner: "Pemula", intermediate: "Menengah", pro: "Pro" },
+    capital: {
+      legend: "Modal yang siap dipakai",
+      free: "Gratis aja ($0)",
+      gas_only: "Buat gas aja (< $10)",
+      up_to_100: "$10 sampai 100",
+      up_to_1000: "$100 sampai 1.000",
+      over_1000: "> $1.000",
+      /** Under the capital field, for a Pemula (spec §5.1, verbatim). */
+      beginnerHint: "Banyak airdrop bisa digarap tanpa modal. Pilih 'Gratis aja' kalau belum mau keluar uang sama sekali.",
+    },
+    wallet: { legend: "Udah punya wallet?", yes: "Udah", no: "Belum", count: "Jumlah wallet" },
+    minutes: { legend: "Waktu per hari", 15: "15 menit", 30: "30 menit", 60: "60 menit", 120: "120+ menit" },
+    goal: { legend: "Tujuan", quick: "Cuan cepat", long_term: "Jangka panjang", learn: "Belajar dulu" },
+    chains: { legend: "Chain favorit (boleh kosong)" },
+    submit: "Simpan dan bikin rencana",
+    submitOnly: "Simpan profil",
+    errors: {
+      level: "Pilih level kamu.",
+      capital: "Pilih modal yang siap kamu pakai.",
+      wallet: "Pilih udah atau belum punya wallet.",
+      walletCount: "Isi jumlah wallet, 1 sampai 10.",
+      minutes: "Pilih waktu per hari.",
+      goal: "Pilih tujuan kamu.",
+      save: "Profil belum tersimpan. Cek isiannya, lalu coba lagi.",
+    },
+  },
+  profile: {
+    title: "Profil kamu",
+    edit: "Ubah profil",
+    makePlan: "Bikin rencana baru",
+    makePlanNote: "Ini dihitung 1 dari 20 pesan hari ini.",
+    planning: "Coach lagi nyusun rencana...",
+  },
+  plan: {
+    title: "Rencana garapan kamu",
+    /** Fixed text above the plan of a Pemula; the model's plan never carries it. */
+    securityTitle: "Pengingat keamanan",
+    security:
+      "Seed phrase dan private key gak pernah dibagi ke siapa pun, termasuk yang ngaku admin atau support. Connect wallet cuma di situs resmi. Transaksi yang kamu gak ngerti, jangan disetujui.",
+    minutes: (n: number) => `Estimasi ${n} menit per hari`,
+    reasons: "Kenapa cocok",
+    freeNote: "Gratis, tapi mungkin tetap butuh sedikit gas kalau di mainnet.",
+    freeNoteKey: "mungkin tetap butuh sedikit gas kalau di mainnet",
+    started: "Udah masuk Garapan saya.",
+    openGarapan: "Buka Garapan saya",
+  },
+  chat: {
+    title: "Tanya Coach",
+    remaining: (left: number) => `Sisa ${left}/20 pesan hari ini`,
+    disclaimer: "Bukan nasihat keuangan. Tetap DYOR.",
+    label: "Pertanyaan kamu",
+    send: "Kirim",
+    sending: "Coach lagi nulis...",
+    you: "Kamu",
+    coach: "Coach",
+  },
+  project: {
+    title: (name: string) => `Tanya Coach soal ${name}`,
+    intro: "Coach cuma bahas project ini, berdasarkan data yang udah lolos check.",
+    endedReason: "udah ended",
+    notListedNote: "Karena itu Coach gak nyaranin buat digarap, dan rencana garapan gak dibikin.",
+    notFound: "Project ini gak ketemu.",
+    open: "Lihat halaman project",
+    askAi: "Tanya AI",
+  },
+  explain: {
+    button: "Jelasin langkah ini",
+    loading: "Coach lagi nulis...",
+    needProfile: "Langkah ini belum bisa dijelasin. Biasanya karena profil kamu belum diisi, jadi lengkapi dulu di halaman Coach.",
+    toCoach: "Buka Coach",
+  },
+  threads: {
+    title: "Riwayat 30 hari terakhir",
+    empty: "Belum ada percakapan.",
+    plan: "Rencana garapan",
+    chat: "Percakapan",
+    project: (name: string) => `Tanya AI: ${name}`,
+    open: "Buka",
+    remove: "Hapus",
+    removeLabel: (label: string) => `Hapus ${label}`,
+  },
 };
 
 export const landing = {

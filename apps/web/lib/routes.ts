@@ -1,7 +1,7 @@
 import { safeNextPath } from "./safe-next";
 
 /** Top-level paths of the signed-in app (the `(app)` route group). The proxy sends signed-out users to /login. */
-export const PROTECTED_PREFIXES = ["/garapan", "/watchlist", "/wallets", "/settings"] as const;
+export const PROTECTED_PREFIXES = ["/garapan", "/coach", "/watchlist", "/wallets", "/settings"] as const;
 
 /** Where the public airdrop list lives (the landing page is `/`). */
 export const LIST_PATH = "/airdrops";

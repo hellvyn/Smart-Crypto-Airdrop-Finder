@@ -10,6 +10,9 @@ describe("isProtectedPath", () => {
     expect(isProtectedPath("/settings")).toBe(true);
     expect(isProtectedPath("/garapan")).toBe(true);
     expect(isProtectedPath("/garapanx")).toBe(false);
+    expect(isProtectedPath("/coach")).toBe(true);
+    expect(isProtectedPath("/coach/")).toBe(true);
+    expect(isProtectedPath("/coachx")).toBe(false);
   });
 
   it("leaves the public pages and login open", () => {
