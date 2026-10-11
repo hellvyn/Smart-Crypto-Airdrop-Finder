@@ -482,3 +482,7 @@ Ruling: T4 wires `getRunSummary` and `getTrackRecord` into the landing — P7.T4
   - A thrown `stored`-attempt write double-counts `logos_failed`.
   - The DNS/private-IP gap was judged acceptable (TLS + raster-only + ephemeral runner).
 - List cards: OPEN owner decision: unavatar's free plan asks for a followable link, while the cards show plain text "Logo: unavatar.io".
+
+## Deploy 2026-10-11 (cards + RDAP), 12:26 UTC
+- 0016_project_logos applied to hosted via MCP (create/grant/create-or-replace only); verified public_list=curated_list=21 rows, anon reads project_logos, not project_logo_attempts.
+- PR #4 merged (03d5c92) after CI green (test, e2e). Vercel production dpl_4fSiwoD5VkKxGSpyvkurM7vGjryv READY; /airdrops 200 with cards (letter tiles until the pipeline fills logos); /logo/<unknown> 404 with CSP sandbox + nosniff; no runtime errors in 30 min. Rollback target if needed: dpl_Dijs8Txy6VuZ9ffwRZSv2tGNZfdv.
