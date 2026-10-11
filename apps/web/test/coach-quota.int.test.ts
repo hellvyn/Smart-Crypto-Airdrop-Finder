@@ -81,18 +81,22 @@ describe.skipIf(!keys)("coach_begin under concurrency (0017)", () => {
       expect(thread.error).toBeNull();
       const threadId = thread.data as string;
 
-      // 19 answered messages from the start of today (UTC, the default timezone): one slot left.
-      const now = new Date();
-      const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+      // 19 answered messages from just now (so a UTC midnight cannot fall between the seed and the calls): one slot left.
+      // The quota is counted from coach_usage, so the ledger rows are seeded with the messages.
+      const at = new Date(Date.now() - 60_000).toISOString();
       const asked = Array.from({ length: 19 }, () => randomUUID());
       const users = await admin.from("coach_messages").insert(
-        asked.map((mid) => ({ id: mid, thread_id: threadId, user_id: id, role: "user", kind: "chat", content: "seed", created_at: dayStart })),
+        asked.map((mid) => ({ id: mid, thread_id: threadId, user_id: id, role: "user", kind: "chat", content: "seed", created_at: at })),
       );
       expect(users.error).toBeNull();
       const replies = await admin.from("coach_messages").insert(
-        asked.map((mid) => ({ thread_id: threadId, user_id: id, role: "assistant", kind: "chat", content: "seed", reply_to: mid, created_at: dayStart })),
+        asked.map((mid) => ({ thread_id: threadId, user_id: id, role: "assistant", kind: "chat", content: "seed", reply_to: mid, created_at: at })),
       );
       expect(replies.error).toBeNull();
+      const ledger = await admin
+        .from("coach_usage")
+        .insert(asked.map((mid) => ({ id: mid, kind: "message", user_id: id, created_at: at, replied: true })));
+      expect(ledger.error).toBeNull();
 
       const [a, b] = await Promise.all([
         db.rpc("coach_begin", { p_thread_id: threadId, p_kind: "chat", p_content: "satu" }),
@@ -107,10 +111,10 @@ describe.skipIf(!keys)("coach_begin under concurrency (0017)", () => {
       expect(losses[0]!.error!.message).toBe("quota");
 
       const counted = await admin
-        .from("coach_messages")
+        .from("coach_usage")
         .select("id", { count: "exact", head: true })
         .eq("user_id", id)
-        .eq("role", "user");
+        .eq("kind", "message");
       expect(counted.count).toBe(20);
     }
   }, 60_000);

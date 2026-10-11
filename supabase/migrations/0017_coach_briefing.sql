@@ -5,10 +5,13 @@
 -- (farming, 0010; results, 0015; the curated list, 0012) gates on the same predicate.
 -- This migration uses only create, grant and revoke: no DROP and no mass UPDATE.
 --
--- Quota: 20 user messages per member per day, reset at 00:00 in profiles.timezone (UTC when that is missing or not a
--- valid zone). A user message counts while it has a reply, or while it is less than 2 minutes old. A message the model
+-- Quota: 20 user messages per member per day, reset at 00:00 WIB (Asia/Jakarta) for every member, whatever their
+-- profiles.timezone (owner decision: one fixed day, so switching timezone cannot reopen the quota).
+-- A user message counts while it has a reply, or while it is less than 2 minutes old. A message the model
 -- failed to answer therefore stops counting after 2 minutes by itself, and no "give the slot back" RPC exists that
 -- could be abused.
+-- The quota (and the daily thread cap) is counted from the append-only coach_usage table, not from the threads and
+-- messages: a member can delete their own threads (and with them their messages), and that must not give slots back.
 
 -- ---------- coach_profiles: one row per member, owner-only ----------
 -- Chains: at most 10, each at most 40 characters and not null. A CHECK cannot hold a subquery, so the per-item test is
@@ -45,8 +48,10 @@ revoke all on coach_profiles from anon, authenticated;
 grant select, delete on coach_profiles to authenticated;
 grant insert (user_id, level, capital_band, wallet_count, has_wallet, minutes_per_day, goal, chains)
   on coach_profiles to authenticated;
--- user_id and updated_at are not updatable: a profile never moves to another member, and updated_at is the server's.
-grant update (level, capital_band, wallet_count, has_wallet, minutes_per_day, goal, chains)
+-- updated_at is the server's. user_id is in the UPDATE grant only so that supabase-js .upsert() (INSERT ... ON CONFLICT
+-- DO UPDATE SET user_id = excluded.user_id, ...) works; the update policy's WITH CHECK keeps user_id = auth.uid(), so a
+-- profile still cannot move to another member.
+grant update (user_id, level, capital_band, wallet_count, has_wallet, minutes_per_day, goal, chains)
   on coach_profiles to authenticated;
 
 create policy "own coach profile read" on coach_profiles for select to authenticated
@@ -104,7 +109,10 @@ create table coach_messages (
   user_id uuid not null references auth.users (id) on delete cascade,
   role text not null check (role in ('user', 'assistant')),
   kind text not null check (kind in ('plan', 'chat', 'explain_step')),
-  content text not null check (char_length(content) <= 4000),
+  -- Not blank; a member's message at most 4000 characters, the model's reply at most 16000.
+  content text not null check (
+    char_length(btrim(content, E' \t\r\n')) > 0
+    and char_length(content) <= case role when 'user' then 4000 else 16000 end),
   model text,
   input_tokens integer check (input_tokens >= 0),
   output_tokens integer check (output_tokens >= 0),
@@ -127,6 +135,45 @@ grant select on coach_messages to authenticated;
 create policy "own coach messages read" on coach_messages for select to authenticated
   using (user_id = (select auth.uid()));
 
+-- ---------- coach_usage: the append-only ledger the quota and the thread cap are counted from ----------
+-- One row per coach_begin (kind 'message', id = the user message's id) and per coach_new_thread (kind 'thread', id =
+-- the thread's id). No foreign key to threads or messages, so deleting a thread or a message never removes a row; rows
+-- go only with the member (auth.users cascade) or by the pipeline's purge (rows older than 2 days; Plan 9 Task 8).
+-- `replied` is true once coach_finish answered the message, and also once a user message was deleted without an answer
+-- (trigger below), so deleting a thread mid-answer does not hand the slot back after 2 minutes either.
+-- Security definer functions and the service role only: RLS is on with no policy, and the web roles have no grant.
+create table coach_usage (
+  id uuid primary key,
+  kind text not null check (kind in ('message', 'thread')),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  replied boolean not null default false
+);
+create index coach_usage_user_kind_created_idx on coach_usage (user_id, kind, created_at);
+create index coach_usage_created_idx on coach_usage (created_at);
+
+alter table coach_usage enable row level security;
+revoke all on coach_usage from anon, authenticated;
+
+-- A user message deleted without a reply (its thread was deleted, or the purge ran) keeps counting.
+create function public.keep_coach_usage_on_delete() returns trigger
+  language plpgsql
+  security definer
+  set search_path = ''
+as $$
+begin
+  if old.role = 'user' then
+    update public.coach_usage set replied = true where id = old.id;
+  end if;
+  return old;
+end;
+$$;
+revoke execute on function public.keep_coach_usage_on_delete() from public, anon, authenticated;
+
+create trigger coach_messages_keep_usage
+  before delete on coach_messages
+  for each row execute function public.keep_coach_usage_on_delete();
+
 -- ---------- briefings: members read, the pipeline (service role) writes ----------
 create table briefings (
   day date primary key,
@@ -147,8 +194,9 @@ create policy "members read briefings" on briefings for select to authenticated
 
 -- ---------- RPCs (security definer, empty search_path, execute for authenticated only) ----------
 
--- A new thread for the caller, about a project or not. At most 50 a day, so a member cannot fill the table by calling
--- this in a loop (the purge step removes threads after 30 days).
+-- A new thread for the caller, about a project or not. At most 50 a day (counted from coach_usage, which survives
+-- deleting threads), so a member cannot fill the table by calling this in a loop (the purge step removes threads after
+-- 30 days).
 create function public.coach_new_thread(p_project_id uuid) returns uuid
   language plpgsql
   security definer
@@ -162,11 +210,13 @@ begin
     raise exception 'not authenticated' using errcode = '42501';
   end if;
   perform pg_advisory_xact_lock(hashtextextended('coach_new_thread:' || v_uid::text, 0));
-  if (select count(*) from public.coach_threads t
-      where t.user_id = v_uid and t.created_at > now() - interval '1 day') >= 50 then
+  -- Counted from coach_usage, so deleting threads does not reset it.
+  if (select count(*) from public.coach_usage u
+      where u.user_id = v_uid and u.kind = 'thread' and u.created_at > now() - interval '1 day') >= 50 then
     raise exception 'threads' using errcode = 'P0001';
   end if;
   insert into public.coach_threads (user_id, project_id) values (v_uid, p_project_id) returning id into v_id;
+  insert into public.coach_usage (id, kind, user_id) values (v_id, 'thread', v_uid);
   return v_id;
 end;
 $$;
@@ -185,10 +235,9 @@ create function public.coach_begin(p_thread_id uuid, p_kind text, p_content text
 as $$
 declare
   v_uid uuid := (select auth.uid());
-  v_tz text;
   v_start timestamptz;
   v_used integer;
-  v_id uuid;
+  v_id uuid := gen_random_uuid();
 begin
   if v_uid is null then
     raise exception 'not authenticated' using errcode = '42501';
@@ -199,29 +248,24 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended('coach_begin:' || v_uid::text, 0));
 
-  -- Start of the caller's day. A missing profile or timezone, or a name Postgres does not know, means UTC.
-  select p.timezone into v_tz from public.profiles p where p.user_id = v_uid;
-  v_tz := coalesce(v_tz, 'UTC');
-  begin
-    v_start := date_trunc('day', now() at time zone v_tz) at time zone v_tz;
-  exception when invalid_parameter_value then
-    v_start := date_trunc('day', now() at time zone 'UTC') at time zone 'UTC';
-  end;
+  -- Start of today in Asia/Jakarta (WIB), the same day for every member.
+  v_start := date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta';
 
+  -- Counted from the append-only ledger, not from coach_messages (those go with a deleted thread).
   select count(*) into v_used
-  from public.coach_messages m
-  where m.user_id = v_uid
-    and m.role = 'user'
-    and m.created_at >= v_start
-    and (m.created_at > now() - interval '2 minutes'
-         or exists (select 1 from public.coach_messages r where r.reply_to = m.id));
+  from public.coach_usage u
+  where u.user_id = v_uid
+    and u.kind = 'message'
+    and u.created_at >= v_start
+    and (u.replied or u.created_at > now() - interval '2 minutes');
   if v_used >= 20 then
     raise exception 'quota' using errcode = 'P0001';
   end if;
 
-  insert into public.coach_messages (thread_id, user_id, role, kind, content)
-    values (p_thread_id, v_uid, 'user', p_kind, p_content)
-    returning id into v_id;
+  -- Both rows or neither (a check failure on the message, such as a blank text, rolls the ledger row back too).
+  insert into public.coach_usage (id, kind, user_id) values (v_id, 'message', v_uid);
+  insert into public.coach_messages (id, thread_id, user_id, role, kind, content)
+    values (v_id, p_thread_id, v_uid, 'user', p_kind, p_content);
   return v_id;
 end;
 $$;
@@ -271,6 +315,7 @@ begin
     values (v_thread, v_uid, 'assistant', v_kind, p_content, p_model, p_in, p_out, p_cache_read, p_cache_write,
             p_user_message_id)
     returning id into v_id;
+  update public.coach_usage set replied = true where id = p_user_message_id;
   return v_id;
 end;
 $$;

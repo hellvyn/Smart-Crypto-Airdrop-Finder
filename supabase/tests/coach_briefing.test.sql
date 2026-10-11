@@ -1,17 +1,17 @@
 -- pgTAP tests for 0017_coach_briefing.sql (Plan 9 Task 3; coach-briefing spec §4.4, §10): the Coach tables, the quota
 -- RPCs and briefings. Everything is member-only: anon holds no privilege on any new table or function. A member reads
 -- and deletes only their own threads and messages and never writes a message directly; the RPCs do, and count 20 user
--- messages a day (a day is the member's profiles.timezone, UTC when that is missing or invalid). A user message counts
+-- messages a day (a day is 00:00 to 24:00 WIB, Asia/Jakarta, for everyone). A user message counts
 -- while it has a reply, or while it is less than 2 minutes old. Briefings are read-only for members.
 -- The two-connection race on the last slot is in apps/web/test/coach-quota.int.test.ts (a pgTAP file is one transaction).
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(86);
+select plan(109);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS).
--- A: ca.., B: cb.. (the other member), C: Asia/Jakarta, D: no profile row (no timezone), E: an invalid timezone,
+-- A: ca.., B: cb.. (the other member), C: default timezone, D: Pacific/Kiritimati, E: Pacific/Pago_Pago,
 -- F: backdated unanswered messages, G: counting with a reply.
 insert into auth.users (id, email) values
   ('ca000000-0000-4000-8000-00000000000a', 'coach-a@example.test'),
@@ -20,14 +20,15 @@ insert into auth.users (id, email) values
   ('cd000000-0000-4000-8000-00000000000d', 'coach-d@example.test'),
   ('ce000000-0000-4000-8000-00000000000e', 'coach-e@example.test'),
   ('cf000000-0000-4000-8000-00000000000f', 'coach-f@example.test'),
-  ('c0000000-0000-4000-8000-000000000001', 'coach-g@example.test');
+  ('c0000000-0000-4000-8000-000000000001', 'coach-g@example.test'),
+  ('c1000000-0000-4000-8000-000000000001', 'coach-h@example.test'),
+  ('c2000000-0000-4000-8000-000000000001', 'coach-i@example.test');
 
 insert into projects (id, slug, name, name_key, status, chains, first_seen, last_seen) values
   ('ca100000-0000-4000-8000-000000000001', 'coach-proj', 'Coach Proj', 'coachproj', 'live', '{}', now(), now());
 
-update profiles set timezone = 'Asia/Jakarta' where user_id = 'cc000000-0000-4000-8000-00000000000c';
-delete from profiles where user_id = 'cd000000-0000-4000-8000-00000000000d';
-update profiles set timezone = 'Not/AZone' where user_id = 'ce000000-0000-4000-8000-00000000000e';
+update profiles set timezone = 'Pacific/Kiritimati' where user_id = 'cd000000-0000-4000-8000-00000000000d';
+update profiles set timezone = 'Pacific/Pago_Pago' where user_id = 'ce000000-0000-4000-8000-00000000000e';
 
 insert into coach_threads (id, user_id, project_id) values
   ('ca200000-0000-4000-8000-0000000000a1', 'ca000000-0000-4000-8000-00000000000a', null),
@@ -62,6 +63,7 @@ begin
   for i in 1..p_n loop
     insert into public.coach_messages (thread_id, user_id, role, kind, content, created_at)
       values (p_thread, p_uid, 'user', 'chat', 'seed', p_at) returning id into v_id;
+    insert into public.coach_usage (id, kind, user_id, created_at, replied) values (v_id, 'message', p_uid, p_at, p_replied);
     if p_replied then
       insert into public.coach_messages (thread_id, user_id, role, kind, content, reply_to, created_at)
         values (p_thread, p_uid, 'assistant', 'chat', 'seed reply', v_id, p_at + interval '1 second');
@@ -297,9 +299,8 @@ select ok((select updated_at > now() - interval '1 minute' from coach_profiles w
   'updated_at is stamped by the server on update');
 select ok(
   not has_column_privilege('authenticated', 'public.coach_profiles', 'updated_at', 'INSERT')
-  and not has_column_privilege('authenticated', 'public.coach_profiles', 'updated_at', 'UPDATE')
-  and not has_column_privilege('authenticated', 'public.coach_profiles', 'user_id', 'UPDATE'),
-  'a member cannot write updated_at, nor move a coach profile to another user');
+  and not has_column_privilege('authenticated', 'public.coach_profiles', 'updated_at', 'UPDATE'),
+  'a member cannot write updated_at (user_id is updatable for upserts; the policy keeps it the member''s own)');
 
 -- 55-66. Coach profile constraints (as the owner role, which skips RLS but not CHECK).
 select lives_ok(
@@ -368,10 +369,10 @@ select throws_ok(
   'the fresh unanswered messages count: the 21st raises quota');
 reset role;
 
--- G: 19 answered messages from today (old) + 1 unanswered 119 seconds old = 20 counted; the next raises. Then the
+-- G: 19 answered messages from the start of today WIB + 1 unanswered 119 seconds old = 20 counted; the next raises. Then the
 -- young one is backdated to 121 seconds: it stops counting, so the next succeeds.
 select pg_temp.seed('c0000000-0000-4000-8000-000000000001', 'c0200000-0000-4000-8000-0000000000f2', 19,
-  date_trunc('day', now() at time zone 'UTC') at time zone 'UTC', true);
+  date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta', true);
 select pg_temp.seed('c0000000-0000-4000-8000-000000000001', 'c0200000-0000-4000-8000-0000000000f2', 1,
   now() - interval '119 seconds', false);
 set local role authenticated;
@@ -380,9 +381,8 @@ select throws_ok(
   $$ select coach_begin('c0200000-0000-4000-8000-0000000000f2', 'chat', 'x') $$, 'P0001', 'quota',
   '19 answered messages and one under 2 minutes old fill the quota');
 reset role;
-update coach_messages set created_at = now() - interval '121 seconds'
-  where user_id = 'c0000000-0000-4000-8000-000000000001' and content = 'seed' and role = 'user'
-    and not exists (select 1 from coach_messages r where r.reply_to = coach_messages.id);
+update coach_usage set created_at = now() - interval '121 seconds'
+  where user_id = 'c0000000-0000-4000-8000-000000000001' and not replied;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"c0000000-0000-4000-8000-000000000001","role":"authenticated"}';
 select lives_ok(
@@ -390,67 +390,71 @@ select lives_ok(
   'a message older than 2 minutes with no reply stops counting');
 reset role;
 
--- C (Asia/Jakarta): 20 answered messages one second before the start of today in Jakarta are yesterday there: not counted.
+-- The day is fixed to WIB (Asia/Jakarta) whatever profiles.timezone says. C: the default timezone (UTC).
+-- C: default timezone. 20 answered messages one second before the start of today WIB are yesterday: not counted.
 select pg_temp.seed('cc000000-0000-4000-8000-00000000000c', 'cc200000-0000-4000-8000-0000000000c1', 20,
   (date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta') - interval '1 second', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cc000000-0000-4000-8000-00000000000c","role":"authenticated"}';
 select lives_ok(
   $$ select coach_begin('cc200000-0000-4000-8000-0000000000c1', 'chat', 'x') $$,
-  'with Asia/Jakarta, messages from yesterday local time are not counted');
+  'default timezone: usage from yesterday WIB is not counted');
 reset role;
--- ...and 19 answered messages at the very start of today in Jakarta (+ the one above, fresh) are today there: counted.
+-- 19 more at the very start of today WIB (+ the fresh one above) are today: counted, so the next begin raises quota.
 select pg_temp.seed('cc000000-0000-4000-8000-00000000000c', 'cc200000-0000-4000-8000-0000000000c1', 19,
   date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cc000000-0000-4000-8000-00000000000c","role":"authenticated"}';
 select throws_ok(
   $$ select coach_begin('cc200000-0000-4000-8000-0000000000c1', 'chat', 'x') $$, 'P0001', 'quota',
-  'with Asia/Jakarta, messages from the start of today local time are counted');
+  'default timezone: usage from today WIB is counted');
 reset role;
 
--- D (no profile row, so no timezone): the UTC day. 20 answered messages one second before the UTC day start are not
--- counted; 20 at the UTC day start are.
+-- D: timezone set to Pacific/Kiritimati (UTC+14), E: Pacific/Pago_Pago (UTC-11). Changing it does not change the count.
+-- D: Pacific/Kiritimati. 20 answered messages one second before the start of today WIB are yesterday: not counted.
 select pg_temp.seed('cd000000-0000-4000-8000-00000000000d', 'cd200000-0000-4000-8000-0000000000d1', 20,
-  (date_trunc('day', now() at time zone 'UTC') at time zone 'UTC') - interval '1 second', true);
+  (date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta') - interval '1 second', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cd000000-0000-4000-8000-00000000000d","role":"authenticated"}';
 select lives_ok(
   $$ select coach_begin('cd200000-0000-4000-8000-0000000000d1', 'chat', 'x') $$,
-  'a member without a timezone counts per UTC day (yesterday not counted)');
+  'Pacific/Kiritimati: usage from yesterday WIB is not counted');
 reset role;
+-- 19 more at the very start of today WIB (+ the fresh one above) are today: counted, so the next begin raises quota.
 select pg_temp.seed('cd000000-0000-4000-8000-00000000000d', 'cd200000-0000-4000-8000-0000000000d1', 19,
-  date_trunc('day', now() at time zone 'UTC') at time zone 'UTC', true);
+  date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cd000000-0000-4000-8000-00000000000d","role":"authenticated"}';
 select throws_ok(
   $$ select coach_begin('cd200000-0000-4000-8000-0000000000d1', 'chat', 'x') $$, 'P0001', 'quota',
-  'a member without a timezone counts per UTC day (today counted)');
+  'Pacific/Kiritimati: usage from today WIB is counted');
 reset role;
 
--- E (invalid timezone 'Not/AZone'): the UTC day, and no error.
+-- E: Pacific/Pago_Pago. 20 answered messages one second before the start of today WIB are yesterday: not counted.
 select pg_temp.seed('ce000000-0000-4000-8000-00000000000e', 'ce200000-0000-4000-8000-0000000000e1', 20,
-  (date_trunc('day', now() at time zone 'UTC') at time zone 'UTC') - interval '1 second', true);
+  (date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta') - interval '1 second', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"ce000000-0000-4000-8000-00000000000e","role":"authenticated"}';
 select lives_ok(
   $$ select coach_begin('ce200000-0000-4000-8000-0000000000e1', 'chat', 'x') $$,
-  'an invalid timezone counts per UTC day with no error (yesterday not counted)');
+  'Pacific/Pago_Pago: usage from yesterday WIB is not counted');
 reset role;
+-- 19 more at the very start of today WIB (+ the fresh one above) are today: counted, so the next begin raises quota.
 select pg_temp.seed('ce000000-0000-4000-8000-00000000000e', 'ce200000-0000-4000-8000-0000000000e1', 19,
-  date_trunc('day', now() at time zone 'UTC') at time zone 'UTC', true);
+  date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"ce000000-0000-4000-8000-00000000000e","role":"authenticated"}';
 select throws_ok(
   $$ select coach_begin('ce200000-0000-4000-8000-0000000000e1', 'chat', 'x') $$, 'P0001', 'quota',
-  'an invalid timezone counts per UTC day (today counted)');
+  'Pacific/Pago_Pago: usage from today WIB is counted');
 reset role;
+
 
 -- ---------- coach_finish ----------
 -- A's first message of the 20 above: finish it as A.
 create temp table a_msgs as
   select id from coach_messages
-  where user_id = 'ca000000-0000-4000-8000-00000000000a' and role = 'user' order by created_at, id limit 2;
+  where user_id = 'ca000000-0000-4000-8000-00000000000a' and role = 'user' order by created_at, id limit 3;
 grant select on a_msgs to authenticated;
 
 set local role authenticated;
@@ -488,7 +492,100 @@ select throws_ok(
 select throws_ok(
   format($$ select coach_finish(%L, 'x', 'm', -1, 1, null, null) $$, (select id from a_msgs offset 1 limit 1)),
   '23514', null, 'a negative token count is rejected');
+-- Reply length: at most 16000 characters (a member's own message is limited to 4000, above) and not blank.
+select throws_ok(
+  format($$ select coach_finish(%L, repeat('y', 16001), 'm', 1, 1, null, null) $$, (select id from a_msgs offset 2 limit 1)),
+  '23514', null, 'an assistant reply above 16000 characters is rejected');
+select throws_ok(
+  format($$ select coach_finish(%L, E'  \n ', 'm', 1, 1, null, null) $$, (select id from a_msgs offset 2 limit 1)),
+  '23514', null, 'a blank assistant reply is rejected');
+select lives_ok(
+  format($$ select coach_finish(%L, repeat('y', 5000), 'm', 1, 1, null, null) $$, (select id from a_msgs offset 1 limit 1)),
+  'a 5000-character assistant reply is accepted');
+
+-- supabase-js .upsert(): INSERT ... ON CONFLICT (user_id) DO UPDATE SET user_id = excluded.user_id, ... works for the
+-- member's own row (A's profile exists from the bounds test) and for no one else's.
+select lives_ok(
+  $$ insert into coach_profiles (user_id, level, capital_band, has_wallet, minutes_per_day, goal, chains)
+     values ('ca000000-0000-4000-8000-00000000000a', 'pro', 'free', false, 30, 'quick', '{Base}')
+     on conflict (user_id) do update set user_id = excluded.user_id, level = excluded.level,
+       capital_band = excluded.capital_band, has_wallet = excluded.has_wallet, wallet_count = excluded.wallet_count,
+       minutes_per_day = excluded.minutes_per_day, goal = excluded.goal, chains = excluded.chains $$,
+  'a member upserts their own coach profile');
+select is((select level || '/' || goal from coach_profiles where user_id = 'ca000000-0000-4000-8000-00000000000a'),
+  'pro/quick', 'the upsert updated the row');
+select throws_ok(
+  $$ insert into coach_profiles (user_id, level, capital_band, has_wallet, minutes_per_day, goal)
+     values ('cb000000-0000-4000-8000-00000000000b', 'pro', 'free', false, 30, 'quick')
+     on conflict (user_id) do update set user_id = excluded.user_id, level = excluded.level $$,
+  '42501', null, 'an upsert cannot overwrite another member''s coach profile');
+select throws_ok(
+  $$ update coach_profiles set user_id = 'cd000000-0000-4000-8000-00000000000d'
+     where user_id = 'ca000000-0000-4000-8000-00000000000a' $$,
+  '42501', null, 'a member cannot move their coach profile to another user');
+select throws_ok($$ select * from coach_usage $$, '42501', null, 'a member cannot read the usage ledger');
 reset role;
+
+-- coach_usage: the ledger. coach_finish marked the answered message; the table is closed to both web roles.
+select is((select replied from coach_usage where id = (select id from a_msgs offset 1 limit 1)), true,
+  'coach_finish marks the usage row as replied');
+select is((select relrowsecurity from pg_class where oid = 'public.coach_usage'::regclass)
+          and not exists (select 1 from pg_policies where tablename = 'coach_usage'), true,
+  'coach_usage has RLS on and no policy');
+select ok(
+  not has_table_privilege('anon', 'public.coach_usage', 'SELECT') and not has_any_column_privilege('anon', 'public.coach_usage', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.coach_usage', 'SELECT')
+  and not has_any_column_privilege('authenticated', 'public.coach_usage', 'INSERT')
+  and not has_any_column_privilege('authenticated', 'public.coach_usage', 'UPDATE')
+  and not has_table_privilege('authenticated', 'public.coach_usage', 'DELETE'),
+  'neither web role has any privilege on coach_usage');
+
+-- ---------- deleting threads gives nothing back ----------
+-- H: a blank message is refused (and leaves no ledger row); 20 begins, then the thread is deleted and a new one opened:
+-- the 21st still raises quota. The messages deleted unanswered keep counting (trigger), even once they are 2 minutes old.
+create temp table h_t (id uuid, n int);
+grant all on h_t to authenticated;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c1000000-0000-4000-8000-000000000001","role":"authenticated"}';
+select lives_ok($$ insert into h_t select coach_new_thread(null), 1 $$, 'H opens a thread');
+select throws_ok(
+  format($$ select coach_begin(%L, 'chat', E'   \t ') $$, (select id from h_t where n = 1)),
+  '23514', null, 'a blank user message is rejected');
+select is(pg_temp.begin_n((select id from h_t where n = 1), 20), 20, 'H sends 20 messages');
+select is(
+  pg_temp.rows_deleted(format($q$ delete from coach_threads where id = %L $q$, (select id from h_t where n = 1))),
+  1::bigint, 'H deletes the thread');
+insert into h_t select coach_new_thread(null), 2;
+select throws_ok(
+  format($$ select coach_begin(%L, 'chat', 'ke-21') $$, (select id from h_t where n = 2)), 'P0001', 'quota',
+  'after deleting the thread, the 21st message of the day still raises quota');
+reset role;
+select is((select count(*)::int from coach_usage where user_id = 'c1000000-0000-4000-8000-000000000001' and kind = 'message'), 20,
+  'the ledger kept the 20 messages (the blank one left no row)');
+select is((select count(*)::int from coach_usage where user_id = 'c1000000-0000-4000-8000-000000000001' and kind = 'message' and replied), 20,
+  'messages deleted without a reply keep counting after 2 minutes');
+select is((select count(*)::int from coach_messages where user_id = 'c1000000-0000-4000-8000-000000000001'), 0,
+  'the thread''s messages are gone');
+
+-- I: the daily thread cap also survives deleting the threads.
+create function pg_temp.new_thread_n(p_n int) returns int language plpgsql as $f$
+declare i int; ok int := 0;
+begin
+  for i in 1..p_n loop
+    perform public.coach_new_thread(null);
+    ok := ok + 1;
+  end loop;
+  return ok;
+end
+$f$;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c2000000-0000-4000-8000-000000000001","role":"authenticated"}';
+select is(pg_temp.new_thread_n(50), 50, 'I opens 50 threads in a day');
+select is(pg_temp.rows_deleted($q$ delete from coach_threads $q$), 50::bigint, 'I deletes all their threads');
+select throws_ok($$ select coach_new_thread(null) $$, 'P0001', 'threads', 'the 51st thread of the day is refused even after the deletes');
+reset role;
+select is((select count(*)::int from coach_usage where user_id = 'c2000000-0000-4000-8000-000000000001' and kind = 'thread'), 50,
+  'the ledger kept the 50 threads');
 
 -- ---------- delete cascades ----------
 set local role authenticated;
