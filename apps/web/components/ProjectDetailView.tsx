@@ -128,7 +128,7 @@ export function ProjectDetailView({ project, member, now }: { project: ProjectDe
             statusQuotes={project.conflict ? project.evidence.filter((e) => e.field === "status") : []}
             sourceUrls={project.sourceUrls}
           />
-          <StepsList steps={project.steps} links={project.links} />
+          <StepsList steps={project.steps} links={project.links} member={member} projectId={project.id} />
           <SafetyBox
             risk={risk}
             links={project.links}

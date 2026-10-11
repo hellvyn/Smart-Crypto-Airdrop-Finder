@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/app/(app)/coach/actions", () => ({ startCoachThreadAction: vi.fn() }));
+
 import { ProjectDetailView } from "@/components/ProjectDetailView";
 import type { ProjectDetail } from "@/lib/view";
 import { SOURCE_A, analyst, projectDetail } from "../../fixtures/project-detail";
@@ -70,6 +73,16 @@ describe("ProjectDetailView", () => {
     expect(within(section).getByText("Bridge ke Arbitrum")).toBeTruthy();
     expect(document.body.textContent).not.toContain("0x1111222233334444555566667777888899990000");
     expect(document.body.textContent).not.toContain("Kirim 0.05 ETH");
+  });
+
+  it("offers Jelasin langkah ini under a step to a member only, in the page and in its markup", () => {
+    const steps = [{ id: "55555555-5555-4555-8555-555555555551", text: "Bridge ke Arbitrum", cadence: "once" as const }];
+    view({ steps }, true);
+    expect(screen.getAllByRole("button", { name: "Jelasin langkah ini" })).toHaveLength(1);
+    cleanup();
+    const { container } = view({ steps });
+    expect(screen.queryByRole("button", { name: "Jelasin langkah ini" })).toBeNull();
+    expect(container.innerHTML).not.toContain("Jelasin langkah ini");
   });
 
   it("shows a member and a visitor the same steps", () => {

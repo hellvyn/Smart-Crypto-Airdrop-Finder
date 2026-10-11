@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/app/(app)/coach/actions", () => ({ startCoachThreadAction: vi.fn() }));
+
 import { StepsList } from "@/components/detail/StepsList";
 
 afterEach(cleanup);
@@ -75,5 +78,27 @@ describe("StepsList", () => {
     cleanup();
     render(<StepsList steps={[{ text: "Buka https://x.io/claim.", cadence: "once" }]} links={links} />);
     expect(screen.getByText("✓ Official domain")).toBeTruthy();
+  });
+});
+
+describe("StepsList: Jelasin langkah ini", () => {
+  const PID = "44444444-4444-4444-8444-444444444444";
+  const S1 = "55555555-5555-4555-8555-555555555551";
+  const steps = [
+    { id: S1, text: "Bridge aset ke Arbitrum.", cadence: "once" as const },
+    { text: "Step tanpa id.", cadence: "daily" as const },
+  ];
+
+  it("gives a member a button under each step that has an id, and nothing under one that has none", () => {
+    render(<StepsList steps={steps} links={[]} member projectId={PID} />);
+    expect(screen.getAllByRole("button", { name: "Jelasin langkah ini" })).toHaveLength(1);
+    const item = screen.getByText("Bridge aset ke Arbitrum.").closest("li")!;
+    expect(within(item).getByRole("button", { name: "Jelasin langkah ini" })).toBeTruthy();
+  });
+
+  it("gives a visitor no control and no trace of it in the markup", () => {
+    const { container } = render(<StepsList steps={steps} links={[]} projectId={PID} />);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(container.innerHTML).not.toContain("Jelasin langkah ini");
   });
 });

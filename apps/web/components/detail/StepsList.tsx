@@ -1,3 +1,4 @@
+import { ExplainStep } from "@/components/coach/ExplainStep";
 import { LinkStatus, SectionCard } from "@/components/ui";
 import { detail as copy } from "@/lib/copy";
 import { isCheckedKind } from "@/lib/detail";
@@ -35,7 +36,18 @@ function linksOf(text: string, links: DetailLink[]): DetailLink[] {
  * in it is no link); a claim/app link the step names is shown under it with its check status, and a phishing one is
  * a warning, never an anchor.
  */
-export function StepsList({ steps, links }: { steps: { text: string; cadence: Cadence }[]; links: DetailLink[] }) {
+export function StepsList({
+  steps,
+  links,
+  member = false,
+  projectId,
+}: {
+  steps: { id?: string; text: string; cadence: Cadence }[];
+  links: DetailLink[];
+  /** A signed-in member also gets "Jelasin langkah ini" under each step; a visitor gets no trace of it. */
+  member?: boolean;
+  projectId?: string;
+}) {
   const groups = ORDER.map((cadence) => ({ cadence, steps: steps.filter((s) => s.cadence === cadence) })).filter(
     (g) => g.steps.length > 0,
   );
@@ -52,6 +64,7 @@ export function StepsList({ steps, links }: { steps: { text: string; cadence: Ca
                 {linksOf(s.text, links).map((l) => (
                   <LinkStatus key={l.url} status={l.status ?? "unchecked"} url={l.url} />
                 ))}
+                {member && projectId && s.id ? <ExplainStep projectId={projectId} stepId={s.id} /> : null}
               </li>
             ))}
           </ul>

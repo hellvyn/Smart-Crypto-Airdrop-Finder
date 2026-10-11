@@ -401,7 +401,7 @@ export async function getProjectDetail(
       member ? latestAi("scam") : none,
       latestAi("contradictions"),
       db.from("deadlines").select("kind, date, precision, text").eq("project_id", id),
-      db.from("tasks").select("description, text_id, cadence, position").eq("project_id", id)
+      db.from("tasks").select("id, description, text_id, cadence, position").eq("project_id", id)
         .order("position", { ascending: true }).order("document_id", { ascending: true }),
       db.from("links").select("url, kind").eq("project_id", id),
       db.from("evidence").select("field, value, quote, source_url, at, seq").eq("project_id", id).eq("field", "status")
@@ -504,6 +504,8 @@ export async function getProjectDetail(
     scamFlags: scamRow ? (scamRow.success ? scamRow.data.flags : []) : null,
     contradictions: contradictionsRow.success ? contradictionsRow.data.items : [],
     steps: ((tasks.data ?? []) as Record<string, unknown>[]).map((t) => ({
+      // The task id lets a member ask the Coach about this step; it is never rendered for a visitor.
+      ...(isUuid(t.id) ? { id: t.id } : {}),
       text: typeof t.text_id === "string" && t.text_id.trim() !== "" ? t.text_id : String(t.description),
       cadence: CADENCES.includes(t.cadence as Cadence) ? (t.cadence as Cadence) : "once",
     })),

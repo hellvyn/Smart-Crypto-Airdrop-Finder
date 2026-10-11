@@ -255,8 +255,8 @@ describe("getProjectDetail", () => {
       "ai_analyses:scam": [{ result: { flags: [{ pattern: "urgency", quote: "Only 2 hours", explanation: "Buru-buru." }] }, created_at: "2026-10-09T23:00:00Z" }],
       "ai_analyses:contradictions": [{ result: { items: [{ topic: "t", quote_a: "a", url_a: "https://s.example/1", quote_b: "b", url_b: "https://s.example/2", explanation: "e" }] }, created_at: "2026-10-09T23:00:00Z" }],
       tasks: [
-        { description: "Bridge to Base", text_id: "Bridge ke Base", cadence: "once", position: 0 },
-        { description: "Swap daily", text_id: null, cadence: "daily", position: 1 },
+        { id: "55555555-5555-4555-8555-555555555551", description: "Bridge to Base", text_id: "Bridge ke Base", cadence: "once", position: 0 },
+        { id: "55555555-5555-4555-8555-555555555552", description: "Swap daily", text_id: null, cadence: "daily", position: 1 },
       ],
       links: [{ url: "https://claim.demo.example/", kind: "claim" }],
       link_checks: [{ url: "https://claim.demo.example/", status: "official" }],
@@ -345,8 +345,8 @@ describe("getProjectDetail", () => {
     expect(d?.contradictions).toHaveLength(1);
     expect(recs.find((r) => r.table === "tasks")?.calls).toContainEqual(["order", "position", { ascending: true }]);
     expect(d?.steps).toEqual([
-      { text: "Bridge ke Base", cadence: "once" },
-      { text: "Swap daily", cadence: "daily" },
+      { id: "55555555-5555-4555-8555-555555555551", text: "Bridge ke Base", cadence: "once" },
+      { id: "55555555-5555-4555-8555-555555555552", text: "Swap daily", cadence: "daily" },
     ]);
     expect(d?.links).toEqual([{ url: "https://claim.demo.example/", kind: "claim", status: "official" }]);
     expect(d?.claimOpenChecked).toBe(true);

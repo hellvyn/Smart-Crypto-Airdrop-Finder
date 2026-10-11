@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import { AskCoachLink } from "@/components/coach/AskCoachLink";
 import { FarmButton } from "@/components/farming/FarmButton";
 import { NotCuratedBanner } from "@/components/NotCuratedBanner";
 import { ProjectDetailView } from "@/components/ProjectDetailView";
@@ -66,6 +67,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
       <div className="project-actions">
         <WatchButton projectId={project.id} slug={project.slug} watching={watching} />
         <FarmButton projectId={project.id} farming={farming} />
+        <AskCoachLink projectId={project.id} member={user !== null} />
       </div>
       <ProjectDetailView project={project} member={user !== null} now={now} />
       <WalletActivitySection project={project} wallets={wallets} />
