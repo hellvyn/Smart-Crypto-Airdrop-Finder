@@ -90,10 +90,10 @@ describe.skipIf(!keys)("coach_begin under concurrency (0017)", () => {
       expect(thread.error).toBeNull();
       const threadId = thread.data as string;
 
-      // 19 answered messages from just now (so a WIB midnight cannot fall between the seed and the calls): one slot left.
+      // 99 answered messages from just now (so a WIB midnight cannot fall between the seed and the calls): one slot left.
       // The quota is counted from coach_usage, so the ledger rows are seeded with the messages.
       const at = new Date(Date.now() - 60_000).toISOString();
-      const asked = Array.from({ length: 19 }, () => randomUUID());
+      const asked = Array.from({ length: 99 }, () => randomUUID());
       const users = await admin.from("coach_messages").insert(
         asked.map((mid) => ({ id: mid, thread_id: threadId, user_id: id, role: "user", kind: "chat", content: "seed", created_at: at })),
       );
@@ -124,7 +124,7 @@ describe.skipIf(!keys)("coach_begin under concurrency (0017)", () => {
         .select("id", { count: "exact", head: true })
         .eq("user_id", id)
         .eq("kind", "message");
-      expect(counted.count).toBe(20);
+      expect(counted.count).toBe(100);
     }
   }, 60_000);
 });

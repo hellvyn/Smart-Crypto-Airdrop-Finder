@@ -138,35 +138,35 @@ test("the chat streams an answer with the project name as a link, and counts the
   await signIn(page, "coach-chat");
   await fillProPlan(page);
   await expect(cards(page).first()).toBeVisible();
-  await expect(page.getByTestId("coach-remaining")).toHaveText("Sisa 19/20 pesan hari ini");
+  await expect(page.getByTestId("coach-remaining")).toHaveText("Sisa 99/100 pesan hari ini");
   await expect(page.getByText("Bukan nasihat keuangan. Tetap DYOR.")).toBeVisible();
 
   await page.getByLabel("Pertanyaan kamu").fill("Mulai dari mana ya?");
   await page.getByRole("button", { name: "Kirim" }).click();
   const answer = page.getByTestId("coach-answer");
   await expect(answer).toContainText("Langkahnya ringan dan bisa dicicil pelan-pelan.");
-  await expect(page.getByTestId("coach-remaining")).toHaveText("Sisa 18/20 pesan hari ini");
+  await expect(page.getByTestId("coach-remaining")).toHaveText("Sisa 98/100 pesan hari ini");
   const link = answer.getByRole("link");
   await expect(link).toHaveCount(1);
   expect(projects.map((p) => p.name)).toContain((await link.textContent()) ?? "");
   expect(await link.getAttribute("href")).toMatch(/^\/projects\/e2e-coach-/);
 });
 
-test("after the 20th message the Coach says the quota is spent and WIB reset time", async ({ page }) => {
+test("after the 100th message the Coach says the quota is spent and WIB reset time", async ({ page }) => {
   const email = await signIn(page, "coach-quota");
   await fillProPlan(page);
   await expect(cards(page).first()).toBeVisible();
-  // The plan was message 1. Nineteen more answered messages of today fill the day.
+  // The plan was message 1. 99 more answered messages of today fill the day.
   const userId = await userIdOf(email);
-  const rows = Array.from({ length: 19 }, () => ({ id: randomUUID(), kind: "message", user_id: userId, replied: true }));
+  const rows = Array.from({ length: 99 }, () => ({ id: randomUUID(), kind: "message", user_id: userId, replied: true }));
   const { error } = await adminClient().from("coach_usage").insert(rows);
   if (error) throw error;
 
   await page.getByLabel("Pertanyaan kamu").fill("Satu lagi");
   await page.getByRole("button", { name: "Kirim" }).click();
   // Not getByRole("alert") alone: Next's route announcer is an alert too.
-  await expect(page.locator("p[role=alert]")).toHaveText("Jatah 20 pesan hari ini habis, reset jam 00.00 WIB.");
-  await expect(page.getByTestId("coach-remaining")).toHaveText("Sisa 0/20 pesan hari ini");
+  await expect(page.locator("p[role=alert]")).toHaveText("Jatah 100 pesan hari ini habis, reset jam 00.00 WIB.");
+  await expect(page.getByTestId("coach-remaining")).toHaveText("Sisa 0/100 pesan hari ini");
   await expect(page.getByRole("button", { name: "Kirim" })).toBeDisabled();
 });
 

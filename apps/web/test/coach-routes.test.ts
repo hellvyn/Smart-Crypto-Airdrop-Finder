@@ -465,11 +465,22 @@ describe("POST /api/coach/chat: input", () => {
     expect((await post(chatPOST, body, { type })).status).toBe(400);
   });
 
-  it("is 400 bad_input without a profile", async () => {
+  it("is 400 bad_input without a profile in a plan thread", async () => {
     setup({ tables: { coach_profiles: [] } });
     const res = await post(chatPOST, chatBody());
     expect(res.status).toBe(400);
     expect(rpcNames()).toHaveLength(0);
+  });
+
+  it("answers Tanya AI about a listed project without any profile, and tells the model the profile is empty", async () => {
+    setup({ tables: { coach_profiles: [], coach_threads: [{ id: THREAD, user_id: USER.id, project_id: P1 }] } });
+    streamText.mockReturnValue(events({ delta: "Oke. " }, DONE()));
+    const res = await post(chatPOST, chatBody());
+    expect(res.status).toBe(200);
+    await res.text();
+    const member = (streamText.mock.calls[0]![1] as { content: string }[])[1]!.content;
+    expect(member).toMatch(/belum diisi/);
+    expect(member).toContain("Alpha");
   });
 
   it("is 403 not_member for a thread that is not the member's, before counting any quota", async () => {
@@ -784,8 +795,8 @@ describe("POST /api/coach/chat: explain_step and project threads", () => {
     expect(rpcNames()).toHaveLength(0);
   });
 
-  it("answers a thread with no candidate with the empty-state copy, without coach_begin or a model call", async () => {
-    // A Pemula asking about a High-risk project: the thread's project is filtered out of the member's candidates.
+  it("answers about a project thread's project even when it does not fit the member, and tells the model why", async () => {
+    // A Pemula asking about a High-risk project: not one to farm, but the question still gets a real, honest answer.
     setup({
       tables: {
         coach_profiles: [{ user_id: USER.id, ...PROFILE, level: "beginner" }],
@@ -793,13 +804,15 @@ describe("POST /api/coach/chat: explain_step and project threads", () => {
         curated_list: candidateTables([{ id: P2, name: "Beta" }]).curated_list!.map((r) => ({ ...r, latest_risk_level: "high" })),
       },
     });
+    streamText.mockReturnValue(events({ delta: "Beta belum cocok buat kamu. " }, DONE()));
     const res = await post(chatPOST, chatBody());
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/plain");
-    expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(await res.text()).toBe(coach.empty.noCandidates);
-    expect(flowCalls()).toEqual([]);
-    expect(streamText).not.toHaveBeenCalled();
+    expect(await res.text()).not.toBe(coach.empty.noCandidates);
+    expect(streamText).toHaveBeenCalledTimes(1);
+    const member = (streamText.mock.calls[0]![1] as { content: string }[])[1]!.content;
+    expect(member).toContain("Beta");
+    expect(member).toMatch(/BELUM COCOK/);
+    expect(member).toMatch(/risiko/i);
   });
 
   it("does the same when the profile filters every candidate out of a general thread", async () => {

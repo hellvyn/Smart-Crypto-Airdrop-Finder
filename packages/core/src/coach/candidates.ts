@@ -39,23 +39,50 @@ const DEPOSIT_CEILING_USD: Record<CoachProfile["capital_band"], number> = {
 
 const WORTH_RANK: Record<WorthLevel, number> = { high: 0, medium: 1, low: 2, insufficient_data: 3 };
 
-function capitalAllowed(candidate: Candidate, profile: CoachProfile): boolean {
+/** Why a listed project is not one to farm for a member; `null` when it is. */
+export type UnfitReason = "ended" | "beginner_risk" | "capital_unknown" | "deposit_over" | "deposit_unstated";
+
+function capitalUnfit(candidate: Candidate, profile: CoachProfile): UnfitReason | null {
   switch (candidate.capital) {
     case "free":
-      return true;
+      return null;
     case "deposit":
       // Only a stated minimum can be compared with the band; a deposit with no stated minimum is not offered.
-      return candidate.capitalMinUsd !== null && candidate.capitalMinUsd <= DEPOSIT_CEILING_USD[profile.capital_band];
+      if (candidate.capitalMinUsd === null) return "deposit_unstated";
+      return candidate.capitalMinUsd <= DEPOSIT_CEILING_USD[profile.capital_band] ? null : "deposit_over";
     case "unknown":
       // "Modal belum jelas": never for a Pemula, never for "Gratis aja", otherwise labelled by the prompt.
-      return profile.level !== "beginner" && profile.capital_band !== "free";
+      return profile.level !== "beginner" && profile.capital_band !== "free" ? null : "capital_unknown";
   }
 }
 
+/**
+ * The first reason `candidate` is not one to farm for `profile`, or null when it fits: tab `live_now` or `early_bets`;
+ * for a Pemula no `high` or `critical` risk; the capital table of §5.2. Without a profile only the tab counts.
+ */
+export function unfitReason(candidate: Candidate, profile: CoachProfile | null): UnfitReason | null {
+  if (candidate.tab !== "live_now" && candidate.tab !== "early_bets") return "ended";
+  if (profile === null) return null;
+  if (profile.level === "beginner" && (candidate.risk === "high" || candidate.risk === "critical")) return "beginner_risk";
+  return capitalUnfit(candidate, profile);
+}
+
 function eligible(candidate: Candidate, profile: CoachProfile): boolean {
-  if (candidate.tab !== "live_now" && candidate.tab !== "early_bets") return false;
-  if (profile.level === "beginner" && (candidate.risk === "high" || candidate.risk === "critical")) return false;
-  return capitalAllowed(candidate, profile);
+  return unfitReason(candidate, profile) === null;
+}
+
+/**
+ * The project a "Tanya AI" thread is about, from the listed projects, with why it does not fit the member (null when
+ * it does, or when there is no profile). The profile never filters it out: the Coach answers about it. Null when it is
+ * not listed.
+ */
+export function askedProject(
+  all: Candidate[],
+  profile: CoachProfile | null,
+  projectId: string,
+): { candidate: Candidate; unfit: UnfitReason | null } | null {
+  const candidate = all.find((c) => c.id === projectId);
+  return candidate === undefined ? null : { candidate, unfit: unfitReason(candidate, profile) };
 }
 
 /** `a - b` with nulls last. */

@@ -122,6 +122,39 @@ describe("buildCoachSystemPrompt member block", () => {
   });
 });
 
+describe("buildCoachSystemPrompt for a project that does not fit the member", () => {
+  it("still gives the asked project as data, says why it does not fit yet, and says not to push farming it", () => {
+    const { member } = buildCoachSystemPrompt(profile({ level: "beginner" }), [cand("poly", { capital: "unknown" })], NOW, {
+      unfit: "capital_unknown",
+    });
+    expect(member).toContain("slug-poly");
+    expect(member).toMatch(/belum cocok/i);
+    expect(member).toMatch(/modal/i);
+    expect(member).not.toContain("Tidak ada kandidat");
+    expect(findBanned(member)).toEqual([]);
+  });
+  it("never lets the profile limit the answer", () => {
+    const { member } = buildCoachSystemPrompt(profile({ level: "beginner" }), [cand("poly", { risk: "high" })], NOW, { unfit: "beginner_risk" });
+    expect(member).toMatch(/tidak membatasi jawaban/i);
+    expect(member).not.toMatch(/Jangan menyuruh member mulai/);
+  });
+  it("works without a profile: no profile data and no guessing", () => {
+    const { member } = buildCoachSystemPrompt(null, [cand("poly")], NOW);
+    expect(member).toMatch(/belum diisi/);
+    expect(member).not.toContain("PROFIL MEMBER (data");
+    expect(member).not.toMatch(/Pemula/);
+    expect(member).toContain("slug-poly");
+  });
+  it("names each reason in its own words", () => {
+    const reasonText = (unfit: Parameters<typeof buildCoachSystemPrompt>[3] extends infer O ? (O extends { unfit?: infer U } ? U : never) : never) =>
+      buildCoachSystemPrompt(profile(), [cand("x")], NOW, { unfit }).member;
+    expect(reasonText("ended")).toMatch(/ended/i);
+    expect(reasonText("beginner_risk")).toMatch(/risiko/i);
+    expect(reasonText("deposit_over")).toMatch(/deposit/i);
+    expect(reasonText("deposit_unstated")).toMatch(/deposit/i);
+  });
+});
+
 describe("buildCoachSystemPrompt privacy and style", () => {
   it("never carries an email, a user id or a wallet address", () => {
     const sneaky = { ...profile(), email: "someone@example.com", user_id: "11111111-2222-3333-4444-555555555555", wallet_address: "0xAbCdEf0123456789AbCdEf0123456789AbCdEf01" } as CoachProfile;

@@ -11,7 +11,7 @@ const copy = coach.explain;
 /**
  * "Jelasin langkah ini" under one step of the project page (members only; the page does not render it for a
  * visitor). It posts `explain_step` with the step's id on a thread about this project and shows the answer right
- * below the step as plain text. Each click costs one of the member's 20 messages of the day.
+ * below the step as plain text. Each click costs one of the member's daily Coach messages (100 in the beta).
  */
 export function ExplainStep({ projectId, stepId }: { projectId: string; stepId: string }) {
   const [threadId, setThreadId] = useState<string | null>(null);

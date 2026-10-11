@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectCandidates, type Candidate } from "../src/coach/candidates.js";
+import { askedProject, selectCandidates, unfitReason, type Candidate } from "../src/coach/candidates.js";
 import { coachProfileSchema, type CoachProfile } from "../src/coach/profile.js";
 
 function cand(over: Partial<Candidate> & { id: string }): Candidate {
@@ -167,5 +167,29 @@ describe("selectCandidates onlyProjectId", () => {
     expect(selectCandidates(all, profile(), "zzz")).toEqual([]);
     expect(selectCandidates(all, profile({ level: "beginner" }), "hi")).toEqual([]);
     expect(selectCandidates(all, profile(), "end")).toEqual([]);
+  });
+});
+
+describe("unfitReason and askedProject (Tanya AI about one project)", () => {
+  it("names why a listed project is not one to farm for this member, or null when it fits", () => {
+    expect(unfitReason(cand({ id: "a" }), profile())).toBeNull();
+    expect(unfitReason(cand({ id: "a", tab: "ended" }), profile())).toBe("ended");
+    expect(unfitReason(cand({ id: "a", risk: "high" }), profile({ level: "beginner" }))).toBe("beginner_risk");
+    expect(unfitReason(cand({ id: "a", capital: "unknown" }), profile({ level: "beginner" }))).toBe("capital_unknown");
+    expect(unfitReason(cand({ id: "a", capital: "deposit", capitalMinUsd: 5 }), profile({ capital_band: "free" }))).toBe("deposit_over");
+    expect(unfitReason(cand({ id: "a", capital: "deposit", capitalMinUsd: 500 }), profile({ capital_band: "up_to_100" }))).toBe("deposit_over");
+    expect(unfitReason(cand({ id: "a", capital: "deposit", capitalMinUsd: null }), profile())).toBe("deposit_unstated");
+  });
+
+  it("returns the asked project with its reason even when the profile filters it out, and null for an unknown id", () => {
+    const all = [cand({ id: "poly", capital: "unknown" }), cand({ id: "other" })];
+    const beginner = profile({ level: "beginner", capital_band: "up_to_100" });
+    expect(selectCandidates(all, beginner, "poly")).toEqual([]);
+    expect(askedProject(all, beginner, "poly")).toEqual({ candidate: all[0], unfit: "capital_unknown" });
+    expect(askedProject(all, beginner, "other")).toEqual({ candidate: all[1], unfit: null });
+    expect(askedProject(all, beginner, "missing")).toBeNull();
+    // No profile ("Tanya AI" before the form): the project is still answered about; only an ended one is flagged.
+    expect(askedProject(all, null, "poly")).toEqual({ candidate: all[0], unfit: null });
+    expect(unfitReason(cand({ id: "e", tab: "ended" }), null)).toBe("ended");
   });
 });

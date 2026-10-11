@@ -1,7 +1,7 @@
 -- pgTAP tests for 0017_coach_briefing.sql (Plan 9 Task 3; coach-briefing spec §4.4, §10): the Coach tables, the quota
 -- RPCs and briefings. Everything is member-only: anon holds no privilege on any new table or function. A member reads
--- and deletes only their own threads and messages and never writes a message directly; the RPCs do, and count 20 user
--- messages a day (a day is 00:00 to 24:00 WIB, Asia/Jakarta, for everyone). A user message counts
+-- and deletes only their own threads and messages and never writes a message directly; the RPCs do, and count user
+-- messages a day (100 in the beta, 0018, after 20 in 0017; a day is 00:00 to 24:00 WIB, Asia/Jakarta, for everyone). A user message counts
 -- while it has a reply, or while it is less than 2 minutes old. Briefings are read-only for members.
 -- The two-connection race on the last slot is in apps/web/test/coach-quota.int.test.ts (a pgTAP file is one transaction).
 
@@ -289,11 +289,11 @@ select is((select plan from coach_threads where id = 'ca200000-0000-4000-8000-00
 select throws_ok($$ select coach_save_plan('ca200000-0000-4000-8000-0000000000a1', '[1]') $$, '22023', null,
   'a plan must be a JSON object');
 
--- 46-47. 20 begins succeed and the 21st raises quota.
-select is(pg_temp.begin_n('ca200000-0000-4000-8000-0000000000a1', 20), 20, '20 coach_begin calls succeed');
+-- 46-47. 100 begins succeed and the 101st raises quota (beta quota, 0018).
+select is(pg_temp.begin_n('ca200000-0000-4000-8000-0000000000a1', 100), 100, '100 coach_begin calls succeed');
 select throws_ok(
-  $$ select coach_begin('ca200000-0000-4000-8000-0000000000a1', 'chat', 'ke-21') $$, 'P0001', 'quota',
-  'the 21st coach_begin raises quota');
+  $$ select coach_begin('ca200000-0000-4000-8000-0000000000a1', 'chat', 'ke-101') $$, 'P0001', 'quota',
+  'the 101st coach_begin raises quota');
 -- 48. B's usage does not count against A (and A's against B): B has one replied message, so B can still begin.
 reset role;
 set local role authenticated;
@@ -381,24 +381,24 @@ select lives_ok(
 
 -- ---------- the quota, as the owner seeds usage and a member calls coach_begin ----------
 -- Helper: act as a member.
--- 67. A's 20 messages (above) have no reply but are fresh, so they count; a reply keeps counting once old.
+-- 67. A's 100 messages (above) have no reply but are fresh, so they count; a reply keeps counting once old.
 -- (A is done; the cases below use fresh members.)
 
--- F: 20 unanswered messages older than 2 minutes do not count, so F can begin 20 more; a message under 2 minutes old
+-- F: 100 unanswered messages older than 2 minutes do not count, so F can begin 100 more; a message under 2 minutes old
 -- with no reply does count.
-select pg_temp.seed('cf000000-0000-4000-8000-00000000000f', 'cf200000-0000-4000-8000-0000000000f1', 20, now() - interval '3 minutes', false);
+select pg_temp.seed('cf000000-0000-4000-8000-00000000000f', 'cf200000-0000-4000-8000-0000000000f1', 100, now() - interval '3 minutes', false);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cf000000-0000-4000-8000-00000000000f","role":"authenticated"}';
-select is(pg_temp.begin_n('cf200000-0000-4000-8000-0000000000f1', 20), 20,
+select is(pg_temp.begin_n('cf200000-0000-4000-8000-0000000000f1', 100), 100,
   'unanswered messages older than 2 minutes are not counted');
 select throws_ok(
-  $$ select coach_begin('cf200000-0000-4000-8000-0000000000f1', 'chat', 'ke-21') $$, 'P0001', 'quota',
-  'the fresh unanswered messages count: the 21st raises quota');
+  $$ select coach_begin('cf200000-0000-4000-8000-0000000000f1', 'chat', 'ke-101') $$, 'P0001', 'quota',
+  'the fresh unanswered messages count: the 101st raises quota');
 reset role;
 
--- G: 19 answered messages from the start of today WIB + 1 unanswered 119 seconds old = 20 counted; the next raises. Then the
+-- G: 99 answered messages from the start of today WIB + 1 unanswered 119 seconds old = 100 counted; the next raises. Then the
 -- young one is backdated to 121 seconds: it stops counting, so the next succeeds.
-select pg_temp.seed('c0000000-0000-4000-8000-000000000001', 'c0200000-0000-4000-8000-0000000000f2', 19,
+select pg_temp.seed('c0000000-0000-4000-8000-000000000001', 'c0200000-0000-4000-8000-0000000000f2', 99,
   date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta', true);
 select pg_temp.seed('c0000000-0000-4000-8000-000000000001', 'c0200000-0000-4000-8000-0000000000f2', 1,
   now() - interval '119 seconds', false);
@@ -406,7 +406,7 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"c0000000-0000-4000-8000-000000000001","role":"authenticated"}';
 select throws_ok(
   $$ select coach_begin('c0200000-0000-4000-8000-0000000000f2', 'chat', 'x') $$, 'P0001', 'quota',
-  '19 answered messages and one under 2 minutes old fill the quota');
+  '99 answered messages and one under 2 minutes old fill the quota');
 reset role;
 update coach_usage set created_at = now() - interval '121 seconds'
   where user_id = 'c0000000-0000-4000-8000-000000000001' and not replied;
@@ -418,8 +418,8 @@ select lives_ok(
 reset role;
 
 -- The day is fixed to WIB (Asia/Jakarta) whatever profiles.timezone says. C: the default timezone (UTC).
--- C: default timezone. 20 answered messages one second before the start of today WIB are yesterday: not counted.
-select pg_temp.seed('cc000000-0000-4000-8000-00000000000c', 'cc200000-0000-4000-8000-0000000000c1', 20,
+-- C: default timezone. 100 answered messages one second before the start of today WIB are yesterday: not counted.
+select pg_temp.seed('cc000000-0000-4000-8000-00000000000c', 'cc200000-0000-4000-8000-0000000000c1', 100,
   (date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta') - interval '1 second', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cc000000-0000-4000-8000-00000000000c","role":"authenticated"}';
@@ -427,8 +427,8 @@ select lives_ok(
   $$ select coach_begin('cc200000-0000-4000-8000-0000000000c1', 'chat', 'x') $$,
   'default timezone: usage from yesterday WIB is not counted');
 reset role;
--- 19 more at the very start of today WIB (+ the fresh one above) are today: counted, so the next begin raises quota.
-select pg_temp.seed('cc000000-0000-4000-8000-00000000000c', 'cc200000-0000-4000-8000-0000000000c1', 19,
+-- 99 more at the very start of today WIB (+ the fresh one above) are today: counted, so the next begin raises quota.
+select pg_temp.seed('cc000000-0000-4000-8000-00000000000c', 'cc200000-0000-4000-8000-0000000000c1', 99,
   date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cc000000-0000-4000-8000-00000000000c","role":"authenticated"}';
@@ -438,8 +438,8 @@ select throws_ok(
 reset role;
 
 -- D: timezone set to Pacific/Kiritimati (UTC+14), E: Pacific/Pago_Pago (UTC-11). Changing it does not change the count.
--- D: Pacific/Kiritimati. 20 answered messages one second before the start of today WIB are yesterday: not counted.
-select pg_temp.seed('cd000000-0000-4000-8000-00000000000d', 'cd200000-0000-4000-8000-0000000000d1', 20,
+-- D: Pacific/Kiritimati. 100 answered messages one second before the start of today WIB are yesterday: not counted.
+select pg_temp.seed('cd000000-0000-4000-8000-00000000000d', 'cd200000-0000-4000-8000-0000000000d1', 100,
   (date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta') - interval '1 second', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cd000000-0000-4000-8000-00000000000d","role":"authenticated"}';
@@ -447,8 +447,8 @@ select lives_ok(
   $$ select coach_begin('cd200000-0000-4000-8000-0000000000d1', 'chat', 'x') $$,
   'Pacific/Kiritimati: usage from yesterday WIB is not counted');
 reset role;
--- 19 more at the very start of today WIB (+ the fresh one above) are today: counted, so the next begin raises quota.
-select pg_temp.seed('cd000000-0000-4000-8000-00000000000d', 'cd200000-0000-4000-8000-0000000000d1', 19,
+-- 99 more at the very start of today WIB (+ the fresh one above) are today: counted, so the next begin raises quota.
+select pg_temp.seed('cd000000-0000-4000-8000-00000000000d', 'cd200000-0000-4000-8000-0000000000d1', 99,
   date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"cd000000-0000-4000-8000-00000000000d","role":"authenticated"}';
@@ -457,8 +457,8 @@ select throws_ok(
   'Pacific/Kiritimati: usage from today WIB is counted');
 reset role;
 
--- E: Pacific/Pago_Pago. 20 answered messages one second before the start of today WIB are yesterday: not counted.
-select pg_temp.seed('ce000000-0000-4000-8000-00000000000e', 'ce200000-0000-4000-8000-0000000000e1', 20,
+-- E: Pacific/Pago_Pago. 100 answered messages one second before the start of today WIB are yesterday: not counted.
+select pg_temp.seed('ce000000-0000-4000-8000-00000000000e', 'ce200000-0000-4000-8000-0000000000e1', 100,
   (date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta') - interval '1 second', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"ce000000-0000-4000-8000-00000000000e","role":"authenticated"}';
@@ -466,8 +466,8 @@ select lives_ok(
   $$ select coach_begin('ce200000-0000-4000-8000-0000000000e1', 'chat', 'x') $$,
   'Pacific/Pago_Pago: usage from yesterday WIB is not counted');
 reset role;
--- 19 more at the very start of today WIB (+ the fresh one above) are today: counted, so the next begin raises quota.
-select pg_temp.seed('ce000000-0000-4000-8000-00000000000e', 'ce200000-0000-4000-8000-0000000000e1', 19,
+-- 99 more at the very start of today WIB (+ the fresh one above) are today: counted, so the next begin raises quota.
+select pg_temp.seed('ce000000-0000-4000-8000-00000000000e', 'ce200000-0000-4000-8000-0000000000e1', 99,
   date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta', true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"ce000000-0000-4000-8000-00000000000e","role":"authenticated"}';
@@ -478,7 +478,7 @@ reset role;
 
 
 -- ---------- coach_finish ----------
--- A's first message of the 20 above: finish it as A.
+-- A's first message of the 100 above: finish it as A.
 create temp table a_msgs as
   select id from coach_messages
   where user_id = 'ca000000-0000-4000-8000-00000000000a' and role = 'user' order by created_at, id limit 3;
@@ -568,8 +568,8 @@ select ok(
   'neither web role has any privilege on coach_usage');
 
 -- ---------- deleting threads gives nothing back ----------
--- H: a blank message is refused (and leaves no ledger row); 20 begins, then the thread is deleted and a new one opened:
--- the 21st still raises quota. The messages deleted unanswered keep counting (trigger), even once they are 2 minutes old.
+-- H: a blank message is refused (and leaves no ledger row); 100 begins, then the thread is deleted and a new one opened:
+-- the 101st still raises quota. The messages deleted unanswered keep counting (trigger), even once they are 2 minutes old.
 create temp table h_t (id uuid, n int);
 grant all on h_t to authenticated;
 set local role authenticated;
@@ -578,18 +578,18 @@ select lives_ok($$ insert into h_t select coach_new_thread(null), 1 $$, 'H opens
 select throws_ok(
   format($$ select coach_begin(%L, 'chat', E'   \t ') $$, (select id from h_t where n = 1)),
   '23514', null, 'a blank user message is rejected');
-select is(pg_temp.begin_n((select id from h_t where n = 1), 20), 20, 'H sends 20 messages');
+select is(pg_temp.begin_n((select id from h_t where n = 1), 100), 100, 'H sends 100 messages');
 select is(
   pg_temp.rows_deleted(format($q$ delete from coach_threads where id = %L $q$, (select id from h_t where n = 1))),
   1::bigint, 'H deletes the thread');
 insert into h_t select coach_new_thread(null), 2;
 select throws_ok(
-  format($$ select coach_begin(%L, 'chat', 'ke-21') $$, (select id from h_t where n = 2)), 'P0001', 'quota',
-  'after deleting the thread, the 21st message of the day still raises quota');
+  format($$ select coach_begin(%L, 'chat', 'ke-101') $$, (select id from h_t where n = 2)), 'P0001', 'quota',
+  'after deleting the thread, the 101st message of the day still raises quota');
 reset role;
-select is((select count(*)::int from coach_usage where user_id = 'c1000000-0000-4000-8000-000000000001' and kind = 'message'), 20,
-  'the ledger kept the 20 messages (the blank one left no row)');
-select is((select count(*)::int from coach_usage where user_id = 'c1000000-0000-4000-8000-000000000001' and kind = 'message' and replied), 20,
+select is((select count(*)::int from coach_usage where user_id = 'c1000000-0000-4000-8000-000000000001' and kind = 'message'), 100,
+  'the ledger kept the 100 messages (the blank one left no row)');
+select is((select count(*)::int from coach_usage where user_id = 'c1000000-0000-4000-8000-000000000001' and kind = 'message' and replied), 100,
   'messages deleted without a reply keep counting after 2 minutes');
 select is((select count(*)::int from coach_messages where user_id = 'c1000000-0000-4000-8000-000000000001'), 0,
   'the thread''s messages are gone');
@@ -635,10 +635,10 @@ select lives_ok(
   'coach_finish on an old message that was marked still works');
 reset role;
 
--- coach_quota_remaining reads the same ledger: H deleted a thread after 20 counted messages and still has 0 left.
+-- coach_quota_remaining reads the same ledger.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"c5000000-0000-4000-8000-000000000001","role":"authenticated"}';
-select is(coach_quota_remaining(), 19, 'quota_remaining counts the marked old message and ignores the expired one');
+select is(coach_quota_remaining(), 99, 'quota_remaining counts the marked old message and ignores the expired one');
 set local role anon;
 set local request.jwt.claims = '{}';
 select throws_ok($$ select coach_quota_remaining() $$, '42501', null, 'anon cannot call coach_quota_remaining');
@@ -661,9 +661,9 @@ reset role;
 select is((select replied from coach_usage where id = (select id from l_ids)), false,
   'a failed message stays uncounted after its thread is deleted');
 
--- K: 20 messages past their 2 minutes without a reply (none count). A lapsed message cannot be marked (it would count
+-- K: 100 messages past their 2 minutes without a reply (none count). A lapsed message cannot be marked (it would count
 -- again); a fresh message that is marked keeps counting for good after its 2 minutes.
-select pg_temp.seed('c3000000-0000-4000-8000-000000000001', 'c3200000-0000-4000-8000-0000000000f3', 20, now() - interval '3 minutes', false);
+select pg_temp.seed('c3000000-0000-4000-8000-000000000001', 'c3200000-0000-4000-8000-0000000000f3', 100, now() - interval '3 minutes', false);
 create temp table k_ids as select id from coach_usage where user_id = 'c3000000-0000-4000-8000-000000000001' limit 1;
 create temp table k_fresh (id uuid);
 grant all on k_ids, k_fresh to authenticated;
@@ -683,10 +683,10 @@ update coach_usage set created_at = now() - interval '3 minutes' where id = (sel
 update coach_messages set created_at = now() - interval '3 minutes' where id = (select id from k_fresh);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"c3000000-0000-4000-8000-000000000001","role":"authenticated"}';
-select is(pg_temp.begin_n('c3200000-0000-4000-8000-0000000000f3', 19), 19,
-  'with one old marked message counted, 19 more fit in the day');
+select is(pg_temp.begin_n('c3200000-0000-4000-8000-0000000000f3', 99), 99,
+  'with one old marked message counted, 99 more fit in the day');
 select throws_ok(
-  $$ select coach_begin('c3200000-0000-4000-8000-0000000000f3', 'chat', 'ke-21') $$, 'P0001', 'quota',
+  $$ select coach_begin('c3200000-0000-4000-8000-0000000000f3', 'chat', 'ke-101') $$, 'P0001', 'quota',
   'a marked message with no reply keeps counting after 2 minutes');
 reset role;
 
@@ -697,19 +697,19 @@ select lives_ok($$ delete from auth.users where id = 'c6000000-0000-4000-8000-00
 select is((select count(*)::int from coach_usage where user_id = 'c6000000-0000-4000-8000-000000000001'), 0,
   'the member''s ledger rows went with them');
 
--- O: the attempts cap. 60 unanswered begins older than 2 minutes count for nothing toward the 20, yet the 61st attempt of
+-- O: the attempts cap. 300 unanswered begins older than 2 minutes count for nothing toward the 100, yet the 301st attempt of
 -- the day raises quota (a member who aborts before the first text must not get unlimited paid calls).
 insert into coach_threads (id, user_id, project_id) values
   ('c7200000-0000-4000-8000-0000000000f7', 'c7000000-0000-4000-8000-000000000001', null);
-select pg_temp.seed('c7000000-0000-4000-8000-000000000001', 'c7200000-0000-4000-8000-0000000000f7', 60, now() - interval '3 minutes', false);
+select pg_temp.seed('c7000000-0000-4000-8000-000000000001', 'c7200000-0000-4000-8000-0000000000f7', 300, now() - interval '3 minutes', false);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"c7000000-0000-4000-8000-000000000001","role":"authenticated"}';
-select is(coach_quota_remaining(), 20, '60 expired unanswered begins leave the counted quota at 20 left');
+select is(coach_quota_remaining(), 100, '300 expired unanswered begins leave the counted quota at 100 left');
 select throws_ok(
-  $$ select coach_begin('c7200000-0000-4000-8000-0000000000f7', 'chat', 'ke-61') $$, 'P0001', 'quota',
-  'the 61st begin of the day raises quota although 20 counted messages are left');
+  $$ select coach_begin('c7200000-0000-4000-8000-0000000000f7', 'chat', 'ke-301') $$, 'P0001', 'quota',
+  'the 301st begin of the day raises quota although 100 counted messages are left');
 reset role;
-select is((select count(*)::int from coach_usage where user_id = 'c7000000-0000-4000-8000-000000000001' and kind = 'message'), 60,
+select is((select count(*)::int from coach_usage where user_id = 'c7000000-0000-4000-8000-000000000001' and kind = 'message'), 300,
   'the refused begin left no ledger row');
 
 -- I again: the thread cap is the WIB day. The 50 rows from today are backdated to just before today started: the cap is clear.

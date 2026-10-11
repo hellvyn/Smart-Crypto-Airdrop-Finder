@@ -39,7 +39,8 @@ function summaryOf(profile: CoachProfile): string[] {
 
 /**
  * The interactive part of /coach: profile form, plan and chat (spec §5.1 to §5.3). The page has already read the
- * member's profile and quota. With `project` set it is the "Tanya AI" page: no plan, a chat about that one project.
+ * member's profile and quota. With `project` set it is the "Tanya AI" page: no plan, no profile form, a chat about that
+ * one project.
  */
 export function CoachApp({
   chains,
@@ -101,7 +102,8 @@ export function CoachApp({
     if (project === null) await makePlan();
   }
 
-  const showForm = profile === null || editing;
+  // "Tanya AI" about one project needs no profile and shows none: the profile never filters that chat (owner 2026-10-11).
+  const showForm = project === null && (profile === null || editing);
   const thread = project === null ? (plan?.threadId ?? null) : (restored?.threadId ?? null);
 
   return (
@@ -116,7 +118,7 @@ export function CoachApp({
           submitLabel={project ? coach.form.submitOnly : coach.form.submit}
           onSaved={saved}
         />
-      ) : profile ? (
+      ) : profile && project === null ? (
         <section className="coach-profile" aria-labelledby="coach-profile-title">
           <h2 id="coach-profile-title" className="coach-section-title">
             {coach.profile.title}
@@ -126,13 +128,11 @@ export function CoachApp({
             <Button variant="secondary" type="button" onClick={() => setEditing(true)}>
               {coach.profile.edit}
             </Button>
-            {project === null ? (
-              <Button variant="primary" type="button" disabled={busy} onClick={makePlan}>
-                {coach.profile.makePlan}
-              </Button>
-            ) : null}
+            <Button variant="primary" type="button" disabled={busy} onClick={makePlan}>
+              {coach.profile.makePlan}
+            </Button>
           </div>
-          {project === null ? <p className="muted">{coach.profile.makePlanNote}</p> : null}
+          <p className="muted">{coach.profile.makePlanNote}</p>
         </section>
       ) : null}
 
@@ -166,7 +166,7 @@ export function CoachApp({
           />
         </>
       ) : null}
-      {profile && !showForm && project !== null ? (
+      {project !== null ? (
         <CoachChat key={thread ?? "new"} threadId={thread} projectId={project.id} remaining={remaining} initialMessages={restored?.messages ?? []} />
       ) : null}
     </div>

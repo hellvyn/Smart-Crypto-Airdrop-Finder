@@ -5,15 +5,15 @@
 import {
   GLOSSARY,
   LANGKAH_NOL,
+  askedProject,
   buildCoachSystemPrompt,
   cleanStyle,
   plainChatText,
   coachProfileSchema,
   redactSensitive,
-  selectCandidates,
   storedAnalystSchema,
 } from "@saf/core";
-import type { Candidate, CoachProfile } from "@saf/core";
+import type { Candidate, CoachProfile, UnfitReason } from "@saf/core";
 import { COACH_MODELS, createChat, createCircuitBreaker, createClaudeClient, loadProviders, usableModels } from "@saf/llm";
 import type { ChatFn, ChatMessage, CircuitBreaker, ModelConfig, Providers } from "@saf/llm";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -23,7 +23,8 @@ import { RISK_LEVELS, WORTH_LEVELS } from "./view";
 // ---- Constants ----
 
 /** Messages a member may send per WIB day (`coach_begin` enforces it; this number is only for the countdown). */
-export const DAILY_QUOTA = 20;
+/** Messages per member per WIB day: 100 during the beta (0018), was 20. Must match coach_begin. */
+export const DAILY_QUOTA = 100;
 /** The longest assistant message `coach_messages` accepts. */
 export const MAX_REPLY_CHARS = 16_000;
 /** Longest member message the chat route takes (spec §5.3). */
@@ -289,15 +290,14 @@ function withoutUrls(text: string): string {
 }
 
 /**
- * Whether `projectId` is one of the member's candidates (their profile keeps it, through the same filters as the chat
- * route's `selectCandidates`). False without a profile and on any failure: the project page then simply offers no
- * "Jelasin langkah ini", which the chat route would refuse anyway.
+ * Whether the Coach can talk about `projectId`: it is listed (the chat route's `askedProject`). The member's profile
+ * does not matter, "Tanya AI" never filters by it. False on any failure: the project page then simply offers no
+ * "Jelasin langkah ini".
  */
 export async function isCoachCandidate(db: SupabaseClient, userId: string, projectId: string, now: Date): Promise<boolean> {
   try {
     const profile = await getCoachProfile(db, userId);
-    if (profile === null) return false;
-    return selectCandidates(await loadCandidates(db, now, projectId), profile, projectId).length > 0;
+    return askedProject(await loadCandidates(db, now, projectId), profile, projectId) !== null;
   } catch {
     return false;
   }
@@ -311,11 +311,11 @@ export async function isCoachCandidate(db: SupabaseClient, userId: string, proje
  * repeated it (or put another path on its host) would send the member somewhere only the model chose. A bare host
  * name stays, since a project's name can be one.
  */
-export function candidateContext(candidates: Candidate[], profile: CoachProfile): string {
+export function candidateContext(candidates: Candidate[], profile: CoachProfile | null): string {
   return [
     ...GLOSSARY.map((g) => `${g.term} ${g.text}`),
     LANGKAH_NOL,
-    String(profile.minutes_per_day),
+    profile === null ? "" : String(profile.minutes_per_day),
     ...candidates.flatMap((c) => [
       c.name,
       c.chains.join(" "),
@@ -345,7 +345,7 @@ export function wibDayStart(now: Date): Date {
 }
 
 /**
- * Messages the member has left today, for "Sisa X/20 pesan hari ini": the `coach_quota_remaining` RPC, which counts
+ * Messages the member has left today, for "Sisa X/100 pesan hari ini": the `coach_quota_remaining` RPC, which counts
  * from the same ledger (`coach_usage`) and WIB day as `coach_begin`, so a deleted thread never makes the page promise
  * more than the server allows. Null when the RPC fails: the route then leaves `remaining` out.
  */
@@ -423,15 +423,16 @@ export function planMessages(profile: CoachProfile, candidates: Candidate[], now
   ];
 }
 
-/** A chat turn: both system blocks, the earlier answered turns, then the new message. */
+/** A chat turn: both system blocks, the earlier answered turns, then the new message. `unfit`: see buildCoachSystemPrompt. */
 export function chatMessages(
-  profile: CoachProfile,
+  profile: CoachProfile | null,
   candidates: Candidate[],
   now: Date,
   history: ChatMessage[],
   userTurn: string,
+  unfit: UnfitReason | null = null,
 ): ChatMessage[] {
-  const { shared, member } = buildCoachSystemPrompt(profile, candidates, now);
+  const { shared, member } = buildCoachSystemPrompt(profile, candidates, now, { unfit });
   return [{ role: "system", content: shared }, { role: "system", content: member }, ...history, { role: "user", content: userTurn }];
 }
 
