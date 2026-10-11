@@ -117,7 +117,7 @@ Each of these has a test in the owning task: 1 in Task 4, 2 in Task 5, 3 and 4 i
   - Locks the caller's `coach_profiles` row (or an advisory lock on the uid) so concurrent calls serialise.
   - The day is the caller's `profiles.timezone`. When that is null or invalid, it uses UTC.
   - Raises `P0001 'quota'` at the 21st counted message, and `P0001 'thread'` for a thread that is not the caller's.
-- `coach_finish(p_user_message_id uuid, p_content text, p_model text, p_in int, p_out int) returns uuid`.
+- `coach_finish(p_user_message_id uuid, p_content text, p_model text, p_in int, p_out int, p_cache_read int, p_cache_write int) returns uuid`. `coach_messages` gets `cache_read_tokens` and `cache_creation_tokens` int null.
 - `coach_save_plan(p_thread_id uuid, p_plan jsonb) returns void`.
 - `coach_new_thread(p_project_id uuid) returns uuid`.
 - All four are security definer with `search_path = ''`, EXECUTE revoked from public and anon, granted to authenticated.
@@ -162,7 +162,7 @@ Each of these has a test in the owning task: 1 in Task 4, 2 in Task 5, 3 and 4 i
   - a reason whose text fails `groundedAgainst` against that candidate's context.
 
   It applies `cleanStyle`, trims to 5, and enforces that the sum of `minutes_per_day` ≤ the profile's `minutes_per_day`. Over budget, it drops from the end.
-- `buildCoachSystemPrompt(profile, candidates): string`, with:
+- `buildCoachSystemPrompt(profile, candidates): { shared: string; member: string }`. `shared` is byte-identical for every member and every request (style rules, glossary, data marker, topic lock; no date, no profile). `member` holds the profile, the candidate JSON and today's date, with candidates in a stable order and keys sorted, so the same member and day render the same bytes. Contents:
   - the spec §7 style rules and the `GLOSSARY`;
   - the data-not-instructions marker;
   - the topic lock;
@@ -207,6 +207,12 @@ Each of these has a test in the owning task: 1 in Task 4, 2 in Task 5, 3 and 4 i
   7. `coach_save_plan`, then `coach_finish`.
 
   It returns `{ threadId, recommendations, remaining }`.
+- Prompt caching (Claude only; the freellm/NVIDIA fallbacks ignore it):
+  - `system` is two text blocks, `shared` then `member`. Each carries an explicit `cache_control: { type: "ephemeral" }` (5-minute TTL).
+  - The conversation turns use automatic caching (top-level `cache_control`), so follow-ups reuse the prior prefix.
+  - Nothing that changes per request goes before the breakpoints.
+  - `coach_finish` stores `cache_read_tokens` and `cache_creation_tokens`, so the hit rate can be measured. Add both columns in Task 3.
+  - Tests: the two system blocks are byte-identical across two calls for the same member and day; `shared` is identical across two different members; no timestamp appears in `shared`.
 - `POST /api/coach/chat` with body `{ threadId: uuid, message: string ≤ 1000, kind: 'chat' | 'explain_step', stepId?: uuid }`.
   - `coach_begin`, then `streamText`. The response is `text/plain` streamed. The stream is passed through `redactSensitive` and `cleanStyle` per completed sentence; the full text is redacted again before `coach_finish`.
   - Project names among the candidates come back as separate JSON metadata (`x-coach-links` header or a trailing event) so the client can link them. They are never parsed from the model text.

@@ -257,7 +257,11 @@ Pemeriksaan otomatis memakai daftar yang sama dengan `copy-style.test.ts`:
 ## 9. Biaya dan batasan
 
 Estimasi [INFERENCE], dengan harga Sonnet 5.5 dari dokumentasi ($2 per juta token input, $10 per juta token output):
-- Konteks Coach sekitar 10 ribu sampai 30 ribu token, diberi prompt caching. Satu pesan sekitar $0,01 sampai $0,05.
+- Konteks Coach sekitar 10 ribu sampai 30 ribu token. Satu pesan sekitar $0,01 sampai $0,05.
+- Prompt caching (khusus Claude): instruksi tetap dan glosarium jadi blok bersama untuk semua member. Profil dan kandidat
+  jadi blok per member. Chat lanjutan memakai cache otomatis. Baca cache dibayar sekitar 0,1x harga input, tulis cache
+  1,25x (TTL 5 menit). Minimal prefix yang bisa di-cache di Sonnet 5.5 adalah 512 token. Token cache dicatat per pesan
+  supaya hit rate bisa diukur.
 - Batas atas: 20 pesan × jumlah member aktif × hari. Contoh 10 member aktif penuh sebulan sekitar $60 sampai $300.
   [UNKNOWN] Pemakaian nyata.
 - Briefing: satu panggilan per hari, di bawah $0,05.
