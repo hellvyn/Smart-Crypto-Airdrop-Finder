@@ -320,8 +320,9 @@ test("the security check shows a phishing claim link as a warning, never as a li
   await expect(page.getByText(/dicocokin satu-satu/)).toHaveCount(0);
 
   // v3 facts: the claimed backer as a claim, the update and the key parameter in their boxes; no source rating for a visitor.
-  await expect(section(page, "06 · Kenapa lolos").getByText(/"Backed by Paradigm /)).toBeVisible();
-  await expect(section(page, "06 · Kenapa lolos").getByText("Klaim project, belum verified")).toBeVisible();
+  // This project has no curation, so section 06 is "Kenapa gak lolos".
+  await expect(section(page, "06 · Kenapa gak lolos").getByText(/"Backed by Paradigm /)).toBeVisible();
+  await expect(section(page, "06 · Kenapa gak lolos").getByText("Klaim project, belum verified")).toBeVisible();
   await expect(page.getByText("VC: Paradigm ✓")).toHaveCount(0);
   await expect(section(page, "Update terbaru").getByText(/Season 2 announced/)).toBeVisible();
   await expect(section(page, "Ringkasan").getByText("Alokasi: 10% of supply")).toBeVisible();
@@ -357,11 +358,30 @@ test("an unknown slug is a 404", async ({ page }) => {
 const noindex = (page: Page) => page.locator('meta[name="robots"]');
 const banner = (page: Page) => page.getByTestId("not-curated");
 
-test("a project whose latest curation failed opens with the warning above everything and is noindex", async ({ page }) => {
+/** True when the banner comes after the back link and before the stale banner (if any), the actions block and the page head. */
+async function bannerLeadsThePage(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const before = (a: Element | null, b: Element | null) =>
+      a !== null && b !== null && Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const banner = document.querySelector('[data-testid="not-curated"]');
+    const stale = document.querySelector(".banner-stale");
+    const back = [...document.querySelectorAll("a")].find((a) => a.textContent === "← Balik ke list") ?? null;
+    return (
+      before(back, banner) &&
+      before(banner, document.querySelector(".project-actions")) &&
+      before(banner, document.querySelector("header.detail-head")) &&
+      (stale === null || before(banner, stale))
+    );
+  });
+}
+
+test("a project whose latest curation failed shows the warning right after the back link, before the actions and the head, and is noindex", async ({
+  page,
+}) => {
   const res = await page.goto(`/projects/${curated.failed.slug}`);
   expect(res?.status()).toBe(200);
   await expect(banner(page)).toHaveText("Gak masuk list: Risiko tinggi");
-  await expect(page.locator("article.detail > :first-child")).toHaveAttribute("data-testid", "not-curated");
+  expect(await bannerLeadsThePage(page)).toBe(true);
   await expect(noindex(page)).toHaveAttribute("content", "noindex");
   // Not a tab project: no pass stamp either.
   await expect(page.getByRole("img", { name: /LOLOS/ })).toHaveCount(0);
@@ -392,6 +412,10 @@ test("a member sees the same public reason in the banner, never the member-only 
   await expect(banner(page)).toHaveText("Gak masuk list: Risiko tinggi");
   await expect(banner(page)).not.toContainText(curated.failedMemberReason);
   await expect(noindex(page)).toHaveAttribute("content", "noindex");
+  // The member sees the warning before "Mulai garap" and the watch button, and the reasons under "Kenapa gak lolos".
+  expect(await bannerLeadsThePage(page)).toBe(true);
+  await expect(section(page, "06 · Kenapa gak lolos")).toContainText(curated.failedMemberReason);
+  await expect(page.getByRole("heading", { name: "06 · Kenapa lolos", exact: true })).toHaveCount(0);
 });
 
 test("a visitor's page for a failed project carries none of its member-only text", async ({ request }) => {

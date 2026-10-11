@@ -73,21 +73,24 @@ function rows(signals: CuratedSignal[], facts: EvidenceRow[]): Row[] {
 }
 
 /**
- * "06 · Kenapa lolos": the signals behind the listing, each with its source label, and for a member the notes of our
- * assessment (`curations.reasons`, member-only, #55; null for a visitor).
+ * "06 · Kenapa lolos" ("Kenapa gak lolos" when the latest curation did not pass): the signals behind the listing, each
+ * with its source label, and for a member the notes of our assessment (`curations.reasons`, member-only, #55; null
+ * for a visitor).
  */
 export function WhyListed({
+  passed,
   signals,
   facts,
   reasons,
 }: {
+  passed: boolean;
   signals: CuratedSignal[];
   facts: EvidenceRow[];
   reasons: CurationReason[] | null;
 }) {
   const items = rows(signals, facts);
   return (
-    <SectionCard number="06" title={copy.sections.why}>
+    <SectionCard number="06" title={passed ? copy.sections.why : copy.sections.whyNot}>
       {items.length === 0 ? (
         <p className="muted">{w.empty}</p>
       ) : (

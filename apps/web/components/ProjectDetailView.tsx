@@ -1,6 +1,5 @@
 import { KEY_CHECKS } from "@saf/core";
 import { ExternalLink } from "./ExternalLink";
-import { NotCuratedBanner } from "./NotCuratedBanner";
 import { StatusBadge } from "./StatusBadge";
 import { AiDecision } from "./detail/AiDecision";
 import { Contradictions } from "./detail/Contradictions";
@@ -18,7 +17,6 @@ import {
   endedLabel,
   isCheckFrozen,
   isCheckStale,
-  notCuratedReason,
   precisionLabel,
   riskLabel,
   safeHttpUrl,
@@ -76,11 +74,9 @@ export function ProjectDetailView({ project, member, now }: { project: ProjectDe
   const frozen = curation?.tab ? isCheckFrozen(curation.tab, curation.endedOn, now) : false;
   const steps = member && project.analyst && project.analyst.steps_id.length > 0 ? project.analyst.steps_id : project.steps;
   const level = risk?.level ?? project.riskLevel;
-  const notListed = notCuratedReason(curation);
 
   return (
     <article className="detail">
-      {notListed !== null ? <NotCuratedBanner reason={notListed} /> : null}
       <header className="detail-head">
         <div className="detail-head-text">
           <h1 className="ui-display detail-title">
@@ -139,7 +135,12 @@ export function ProjectDetailView({ project, member, now }: { project: ProjectDe
             scamFlags={member ? project.scamFlags : null}
           />
           <EffortBox member={member} analyst={member ? project.analyst : null} facts={project.facts} />
-          <WhyListed signals={project.signals} facts={project.facts} reasons={member ? (curation?.reasons ?? null) : null} />
+          <WhyListed
+            passed={curation?.passed === true}
+            signals={project.signals}
+            facts={project.facts}
+            reasons={member ? (curation?.reasons ?? null) : null}
+          />
         </div>
         <aside className="detail-aside">
           <Summary project={project} />

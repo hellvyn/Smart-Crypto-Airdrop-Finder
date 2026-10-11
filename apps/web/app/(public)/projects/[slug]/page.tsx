@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { FarmButton } from "@/components/farming/FarmButton";
+import { NotCuratedBanner } from "@/components/NotCuratedBanner";
 import { ProjectDetailView } from "@/components/ProjectDetailView";
 import { StaleBanner } from "@/components/StaleBanner";
 import { WalletActivitySection } from "@/components/WalletActivitySection";
@@ -17,7 +18,10 @@ import { isWatching } from "@/lib/watchlist";
 import { notCuratedReason } from "@/lib/view";
 import { listWallets } from "@/lib/wallets";
 
-/** One read of the project per request, shared by the page and its metadata (React `cache` keys on the arguments). */
+/**
+ * One read of the project per request, shared by the page and its metadata (React `cache` keys on the arguments).
+ * Both call it without `now` on purpose: an extra argument would make the keys differ and defeat the dedupe.
+ */
 const loadProject = cache(async (slug: string, member: boolean) =>
   getProjectDetail(await createServerClient(), slug, { member }),
 );
@@ -50,11 +54,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
     : [null, null];
   // Wallet activity is for signed-in users (null = signed out); see WalletActivitySection for what each case shows.
   const wallets = user ? await listWallets(db) : null;
+  const notListed = notCuratedReason(project.curation);
   return (
     <>
       <p>
         <Link href={LIST_PATH}>{detail.back}</Link>
       </p>
+      {/* Right after the back link, above the stale banner and the watch and farm buttons. */}
+      {notListed !== null ? <NotCuratedBanner reason={notListed} /> : null}
       <StaleBanner lastRunAt={lastRunAt} now={now} />
       <div className="project-actions">
         <WatchButton projectId={project.id} slug={project.slug} watching={watching} />

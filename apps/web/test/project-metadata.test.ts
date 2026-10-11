@@ -31,6 +31,8 @@ beforeEach(() => {
   getProjectDetail.mockReset();
 });
 
+// These tests run outside a request, where React's `cache()` does not memoize, so they do not prove that the page
+// and its metadata share one read. They cover the noindex decision and how the project is read.
 describe("project page metadata", () => {
   it("is noindex when the latest curation failed", async () => {
     getProjectDetail.mockResolvedValue({ curation: curation({ passed: false, tab: null, publicFailReason: "Risiko tinggi" }) });

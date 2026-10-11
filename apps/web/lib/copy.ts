@@ -231,6 +231,8 @@ export const detail = {
     safety: "Security check",
     effort: "Estimasi effort",
     why: "Kenapa lolos",
+    /** Section 06 of a project that is not on the list (failed or never rated). */
+    whyNot: "Kenapa gak lolos",
     summary: "Ringkasan",
     latestUpdate: "Update terbaru",
   },
