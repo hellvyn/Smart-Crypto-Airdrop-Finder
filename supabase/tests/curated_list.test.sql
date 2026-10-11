@@ -133,14 +133,15 @@ select columns_are('public', 'latest_curations',
 select columns_are('public', 'public_list',
   array['id', 'slug', 'name', 'status', 'chains', 'chains_lower', 'last_seen', 'next_deadline_date', 'next_deadline_kind',
         'next_deadline_precision', 'latest_risk_level', 'curation_id', 'tab', 'ended_on', 'checked_at', 'signals',
-        'signal_rank', 'claim_open_checked', 'capital', 'capital_min_usd', 'key_checks_ran'],
-  'public_list = project_list + curation columns, signals, claim badge, capital and key check count, without worth_level');
+        'signal_rank', 'claim_open_checked', 'capital', 'capital_min_usd', 'key_checks_ran', 'logo_source'],
+  'public_list = project_list + curation columns, signals, claim badge, capital, key check count and logo source (0016), without worth_level');
 -- 7.
 select columns_are('public', 'curated_list',
   array['id', 'slug', 'name', 'status', 'chains', 'chains_lower', 'last_seen', 'next_deadline_date', 'next_deadline_kind',
         'next_deadline_precision', 'latest_risk_level', 'curation_id', 'tab', 'ended_on', 'checked_at', 'signals',
-        'signal_rank', 'claim_open_checked', 'capital', 'capital_min_usd', 'key_checks_ran', 'worth_level', 'worth_rank'],
-  'curated_list = public_list + worth_level and its sort rank');
+        'signal_rank', 'claim_open_checked', 'capital', 'capital_min_usd', 'key_checks_ran', 'worth_level', 'worth_rank',
+        'logo_source'],
+  'curated_list = public_list + worth_level and its sort rank (logo_source of 0016 last)');
 
 -- ---------- privileges ----------
 -- 8. Effective privileges (Supabase's default privileges grant everything on new views, so this proves the revoke).
