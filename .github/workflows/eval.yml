@@ -53,6 +53,15 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: pnpm --silent --filter pipeline exec tsx eval/model-compare.ts --projects "$PROJECTS" --models "$MODELS"
+      # The report in the log and on the run page too: the artifact link is not reachable from every machine.
+      - name: Show report
+        if: always()
+        run: |
+          for f in pipeline/eval/cases/model-compare/*.md; do
+            [ -f "$f" ] || continue
+            cat "$f"
+            cat "$f" >> "$GITHUB_STEP_SUMMARY"
+          done
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4
