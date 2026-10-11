@@ -78,7 +78,10 @@ export interface DailyStats extends RunStats {
   curation_passed_live_now: number;
   curation_passed_early_bets: number;
   curation_passed_ended: number;
-  /** Failed curations with an `insufficient_checks` reason (no official domain, or a key check did not run). */
+  /**
+   * Failed curations with an `insufficient_checks` reason (no official domain, or a key check did not run; domain age
+   * and the phishing list count only when they answered for an official domain).
+   */
   curation_hidden_insufficient_checks: number;
   /**
    * Track record (curation spec §15.3, #43): projects whose first passing curation came before their token traded

@@ -2596,6 +2596,41 @@ describe("runDaily curation", () => {
       ]);
     });
 
+    it("hides a project whose official domain got no phishing answer, even when its claim domain was checked", async () => {
+      const { repo, deps, config, http } = setup({ pages: pagesWithClaim(), chat: fakeChat(deepbookWithClaim) });
+      // GoPlus answers for claimportal.xyz but not for the official deepbook.tech.
+      const noAnswerForOfficial: Http = {
+        ...http,
+        get: async (url) =>
+          url.startsWith("https://api.gopluslabs.io/") && url.includes("deepbook.tech") ? { status: 0, body: "" } : http.get(url),
+      };
+
+      const stats = await runDaily({ ...deps, http: noAnswerForOfficial }, config);
+
+      // The risk engine counts the claim domain's answer as the phishing check having run.
+      expect((await latestRisk(repo, "deepbook"))?.checks.find((c) => c.id === "phishing_list")?.ran).toBe(true);
+      const curation = await latestCurationOf(repo, "deepbook");
+      expect(curation).toMatchObject({ passed: false, tab: null });
+      expect(codes(curation)).toContain("insufficient_checks");
+      expect(stats.curation_hidden_insufficient_checks).toBe(1);
+    });
+
+    it("hides a project whose official domain has no known age, even when its claim domain's age is known", async () => {
+      const { repo, deps, config, http } = setup({ pages: pagesWithClaim(), chat: fakeChat(deepbookWithClaim) });
+      // RDAP has no answer for deepbook.tech; crt.sh has none either (not in the fake pages).
+      const noAgeForOfficial: Http = {
+        ...http,
+        get: async (url) => (url === "https://rdap.org/domain/deepbook.tech" ? { status: 404, body: "" } : http.get(url)),
+      };
+
+      await runDaily({ ...deps, http: noAgeForOfficial }, config);
+
+      expect((await latestRisk(repo, "deepbook"))?.checks.find((c) => c.id === "domain_age")?.ran).toBe(true);
+      const curation = await latestCurationOf(repo, "deepbook");
+      expect(curation).toMatchObject({ passed: false, tab: null });
+      expect(codes(curation)).toContain("insufficient_checks");
+    });
+
     it("reads the claim portal in analyze so its text reaches the scam analyst in the same run", async () => {
       const pages = pagesWithClaim();
       pages[CLAIM] = {
