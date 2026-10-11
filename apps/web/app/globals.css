@@ -1499,6 +1499,44 @@ blockquote {
   background: var(--member-fill);
 }
 
+/* On a phone the three columns fit the screen: no sideways scroll, narrower tick columns, smaller headers. */
+@media (max-width: 639px) {
+  .landing-table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .landing-table thead th {
+    padding: 10px 6px;
+    font-size: 14px;
+  }
+
+  .landing-table thead th:first-child {
+    width: auto;
+    padding-left: 12px;
+  }
+
+  .landing-table thead th:not(:first-child) {
+    width: 76px;
+  }
+
+  .landing-table tbody th {
+    padding: 12px;
+  }
+
+  .landing-feature {
+    font-size: 15px;
+  }
+
+  .landing-feature-note {
+    font-size: 13px;
+  }
+
+  .landing-table td {
+    padding: 10px 4px;
+  }
+}
+
 .landing-footer {
   border-top: 3px solid var(--ink);
 }

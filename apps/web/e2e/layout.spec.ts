@@ -88,11 +88,18 @@ test("the signed-in header is Indonesian", async ({ page }) => {
 test.describe("360px phone", () => {
   test.use({ viewport: { width: 360, height: 740 } });
 
-  test("visitor pages do not scroll sideways", async ({ page }) => {
-    for (const path of ["/", "/airdrops", "/login"]) {
+  test("visitor pages do not scroll sideways, and neither does any box inside them", async ({ page }) => {
+    for (const path of ["/", "/airdrops", "/coach", "/login"]) {
       await page.goto(path);
       const width = await page.evaluate(() => document.documentElement.scrollWidth);
       expect(width, path).toBeLessThanOrEqual(360);
+      // A box with its own sideways scroll (the landing's plan table once had one) is just as hard to use on a phone.
+      const scrollers = await page.evaluate(() =>
+        [...document.querySelectorAll("body *")]
+          .filter((e) => ["auto", "scroll"].includes(getComputedStyle(e).overflowX) && e.scrollWidth > e.clientWidth + 1)
+          .map((e) => e.className || e.tagName),
+      );
+      expect(scrollers, path).toEqual([]);
     }
     await expect(page.getByRole("banner").getByRole("link", { name: "Login" })).toBeVisible();
   });

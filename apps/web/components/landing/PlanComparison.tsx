@@ -25,7 +25,7 @@ function NotIncluded() {
   );
 }
 
-/** The "Apa bedanya gratis sama member?" table. On a narrow screen it scrolls inside its own box. */
+/** The "Apa bedanya gratis sama member?" table. On a phone its three columns fit the screen without scrolling. */
 export function PlanComparison() {
   return (
     <section className="landing-section landing-compare">
