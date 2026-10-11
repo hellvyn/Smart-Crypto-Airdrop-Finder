@@ -90,7 +90,7 @@ describe("StepsList: Jelasin langkah ini", () => {
   ];
 
   it("gives a member a button under each step that has an id, and nothing under one that has none", () => {
-    render(<StepsList steps={steps} links={[]} member projectId={PID} />);
+    render(<StepsList steps={steps} links={[]} canExplain projectId={PID} />);
     expect(screen.getAllByRole("button", { name: "Jelasin langkah ini" })).toHaveLength(1);
     const item = screen.getByText("Bridge aset ke Arbitrum.").closest("li")!;
     expect(within(item).getByRole("button", { name: "Jelasin langkah ini" })).toBeTruthy();

@@ -9,6 +9,7 @@ import {
   cleanStyle,
   coachProfileSchema,
   redactSensitive,
+  selectCandidates,
   storedAnalystSchema,
 } from "@saf/core";
 import type { Candidate, CoachProfile } from "@saf/core";
@@ -184,9 +185,11 @@ const CURATED_COLUMNS =
  * and its steps (`tasks.text_id`, the grounded Indonesian text, with the source `description` as fallback). A project
  * with neither a point nor a step is left out: there would be nothing the model could quote. A deadline already past
  * (against `now`, UTC date) is left out. Member session only: `curated_list` and `analyst` results are member-only.
+ * `onlyProjectId` reads that one project only (the project page asks about a single one).
  */
-export async function loadCandidates(db: SupabaseClient, now: Date): Promise<Candidate[]> {
-  const listed = await db.from("curated_list").select(CURATED_COLUMNS).in("tab", [...CANDIDATE_TABS]).limit(CURATED_LIMIT);
+export async function loadCandidates(db: SupabaseClient, now: Date, onlyProjectId?: string): Promise<Candidate[]> {
+  const tabs = db.from("curated_list").select(CURATED_COLUMNS).in("tab", [...CANDIDATE_TABS]);
+  const listed = await (onlyProjectId === undefined ? tabs : tabs.eq("id", onlyProjectId)).limit(CURATED_LIMIT);
   throwIf(listed.error, "the curated list");
   const rows = ((listed.data ?? []) as unknown as Record<string, unknown>[]).filter((r) => typeof r.id === "string");
   if (rows.length === 0) return [];
@@ -280,6 +283,21 @@ const URL_WITH_SCHEME_OR_PATH_RE = /\b[a-z][a-z0-9+.-]*:\/\/\S*|\b(?:[a-z0-9-]+\
 /** `text` without any URL that has a scheme or a path; bare host names stay (some project names are one). */
 function withoutUrls(text: string): string {
   return text.replace(URL_WITH_SCHEME_OR_PATH_RE, " ");
+}
+
+/**
+ * Whether `projectId` is one of the member's candidates (their profile keeps it, through the same filters as the chat
+ * route's `selectCandidates`). False without a profile and on any failure: the project page then simply offers no
+ * "Jelasin langkah ini", which the chat route would refuse anyway.
+ */
+export async function isCoachCandidate(db: SupabaseClient, userId: string, projectId: string, now: Date): Promise<boolean> {
+  try {
+    const profile = await getCoachProfile(db, userId);
+    if (profile === null) return false;
+    return selectCandidates(await loadCandidates(db, now, projectId), profile, projectId).length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /**

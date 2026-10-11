@@ -7,6 +7,7 @@ import {
   coachErrorFrom,
   createStreamSanitizer,
   getCoachProfile,
+  isCoachCandidate,
   loadCandidates,
   remainingQuota,
   saveCoachProfile,
@@ -304,5 +305,46 @@ describe("candidateContext", () => {
     const out = redactSensitive("claim di https://claim.alpha.xyz/claim sekarang", candidateContext(candidates, PROFILE));
     expect(out.text).not.toContain("claim.alpha.xyz");
     expect(out.redactions).toBe(1);
+  });
+});
+
+describe("loadCandidates narrowed to one project", () => {
+  it("reads only that project's rows", async () => {
+    const fake = fakeCoachDb({ tables: candidateTables([{ id: P1, name: "Alpha" }, { id: P2, name: "Beta" }]) });
+    const out = await loadCandidates(fake.db, NOW, P2);
+    expect(out.map((c) => c.id)).toEqual([P2]);
+    expect(fake.reads.find((r) => r.table === "curated_list")?.filters).toContainEqual(["eq", "id", P2]);
+  });
+});
+
+describe("isCoachCandidate", () => {
+  const tables = (over: Record<string, unknown> = {}) => ({
+    coach_profiles: [{ user_id: USER, ...PROFILE }],
+    ...candidateTables([{ id: P1, name: "Alpha" }, { id: P2, name: "Beta" }]),
+    ...over,
+  });
+
+  it("is true for a project the member's profile keeps", async () => {
+    expect(await isCoachCandidate(fakeCoachDb({ tables: tables() }).db, USER, P1, NOW)).toBe(true);
+  });
+
+  it("is false for a project the profile filters out (a Pemula and a High-risk project)", async () => {
+    const t = tables({
+      coach_profiles: [{ user_id: USER, ...PROFILE, level: "beginner" }],
+      curated_list: candidateTables([{ id: P1, name: "Alpha" }]).curated_list!.map((r) => ({ ...r, latest_risk_level: "high" })),
+    });
+    expect(await isCoachCandidate(fakeCoachDb({ tables: t }).db, USER, P1, NOW)).toBe(false);
+  });
+
+  it("is false for a project that is not on the curated candidate tabs, and for one without points or steps", async () => {
+    expect(await isCoachCandidate(fakeCoachDb({ tables: tables() }).db, USER, "ffffffff-ffff-4fff-8fff-fffffffffff9", NOW)).toBe(false);
+    const t = tables({ ai_analyses: [], tasks: [] });
+    expect(await isCoachCandidate(fakeCoachDb({ tables: t }).db, USER, P1, NOW)).toBe(false);
+  });
+
+  it("is false without a coach profile, and when the database fails", async () => {
+    expect(await isCoachCandidate(fakeCoachDb({ tables: tables({ coach_profiles: [] }) }).db, USER, P1, NOW)).toBe(false);
+    const failing = fakeCoachDb({ tables: tables(), tableErrors: { curated_list: { message: "down" } } });
+    expect(await isCoachCandidate(failing.db, USER, P1, NOW)).toBe(false);
   });
 });

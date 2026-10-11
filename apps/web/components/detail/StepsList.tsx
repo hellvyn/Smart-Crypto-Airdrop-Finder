@@ -39,13 +39,16 @@ function linksOf(text: string, links: DetailLink[]): DetailLink[] {
 export function StepsList({
   steps,
   links,
-  member = false,
+  canExplain = false,
   projectId,
 }: {
   steps: { id?: string; text: string; cadence: Cadence }[];
   links: DetailLink[];
-  /** A signed-in member also gets "Jelasin langkah ini" under each step; a visitor gets no trace of it. */
-  member?: boolean;
+  /**
+   * "Jelasin langkah ini" under each step, for a member whose Coach candidates include this project. A visitor, and a
+   * member for whom the Coach would refuse the project, get no trace of it.
+   */
+  canExplain?: boolean;
   projectId?: string;
 }) {
   const groups = ORDER.map((cadence) => ({ cadence, steps: steps.filter((s) => s.cadence === cadence) })).filter(
@@ -64,7 +67,7 @@ export function StepsList({
                 {linksOf(s.text, links).map((l) => (
                   <LinkStatus key={l.url} status={l.status ?? "unchecked"} url={l.url} />
                 ))}
-                {member && projectId && s.id ? <ExplainStep projectId={projectId} stepId={s.id} /> : null}
+                {canExplain && projectId && s.id ? <ExplainStep projectId={projectId} stepId={s.id} /> : null}
               </li>
             ))}
           </ul>

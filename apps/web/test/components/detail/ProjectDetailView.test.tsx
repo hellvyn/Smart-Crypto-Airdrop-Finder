@@ -11,8 +11,8 @@ import { SOURCE_A, analyst, projectDetail } from "../../fixtures/project-detail"
 afterEach(cleanup);
 
 const NOW = new Date("2026-10-10T03:00:00Z");
-const view = (over: Partial<ProjectDetail> = {}, member = false) =>
-  render(<ProjectDetailView project={projectDetail(over)} member={member} now={NOW} />);
+const view = (over: Partial<ProjectDetail> = {}, member = false, canExplain = member) =>
+  render(<ProjectDetailView project={projectDetail(over)} member={member} canExplain={canExplain} now={NOW} />);
 
 describe("ProjectDetailView", () => {
   it("lays the sections out in the page order, the side boxes last", () => {
@@ -82,6 +82,20 @@ describe("ProjectDetailView", () => {
     cleanup();
     const { container } = view({ steps });
     expect(screen.queryByRole("button", { name: "Jelasin langkah ini" })).toBeNull();
+    expect(container.innerHTML).not.toContain("Jelasin langkah ini");
+  });
+
+  it("offers no Jelasin langkah ini on a project that is not among the member's candidates", () => {
+    const steps = [{ id: "55555555-5555-4555-8555-555555555551", text: "Bridge ke Arbitrum", cadence: "once" as const }];
+    const { container } = view({ steps }, true, false);
+    expect(screen.getByText("Bridge ke Arbitrum")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Jelasin langkah ini" })).toBeNull();
+    expect(container.innerHTML).not.toContain("Jelasin langkah ini");
+  });
+
+  it("offers no Jelasin langkah ini to a visitor even when canExplain is set", () => {
+    const steps = [{ id: "55555555-5555-4555-8555-555555555551", text: "Bridge ke Arbitrum", cadence: "once" as const }];
+    const { container } = view({ steps }, false, true);
     expect(container.innerHTML).not.toContain("Jelasin langkah ini");
   });
 
