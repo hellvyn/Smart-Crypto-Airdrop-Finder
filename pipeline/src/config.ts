@@ -107,8 +107,11 @@ export const VC_CANDIDATES: VcConfig[] = [
  * removes signals from the other VCs.
  */
 export const VC_LIST: VcConfig[] = [
-  // Page 200, 121 portfolio domains in the HTML, robots.txt allows /portfolio/, terms (on a16z.com) do not forbid
-  // automated reading or limit the site to personal use. Its sister site a16z.com is in NON_PORTFOLIO_DOMAINS.
+  // Page 200, 121 portfolio domains in the HTML, robots.txt allows /portfolio/. Its terms (on a16z.com) have no
+  // automation or scraping ban and no personal/noncommercial restriction, but their general clause "all content and
+  // material on the Services ... including information ... should not be used, modified, or reproduced without our
+  // prior written consent" is ambiguous for a commercial product. Used, awaiting owner confirmation (2026-10-11); to
+  // remove it, move this entry back to VC_CANDIDATES. Its sister site a16z.com is in NON_PORTFOLIO_DOMAINS.
   { id: "a16z-crypto", name: "a16z crypto", aliases: ["a16z", "Andreessen Horowitz"], tier: 1, portfolioUrl: "https://a16zcrypto.com/portfolio/" },
 ];
 

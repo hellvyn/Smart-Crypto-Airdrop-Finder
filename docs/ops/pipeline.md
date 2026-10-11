@@ -178,6 +178,9 @@ To check, run (from a network that reaches the VC hosts):
 pnpm --filter pipeline exec tsx scripts/vc-portfolio-check.ts
 ```
 
+Behind the dev-container egress proxy, prefix it with `NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=<proxy CA bundle>`;
+without them Node's `fetch` ignores the proxy and every page shows `status=0`.
+
 It prints each VC's list (`verified` or `candidate`), HTTP status, the number of portfolio domains in its HTML and the
 domains; conditions 2 and 4 are checked by hand. Fix a candidate's `portfolioUrl` first if the page moved. A candidate
 that fails a condition stays in `VC_CANDIDATES` with a one-line reason comment in `config.ts`. Add a host to
@@ -185,11 +188,16 @@ that fails a condition stays in `VC_CANDIDATES` with a one-line reason comment i
 Record every result in the table below.
 
 **Check of 2026-10-11** (pipeline client, through the development egress proxy after the owner allowed the VC hosts):
-only **a16z crypto** passed every condition, so **`VC_LIST` holds a16z crypto (tier 1) alone.** Its page answers 200
-with 121 portfolio domains in the HTML (every one from the portfolio grid; the only other outbound links are its sister
-site `a16z.com`, now in `NON_PORTFOLIO_DOMAINS`, and social hosts), `robots.txt` allows `/portfolio/`, and its terms
-(linked from `a16zcrypto.com/legal` to `a16z.com/terms-of-use/`) neither forbid automated reading nor limit the site
-to personal use. Five pages pass conditions 1–3 and `robots.txt` but their terms forbid automated reading (Paradigm,
+only **a16z crypto** is used, so **`VC_LIST` holds a16z crypto (tier 1) alone, awaiting the owner's confirmation.**
+Its page answers 200 with 121 portfolio domains in the HTML (every one from the portfolio grid; the only other outbound
+links are its sister site `a16z.com`, now in `NON_PORTFOLIO_DOMAINS`, and social hosts) and `robots.txt` allows
+`/portfolio/`. Its terms (linked from `a16zcrypto.com/legal` to `a16z.com/terms-of-use/`) have no automation or
+scraping ban and no personal/noncommercial restriction, but they contain a general clause: "all content and material
+on the Services — including information, […] — are the property of a16z Capital Management, LLC […] and should not
+be used, modified, or reproduced without our prior written consent." For a commercial product that clause is
+ambiguous (the pipeline keeps only the linked domains, never page text). Decision of 2026-10-11: used, pending the
+owner's confirmation; if the owner rejects it, move the entry from `VC_LIST` back to `VC_CANDIDATES` in `config.ts`
+(the next run then drops its `vc_backer` signals). Five pages pass conditions 1–3 and `robots.txt` but their terms forbid automated reading (Paradigm,
 Variant, Electric Capital) or limit the site to personal, noncommercial use (Framework, Placeholder). Jump Crypto is
 the same: its terms (`jumptrading.com/policies/terms-of-use`, linked from the `jumpcrypto.com` footer) license the
 site for private, non-commercial use only. If Jump Crypto ever moves to `VC_LIST`, first add its parent
@@ -198,7 +206,7 @@ portfolio company).
 
 | VC | Tier | Status (2026-10-11) | Reason |
 |---|---|---|---|
-| a16z crypto | 1 | dipakai | passed every condition: page 200, 121 portfolio domains (after dropping `a16z.com`), `robots.txt` allows, terms on `a16z.com` do not forbid automated reading or limit use to personal use |
+| a16z crypto | 1 | dipakai, menunggu konfirmasi owner (2026-10-11) | page 200, 121 portfolio domains (after dropping `a16z.com`), `robots.txt` allows. Terms on `a16z.com`: no automation or scraping ban, no personal/noncommercial restriction, but the general clause "should not be used, modified, or reproduced without our prior written consent" is ambiguous for a commercial product. Removing it = moving the entry back to `VC_CANDIDATES` |
 | Paradigm | 1 | ditunda | terms forbid accessing or collecting data from the site by automated means. Page moved to `/investments` (200, 95 domains) |
 | Polychain Capital | 1 | ditunda | 404: no portfolio page on `polychain.capital` (the homepage links only to job boards) |
 | Pantera Capital | 1 | ditunda | JavaScript-rendered: the list is not in the HTML (3 domains, all investor-portal links) |
