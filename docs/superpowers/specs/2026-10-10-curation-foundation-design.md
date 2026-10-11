@@ -480,6 +480,12 @@ cek kunci saja. Lingkungan sama seperti di atas: crt.sh diblokir dan umur domain
 | G7 scam yang lolos kurasi | 0 dari 60 | Semua 60 juga ada di daftar phishing, jadi hampir melingkar; nama project di domain membuat lookalike optimistis (`brandOf` mencocokkan substring). 0 scam yang tertahan *hanya* karena cek kunci gak jalan |
 | G8 legit yang tersembunyi | 44 dari 45 (97,8%), **belum bisa dinilai** | 44 kasus tersembunyi karena `insufficient_checks` (umur domain gak terjawab), bukan karena penilaian aturan. Yang disembunyikan aturan lain: 2 dari 45 (4,4%), dua kasus `lookalike_domain` yang sama dengan hasil risk-only. Ulangi di lingkungan yang RDAP/crt.sh-nya menjawab sebelum angka ini dipakai |
 
+`legit.json` diaudit 2026-10-11 (Task FX7): Polygon, Lido, Sui, Pendle dan Ondo diganti project yang jelas membagi
+airdrop publik, domain dYdX, 1inch dan Kamino diganti ke yang tercantum di CoinGecko; total tetap 45. Dua tabel hasil
+set uji scam di atas diukur dengan daftar **sebelum** audit, dan `build.ts` memilih domain scam dari nama di daftar
+itu, jadi set scam berikutnya berbeda. Jalankan ulang `build.ts` dan `run.ts` sebelum G7/G8 dipakai lagi. Detail:
+`pipeline/eval/scam-set/README.md` bagian "Audit of `legit.json`".
+
 Alat ukur gerbang lain sudah ada (`pipeline/eval/quality-report.ts` untuk G1, G2, G3, G9; `worth-review.ts` untuk G10;
 `ai-samples.ts` untuk G11 dan G13; G12 belum punya alat). Angka G1 sampai G3 dan G9 sampai G13 **belum diukur terhadap
 data produksi**: itu butuh satu run harian dengan kode Plan 5 dan kunci service role produksi. Perintahnya ada di
@@ -491,21 +497,62 @@ dari `official_urls` yang ada di teks sumber) cocok ≥ 80%. Syarat v1 (negatif 
 tetap. Gerbang deadline/domain yang belum punya label dinilai **gagal**, bukan lolos, supaya gerbang yang belum
 terukur gak terlihat terpenuhi.
 
-| Gerbang | Hasil terakhir | Catatan |
-|---|---|---|
-| G4 akurasi status | **22/30 (73,3%) — gagal** | Salah: `aio_abstract`, `aio_czr`, `aio_extended`, `aio_memebook`, `aio_mint_io`, `aio_perptools`, `aio_synthra`, `tg_flop` |
-| G5 akurasi deadline | **13/18 (72,2%) — gagal** | Meleset: Abstract `withdraw_funds`, Extended dan Variational `campaign_end`, 1 dari 3 di CZR, 1 dari 2 di Concrete |
-| G6 URL halusinasi | **0 — lolos** | |
-| Domain resmi (≥ 80%) | **28/28 (100%) — lolos** | |
+Label: **lama** = sebelum audit (18 deadline berlabel); **audit-1** = audit FX7 pertama (20 deadline); **final** =
+audit-1 plus 2 `snapshot` dari review audit (22 deadline). Status dan domain sama di audit-1 dan final.
 
-Run 2026-10-10 (prompt `2026-10-10.3`, `NODE_USE_ENV_PROXY=1 pnpm --filter pipeline eval`): 33 kasus berlabel (23
-halaman airdrops.io, 10 post Telegram; 30 berstatus, 18 deadline, 28 domain berlabel). 29 kasus dijawab `freellm:auto`,
-4 oleh `nvidia:z-ai/glm-5.3-flash`. Syarat v1: negatif ditolak (lolos), **Abstract `ended` gagal**, **recall radar
-18/28 gagal** (butuh 22). Satu run saja dan `freellm:auto` memilih model per request, jadi angkanya bisa bergeser antar
-run. Teks kasus diambil hari itu dengan collector pipeline sendiri (bukan `export-cases.ts`: kunci service role produksi
-gak tersedia); 4 kasus Telegram lama dicocokkan ulang ke post sumbernya lewat isi. Label yang meragukan ada di
-`pipeline/eval/README.md` bagian "Label yang perlu review owner"; owner me-review semua label baru sebelum angka ini
-dipakai untuk keputusan paywall.
+| Gerbang | A: 10-10, label lama, default | B: 10-11, audit-1, default | C: 10-11, audit-1, NVIDIA dulu | D: 10-11, final, default | E: 10-11, final, NVIDIA dulu |
+|---|---|---|---|---|---|
+| G4 akurasi status | **22/30 (73,3%) — gagal** | **25/30 (83,3%) — gagal** | **29/30 (96,7%) — lolos** | **23/30 (76,7%) — gagal** | **28/30 (93,3%) — lolos** |
+| G5 akurasi deadline | **13/18 (72,2%) — gagal** | 17/20 (85,0%); di label final 17–19/22 (≤ 86,4%) — **gagal** | 18/20 (90,0%); di label final 18–20/22 (81,8–90,9%) — **gak bisa dipastikan** | **20/22 (90,9%) — lolos** | **17/22 (77,3%) — gagal** |
+| G6 URL halusinasi | **0 — lolos** | **0 — lolos** | **0 — lolos** | **0 — lolos** | **0 — lolos** |
+| Domain resmi (≥ 80%) | **28/28 (100%) — lolos** | **28/28 (100%) — lolos** | **27/28 (96,4%) — lolos** | **26/28 (92,9%) — lolos** | **27/28 (96,4%) — lolos** |
+| Syarat v1: negatif ditolak / Abstract `ended` / recall radar ≥ 22 | lolos / **gagal** / **18/28 gagal** | lolos / lolos / 24/28 lolos | lolos / lolos / 26/28 lolos | lolos / lolos / **11/28 gagal** | lolos / lolos / 26/28 lolos |
+| Model yang menjawab | 29 `freellm:auto`, 4 `nvidia:z-ai/glm-5.3-flash` | 24 `freellm:auto`, 9 `nvidia:z-ai/glm-5.3-flash` | 33 `nvidia:z-ai/glm-5.3-flash` | 23 `freellm:auto`, 10 `nvidia:z-ai/glm-5.3-flash` | 32 `nvidia:z-ai/glm-5.3-flash`, 1 gagal di semua model |
+
+Semua run: prompt `2026-10-10.3`, `NODE_USE_ENV_PROXY=1 pnpm --filter pipeline eval`, 33 kasus berlabel (23 halaman
+airdrops.io, 10 post Telegram; 30 berstatus, 28 domain berlabel). Teks kasus diambil 2026-10-10 dengan collector
+pipeline sendiri (bukan `export-cases.ts`: kunci service role produksi gak tersedia); 4 kasus Telegram lama dicocokkan
+ulang ke post sumbernya lewat isi. "NVIDIA dulu" = run lokal dengan urutan `glm-5.3-flash` > `kimi-k3` >
+`gemma-4-31b-it` > `freellm:auto` (perubahan `MODELS` sementara, gak di-commit). Run D dan E memakai label final.
+
+- **A (2026-10-10, label lama).** Salah status: `aio_abstract`, `aio_czr`, `aio_extended`, `aio_memebook`,
+  `aio_mint_io`, `aio_perptools`, `aio_synthra`, `tg_flop`. Deadline meleset: Abstract `withdraw_funds`, Extended dan
+  Variational `campaign_end`, 1 dari 3 di CZR, 1 dari 2 di Concrete.
+- **Audit label 2026-10-11 (Task FX7, agent dengan mandat owner).** Semua label 33 kasus dicek ulang ke teksnya.
+  Audit-1 mengubah 3 label di 2 kasus: `tg_flop` status `speculative` → `announced`, plus `snapshot` tanpa tanggal di
+  `tg_flop` dan `aio_mint_io`. Review audit menemukan aturan yang sama belum diterapkan di `aio_satsuma` ("The Genesis
+  snapshot is already taken") dan `aio_collector_crypt` ("snapshot timing is kept undisclosed"); keduanya ditambah
+  `snapshot` tanpa tanggal (label final). Alasan per label dan label ragu yang dipertahankan ada di
+  `pipeline/eval/README.md` bagian "Label diaudit 2026-10-11 (agent, mandat owner)".
+- **B dan C dinilai ulang ke label final.** Baris per kasus cuma mencatat jumlah deadline yang cocok, bukan deadline
+  yang diekstrak, jadi apakah model menulis `snapshot` tanpa tanggal untuk Satsuma dan Collector Crypt gak bisa dibaca
+  dari output-nya: B jadi 17–19/22 (gagal di semua kemungkinan), C jadi 18–20/22 (lolos hanya kalau dua-duanya cocok).
+  Karena itu D dan E dijalankan ulang di label final; angka yang dipakai adalah D dan E.
+- **B (urutan default).** Kelima salah status (`aio_extended`, `aio_memebook`, `aio_mint_io`, `aio_perptools`,
+  `aio_synthra`) dijawab `freellm:auto`. Deadline meleset: Concrete 1 dari 2, Extended `campaign_end`, `snapshot`
+  `tg_flop`.
+- **C (NVIDIA dulu).** Satu-satunya salah status: `tg_flop` (label yang diubah audit). Deadline meleset: 1 dari 3 di
+  CZR, Extended `campaign_end`. Domain meleset: `arcus.xyz` di `tg_7928`.
+- **D (urutan default, label final).** Ketujuh salah status dijawab `freellm:auto`: `aio_memebook`, `aio_orbinum`,
+  `aio_variational`, `tg_7892`, `tg_ink`, serta `tg_7919` dan `tg_7928` yang keluar tanpa proyek sama sekali (dua
+  domain dan deadline `tg_7919` ikut meleset). Deadline meleset: 1 dari 2 di Collector Crypt, `tg_7919`. Radar:
+  `freellm:auto` cuma mengembalikan 11 proyek (11/28).
+- **E (NVIDIA dulu, label final).** `aio_variational` gagal di keempat model (`schema`, `json_parse`, `http_502`,
+  `json_parse`), jadi status, deadline dan domainnya meleset. Salah status lain: `tg_flop`. Deadline meleset juga:
+  1 dari 2 di Collector Crypt, DeepBook dan Satsuma, Extended `campaign_end`.
+- **Efek label review (2 `snapshot` tambahan) di D dan E.** Dari baris per kasus yang sama: tanpa dua label itu, D jadi
+  18–19/20 (lolos di semua kemungkinan) dan E jadi 15–17/20 (gagal di semua kemungkinan). Jadi hasil G5 di D dan E
+  gak bergantung pada dua label itu. Hasil G5 C (lolos 18/20 di audit-1) memang bergantung pada dua `snapshot` audit-1
+  (dengan label lama C jadi 16/18, 88,9%).
+- **Efek model vs efek label.** Di B dan D semua salah status dijawab `freellm:auto`, dan kasus yang sama benar saat
+  `glm-5.3-flash` menjawab (di C dan E; `aio_variational` benar di C, di E gagal di semua model), jadi selisih G4
+  terbesar adalah efek model: `auto` memilih model per request. Antar run dengan urutan yang sama hasilnya bergeser
+  jauh: label status dan radar sama di B dan D, tapi status turun dari 25/30 ke 23/30 dan radar dari 24/28 ke 11/28;
+  NVIDIA dulu lolos G5 di C tapi gagal di E, dan E tetap gagal walau dinilai tanpa dua label review (15–17/20), karena
+  `aio_variational` gagal di semua model dan 4 deadline lain meleset. Satu run per kombinasi belum cukup untuk
+  menyimpulkan.
+- G4–G6 belum dianggap terpenuhi untuk keputusan paywall: urutan produksi (B, D) gagal G4 di kedua run, dan gak ada
+  run yang lolos G4 dan G5 sekaligus di label final.
 
 Kalau G7 gagal (ada scam yang lolos), penyebabnya diperbaiki di aturan risiko/kurasi dulu, lalu set uji dijalankan
 ulang. Kalau G9 gagal karena syarat cek kunci, perbaikannya di cakupan data (§5.0), bukan melonggarkan syarat.

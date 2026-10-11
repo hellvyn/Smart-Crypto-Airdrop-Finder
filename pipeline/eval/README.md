@@ -38,7 +38,8 @@ Where each labelled case comes from (texts are not in the repo):
 - `tg_<n>`: post `https://t.me/airdrops_io/<n>`, one post per case, as `collectTelegram` / `parseTelegramPage` parse it.
 - The four original Telegram cases: `tg_flop` = post 7927, `tg_ink` = post 7921, `tg_ledger_negative` = post 7929,
   `tg_weekly_radar` = post 7932 (weekly radar Oct 3 to Oct 9). The original texts were never committed, so these
-  posts were matched to the existing labels by content on 2026-10-10 (see "Label yang perlu review owner").
+  posts were matched to the existing labels by content on 2026-10-10 (see "Label diaudit 2026-10-11 (agent, mandat
+  owner)").
 
 Pages change: a later fetch of an `aio_*` page can differ from the text the labels were made from (2026-10-10). If a
 label no longer fits the current page, relabel it from the new text rather than keeping the old one.
@@ -118,41 +119,80 @@ Labelled on 2026-10-10 from texts fetched that day: 33 cases.
 
 - 23 airdrops.io pages: 4 original (`aio_deepbook`, `aio_variational`, `aio_abstract`, `aio_raycash`) and 19 new.
   Of the new ones, 14 are `live` and 5 `speculative`.
-- 10 Telegram posts: the 4 original ones (2 speculative, 1 negative, the radar) and 6 new ones (`tg_7919` ended,
-  `tg_7908`, `tg_7892` and `tg_7928` speculative, `tg_7832` announced, `tg_4899` negative).
-- Every project case carries `deadlines` and `officialDomains` (18 labelled deadlines, 28 labelled domains in total).
+- 10 Telegram posts: the 4 original ones (`tg_ink` speculative, `tg_flop` announced since the audit, 1 negative, the
+  radar) and 6 new ones (`tg_7919` ended, `tg_7908`, `tg_7892` and `tg_7928` speculative, `tg_7832` announced,
+  `tg_4899` negative).
+- Every project case carries `deadlines` and `officialDomains` (22 labelled deadlines since the audit, 28 labelled
+  domains in total).
 
 The texts were fetched with the pipeline's own collectors (airdrops.io home, `/latest/` and `/speculative/` listings,
 the `airdrops_io` Telegram channel and its search), not with `export-cases.ts`: the production service role key was
 not available. The texts are what the daily job would have stored for the same pages that day.
 
-### Label yang perlu review owner
+### Label diaudit 2026-10-11 (agent, mandat owner)
 
-The owner reviews all of the new labels anyway (plan prerequisite). These are the ones most likely to be wrong:
+On 2026-10-11 the owner delegated the label review. An agent that did not write the labels checked every label of
+all 33 cases (status, token, chain, deadlines with kind and date, `officialDomains`, radar slugs) against the case
+text and the prompt's status definitions, and changed a label only where the text clearly supports another value.
 
-- `tg_flop`, `tg_ink`, `tg_ledger_negative`, `tg_weekly_radar`: source posts matched to the existing labels by
-  content (7927, 7921, 7929, 7932); confirm these are the posts the labels were made from.
-- `aio_czr` status `live`: the claim window in the text closed on 2026-10-05; `live` is what the text says, without
-  knowing today's date.
-- `aio_perptools` status `live`: the page header says "Airdrop unconfirmed" but the body says the airdrop is
-  confirmed and points convert into $PERP while Season 2 runs. Labelled from the body.
-- `aio_imperial` status `speculative`: the page header says "Airdrop confirmed" but the body says no token or TGE is
-  announced. Labelled from the body.
-- `aio_extended` status `live`: about 30% of EXT is set aside for points holders, but the docs say points carry no
-  guaranteed entitlement. Could be read as `speculative`.
-- `tg_7832` status `announced`: Arthur Hayes "confirmed the schedule" and 20% of supply for the testnet, which has
-  not started yet.
-- `aio_canopy` deadlines `[]`: the text gives "TGE Date: 07.09.26", which is ambiguous (7 Sep or 9 Jul); not labelled.
-- `aio_perptools` deadlines `[]`: "Season 1 balances were snapshotted ... on October 2, 2026" could be a `snapshot`
-  deadline; not labelled.
-- `aio_mint_io` deadlines: only the TGE (2026-10-20); the Mint a Bear whitelist claim closing on 2026-10-27 is an NFT
-  whitelist window and is not labelled.
-- `aio_deepbook` deadline `campaign_end 2026-04-17`: Season 1 end date, a past event; `claim` is `null` because the
-  text only says "30 days after the portal launched".
-- Chains left `null` where the text's chain is not a plain chain name (own chain, "Orderly", "Lighter", "BSC" vs "BNB
-  Chain", Extended's Starknet vs the header's Arbitrum/Ethereum). Chain is not a gate.
-- `aio_acepyr` token `ACEPYR` and `aio_wick` token `WICK`: the text names the ticker of a token that does not exist
-  yet; `token: null` would also be defensible.
+Changed (5 labels in 4 cases; the last two were added after the review of the audit):
+
+- `tg_flop` status `speculative` → `announced`. The post is an update "from Arthur Hayes and @Flop_Labs": "Genesis
+  rewards for miners, agents, validators, builders and creators", "Rewards are designed around real contributions",
+  and the top 1,000 validators "receive 1.2M $FLOP each". That is a team-confirmed token reward whose testnet has not
+  started ("Launch expected within roughly a month"), which is `announced` by the prompt's definitions. It also
+  matches `tg_7832` (the same project, an earlier post, labelled `announced`).
+- `tg_flop` deadlines `[]` → `[snapshot null]`: "Final snapshot at the closing testnet block" names a snapshot without
+  a date. The labelling rule above says such an event is labelled with `date: null` (as `aio_orbinum`'s "before its
+  snapshot").
+- `aio_mint_io` deadlines: added `snapshot null` next to the TGE. "The Season 1 snapshot happens shortly before the
+  TGE in Q4 2026, with the exact date announced through MINT's official channels": a named snapshot without a date,
+  same rule.
+- `aio_satsuma` deadlines: added `snapshot null` next to the TGE. "If your wallet is in the Genesis snapshot" and "The
+  Genesis snapshot is already taken, so airdrop eligibility is fixed": a named snapshot without a date, same rule.
+  That it is already past does not exclude it: the prompt defines `snapshot` as the date the eligibility snapshot
+  "is or was taken", and past dated events are labelled too (Satsuma's own TGE on 2026-06-04, DeepBook's
+  `campaign_end 2026-04-17`); the past facts the rule leaves out are launch, funding and announcement dates.
+- `aio_collector_crypt` deadlines: added `snapshot null` next to the TGE. "matter most before each snapshot" and
+  "There is no fixed public date for the next one, and snapshot timing is kept undisclosed on purpose": the next
+  quarterly snapshot is named, its date is not. No `claim` is added: the prompt defines `claim` as the last day to
+  claim, and the text gives none (only that the next distribution has no public date).
+
+Checked and kept (the doubtful ones listed before the audit, with the reason):
+
+- `tg_flop`, `tg_ink`, `tg_ledger_negative`, `tg_weekly_radar` (posts 7927, 7921, 7929, 7932): which post the
+  original labels were made from cannot be confirmed (those texts were never committed), so every label was judged
+  against these posts instead. Each fits its post (after the `tg_flop` changes above), and all 28 radar slugs name a
+  project the radar post mentions.
+- `aio_czr` status `live`: the text says the claim is open until 2026-10-05. The model judges status from the text;
+  expiry by date is `expireStatus` (spec §6.1), which reads the `claim 2026-10-05` deadline.
+- `aio_perptools` status `live`: the body says "The PERPTools airdrop is confirmed" and points convert into $PERP
+  while Season 2 runs; the header's "Airdrop unconfirmed" is the page template.
+- `aio_imperial` status `speculative`: the body says "No token has been announced" and "nothing has been officially
+  confirmed by the team"; the header's "Airdrop confirmed" is the page template.
+- `aio_extended` status `live`: the text says Extended "publicly committed around 30% of EXT supply" to points
+  holders and the points program is running. The "no guaranteed entitlement" in the docs is about an individual
+  allocation, not whether a token airdrop exists.
+- `tg_7832` status `announced`: "20% of the total supply is allocated to the testnet" and "to be eligible for the
+  airdrop", with the testnet starting at the end of October 2026.
+- `aio_canopy` deadlines `[]`: "TGE Date: 07.09.26" can be 7 Sep or 9 Jul, and the FAQ on the same page says the TGE
+  date "has not been announced". Not clear enough to label.
+- `aio_perptools` deadlines `[]`: "Season 1 balances were snapshotted and archived on October 2, 2026", but the text
+  says archived points only "may be used for future rewards, the airdrop or TGE", so it is not clearly an eligibility
+  snapshot.
+- `aio_wick` deadlines `[]`: "if Wick ever takes a snapshot" is hypothetical, not a named snapshot. With this and
+  `aio_perptools`, every case text that mentions a snapshot was checked (after review: `aio_satsuma` and
+  `aio_collector_crypt` were labelled above).
+- `aio_mint_io`: the Mint a Bear whitelist closing on 2026-10-27 stays unlabelled (NFT whitelist window).
+- `aio_deepbook` `campaign_end 2026-04-17` (Season 1 "ran from January 22 to April 17, 2026") and `claim null`
+  ("30 days after the portal launched") kept; `aio_variational` and `aio_extended` keep their `campaign_end` for the
+  ended trading competitions (dated, and a campaign by the prompt's definition).
+- Chains left `null` (own chain, "Orderly", "Lighter", "BSC" vs "BNB Chain", Extended's Starknet vs the header's
+  Arbitrum/Ethereum) kept: not a gate.
+- `aio_acepyr` token `ACEPYR` and `aio_wick` token `WICK` kept: the text names the ticker (`testnet $ACEPYR`, "the
+  WICK token"), even though neither trades yet.
+- Every `officialDomains` entry was checked against the links in its text; none changed. Hosts that are not the
+  project's own (`docs.sui.io` on DeepBook, `gitbook.io`, `mirror.xyz`, `medium.com`, faucets, bridges) stay out.
 
 ## Quality gate tools (spec sections 12 and 13: G1 to G3, G7 to G13)
 

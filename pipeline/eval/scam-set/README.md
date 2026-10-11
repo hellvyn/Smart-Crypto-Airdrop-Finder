@@ -9,8 +9,8 @@ hidden). `run.ts` reports both the risk-only version (risk engine alone) and the
 
 - `legit.json` (committed, our own labelling): 45 airdrops that paid out, `{ name, officialDomain, claimDomain? }`.
   `claimDomain` is only set where the claim happened on another registrable domain than the official one.
-  The domains were written from memory and have not been checked one by one: check them before relying on a
-  single entry.
+  Written from memory in P4.T7 and audited on 2026-10-11 (see "Audit of `legit.json`" below): every official
+  domain is now one that CoinGecko lists for the project's token; two claim domains are still unchecked.
 - `build.ts`: downloads the MetaMask `eth-phishing-detect` `src/config.json` (`blacklist` array) and the
   ScamSniffer `scam-database` `blacklist/domains.json` (array of strings), keeps apex domains that look like a
   fake airdrop and name a project from `legit.json`, and writes `cases/scam.json`. 60 cases, at most 3 per
@@ -52,6 +52,36 @@ request at a time.
   build. The set does not tell how such a scam would be scored.
 - Every scam in the set has a known official domain. In production that is not always the case (gate G1).
 - The phishing list entries are often dead or expired, so RDAP and crt.sh may have nothing for them.
+
+## Audit of `legit.json` (2026-10-11, agent, mandat owner)
+
+Each entry must be a project with a clearly paid, broad public airdrop, on its real domain. The total stays 45.
+
+Replaced (no broad public airdrop, or doubtful):
+
+| Removed | Why | Added |
+|---|---|---|
+| Polygon (`polygon.technology`) | MATIC to POL was a token migration, not an airdrop | Pudgy Penguins (`pudgypenguins.com`), PENGU airdrop |
+| Lido (`lido.fi`) | no broad public LDO airdrop is known (the P4.T7 reviewer doubted it too) | Magic Eden (`magiceden.io`), ME airdrop |
+| Sui (`sui.io`) | SUI went out through community access sales; no broad public airdrop is known | Bonk (`bonkcoin.com`), BONK airdrop |
+| Pendle (`pendle.finance`) | no broad public PENDLE airdrop is known | ZetaChain (`zetachain.com`), ZETA airdrop |
+| Ondo (`ondo.finance`) | the ONDO community distribution is not clearly a broad public airdrop | AltLayer (`altlayer.io`), ALT airdrop |
+
+Official domain corrected to the one CoinGecko lists now: dYdX `dydx.exchange` → `dydx.trade`, 1inch `1inch.io` →
+`1inch.com`, Kamino `kamino.finance` → `kamino.com`.
+
+How the domains were checked: the projects' own sites are blocked by this container's network policy (HTTP 403 on
+CONNECT for all 45), so each official domain was checked against the `links` CoinGecko's public API lists for the
+project's token (`/api/v3/coins/<id>`). All 45 official domains are a host CoinGecko lists there, or the registrable
+domain of one (Jupiter through `station.jup.ag`, Pudgy Penguins through `pengu.pudgypenguins.com`). Claim domains: `arbitrum.foundation` and `eigenfoundation.org` are listed by CoinGecko;
+**`layerzero.foundation` (LayerZero) and `zknation.io` (zkSync) could not be verified** and are kept from memory.
+That each project paid an airdrop is from memory: CoinGecko's descriptions do not say, and the sites could not be
+fetched.
+
+The results below were measured on the list **before** this audit (with Polygon, Lido, Sui, Pendle, Ondo and the
+three old domains). `build.ts` picks scam domains by the names in `legit.json`, so the next `build.ts` run makes a
+different scam set (no more Lido or Ondo imitations, new ones for the added names). Re-run both scripts before
+using G7 or G8 again.
 
 ## Results (2026-10-10, risk engine only)
 
