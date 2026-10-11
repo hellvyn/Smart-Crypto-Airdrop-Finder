@@ -8,6 +8,7 @@ import { Button, HazardBar } from "@/components/ui";
 /**
  * Design C header: hazard strip, "IQ" mark with the product name, capital-letter nav. A visitor gets the public
  * links and a black Login button; account links only exist for a signed-in user. There is no signup link (#46).
+ * On a phone: the logo and Login/Logout on one row, every menu link below in a grid, nothing to swipe.
  */
 export async function SiteHeader() {
   const user = await getUser();
@@ -15,13 +16,15 @@ export async function SiteHeader() {
     <>
       <HazardBar />
       <header className="site-header">
-        <Link href="/" className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            {header.brandMark}
-          </span>
-          <span className="brand-name">{header.brand}</span>
-        </Link>
-        <span className="brand-beta">{header.beta}</span>
+        <div className="brand-wrap">
+          <Link href="/" className="brand">
+            <span className="brand-mark" aria-hidden="true">
+              {header.brandMark}
+            </span>
+            <span className="brand-name">{header.brand}</span>
+          </Link>
+          <span className="brand-beta">{header.beta}</span>
+        </div>
         {user ? (
           <nav className="site-nav site-nav-member" aria-label={header.navLabel}>
             <Link href={LIST_PATH}>{header.airdrops}</Link>
