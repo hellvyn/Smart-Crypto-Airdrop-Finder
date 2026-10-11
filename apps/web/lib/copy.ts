@@ -538,6 +538,23 @@ export const garapan = {
   },
 };
 
+/** Coach (plan and chat routes; the pages come later). Texts of spec §5.7. */
+export const coach = {
+  errors: {
+    quota: "Jatah 20 pesan hari ini habis, reset jam 00.00 WIB.",
+    unavailable: "Coach lagi gak bisa jawab, coba lagi sebentar.",
+    bad_input: "Isiannya belum lengkap, atau pesannya kepanjangan (maksimal 1000 karakter). Cek lagi, lalu coba lagi.",
+    not_member: "Percakapan ini gak ketemu di akun kamu. Login lagi, atau mulai percakapan baru dari halaman Coach.",
+  },
+  empty: {
+    noCandidates:
+      "Belum ada project yang cocok sama profil kamu sekarang. Coba ubah modal atau level di profil, atau cek lagi besok. Pesan ini gak memotong jatah kamu.",
+    noPlan: "Coach belum bisa bikin rencana, coba lagi.",
+  },
+  /** Stored as the member's message of a plan request (it shows in the history). */
+  planRequest: "Bikinin rencana garapan buat aku.",
+};
+
 export const landing = {
   deleted: "Akun kamu udah dihapus.",
   heroTitle: "Airdrop yang worth it digarap, udah kami cek duluan.",
