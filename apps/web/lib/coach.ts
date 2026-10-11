@@ -270,10 +270,21 @@ export async function loadCandidates(db: SupabaseClient, now: Date): Promise<Can
   return candidates;
 }
 
+/** A URL with a scheme, or a host followed by a path, query or fragment. A bare host name is not one. */
+const URL_WITH_SCHEME_OR_PATH_RE = /\b[a-z][a-z0-9+.-]*:\/\/\S*|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?[/?#]\S*/gi;
+
+/** `text` without any URL that has a scheme or a path; bare host names stay (some project names are one). */
+function withoutUrls(text: string): string {
+  return text.replace(URL_WITH_SCHEME_OR_PATH_RE, " ");
+}
+
 /**
  * What the model's free text about `candidates` may repeat without being redacted: names, chains, points, steps,
  * the capital figures and the member's minutes budget, plus the glossary and the wallet starter line (an answer that
- * explains "seed phrase" must be allowed to say it). Source URLs are left out on purpose, like in `validatePlan`.
+ * explains "seed phrase" must be allowed to say it). Source URLs are left out on purpose, like in `validatePlan`, and
+ * so is every URL in the candidate texts themselves: a point or a step may quote a link, and a chat answer that
+ * repeated it (or put another path on its host) would send the member somewhere only the model chose. A bare host
+ * name stays, since a project's name can be one.
  */
 export function candidateContext(candidates: Candidate[], profile: CoachProfile): string {
   return [
@@ -290,7 +301,9 @@ export function candidateContext(candidates: Candidate[], profile: CoachProfile)
       c.minutesPerDay === null ? "" : String(c.minutesPerDay),
       c.nextDeadline ?? "",
     ]),
-  ].join("\n");
+  ]
+    .map(withoutUrls)
+    .join("\n");
 }
 
 /** Internal links of the candidates, built here from slugs the server owns; the client matches names in the text. */

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { redactSensitive } from "@saf/core";
 import {
   DAILY_QUOTA,
   MAX_REPLY_CHARS,
@@ -278,5 +279,30 @@ describe("candidateContext", () => {
     expect(text).toContain("Alpha");
     expect(text).toContain("Alpha points program is live");
     expect(text).not.toContain("docs.example.org");
+  });
+
+  it("drops every URL that has a scheme or a path, and keeps a bare host name", () => {
+    const text = candidateContext(
+      [
+        candidate(P1, "Jumper.Exchange", {
+          points: [{ text: "Claim di https://claim.alpha.xyz/start sekarang", quote: "see app.alpha.xyz/rewards?x=1 for points", sourceUrl: "https://s.example.org/p" }],
+          steps: [{ text: "Buka ftp://files.alpha.xyz:21/a lalu pakai alpha.xyz:8080/path/x", cadence: "once" }],
+        }),
+      ],
+      PROFILE,
+    );
+    for (const gone of ["claim.alpha.xyz", "https://", "app.alpha.xyz", "rewards", "files.alpha.xyz", "8080/path"]) {
+      expect(text).not.toContain(gone);
+    }
+    expect(text).toContain("Jumper.Exchange");
+    expect(text).toContain("Claim di");
+    expect(text).toContain("sekarang");
+  });
+
+  it("makes the redactor replace a URL that the candidate data itself carried", () => {
+    const candidates = [candidate(P1, "Alpha", { steps: [{ text: "Buka https://claim.alpha.xyz/start", cadence: "once" }] })];
+    const out = redactSensitive("claim di https://claim.alpha.xyz/claim sekarang", candidateContext(candidates, PROFILE));
+    expect(out.text).not.toContain("claim.alpha.xyz");
+    expect(out.redactions).toBe(1);
   });
 });

@@ -701,6 +701,18 @@ describe("POST /api/coach/chat: streaming", () => {
     expect(stored).toBe(text);
   });
 
+  it("redacts a URL that the candidate data itself carries, in the stream and in the stored reply", async () => {
+    const tables = candidateTables([{ id: P1, name: "Alpha" }]);
+    setup({ tables: { tasks: tables.tasks!.map((t) => ({ ...t, text_id: "Buka https://claim.alpha.xyz/start lalu swap" })) } });
+    streamText.mockReturnValue(events({ delta: "Silakan claim di https://claim.alpha.xyz/claim " }, { delta: "sekarang. Sisanya santai." }, DONE()));
+    const text = await (await post(chatPOST, chatBody())).text();
+    expect(text).not.toContain("claim.alpha.xyz");
+    expect(text).toContain("[dihapus: info sensitif]");
+    const stored = String(fake.rpcCalls.at(-1)?.args.p_content);
+    expect(stored).not.toContain("claim.alpha.xyz");
+    expect(stored).toBe(text);
+  });
+
   it("redacts a URL split across two deltas", async () => {
     streamText.mockReturnValue(events({ delta: "Claim di https://ev" }, { delta: "il.xyz sekarang. Selesai." }, DONE()));
     const text = await (await post(chatPOST, chatBody())).text();
