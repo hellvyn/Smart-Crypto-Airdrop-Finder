@@ -26,11 +26,17 @@ export { buildHeatmap, daysLeft, heatmapRange, localDay, mainProgress, streak, w
 export type { HeatLevel, HeatmapCell, HeatmapRange, TrackerCheck, TrackerTask } from "./farming/tracker.js";
 export type {
   AiKind,
+  CurateInput,
+  CurateResult,
   CurationReason,
   CurationRecord,
   NewSignal,
   SignalKind,
   SignalSource,
   Tab,
+  WorthInput,
   WorthLevel,
+  WorthResult,
 } from "./curate/types.js";
+export { curate, STRONG_SCAM_PATTERNS } from "./curate/curate.js";
+export { worth } from "./curate/worth.js";
