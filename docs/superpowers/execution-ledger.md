@@ -314,3 +314,4 @@ Ruling: AlphaDrops is capped at 120 requests per run — two caps that were neve
 - P5 Task 9: minor (deferred): the ended-candidates query reads every passing curation in 90 days plus an N+1 `latestCuration`, with an unbounded `in.(...)` (a latest-curation view or RPC later). There are no runDaily-level tests for "ended, never passed, stays hidden" or "domain checks stop after the end" (core covers both).
 - G4-4d merged. Tests: core 439, pipeline 585, web 352 unit · typecheck ok · pgTAP 279 · e2e 74/74.
 - G4-4e1 started: P5.T12 ∥ P5.T10
+- OWNER DECISION 2026-10-11: AlphaDrops raise pages are capped at 6 per run, following spec §15.1 (~42 per week). This replaces my T11 ruling (40 per run). Done as FX5 in 4e2, in parallel with P5.T13.
