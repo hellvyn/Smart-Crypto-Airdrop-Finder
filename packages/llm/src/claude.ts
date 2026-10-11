@@ -55,19 +55,32 @@ export function createClaudeClient(apiKey: string, fetchFn: typeof fetch): Claud
 }
 
 /**
- * The request body for `messages`. The `system` messages become the top-level system prompt, marked for prompt
- * caching (it is the same for every project of an analysis kind), and the `user` and `assistant` messages the
- * conversation. No `temperature`: current Claude models reject non-default sampling parameters.
+ * The request body for `messages`. The `user` and `assistant` messages become the conversation. No `temperature`:
+ * current Claude models reject non-default sampling parameters.
+ *
+ * - `cache: false` (default, what `claudeChat` uses): the `system` messages are joined into one system block marked
+ *   for prompt caching (it is the same for every project of an analysis kind).
+ * - `cache: true` (the coach chat): every `system` message is its own text block with its own cache marker, in
+ *   order, so a stable block stays cached when a later one changes; and the body gets the top-level `cache_control`
+ *   that caches the conversation turns automatically.
  */
-export function buildClaudeBody(model: ModelConfig, messages: ChatMessage[]): Anthropic.MessageStreamParams {
-  const system = messages
-    .filter((m) => m.role === "system")
-    .map((m) => m.content)
-    .join("\n\n");
+export function buildClaudeBody(
+  model: ModelConfig,
+  messages: ChatMessage[],
+  options: { cache?: boolean } = {},
+): Anthropic.MessageStreamParams {
+  const systemMessages = messages.filter((m) => m.role === "system").map((m) => m.content);
+  const cache = options.cache === true;
+  const system: Anthropic.TextBlockParam[] = cache
+    ? systemMessages.map((text) => ({ type: "text", text, cache_control: { type: "ephemeral" } }))
+    : systemMessages.length === 0 || systemMessages.join("\n\n") === ""
+      ? []
+      : [{ type: "text", text: systemMessages.join("\n\n"), cache_control: { type: "ephemeral" } }];
   return {
     model: model.id,
     max_tokens: CLAUDE_MAX_TOKENS,
-    ...(system === "" ? {} : { system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] }),
+    ...(system.length === 0 ? {} : { system }),
+    ...(cache ? { cache_control: { type: "ephemeral" } } : {}),
     messages: messages.flatMap((m) => (m.role === "system" ? [] : [{ role: m.role, content: m.content }])),
     output_config: { effort: CLAUDE_EFFORT },
     ...model.extraBody,

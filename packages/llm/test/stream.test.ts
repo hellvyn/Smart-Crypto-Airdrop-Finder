@@ -1,6 +1,6 @@
 import { APIError } from "@anthropic-ai/sdk";
 import type Anthropic from "@anthropic-ai/sdk";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createCircuitBreaker } from "../src/circuit-breaker.js";
 import type { ClaudeStreamClient } from "../src/claude.js";
 import { COACH_MODELS, ANALYZE_MODELS } from "../src/models.js";
@@ -22,7 +22,6 @@ const MESSAGES: ChatMessage[] = [
 ];
 const PROVIDERS = loadProviders({ LLM_BASE_URL: "https://llm.test/v1", LLM_API_KEY: "fk", NVIDIA_API_KEY: "nk", ANTHROPIC_API_KEY: "ak" });
 const NO_CLAUDE_KEY = loadProviders({ LLM_BASE_URL: "https://llm.test/v1", ANTHROPIC_API_KEY: "  " });
-const noSleep = async (): Promise<void> => {};
 
 function finalMessage(over: Partial<Message> = {}): Message {
   return {
@@ -165,12 +164,12 @@ describe("streamText with Claude", () => {
     const { client, calls } = fakeClaude({ events: [thinkingEvent(), textEvent("Hello "), textEvent("there")] });
     const { fetch: f, calls: fetchCalls } = fakeFetch(new Error("must not be called"));
 
-    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client, sleep: noSleep }));
+    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client }));
 
     expect(events).toEqual([
       { delta: "Hello " },
       { delta: "there" },
-      { done: { model: "anthropic:claude-sonnet-5-5", inputTokens: 1200, outputTokens: 80 } },
+      { done: { model: "anthropic:claude-sonnet-5-5", inputTokens: 1200, outputTokens: 80, cacheReadTokens: 0, cacheCreationTokens: 0 } },
     ]);
     expect(fetchCalls).toHaveLength(0);
     expect(calls).toHaveLength(1);
@@ -179,7 +178,7 @@ describe("streamText with Claude", () => {
   it("sends the system prompt as a cached system block and the chat history as turns", async () => {
     const { client, calls } = fakeClaude({ events: [textEvent("x")] });
 
-    await collect(streamText([SONNET], MESSAGES, { providers: PROVIDERS, fetch: fakeFetch().fetch, claude: client, sleep: noSleep }));
+    await collect(streamText([SONNET], MESSAGES, { providers: PROVIDERS, fetch: fakeFetch().fetch, claude: client }));
 
     expect(calls[0]?.body.model).toBe("claude-sonnet-5-5");
     expect(calls[0]?.body.system).toEqual([{ type: "text", text: "You are a coach.", cache_control: { type: "ephemeral" } }]);
@@ -197,13 +196,13 @@ describe("streamText with Claude", () => {
     const breaker = createCircuitBreaker(1);
 
     const events = await collect(
-      streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client, sleep: noSleep, breaker }),
+      streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client, breaker }),
     );
 
     expect(events).toEqual([
       { delta: "Free " },
       { delta: "answer" },
-      { done: { model: "freellm:auto", inputTokens: 30, outputTokens: 7 } },
+      { done: { model: "freellm:auto", inputTokens: 30, outputTokens: 7, cacheReadTokens: null, cacheCreationTokens: null } },
     ]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe("https://llm.test/v1/chat/completions");
@@ -214,7 +213,7 @@ describe("streamText with Claude", () => {
     const { client } = fakeClaude({ events: [], final: finalMessage({ stop_reason: "refusal", content: [] }) });
     const { fetch: f, calls } = fakeFetch(sseResponse(GOOD_SSE));
 
-    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client, sleep: noSleep }));
+    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client }));
 
     expect(events.at(-1)).toMatchObject({ done: { model: "freellm:auto" } });
     expect(calls).toHaveLength(1);
@@ -224,7 +223,7 @@ describe("streamText with Claude", () => {
     const { client } = fakeClaude({ events: [thinkingEvent()], final: finalMessage({ stop_reason: "max_tokens", content: [] }) });
     const { fetch: f } = fakeFetch(sseResponse(GOOD_SSE));
 
-    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client, sleep: noSleep }));
+    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client }));
 
     expect(events.at(-1)).toMatchObject({ done: { model: "freellm:auto" } });
   });
@@ -233,7 +232,7 @@ describe("streamText with Claude", () => {
     const { client } = fakeClaude({ events: [textEvent("Par"), new TypeError("socket closed")] });
     const { fetch: f, calls } = fakeFetch(sseResponse(GOOD_SSE));
 
-    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client, sleep: noSleep }));
+    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client }));
 
     expect(events).toEqual([{ delta: "Par" }, { failed: true }]);
     expect(calls).toHaveLength(0);
@@ -243,7 +242,7 @@ describe("streamText with Claude", () => {
     const { client } = fakeClaude({ events: [textEvent("Par")], final: finalMessage({ stop_reason: "refusal" }) });
     const { fetch: f, calls } = fakeFetch(sseResponse(GOOD_SSE));
 
-    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client, sleep: noSleep }));
+    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client }));
 
     expect(events).toEqual([{ delta: "Par" }, { failed: true }]);
     expect(calls).toHaveLength(0);
@@ -255,7 +254,7 @@ describe("streamText with Claude", () => {
     const breaker = createCircuitBreaker(1);
 
     const events = await collect(
-      streamText([SONNET, FREE], MESSAGES, { providers: NO_CLAUDE_KEY, fetch: f, claude: client, sleep: noSleep, breaker }),
+      streamText([SONNET, FREE], MESSAGES, { providers: NO_CLAUDE_KEY, fetch: f, claude: client, breaker }),
     );
 
     expect(events.at(-1)).toMatchObject({ done: { model: "freellm:auto" } });
@@ -267,9 +266,70 @@ describe("streamText with Claude", () => {
   it("skips Claude when there is no client", async () => {
     const { fetch: f } = fakeFetch(sseResponse(GOOD_SSE));
 
-    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep: noSleep }));
+    const events = await collect(streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null }));
 
     expect(events.at(-1)).toMatchObject({ done: { model: "freellm:auto" } });
+  });
+});
+
+describe("streamText prompt-cache layout", () => {
+  const TWO_SYSTEMS: ChatMessage[] = [
+    { role: "system", content: "rules" },
+    { role: "system", content: "briefing" },
+    { role: "user", content: "question" },
+  ];
+
+  it("by default sends one merged cached system block and no top-level cache_control", async () => {
+    const { client, calls } = fakeClaude({ events: [textEvent("x")] });
+
+    await collect(streamText([SONNET], TWO_SYSTEMS, { providers: PROVIDERS, fetch: fakeFetch().fetch, claude: client }));
+
+    expect(calls[0]?.body).toEqual({
+      model: "claude-sonnet-5-5",
+      max_tokens: 16_000,
+      system: [{ type: "text", text: "rules\n\nbriefing", cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: "question" }],
+      output_config: { effort: "low" },
+    });
+  });
+
+  it("with cache: true sends each system message as its own cached block plus top-level cache_control", async () => {
+    const { client, calls } = fakeClaude({ events: [textEvent("x")] });
+
+    await collect(streamText([SONNET], TWO_SYSTEMS, { providers: PROVIDERS, fetch: fakeFetch().fetch, claude: client, cache: true }));
+
+    expect(calls[0]?.body).toEqual({
+      model: "claude-sonnet-5-5",
+      max_tokens: 16_000,
+      system: [
+        { type: "text", text: "rules", cache_control: { type: "ephemeral" } },
+        { type: "text", text: "briefing", cache_control: { type: "ephemeral" } },
+      ],
+      cache_control: { type: "ephemeral" },
+      messages: [{ role: "user", content: "question" }],
+      output_config: { effort: "low" },
+    });
+  });
+
+  it("leaves the OpenAI-compatible request unchanged with cache: true", async () => {
+    const run = async (cache: boolean): Promise<unknown> => {
+      const { fetch: f, calls } = fakeFetch(sseResponse(GOOD_SSE));
+      await collect(streamText([FREE], TWO_SYSTEMS, { providers: PROVIDERS, fetch: f, claude: null, cache }));
+      return JSON.parse(String(calls[0]?.init.body));
+    };
+
+    expect(await run(true)).toEqual(await run(false));
+  });
+
+  it("reports uncached input, cache reads and cache writes separately in done", async () => {
+    const usage = { ...finalMessage().usage, input_tokens: 40, output_tokens: 90, cache_read_input_tokens: 5000, cache_creation_input_tokens: 700 };
+    const { client } = fakeClaude({ events: [textEvent("x")], final: finalMessage({ usage }) });
+
+    const events = await collect(streamText([SONNET], MESSAGES, { providers: PROVIDERS, fetch: fakeFetch().fetch, claude: client, cache: true }));
+
+    expect(events.at(-1)).toEqual({
+      done: { model: "anthropic:claude-sonnet-5-5", inputTokens: 40, outputTokens: 90, cacheReadTokens: 5000, cacheCreationTokens: 700 },
+    });
   });
 });
 
@@ -279,12 +339,12 @@ describe("streamText with OpenAI-compatible providers", () => {
     const response = new Response(streamOf([bytes.slice(0, 17), bytes.slice(17, 40), bytes.slice(40)]), { status: 200 });
     const { fetch: f, calls } = fakeFetch(response);
 
-    const events = await collect(streamText([NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep: noSleep }));
+    const events = await collect(streamText([NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null }));
 
     expect(events).toEqual([
       { delta: "Hel" },
       { delta: "lo" },
-      { done: { model: "nvidia:z-ai/glm-5.3-flash", inputTokens: null, outputTokens: null } },
+      { done: { model: "nvidia:z-ai/glm-5.3-flash", inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheCreationTokens: null } },
     ]);
     const headers = calls[0]?.init.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Bearer nk");
@@ -297,7 +357,7 @@ describe("streamText with OpenAI-compatible providers", () => {
     const breaker = createCircuitBreaker(1);
 
     const events = await collect(
-      streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep: noSleep, breaker }),
+      streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, breaker }),
     );
 
     expect(events.at(-1)).toMatchObject({ done: { model: "nvidia:z-ai/glm-5.3-flash" } });
@@ -305,20 +365,16 @@ describe("streamText with OpenAI-compatible providers", () => {
     expect(breaker.opened()).toEqual(["freellm:auto"]);
   });
 
-  it("retries a 429 after 2 s then 4 s on the same model before falling back", async () => {
-    const { fetch: f, calls } = fakeFetch(
-      new Response("slow down", { status: 429 }),
-      new Response("slow down", { status: 429 }),
-      new Response("slow down", { status: 429 }),
-      sseResponse(GOOD_SSE),
-    );
-    const sleep = vi.fn(async (_ms: number): Promise<void> => {});
+  it("does not retry a 429: it records the failure and falls back at once", async () => {
+    const { fetch: f, calls } = fakeFetch(new Response("slow down", { status: 429 }), sseResponse(GOOD_SSE));
+    const breaker = createCircuitBreaker(1);
 
-    const events = await collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep }));
+    const events = await collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, breaker }));
 
-    expect(sleep.mock.calls.map((c) => c[0])).toEqual([2000, 4000]);
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.url).toBe("https://llm.test/v1/chat/completions");
     expect(events.at(-1)).toMatchObject({ done: { model: "nvidia:z-ai/glm-5.3-flash" } });
+    expect(breaker.opened()).toEqual(["freellm:auto"]);
   });
 
   it("skips a model whose circuit is open without a request", async () => {
@@ -326,7 +382,7 @@ describe("streamText with OpenAI-compatible providers", () => {
     breaker.recordFailure("freellm:auto");
     const { fetch: f, calls } = fakeFetch(sseResponse(GOOD_SSE));
 
-    const events = await collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep: noSleep, breaker }));
+    const events = await collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, breaker }));
 
     expect(calls).toHaveLength(1);
     expect(events.at(-1)).toMatchObject({ done: { model: "nvidia:z-ai/glm-5.3-flash" } });
@@ -336,7 +392,7 @@ describe("streamText with OpenAI-compatible providers", () => {
     const empty = sseResponse(sseLine(sseDelta("", "length")) + "data: [DONE]\n\n");
     const { fetch: f } = fakeFetch(empty, sseResponse(GOOD_SSE));
 
-    const events = await collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep: noSleep }));
+    const events = await collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null }));
 
     expect(events.at(-1)).toMatchObject({ done: { model: "nvidia:z-ai/glm-5.3-flash" } });
     expect(events.some((e) => "failed" in e)).toBe(false);
@@ -347,7 +403,7 @@ describe("streamText with OpenAI-compatible providers", () => {
     const { fetch: f, calls } = fakeFetch(broken, sseResponse(GOOD_SSE));
     const breaker = createCircuitBreaker(1);
 
-    const events = await collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep: noSleep, breaker }));
+    const events = await collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, breaker }));
 
     expect(events).toEqual([{ delta: "Par" }, { failed: true }]);
     expect(calls).toHaveLength(1);
@@ -358,7 +414,7 @@ describe("streamText with OpenAI-compatible providers", () => {
     const cut = sseResponse(sseLine(sseDelta("Par")) + sseLine(sseDelta("", "length")) + "data: [DONE]\n\n");
     const { fetch: f } = fakeFetch(cut, sseResponse(GOOD_SSE));
 
-    const events = await collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep: noSleep }));
+    const events = await collect(streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null }));
 
     expect(events).toEqual([{ delta: "Par" }, { failed: true }]);
   });
@@ -370,7 +426,7 @@ describe("streamText when nothing works", () => {
     const { fetch: f } = fakeFetch(new Response("down", { status: 502 }), new Error("network"));
 
     const events = await collect(
-      streamText([SONNET, FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client, sleep: noSleep }),
+      streamText([SONNET, FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client }),
     );
 
     expect(events).toEqual([{ failed: true }]);
@@ -381,8 +437,8 @@ describe("streamText when nothing works", () => {
     breaker.recordFailure("freellm:auto");
     const { fetch: f, calls } = fakeFetch(sseResponse(GOOD_SSE));
 
-    expect(await collect(streamText([], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep: noSleep }))).toEqual([{ failed: true }]);
-    expect(await collect(streamText([FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep: noSleep, breaker }))).toEqual([
+    expect(await collect(streamText([], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null }))).toEqual([{ failed: true }]);
+    expect(await collect(streamText([FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, breaker }))).toEqual([
       { failed: true },
     ]);
     expect(calls).toHaveLength(0);
@@ -394,10 +450,55 @@ describe("streamText when nothing works", () => {
     controller.abort();
 
     const events = await collect(
-      streamText([FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, sleep: noSleep, signal: controller.signal }),
+      streamText([FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, signal: controller.signal }),
     );
 
     expect(events).toEqual([{ failed: true }]);
     expect(calls).toHaveLength(0);
+  });
+
+  it("on a caller abort mid-stream ends with failed, touches no breaker and tries no other model", async () => {
+    const controller = new AbortController();
+    const client: ClaudeStreamClient = {
+      messages: {
+        stream: () => ({
+          async *[Symbol.asyncIterator]() {
+            yield textEvent("Par");
+            controller.abort();
+            throw new TypeError("aborted");
+          },
+          finalMessage: () => Promise.reject(new TypeError("aborted")),
+        }),
+      },
+    };
+    const { fetch: f, calls } = fakeFetch(sseResponse(GOOD_SSE));
+    const breaker = createCircuitBreaker(1);
+
+    const events = await collect(
+      streamText([SONNET, FREE], MESSAGES, { providers: PROVIDERS, fetch: f, claude: client, breaker, signal: controller.signal }),
+    );
+
+    expect(events).toEqual([{ delta: "Par" }, { failed: true }]);
+    expect(calls).toHaveLength(0);
+    expect(breaker.opened()).toEqual([]);
+  });
+
+  it("on a caller abort before any output does not fall back or record a failure", async () => {
+    const controller = new AbortController();
+    let requests = 0;
+    const f = (async () => {
+      requests += 1;
+      controller.abort();
+      throw new TypeError("aborted");
+    }) as unknown as typeof fetch;
+    const breaker = createCircuitBreaker(1);
+
+    const events = await collect(
+      streamText([FREE, NVIDIA], MESSAGES, { providers: PROVIDERS, fetch: f, claude: null, breaker, signal: controller.signal }),
+    );
+
+    expect(events).toEqual([{ failed: true }]);
+    expect(requests).toBe(1);
+    expect(breaker.opened()).toEqual([]);
   });
 });

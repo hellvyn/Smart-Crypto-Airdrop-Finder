@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { ModelConfig } from "../src/nvidia.js";
 import { REQUEST_TIMEOUT_MS, streamChat } from "../src/nvidia.js";
 
-
 const enc = new TextEncoder();
 
 function streamOf(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
