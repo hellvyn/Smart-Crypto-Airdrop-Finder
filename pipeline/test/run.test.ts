@@ -2596,6 +2596,41 @@ describe("runDaily curation", () => {
       ]);
     });
 
+    it("hides a project whose official domain got no phishing answer, even when its claim domain was checked", async () => {
+      const { repo, deps, config, http } = setup({ pages: pagesWithClaim(), chat: fakeChat(deepbookWithClaim) });
+      // GoPlus answers for claimportal.xyz but not for the official deepbook.tech.
+      const noAnswerForOfficial: Http = {
+        ...http,
+        get: async (url) =>
+          url.startsWith("https://api.gopluslabs.io/") && url.includes("deepbook.tech") ? { status: 0, body: "" } : http.get(url),
+      };
+
+      const stats = await runDaily({ ...deps, http: noAnswerForOfficial }, config);
+
+      // The risk engine counts the claim domain's answer as the phishing check having run.
+      expect((await latestRisk(repo, "deepbook"))?.checks.find((c) => c.id === "phishing_list")?.ran).toBe(true);
+      const curation = await latestCurationOf(repo, "deepbook");
+      expect(curation).toMatchObject({ passed: false, tab: null });
+      expect(codes(curation)).toContain("insufficient_checks");
+      expect(stats.curation_hidden_insufficient_checks).toBe(1);
+    });
+
+    it("hides a project whose official domain has no known age, even when its claim domain's age is known", async () => {
+      const { repo, deps, config, http } = setup({ pages: pagesWithClaim(), chat: fakeChat(deepbookWithClaim) });
+      // RDAP has no answer for deepbook.tech; crt.sh has none either (not in the fake pages).
+      const noAgeForOfficial: Http = {
+        ...http,
+        get: async (url) => (url === "https://rdap.org/domain/deepbook.tech" ? { status: 404, body: "" } : http.get(url)),
+      };
+
+      await runDaily({ ...deps, http: noAgeForOfficial }, config);
+
+      expect((await latestRisk(repo, "deepbook"))?.checks.find((c) => c.id === "domain_age")?.ran).toBe(true);
+      const curation = await latestCurationOf(repo, "deepbook");
+      expect(curation).toMatchObject({ passed: false, tab: null });
+      expect(codes(curation)).toContain("insufficient_checks");
+    });
+
     it("reads the claim portal in analyze so its text reaches the scam analyst in the same run", async () => {
       const pages = pagesWithClaim();
       pages[CLAIM] = {
@@ -2737,6 +2772,26 @@ describe("runDaily curation", () => {
     await runDaily({ ...deps, now: () => at("2027-01-01") }, config);
 
     expect((await latestCurationOf(repo, "deepbook"))?.computedAt).toEqual(at("2026-10-15"));
+  });
+
+  it("keeps re-checking a listed open project after it leaves the active window, until it drops out", async () => {
+    const config = { ...defaultConfig, scoreActiveSinceDays: 2 };
+    const { repo, deps, http } = setup({ config });
+    const day = (n: number) => new Date(NOW.getTime() + n * DAY);
+    await runDaily(deps, config);
+    await runDaily({ ...deps, now: () => day(1) }, config);
+    // DeepBook's pages do not change: it is last seen on the first run, outside the 2-day window from day 3 on.
+    expect((await repo.findProjectsByNameKey("deepbook"))[0]?.lastSeen).toEqual(NOW);
+
+    await runDaily({ ...deps, http: phishingFor(http, "deepbook.tech"), now: () => day(3) }, config);
+
+    const curation = await latestCurationOf(repo, "deepbook");
+    expect(curation).toMatchObject({ passed: false, tab: null, statusAt: "live", computedAt: day(3) });
+    expect(codes(curation)).toContain("risk_too_high");
+
+    // Out of the list and out of the window: no longer scored.
+    await runDaily({ ...deps, now: () => day(5) }, config);
+    expect((await latestCurationOf(repo, "deepbook"))?.computedAt).toEqual(day(3));
   });
 
   it("gives curate and worth only signals observed in the last 14 days", async () => {
@@ -2895,6 +2950,16 @@ describe("runDaily curation", () => {
 
       expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: true, tab: "ended" });
       expect(trackRecordOf(stats)).toEqual({ total: 1, listed: 0, noToken: 1, riskRaised: 1 });
+    });
+
+    it("counts a project that turned high risk after it passed and stays out of the list", async () => {
+      const { repo, deps, config, http } = setup();
+      await runDaily(deps, config);
+
+      const stats = await runDaily({ ...deps, http: phishingFor(http, "deepbook.tech"), now: () => at("2026-10-11") }, config);
+
+      expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: false, statusAt: "live" });
+      expect(trackRecordOf(stats)).toEqual({ total: 1, listed: 0, noToken: 0, riskRaised: 1 });
     });
 
     it("keeps counting an ended project after it is no longer scored", async () => {

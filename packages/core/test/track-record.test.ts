@@ -35,11 +35,33 @@ describe("trackRecord (curation spec §15.3, #43)", () => {
         ended({ riskRaisedAfterPass: true }),
         ended({ riskRaisedAfterPass: true, coingeckoListed: true }),
         ended(),
-        // Outside the population: the raise does not count.
+        // Back in the list after the raise: in the population, but not ended, so not "no token".
         live({ riskRaisedAfterPass: true }),
+        // Outside the population (its token already traded at the first pass): the raise does not count.
         ended({ listedAtFirstPass: true, riskRaisedAfterPass: true }),
       ]),
-    ).toEqual({ total: 3, listed: 1, noToken: 2, riskRaised: 2 });
+    ).toEqual({ total: 4, listed: 1, noToken: 2, riskRaised: 3 });
+  });
+
+  it("counts a project that passed, then turned high or critical risk and is still out of the list", () => {
+    expect(
+      trackRecord([
+        // Passed, turned high risk, latest curation failed (open or ended): in the population, never "no token".
+        ended({ tab: null, riskRaisedAfterPass: true }),
+        ended({ tab: null, riskRaisedAfterPass: true, coingeckoListed: true }),
+        ended(),
+      ]),
+    ).toEqual({ total: 3, listed: 1, noToken: 1, riskRaised: 2 });
+  });
+
+  it("leaves out a project that turned risky but whose listing at first pass is unknown or already traded", () => {
+    expect(
+      trackRecord([
+        ended({ tab: null, riskRaisedAfterPass: true, listedAtFirstPass: null }),
+        ended({ tab: null, riskRaisedAfterPass: true, listedAtFirstPass: true }),
+        ended({ tab: null, riskRaisedAfterPass: true, firstPassAt: null }),
+      ]),
+    ).toEqual({ total: 0, listed: 0, noToken: 0, riskRaised: 0 });
   });
 
   it("leaves out projects that never passed, are not in the ended tab now, or whose listing at first pass is unknown", () => {

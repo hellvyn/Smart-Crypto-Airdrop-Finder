@@ -112,10 +112,29 @@ function coingeckoListed(signals: NewSignal[], coverage: SignalCoverage): boolea
   return coverage.defillama ? false : null;
 }
 
+/** Which key domain checks (curation spec §6.2 rule 5) got an answer for at least one of the project's official domains. */
+interface OfficialDomainChecks {
+  domain_age: boolean;
+  phishing_list: boolean;
+}
+
+function officialDomainChecks(
+  project: ProjectForScoring,
+  ages: ReadonlyMap<string, number | null>,
+  phishing: ReadonlyMap<string, boolean | null>,
+): OfficialDomainChecks {
+  return {
+    domain_age: project.officialDomains.some((d) => ages.get(d) != null),
+    phishing_list: project.officialDomains.some((d) => phishing.get(d) != null),
+  };
+}
+
 /**
  * The project's curation (curation spec §5.3, §6.2-6.3): `curate()` on the assessment just made, and `worth()`, which
  * is computed for a failing project too (for its detail page). The AI can only lower either. An `ended` project's end
  * date is the deadline that expired it, else the one its latest curation carries, else `today`.
+ * `curate()` gets the assessment's checks with `domain_age` and `phishing_list` counted as run only when an official
+ * domain got an answer (rule 5): the assessment counts an answer for any link domain, a claim portal's included.
  */
 async function curation(
   repo: PipelineRepo,
@@ -124,6 +143,7 @@ async function curation(
   assessment: RiskAssessment,
   aiFlags: RiskInput["aiFlags"],
   runCoverage: SignalCoverage,
+  official: OfficialDomainChecks,
 ): Promise<CurationRecord> {
   const { status, today } = state;
   const ended = status === "ended";
@@ -132,7 +152,9 @@ async function curation(
   const curated = curate({
     status,
     riskLevel: assessment.level,
-    checks: assessment.checks,
+    checks: assessment.checks.map((c) =>
+      c.id === "domain_age" || c.id === "phishing_list" ? { ...c, ran: official[c.id] } : c,
+    ),
     lookalikeOf: project.lookalikeOf,
     hasOfficialDomain: project.officialDomains.length > 0,
     signals,
@@ -183,9 +205,10 @@ function countCuration(stats: DailyStats, c: CurationRecord): void {
 }
 
 /**
- * Scores every project `listProjectsForScoring` returns (seen within `scoreActiveSinceDays`, or ended after passing
- * curation at most 90 days ago): expiry, risk assessment, then curation (`curations`). Enrichment is fetched once per
- * registrable domain per run (the job is daily, so this replaces a longer-lived cache), and hacks once per run.
+ * Scores every project `listProjectsForScoring` returns (seen within `scoreActiveSinceDays`, still listed and open, or
+ * ended after passing curation at most 90 days ago): expiry, risk assessment, then curation (`curations`). Enrichment
+ * is fetched once per registrable domain per run (the job is daily, so this replaces a longer-lived cache), and hacks
+ * once per run.
  * Domain age comes from RDAP, and from the first crt.sh certificate when RDAP has no answer.
  * GoPlus stops starting requests after `goplusBudgetMinutes` (by `deps.now()`, from the start of this step) or after
  * `goplusMaxConsecutiveFailures` domains in a row without an answer; the domains not asked count as not run.
@@ -264,8 +287,9 @@ export async function scoreProjects(
   for (const project of projects) {
     if (project.officialDomains.length === 0) continue;
     stats.projects_with_official_domain += 1;
-    if (project.officialDomains.some((d) => ages.get(d) != null)) stats.domain_age_ran += 1;
-    if (project.officialDomains.some((d) => phishing.get(d) != null)) stats.phishing_list_ran += 1;
+    const official = officialDomainChecks(project, ages, phishing);
+    if (official.domain_age) stats.domain_age_ran += 1;
+    if (official.phishing_list) stats.phishing_list_ran += 1;
   }
 
   const today = now.toISOString().slice(0, 10);
@@ -310,7 +334,8 @@ export async function scoreProjects(
       stats.assessed += 1;
       const state = { status, expiredOn: basis?.date ?? null, today, now };
       const runCoverage = coverage.get(project.id) ?? NOT_CHECKED;
-      const record = await curation(repo, project, state, assessment, input.aiFlags, runCoverage);
+      const official = officialDomainChecks(project, ages, phishing);
+      const record = await curation(repo, project, state, assessment, input.aiFlags, runCoverage, official);
       await repo.saveCuration(project.id, record, now);
       countCuration(stats, record);
     } catch {

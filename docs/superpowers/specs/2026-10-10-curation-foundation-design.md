@@ -252,7 +252,9 @@ gak menggagalkan run.
 
 Per project aktif, urut (project berstatus `ended` yang curation terbarunya lolos tetap ikut di-score sampai 90 hari
 setelah `ended_on`, karena masa klaim adalah waktu paling rawan situs klaim palsu; setelah itu hasil terakhir dibekukan
-dan halaman menampilkan tanggal cek terakhir):
+dan halaman menampilkan tanggal cek terakhir. Project yang belum `ended` dan curation terbarunya lolos juga tetap ikut
+di-score walau `last_seen`-nya sudah di luar jendela aktif, sampai curation-nya gagal atau project-nya berakhir, supaya
+project yang halamannya gak berubah gak membeku di "Live now" tanpa cek ulang; revisi review G4, 2026-10-11):
 1. `expireStatus()`: status kedaluwarsa (§6.1). Perubahan status masuk `project_changes`.
 2. `assessRisk()`: tetap seperti v1.
 3. `curate()` + `worth()`: hasil masuk `curations`. Perubahan `passed` masuk `project_changes` (`field = curated`).
@@ -578,7 +580,7 @@ dari "Data terverifikasi"; semua output Bahasa Indonesia (keputusan #29); hasil 
 | A3 | **Deteksi kontradiksi** | Membandingkan fakta antar sumber dan di dalam satu sumber (label vs teks) | #1 |
 | A4 | **Daily Briefing + Change Detector** | Membandingkan versi dokumen (hash konten sudah disimpan) dan merangkum perubahan yang penting; briefing pagi per member | #3 |
 | A5 | **Farming Coach (chat)** | Rencana farming personal dari modal, jumlah wallet, dan waktu member, berdasar data kurasi. Tiap project yang direkomendasikan punya tombol **"Mulai garap"** (aksi `startFarming` dari §14) | #4 |
-| A6 | **Estimasi effort + terjemahan langkah** | Menit per hari, modal, gas; langkah diringkas ke Bahasa Indonesia | #1 |
+| A6 | **Estimasi effort + terjemahan langkah** | Menit per hari, modal, gas; langkah diringkas ke Bahasa Indonesia. Terjemahan (publik, `tasks.text_id`) ditolak semuanya kalau satu langkah terjemahan memuat host/URL, `@handle`, alamat `0x`/base58, atau angka yang gak ada di langkah aslinya, atau minta seed phrase/kunci privat atau pembayaran yang gak diminta langkah aslinya (review G4, 2026-10-11) | #1 |
 
 **Provider (keputusan #30):** AI pribadi owner `https://freellm.hellvyn.id/v1`, model **`auto`** (keputusan owner:
 pakai `auto`, tanpa eval sekarang). Fakta dari pengecekan 2026-10-10:
@@ -708,9 +710,13 @@ beberapa project cukup dicek sekali per run.
 ### 15.3 Rekam jejak (#43)
 
 - Populasi: project yang **curation lolos pertamanya** terjadi saat project belum `coingecko_listed`, dan sekarang
-  `tab = ended` (#40).
-- Angka: (a) jumlah yang sekarang `coingecko_listed`; (b) jumlah yang berakhir tanpa token diperdagangkan; (c) jumlah yang
-  setelah lolos pernah berisiko `high`/`critical`. Tiga angka + total populasi, tanpa nama project.
+  `tab = ended` (#40) **atau** setelah lolos pernah berisiko `high`/`critical` (apa pun curation terbarunya). Revisi
+  review G4 (2026-10-11): project yang jadi risky lalu terus gagal kurasi gak pernah sampai tab `ended`; tanpa cabang
+  kedua, angka (c) cuma menghitung yang pulih dan total membesar-besarkan tingkat sukses.
+- Angka: (a) jumlah yang sekarang `coingecko_listed`; (b) jumlah yang ada di tab `ended` tanpa token diperdagangkan;
+  (c) jumlah yang setelah lolos pernah berisiko `high`/`critical`. Tiga angka + total populasi, tanpa nama project.
+  (a) dan (b) gak harus berjumlah total: project risky yang belum berakhir dan tokennya belum diperdagangkan ada di
+  total dan (c) saja.
 - Dihitung harian di pipeline, disimpan di `pipeline_runs.stats` (`track_record_total`, `_listed`, `_no_token`,
   `_risk_raised`).
 - Tampil di landing dan halaman list publik **hanya kalau populasi ≥ 10**; sebelum itu gak ditampilkan sama sekali.

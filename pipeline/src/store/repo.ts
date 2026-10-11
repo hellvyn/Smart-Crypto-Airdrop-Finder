@@ -248,9 +248,10 @@ export interface PipelineRepo {
     links: { url: string; kind: string; referralStripped: boolean }[],
   ): Promise<void>;
   /**
-   * Projects with `lastSeen` within `activeSinceDays` of `now`, and the `ended` projects whose latest curation passed
-   * with an `ended_on` at most `ENDED_SCORING_DAYS` before the UTC day of `now` (curation spec §5.3), however long ago
-   * they were last seen.
+   * Projects with `lastSeen` within `activeSinceDays` of `now`, and, however long ago they were last seen: the `ended`
+   * projects whose latest curation passed with an `ended_on` at most `ENDED_SCORING_DAYS` before the UTC day of `now`
+   * (curation spec §5.3), and the open projects whose latest curation passed (no `ended_on`) and that have a passing
+   * open curation computed within `activeSinceDays`, so a listed project is re-checked until it fails or ends.
    */
   listProjectsForScoring(activeSinceDays: number, now: Date): Promise<ProjectForScoring[]>;
   latestRiskLevel(projectId: string): Promise<RiskLevel | null>;

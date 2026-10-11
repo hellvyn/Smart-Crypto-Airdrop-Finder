@@ -760,7 +760,10 @@ describe("SupabaseRepo.listProjectsForScoring ended curated projects", () => {
     const { client, reads } = filteringClient((read) => {
       if (read.table === "curations" && read.single) return latest[String(has(read, "eq", "project_id")?.[2])] ?? null;
       // Passing curations that ended in the window (the active project's too: it is not read twice).
-      if (read.table === "curations") return ["p-active", "p-ended", "p-dropped", "p-ended", "p-moved-on"].map((project_id) => ({ project_id }));
+      if (read.table === "curations" && has(read, "gte", "ended_on")) {
+        return ["p-active", "p-ended", "p-dropped", "p-ended", "p-moved-on"].map((project_id) => ({ project_id }));
+      }
+      if (read.table === "curations") return [];
       if (has(read, "gte", "last_seen")) return [projectRow("p-active", "live", "2026-10-09T00:00:00Z")];
       const ids = (has(read, "in", "id")?.[2] as string[] | undefined) ?? [];
       return ids.map((id) => projectRow(id, "ended", "2026-05-01T00:00:00Z"));
@@ -782,6 +785,55 @@ describe("SupabaseRepo.listProjectsForScoring ended curated projects", () => {
     ]);
     // The latest curation is read once per candidate outside the active window.
     expect(reads.filter((r) => r.single).map((r) => has(r, "eq", "project_id")?.[2])).toEqual(["p-ended", "p-dropped", "p-moved-on"]);
+  });
+
+  it("adds open projects outside the window whose latest curation passed, found by a passing open curation in the window", async () => {
+    const latest: Record<string, { passed: boolean; ended_on: string | null }> = {
+      "p-open": { passed: true, ended_on: null },
+      "p-failed": { passed: false, ended_on: null },
+      // Its latest curation passed after it ended: the ended branch decides, and its end is too old.
+      "p-old-end": { passed: true, ended_on: "2026-01-01" },
+    };
+    const { client, reads } = filteringClient((read) => {
+      if (read.table === "curations" && read.single) return latest[String(has(read, "eq", "project_id")?.[2])] ?? null;
+      // Passing open curations computed in the window (the active project's too: it is not read twice).
+      if (read.table === "curations" && has(read, "gte", "computed_at")) {
+        return ["p-active", "p-open", "p-failed", "p-open", "p-old-end"].map((project_id) => ({ project_id }));
+      }
+      if (read.table === "curations") return [];
+      if (has(read, "gte", "last_seen")) return [projectRow("p-active", "live", "2026-10-09T00:00:00Z")];
+      const ids = (has(read, "in", "id")?.[2] as string[] | undefined) ?? [];
+      return ids.map((id) => projectRow(id, "live", "2026-05-01T00:00:00Z"));
+    });
+
+    const scored = await new SupabaseRepo(client).listProjectsForScoring(60, new Date("2026-10-10T03:00:00Z"));
+
+    expect(scored.map((p) => p.id)).toEqual(["p-active", "p-open"]);
+    const candidates = reads.find((r) => r.table === "curations" && has(r, "gte", "computed_at"));
+    expect(candidates?.filters).toEqual([
+      ["eq", "passed", true],
+      ["neq", "status_at", "ended"],
+      ["gte", "computed_at", "2026-08-11T03:00:00.000Z"],
+    ]);
+    // Any status: an open project's stored status can be live, announced or speculative.
+    const openRead = reads.find((r) => r.table === "projects" && has(r, "in", "id"));
+    expect(openRead?.filters).toEqual([["in", "id", ["p-open"]]]);
+    expect(reads.filter((r) => r.single).map((r) => has(r, "eq", "project_id")?.[2])).toEqual(["p-open", "p-failed", "p-old-end"]);
+  });
+
+  it("reads the latest curation of a project once when it is both an ended and an open candidate", async () => {
+    const { client, reads } = filteringClient((read) => {
+      if (read.table === "curations" && read.single) return { passed: true, ended_on: "2026-09-01" };
+      if (read.table === "curations") return [{ project_id: "p-both" }];
+      if (has(read, "gte", "last_seen")) return [];
+      const ids = (has(read, "in", "id")?.[2] as string[] | undefined) ?? [];
+      return ids.map((id) => projectRow(id, "ended", "2026-05-01T00:00:00Z"));
+    });
+
+    const scored = await new SupabaseRepo(client).listProjectsForScoring(60, new Date("2026-10-10T03:00:00Z"));
+
+    expect(scored.map((p) => p.id)).toEqual(["p-both"]);
+    expect(reads.filter((r) => r.single)).toHaveLength(1);
   });
 
   it("reads no extra projects when no ended curated project qualifies", async () => {

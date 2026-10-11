@@ -36,6 +36,36 @@ export const analystSchema = z.object({
 export type AnalystAnswer = z.infer<typeof analystSchema>;
 export type AnalystVerdict = AnalystAnswer["verdict"];
 
+const HOST_RE = /\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b/gi;
+const HANDLE_RE = /@[a-z0-9_]{2,}/gi;
+const ADDRESS_RE = /\b0x[0-9a-fA-F]{6,}\b|\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
+const NUMBER_RE = /\d+(?:[.,]\d+)*/g;
+const SECRET_TERM_RE = /seed phrase|recovery phrase|secret phrase|mnemonic|private key|kunci (?:privat|pribadi|rahasia)|frasa (?:seed|pemulihan|rahasia)/i;
+const PAYMENT_TERM_RE = /\b(?:send|transfer|pay|deposit|kirim|bayar|setor)/i;
+
+/** A number as its digits only, so "0.01" and "0,01" or "1,000" and "1.000" compare equal. */
+const digitsOf = (n: string): string => n.replace(/\D/g, "");
+
+/**
+ * Whether an AI translation of one step adds nothing the step does not say that could send a reader somewhere or make
+ * them pay or give away a secret (curation spec §13: source text is data, the AI never adds trust). Every host or URL,
+ * `@handle`, `0x`/base58 address and number in `translation` must be in `step` (numbers compared by digits), and a
+ * secret term (seed phrase, private key, kunci privat, ...) or a payment verb (send, pay, kirim, bayar, ...) may appear
+ * only when the step has one too. Built for refusal: a reworded but harmless translation can be refused, never the
+ * other way round.
+ */
+export function stepTranslationGrounded(step: string, translation: string): boolean {
+  const lowerStep = step.toLowerCase();
+  const verbatim = [HOST_RE, HANDLE_RE, ADDRESS_RE].flatMap((re) => translation.match(re) ?? []);
+  if (verbatim.some((token) => !lowerStep.includes(token.toLowerCase()))) return false;
+  const stepNumbers = new Set((step.match(NUMBER_RE) ?? []).map(digitsOf));
+  if ((translation.match(NUMBER_RE) ?? []).some((n) => !stepNumbers.has(digitsOf(n)))) return false;
+  for (const term of [SECRET_TERM_RE, PAYMENT_TERM_RE]) {
+    if (term.test(translation) && !term.test(step)) return false;
+  }
+  return true;
+}
+
 /**
  * Makes a schema-valid answer safe to store:
  * - a point is kept only when its `quote` passes `quoteInSource` against the text of the source its `source_url`
