@@ -117,9 +117,6 @@ export function CoachChat({
         {remaining !== null ? " · " : null}
         <span>{copy.disclaimer}</span>
       </p>
-      <p className="muted coach-chat-meta" data-testid="coach-privacy">
-        {copy.privacy}
-      </p>
       {turns.length > 0 ? (
         <ol className="coach-turns" aria-live="polite" aria-busy={busy}>
           {turns.map((turn, i) => (
