@@ -85,6 +85,8 @@ export interface PipelineConfig {
    * analyses in the same run instead of the next day.
    */
   analyzeListedBudgetMinutes: number;
+  /** AI analyses started at once (the extraction keeps `llmConcurrency`). */
+  analyzeConcurrency: number;
   maxAnalysesPerRun: number;
   scoreActiveSinceDays: number;
   textRetentionDays: number;
@@ -188,6 +190,7 @@ export const defaultConfig: PipelineConfig = {
   crtshBudgetMinutes: 3,
   analyzeBudgetMinutes: 10,
   analyzeListedBudgetMinutes: 5,
+  analyzeConcurrency: 3,
   maxAnalysesPerRun: 60,
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
@@ -196,3 +199,23 @@ export const defaultConfig: PipelineConfig = {
   officialSites: { concurrency: 2, budgetMinutes: 2, maxPerRun: 30 },
   enrichmentCutoffMinutes: 40,
 };
+
+/**
+ * A manual backfill run (workflow_dispatch inputs) may give the AI analyses more time and more parallel calls:
+ * ANALYZE_BUDGET_MINUTES and ANALYZE_LISTED_BUDGET_MINUTES (1 to 30 each) and ANALYZE_CONCURRENCY (1 to 8). Empty,
+ * missing or out-of-range values keep `base`, so the scheduled run is unchanged.
+ */
+export function withAnalyzeOverrides(base: PipelineConfig, env: Record<string, string | undefined>): PipelineConfig {
+  const read = (name: string, min: number, max: number, fallback: number): number => {
+    const raw = env[name]?.trim() ?? "";
+    if (!/^\d+$/.test(raw)) return fallback;
+    const value = Number(raw);
+    return value >= min && value <= max ? value : fallback;
+  };
+  return {
+    ...base,
+    analyzeBudgetMinutes: read("ANALYZE_BUDGET_MINUTES", 1, 30, base.analyzeBudgetMinutes),
+    analyzeListedBudgetMinutes: read("ANALYZE_LISTED_BUDGET_MINUTES", 1, 30, base.analyzeListedBudgetMinutes),
+    analyzeConcurrency: read("ANALYZE_CONCURRENCY", 1, 8, base.analyzeConcurrency),
+  };
+}

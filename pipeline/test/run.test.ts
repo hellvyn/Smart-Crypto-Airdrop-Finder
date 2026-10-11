@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Http } from "../src/collectors/types.js";
 import type { ChatFn } from "../src/llm/extract.js";
 import type { ChatResult } from "@saf/llm";
-import { defaultConfig, VC_CANDIDATES } from "../src/config.js";
+import { defaultConfig, VC_CANDIDATES, withAnalyzeOverrides } from "../src/config.js";
 import { loadProviders, usableModels } from "@saf/llm";
 import type { PipelineConfig } from "../src/config.js";
 import { runDailyJob } from "../src/daily-job.js";
@@ -3952,5 +3952,19 @@ describe("runDaily curation", () => {
       expect((await latestCurationOf(repo, "deepbook"))?.computedAt).toEqual(at("2026-10-15"));
       expect(trackRecordOf(stats)).toEqual({ total: 1, listed: 0, noToken: 1, riskRaised: 0 });
     });
+  });
+});
+
+describe("withAnalyzeOverrides", () => {
+  it("takes in-range backfill values and keeps the defaults otherwise", () => {
+    const base = { ...defaultConfig };
+    expect(withAnalyzeOverrides(base, {})).toMatchObject({ analyzeBudgetMinutes: 10, analyzeListedBudgetMinutes: 5, analyzeConcurrency: 3 });
+    expect(
+      withAnalyzeOverrides(base, { ANALYZE_BUDGET_MINUTES: "30", ANALYZE_LISTED_BUDGET_MINUTES: " 20 ", ANALYZE_CONCURRENCY: "6" }),
+    ).toMatchObject({ analyzeBudgetMinutes: 30, analyzeListedBudgetMinutes: 20, analyzeConcurrency: 6 });
+    expect(
+      withAnalyzeOverrides(base, { ANALYZE_BUDGET_MINUTES: "31", ANALYZE_LISTED_BUDGET_MINUTES: "-1", ANALYZE_CONCURRENCY: "abc" }),
+    ).toMatchObject({ analyzeBudgetMinutes: 10, analyzeListedBudgetMinutes: 5, analyzeConcurrency: 3 });
+    expect(withAnalyzeOverrides(base, { ANALYZE_BUDGET_MINUTES: "" }).analyzeBudgetMinutes).toBe(10);
   });
 });

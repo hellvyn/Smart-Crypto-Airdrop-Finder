@@ -133,7 +133,7 @@ export function listedFirst<T extends { id: string }>(projects: T[], listedIds: 
 }
 
 /**
- * Runs every analyzer on every project, `llmConcurrency` projects at a time, and stores each new analysis.
+ * Runs every analyzer on every project, `analyzeConcurrency` projects at a time, and stores each new analysis.
  *
  * - The input of an analysis is the project's unpurged source documents (`listProjectSourceTexts`) plus the
  *   analyzer's `extraSources`. A project with no input is not analyzed; its previous analysis, if any, stays.
@@ -166,7 +166,7 @@ export async function runAnalyses(
   const deadline = deps.now().getTime() + config.analyzeBudgetMinutes * MINUTE_MS;
   const budgetSpent = (): boolean => deps.now().getTime() >= deadline;
   const breaker = createCircuitBreaker(CIRCUIT_BREAKER_THRESHOLD);
-  const limit = pLimit(config.llmConcurrency);
+  const limit = pLimit(config.analyzeConcurrency);
   let started = 0;
 
   const analyzeOne = async (project: ProjectForScoring, own: SourceText[], analyzer: Analyzer): Promise<void> => {

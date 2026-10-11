@@ -428,6 +428,7 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `coach_threads_purged` / `coach_usage_purged` | coach threads older than 30 days / quota ledger rows older than 2 days deleted this run |
 | `stage_seconds_collect` / `_extract` / `_speculative` / `_signals` / `_official_sites` / `_analyze` / `_score` / `_analyze_listed` / `_briefing` / `_logos` / `_purge` | seconds each stage took (one decimal), also when it failed; flat keys because the stats are numbers only |
 | `ai_analyses_*` (listed projects) | listed projects are analysed first and are never held back by `maxAnalysesPerRun` (only by the 10-minute budget); projects a run newly puts on the list get theirs in `analyze_listed` right after scoring (5-minute budget), so a listed project never waits a day for its AI section |
+| backfill (manual run) | the Daily pipeline workflow's manual run takes `analyze_minutes` and `analyze_listed_minutes` (1 to 30) and `analyze_concurrency` (1 to 8) to fill a backlog of AI analyses in one run; the scheduled run leaves them empty and keeps 10, 5 and 3 |
 | `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 8 signals, 9 analyze, 5 score, 12 analyze_listed, 11 briefing, 10 logos, 6 purge, in run order); the other stages still ran |
 
 Exit code (shown as the workflow status): **failed** when `run_error`, `source_failed`, `ingest_failed`,
