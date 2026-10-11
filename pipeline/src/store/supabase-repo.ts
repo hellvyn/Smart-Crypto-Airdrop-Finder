@@ -8,6 +8,7 @@ import type {
   NewSignal,
   RiskAssessment,
   RiskLevel,
+  SignalSource,
   Status,
   StatusEvidence,
 } from "@saf/core";
@@ -534,8 +535,18 @@ export class SupabaseRepo implements PipelineRepo {
     return rows.length;
   }
 
-  async replaceSignals(projectId: string, signals: NewSignal[], at: Date): Promise<void> {
-    check("replaceSignals.delete", await this.db.from("project_signals").delete().eq("project_id", projectId));
+  async replaceSignals(
+    projectId: string,
+    signals: NewSignal[],
+    at: Date,
+    keepSources: readonly SignalSource[] = [],
+  ): Promise<void> {
+    const remove = this.db.from("project_signals").delete().eq("project_id", projectId);
+    // Source values are plain identifiers (check constraint), so the PostgREST list needs no quoting.
+    check(
+      "replaceSignals.delete",
+      await (keepSources.length === 0 ? remove : remove.not("source", "in", `(${keepSources.join(",")})`)),
+    );
     if (signals.length === 0) return;
     check(
       "replaceSignals.insert",

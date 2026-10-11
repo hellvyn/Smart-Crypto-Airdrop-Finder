@@ -100,7 +100,9 @@ export function buildSignals(
 
 /**
  * The `signals` stage: rewrites the signals of every project seen within `scoreActiveSinceDays`, all observed at
- * `now`. A project whose signals cannot be built or stored counts as `signals_failed`; the others continue.
+ * `now`. When DefiLlama was not checked this run (spec §9: "not checked", never "none"), the project's earlier
+ * `defillama` signals are kept with their own `observed_at` instead of being deleted. A project whose signals cannot
+ * be built or stored counts as `signals_failed`; the others continue.
  */
 export async function refreshSignals(
   deps: { repo: PipelineRepo },
@@ -112,8 +114,8 @@ export async function refreshSignals(
   const projects = await deps.repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
   for (const project of projects) {
     try {
-      const { signals } = buildSignals(project, ctx);
-      await deps.repo.replaceSignals(project.id, signals, now);
+      const { signals, coverage } = buildSignals(project, ctx);
+      await deps.repo.replaceSignals(project.id, signals, now, coverage.defillama ? [] : ["defillama"]);
       stats.signals_tvl += signals.filter((s) => s.kind === "tvl").length;
       stats.signals_coingecko += signals.filter((s) => s.kind === "coingecko_listed").length;
     } catch {

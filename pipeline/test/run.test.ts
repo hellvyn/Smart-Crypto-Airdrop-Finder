@@ -1784,15 +1784,29 @@ describe("runDaily signals", () => {
     expect(stats.run_error).toBeUndefined();
   });
 
-  it("drops DefiLlama signals but keeps the others when the protocol list cannot be fetched", async () => {
+  it("keeps the last checked DefiLlama signals when the protocol list cannot be fetched", async () => {
     const { repo, deps, config } = setup({ pages: withProtocols(LLAMA_DEEPBOOK) });
     await runDaily(deps, config);
 
     const pages = basePages();
     pages[PROTOCOLS] = { status: 503, body: "" };
-    const stats = await runDaily({ ...deps, http: fakeHttp(pages), now: () => new Date(NOW.getTime() + DAY) }, config);
+    const nextDay = new Date(NOW.getTime() + DAY);
+    const stats = await runDaily({ ...deps, http: fakeHttp(pages), now: () => nextDay }, config);
 
+    // "Not checked" is not "none": TVL and listing from the first run stay, dated at that run.
+    const deepbook = (await repo.findProjectsByNameKey("deepbook"))[0]?.id;
+    expect(
+      repo.signals
+        .filter((s) => s.projectId === deepbook)
+        .map(({ kind, source, observedAt }) => [kind, source, observedAt.getTime()]),
+    ).toEqual([
+      ["tvl", "defillama", NOW.getTime()],
+      ["coingecko_listed", "defillama", NOW.getTime()],
+      ["curated_source", "airdrops_io", nextDay.getTime()],
+    ]);
     expect(await signalsOf(repo, "deepbook")).toEqual([
+      { kind: "tvl", value: { tvl_usd: 3e7 }, source: "defillama", verified: true },
+      { kind: "coingecko_listed", value: { gecko_id: "deepbook" }, source: "defillama", verified: true },
       { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: false },
     ]);
     expect(stats).toMatchObject({ source_failed: 1, signals_tvl: 0, signals_coingecko: 0, signals_failed: 0 });
@@ -1802,9 +1816,9 @@ describe("runDaily signals", () => {
   it("counts a project whose signals cannot be stored and still stores the others and scores all", async () => {
     const repo = new MemoryRepo();
     const replace = repo.replaceSignals.bind(repo);
-    repo.replaceSignals = async (projectId, signals, at) => {
+    repo.replaceSignals = async (projectId, signals, at, keepSources) => {
       if ((await repo.findProjectsByNameKey("deepbook"))[0]?.id === projectId) throw new Error("db write failed");
-      return replace(projectId, signals, at);
+      return replace(projectId, signals, at, keepSources);
     };
     const { deps, config } = setup({ repo, pages: withProtocols(LLAMA_DEEPBOOK) });
     const stats = await runDaily(deps, config);

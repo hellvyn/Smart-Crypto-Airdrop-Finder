@@ -6,6 +6,7 @@ import type {
   NewSignal,
   RiskAssessment,
   RiskLevel,
+  SignalSource,
   Status,
   StatusEvidence,
 } from "@saf/core";
@@ -366,16 +367,22 @@ export class MemoryRepo implements PipelineRepo {
     return purged;
   }
 
-  async replaceSignals(projectId: string, signals: NewSignal[], at: Date): Promise<void> {
-    // Delete first, as SupabaseRepo does: a refused insert leaves the project without signals.
-    removeWhere(this.signals, (s) => s.projectId === projectId);
+  async replaceSignals(
+    projectId: string,
+    signals: NewSignal[],
+    at: Date,
+    keepSources: readonly SignalSource[] = [],
+  ): Promise<void> {
+    // Delete first, as SupabaseRepo does: a refused insert leaves the project with only the kept signals.
+    removeWhere(this.signals, (s) => s.projectId === projectId && !keepSources.includes(s.source));
     // Same rules as the project_signals check constraint and unique index.
-    const keys = new Set<string>();
+    const keyOf = (s: NewSignal) => JSON.stringify([s.kind, s.source, investorKey(s.value)]);
+    const keys = new Set(this.signals.filter((s) => s.projectId === projectId).map(keyOf));
     for (const s of signals) {
       if ((s.kind === "claimed_backer" || s.kind === "reported_backer") && s.verified) {
         throw new Error("verified backer claim");
       }
-      const key = JSON.stringify([s.kind, s.source, investorKey(s.value)]);
+      const key = keyOf(s);
       if (keys.has(key)) throw new Error("duplicate signal");
       keys.add(key);
     }

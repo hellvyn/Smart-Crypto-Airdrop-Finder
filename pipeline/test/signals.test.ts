@@ -167,9 +167,9 @@ describe("refreshSignals", () => {
     const broken = await repo.createProject(newProject("Broken", ["arcus.xyz"]), NOW);
     const ok = await repo.createProject(newProject("Arcus", ["arcus.xyz"]), NOW);
     const replace = repo.replaceSignals.bind(repo);
-    repo.replaceSignals = async (projectId, signals, at) => {
+    repo.replaceSignals = async (projectId, signals, at, keepSources) => {
       if (projectId === broken.id) throw new Error("db write failed");
-      return replace(projectId, signals, at);
+      return replace(projectId, signals, at, keepSources);
     };
     const stats = emptyStats();
 
@@ -177,6 +177,37 @@ describe("refreshSignals", () => {
 
     expect(stats).toMatchObject({ signals_tvl: 1, signals_coingecko: 0, signals_failed: 1 });
     expect(repo.signals.map((s) => [s.projectId, s.kind])).toEqual([[ok.id, "tvl"]]);
+  });
+
+  it("keeps the DefiLlama signals of the last check when the protocol list could not be fetched", async () => {
+    const repo = new MemoryRepo();
+    const arcus = await repo.createProject(newProject("Arcus", ["arcus.xyz"]), NOW);
+    const doc = await repo.upsertDocument(
+      { sourceKind: "telegram", sourceKey: "telegram:chan", url: "https://t.me/chan/1", text: "t", publishedAt: null, pageUpdatedAt: null, fetchedAt: NOW },
+      "h",
+    );
+    const earlier = new Date(NOW.getTime() - 86_400_000);
+    await repo.replaceSignals(
+      arcus.id,
+      [
+        { kind: "tvl", value: { tvl_usd: 45_000_000 }, source: "defillama", verified: true },
+        { kind: "coingecko_listed", value: { gecko_id: "arcus" }, source: "defillama", verified: true },
+        { kind: "claimed_backer", value: { investor: "Paradigm", quote: "q" }, source: "llm_text", verified: false },
+      ],
+      earlier,
+    );
+    await repo.addEvidence({ projectId: arcus.id, documentId: doc.id, field: "status", value: "live", quote: "q", at: NOW });
+    const stats = emptyStats();
+
+    await refreshSignals({ repo }, defaultConfig, NOW, stats, { protocols: null, vc: null });
+
+    // Not checked is not "none": the last checked TVL and listing stay, still dated when they were checked.
+    expect(repo.signals.filter((s) => s.projectId === arcus.id)).toEqual([
+      { projectId: arcus.id, kind: "tvl", value: { tvl_usd: 45_000_000 }, source: "defillama", verified: true, observedAt: earlier },
+      { projectId: arcus.id, kind: "coingecko_listed", value: { gecko_id: "arcus" }, source: "defillama", verified: true, observedAt: earlier },
+      { projectId: arcus.id, kind: "curated_source", value: { source_kind: "telegram" }, source: "telegram", verified: false, observedAt: NOW },
+    ]);
+    expect(stats).toMatchObject({ signals_tvl: 0, signals_coingecko: 0, signals_failed: 0 });
   });
 
   it("skips projects not seen within scoreActiveSinceDays", async () => {

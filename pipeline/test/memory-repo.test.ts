@@ -635,6 +635,24 @@ describe("MemoryRepo signals", () => {
     expect(repo.signals.map((s) => s.projectId)).toEqual([other.id]);
   });
 
+  it("keeps the project's signals from the kept sources, with their own observation time", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const curated: NewSignal = { kind: "curated_source", value: {}, source: "airdrops_io", verified: false };
+    await repo.replaceSignals(p.id, [tvl, paradigm, curated], T0);
+    const later = new Date(T0.getTime() + 86_400_000);
+    const telegram: NewSignal = { kind: "curated_source", value: {}, source: "telegram", verified: false };
+
+    await repo.replaceSignals(p.id, [telegram], later, ["defillama"]);
+
+    expect(repo.signals).toEqual([
+      { projectId: p.id, ...tvl, observedAt: T0 },
+      { projectId: p.id, ...telegram, observedAt: later },
+    ]);
+    // A new signal that repeats a kept one breaks the unique index.
+    await expect(repo.replaceSignals(p.id, [tvl], later, ["defillama"])).rejects.toThrow("duplicate signal");
+  });
+
   it("accepts one kind from two sources but rejects a duplicate (kind, source, investor), like the unique index", async () => {
     const repo = new MemoryRepo();
     const p = await repo.createProject(project(), T0);

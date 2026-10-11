@@ -236,6 +236,20 @@ async function main(): Promise<void> {
   // Not atomic (delete, then insert; like replaceTasks): a refused replace leaves no signals until the next run.
   const afterRefused = await admin.from("project_signals").select("id").eq("project_id", p.id);
   assert.deepEqual(afterRefused.data, []);
+  // Kept sources (DefiLlama not checked this run) survive a replace with their own observed_at.
+  await repo.replaceSignals(p.id, [
+    { kind: "tvl", value: { tvl_usd: 25_000_000 }, source: "defillama", verified: true },
+    { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: false },
+  ], T0);
+  await repo.replaceSignals(p.id, [
+    { kind: "curated_source", value: { source_kind: "telegram" }, source: "telegram", verified: false },
+  ], t1, ["defillama"]);
+  const kept = await admin.from("project_signals").select("kind, source, observed_at").eq("project_id", p.id).order("source");
+  assert.equal(kept.error, null);
+  assert.deepEqual(
+    (kept.data ?? []).map((s) => [s.kind, s.source, new Date(s.observed_at as string).getTime()]),
+    [["tvl", "defillama", T0.getTime()], ["curated_source", "telegram", t1.getTime()]],
+  );
   await repo.replaceSignals(p.id, [
     { kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: true },
     { kind: "claimed_backer", value: { investor: "a16z", quote: "backed by a16z" }, source: "llm_text", verified: false },

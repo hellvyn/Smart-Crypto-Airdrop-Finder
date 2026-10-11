@@ -9,6 +9,7 @@ import type {
   NewSignal,
   RiskAssessment,
   RiskLevel,
+  SignalSource,
   Status,
   StatusEvidence,
 } from "@saf/core";
@@ -200,11 +201,13 @@ export interface PipelineRepo {
   /** Blanks the text of documents fetched more than `olderThanDays` ago (hash stays). Returns how many were blanked. */
   purgeDocumentText(olderThanDays: number, now: Date): Promise<number>;
   /**
-   * Deletes every signal of the project, then stores `signals` with `observed_at` = `at`. Throws on two signals with
-   * the same (kind, source, investor), or a verified `claimed_backer`/`reported_backer`; not atomic, so the project
-   * is then left without signals until the next successful replace.
+   * Deletes every signal of the project except those from `keepSources` (a source not checked this run: its last
+   * signals stay, with their own `observed_at`), then stores `signals` with `observed_at` = `at`. Throws on two
+   * signals with the same (kind, source, investor), kept ones included, or a verified `claimed_backer`/
+   * `reported_backer`; not atomic, so the project is then left with only the kept signals until the next successful
+   * replace.
    */
-  replaceSignals(projectId: string, signals: NewSignal[], at: Date): Promise<void>;
+  replaceSignals(projectId: string, signals: NewSignal[], at: Date, keepSources?: readonly SignalSource[]): Promise<void>;
   /** Cached portfolio domains of one VC (sorted) and when they were fetched; `fetchedAt` null when none are cached. */
   listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }>;
   /** Replaces the VC's cached domains, all fetched at `at`. */

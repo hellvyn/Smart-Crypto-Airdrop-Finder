@@ -39,6 +39,10 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
             filters.push([column, value]);
             return query;
           },
+          not: (column: string, operator: string, value: unknown) => {
+            filters.push([column, `not.${operator}.${String(value)}`]);
+            return query;
+          },
           then: (resolve: (value: typeof ok) => unknown) => resolve(ok),
         };
         return query;
@@ -179,6 +183,19 @@ describe("SupabaseRepo.replaceSignals", () => {
         ],
       },
     ]);
+  });
+
+  it("does not delete the signals of the kept sources", async () => {
+    const { client, inserts, deletes } = recordingClient();
+    const repo = new SupabaseRepo(client);
+    const at = new Date("2026-10-10T03:00:00Z");
+
+    await repo.replaceSignals("p-1", [], at, ["defillama", "vc_portfolio"]);
+
+    expect(deletes).toEqual([
+      { table: "project_signals", filters: [["project_id", "p-1"], ["source", "not.in.(defillama,vc_portfolio)"]] },
+    ]);
+    expect(inserts).toEqual([]);
   });
 });
 
