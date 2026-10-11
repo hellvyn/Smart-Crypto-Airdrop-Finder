@@ -26,9 +26,9 @@ const recommendationSchema = z.object({
   capital_note: z.string().min(1).max(300),
 });
 
-/** The plan the model answers with: 3 to 5 recommendations, best first. */
+/** The plan the model answers with: 1 to 5 recommendations, best first (a member may have fewer than 3 candidates). */
 export const coachPlanAnswerSchema = z.object({
-  recommendations: z.array(recommendationSchema).min(3).max(MAX_RECOMMENDATIONS),
+  recommendations: z.array(recommendationSchema).min(1).max(MAX_RECOMMENDATIONS),
 });
 
 export type CoachPlanAnswer = z.infer<typeof coachPlanAnswerSchema>;

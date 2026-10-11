@@ -181,7 +181,7 @@ describe("POST /api/coach/plan", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
 
     expect(rpcNames()).toEqual(["coach_new_thread", "coach_begin", "coach_mark_used", "coach_save_plan", "coach_finish"]);
-    const [thread, begin, used, save, finish] = fake.rpcCalls;
+    const [thread, begin, used, save, finish] = flowCalls();
     expect(thread?.args).toEqual({ p_project_id: null });
     expect(begin?.args).toEqual({ p_thread_id: THREAD, p_kind: "plan", p_content: coach.planRequest });
     expect(used?.args).toEqual({ p_user_message_id: MSG });
@@ -191,6 +191,27 @@ describe("POST /api/coach/plan", () => {
     const stored = String(finish?.args.p_content);
     expect(stored).toContain("Alpha");
     expect(stored.length).toBeLessThanOrEqual(16000);
+  });
+
+  it("answers 200 with a 2-item plan for a member who has only 2 candidates", async () => {
+    setup({ tables: candidateTables([{ id: P1, name: "Alpha" }, { id: P2, name: "Beta" }]) });
+    // The real schema judges what the (fake) model answered, like callStructured does.
+    callStructured.mockImplementation(async (_m: unknown, schema: { safeParse(v: unknown): { success: boolean } }) => {
+      const value = { recommendations: [rec(P1, "Alpha"), rec(P2, "Beta")] };
+      return schema.safeParse(value).success
+        ? { ok: true, value, model: "freellm:auto", servedModel: null, attempts: [] }
+        : { ok: false, stopped: false, attempts: [] };
+    });
+    const res = await post(planPOST, {});
+    expect(res.status).toBe(200);
+    expect((await res.json()).recommendations.map((r: { project_id: string }) => r.project_id)).toEqual([P1, P2]);
+  });
+
+  it("tells the model it may give fewer than 3 when fewer fit, and never to fill 3", async () => {
+    callStructured.mockResolvedValue(GOOD());
+    await post(planPOST, {});
+    const request = (callStructured.mock.calls[0]![0] as { role: string; content: string }[])[2]!.content;
+    expect(request).toContain("Isi 3 sampai 5 rekomendasi, atau semua kandidat yang cocok kalau kurang dari 3.");
   });
 
   it("stores the same recommendations it returns", async () => {
@@ -224,6 +245,25 @@ describe("POST /api/coach/plan", () => {
     expect(await res.json()).toEqual({ error: "quota", message: coach.errors.quota });
     expect(callStructured).not.toHaveBeenCalled();
     expect(rpcNames()).not.toContain("coach_finish");
+  });
+
+  it("is 429 quota without creating a thread when no message is left today", async () => {
+    callStructured.mockResolvedValue(GOOD());
+    setup({ rpc: { coach_quota_remaining: () => ({ data: 0, error: null }) } });
+    const res = await post(planPOST, {});
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "quota", message: coach.errors.quota });
+    expect(rpcNames()).toEqual([]);
+    expect(fake.rpcCalls.map((c) => c.name)).toEqual(["coach_quota_remaining"]);
+    expect(callStructured).not.toHaveBeenCalled();
+  });
+
+  it("checks the remaining quota before it creates the thread", async () => {
+    callStructured.mockResolvedValue(GOOD());
+    await post(planPOST, {});
+    const names = fake.rpcCalls.map((c) => c.name);
+    expect(names.indexOf("coach_quota_remaining")).toBeGreaterThanOrEqual(0);
+    expect(names.indexOf("coach_quota_remaining")).toBeLessThan(names.indexOf("coach_new_thread"));
   });
 
   it("maps the daily thread cap to the quota copy as well", async () => {

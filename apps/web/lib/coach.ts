@@ -367,7 +367,8 @@ const PLAN_REQUEST = [
   "Bikin rencana garapan untuk member ini dari daftar KANDIDAT.",
   "Jawab hanya dengan JSON, tanpa teks lain, persis dalam bentuk ini:",
   '{"recommendations":[{"project_id":"<id dari KANDIDAT>","reasons":[{"text":"<alasan, bahasa Indonesia>","quote":"<kutipan persis dari poin atau langkah project itu>"}],"minutes_per_day":<menit per hari, bilangan bulat>,"capital_note":"<satu kalimat soal modal untuk member ini>"}]}',
-  "Isi 3 sampai 5 rekomendasi, yang paling cocok dulu. Tiap rekomendasi punya 1 sampai 3 alasan, dan tiap alasan membawa satu kutipan. Total menit per hari tidak boleh lebih dari waktu per hari milik member.",
+  "Isi 3 sampai 5 rekomendasi, atau semua kandidat yang cocok kalau kurang dari 3. Yang paling cocok dulu. Tiap rekomendasi punya 1 sampai 3 alasan, dan tiap alasan membawa satu kutipan.",
+  "Total menit per hari tidak boleh lebih dari waktu per hari milik member. Kalau waktunya cuma muat untuk 1 atau 2 rekomendasi, isi segitu saja.",
 ].join("\n");
 
 /**

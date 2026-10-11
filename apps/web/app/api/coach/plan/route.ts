@@ -1,5 +1,5 @@
 // POST /api/coach/plan  {}  ->  the Coach's farming plan for the signed-in member (spec §5.2, §6, §9).
-// Order: member, profile, candidates (none: an empty state, no RPC, no model, no quota), new thread, quota (coach_begin),
+// Order: member, profile, candidates (none: an empty state, no RPC, no model, no quota), quota left (0: 429), new thread, quota (coach_begin),
 // the model, "used" mark as soon as it answers, validation, save, reply. Signed-out callers get a JSON 401.
 // Nothing here logs an email, a user id, a prompt or an answer.
 import { coachPlanAnswerSchema, selectCandidates, validatePlan } from "@saf/core";
@@ -55,6 +55,9 @@ export async function POST(request: Request): Promise<Response> {
         200,
       );
     }
+
+    // No message left today: say so before a thread is created that could never get a plan.
+    if ((await remainingQuota(db)) === 0) return coachErrorResponse("quota");
 
     const thread = await db.rpc("coach_new_thread", { p_project_id: null });
     if (thread.error || typeof thread.data !== "string") return coachErrorResponse(coachErrorFrom(thread.error));

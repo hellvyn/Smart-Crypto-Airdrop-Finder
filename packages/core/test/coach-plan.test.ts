@@ -53,9 +53,11 @@ const pool = [cand("a"), cand("b"), cand("c"), cand("d"), cand("e"), cand("f")];
 
 describe("coachPlanAnswerSchema", () => {
   const valid = answer(rec("a"), rec("b"), rec("c"));
-  it("accepts 3 to 5 recommendations", () => {
+  it("accepts 1 to 5 recommendations (a member may have fewer than 3 candidates)", () => {
     expect(coachPlanAnswerSchema.safeParse(valid).success).toBe(true);
-    expect(coachPlanAnswerSchema.safeParse(answer(rec("a"), rec("b"))).success).toBe(false);
+    expect(coachPlanAnswerSchema.safeParse(answer(rec("a"), rec("b"))).success).toBe(true);
+    expect(coachPlanAnswerSchema.safeParse(answer(rec("a"))).success).toBe(true);
+    expect(coachPlanAnswerSchema.safeParse(answer()).success).toBe(false);
     expect(coachPlanAnswerSchema.safeParse(answer(rec("a"), rec("b"), rec("c"), rec("d"), rec("e"))).success).toBe(true);
     expect(coachPlanAnswerSchema.safeParse(answer(rec("a"), rec("b"), rec("c"), rec("d"), rec("e"), rec("f"))).success).toBe(false);
   });
