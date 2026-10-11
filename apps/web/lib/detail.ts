@@ -115,3 +115,46 @@ export function newestUpdate(facts: EvidenceRow[]): EvidenceRow | null {
   updates.sort((a, b) => (b.value || "").localeCompare(a.value || "") || b.at.localeCompare(a.at));
   return updates[0] ?? null;
 }
+
+const PRECISION_RANK: Record<string, number> = { exact: 0, approximate: 1, month: 2, quarter: 3 };
+
+/**
+ * The deadlines for the "Ringkasan" box: one per kind. Sources each report their own, so a kind can come several times
+ * (once with a date, once "belum diketahui"). The one with a date wins, then the more exact one; kinds keep the order in
+ * which they first appeared.
+ */
+export function summaryDeadlines(deadlines: ProjectDetail["deadlines"]): ProjectDetail["deadlines"] {
+  const best = new Map<string, ProjectDetail["deadlines"][number]>();
+  const rank = (d: ProjectDetail["deadlines"][number]): number =>
+    (d.date === null ? 100 : 0) + (PRECISION_RANK[d.precision] ?? 9);
+  for (const d of deadlines) {
+    const current = best.get(d.kind);
+    if (current === undefined || rank(d) < rank(current)) best.set(d.kind, d);
+  }
+  return [...best.values()];
+}
+
+const HOST_LABELS: Record<string, string> = {
+  "x.com": "X",
+  "twitter.com": "X",
+  "t.me": "Telegram",
+  "telegram.me": "Telegram",
+  "discord.gg": "Discord",
+  "discord.com": "Discord",
+  "github.com": "GitHub",
+  "medium.com": "Medium",
+};
+
+/** The project's own links for the "Ringkasan" box: one per site (host), named when it is a well-known one. */
+export function summaryLinks(links: DetailLink[]): { url: string; label: string }[] {
+  const seen = new Set<string>();
+  const out: { url: string; label: string }[] = [];
+  for (const link of links) {
+    const host = sourceName(link.url);
+    if (seen.has(host)) continue;
+    seen.add(host);
+    out.push({ url: link.url, label: HOST_LABELS[host] ?? host });
+  }
+  return out;
+}
+

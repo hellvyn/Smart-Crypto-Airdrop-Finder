@@ -1,6 +1,6 @@
 // Pure helpers of the project page (lib/detail.ts).
 import { describe, expect, it } from "vitest";
-import { claimOpenChecked, domainAge, registeredOn, sourceName } from "@/lib/detail";
+import { claimOpenChecked, domainAge, registeredOn, sourceName, summaryDeadlines, summaryLinks } from "@/lib/detail";
 
 describe("claimOpenChecked (#42)", () => {
   const today = "2026-10-10";
@@ -50,3 +50,36 @@ describe("sourceName", () => {
     expect(sourceName("not a url")).toBe("not a url");
   });
 });
+
+describe("summaryDeadlines", () => {
+  it("keeps one deadline per kind: a dated one beats 'belum diketahui', and a more exact one beats a looser one", () => {
+    const out = summaryDeadlines([
+      { kind: "campaign_end", date: null, precision: "exact", text: "" },
+      { kind: "tge", date: "2026-10-01", precision: "quarter", text: "" },
+      { kind: "campaign_end", date: "2026-10-27", precision: "exact", text: "" },
+      { kind: "tge", date: "2026-10-20", precision: "exact", text: "" },
+      { kind: "snapshot", date: null, precision: "approximate", text: "" },
+    ]);
+    expect(out.map((d) => [d.kind, d.date])).toEqual([
+      ["campaign_end", "2026-10-27"],
+      ["tge", "2026-10-20"],
+      ["snapshot", null],
+    ]);
+  });
+});
+
+describe("summaryLinks", () => {
+  it("keeps one link per site and names the well-known ones", () => {
+    const link = (url: string) => ({ url, kind: "website" }) as never;
+    const out = summaryLinks([
+      link("https://mint.io/a"),
+      link("https://www.mint.io/b"),
+      link("https://x.com/proj"),
+      link("https://t.me/proj"),
+      link("https://nft.getminted.io/"),
+      link("https://getminted.io/"),
+    ]);
+    expect(out.map((l) => l.label)).toEqual(["mint.io", "X", "Telegram", "nft.getminted.io", "getminted.io"]);
+  });
+});
+
