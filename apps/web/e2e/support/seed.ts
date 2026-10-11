@@ -75,6 +75,18 @@ async function insertProject(row: Record<string, unknown>): Promise<string> {
   return created.id as string;
 }
 
+/**
+ * `msAgo` before `now` as an ISO time. Fixtures up to an hour old must read "Dicek hari ini", and the site's day is the
+ * WIB date: in the first hour after 00:00 WIB those offsets are scaled down (order kept) so they stay on today. A day or
+ * more ago is left as is.
+ */
+function agoToday(now: number): (msAgo: number) => string {
+  const WIB_MS = 7 * 3_600_000;
+  const sinceMidnight = (now + WIB_MS) % 86_400_000;
+  const scale = Math.min(1, (sinceMidnight - 1_000) / 3_600_000);
+  return (msAgo) => new Date(now - (msAgo > 0 && msAgo < 86_400_000 ? Math.max(0, msAgo * scale) : msAgo)).toISOString();
+}
+
 export async function seedProjects(): Promise<Seed> {
   const db = adminClient();
   const tag = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -360,7 +372,7 @@ export async function seedCuratedList(): Promise<CuratedSeed> {
   const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
   const now = Date.now();
-  const at = (msAgo: number) => new Date(now - msAgo).toISOString();
+  const at = agoToday(now);
   const project = (key: string, name: string): SeededProject => ({
     slug: `e2e-cl-${key}-${tag}`,
     name: `E2E CL ${name} ${tag}`,
@@ -503,7 +515,7 @@ export async function seedProjectPage(): Promise<ProjectPageSeed> {
   const db = adminClient();
   const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const now = Date.now();
-  const at = (msAgo: number) => new Date(now - msAgo).toISOString();
+  const at = agoToday(now);
   const day = (offset: number) => new Date(now + offset * 86_400_000).toISOString().slice(0, 10);
   const seed: ProjectPageSeed = {
     slug: `e2e-pp-${tag}`,
