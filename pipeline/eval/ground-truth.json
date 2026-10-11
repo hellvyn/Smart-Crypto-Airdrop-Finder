@@ -47,7 +47,7 @@
     },
     "aio_collector_crypt": {
       "kind": "project", "project": "collector crypt", "status": "live", "token": "CARDS", "chain": "solana",
-      "deadlines": [{ "kind": "tge", "date": "2025-08-29" }],
+      "deadlines": [{ "kind": "tge", "date": "2025-08-29" }, { "kind": "snapshot", "date": null }],
       "officialDomains": ["collectorcrypt.com"]
     },
     "aio_concrete": {
@@ -66,7 +66,7 @@
     },
     "aio_satsuma": {
       "kind": "project", "project": "satsuma", "status": "live", "token": "SUMA", "chain": "citrea",
-      "deadlines": [{ "kind": "tge", "date": "2026-06-04" }],
+      "deadlines": [{ "kind": "tge", "date": "2026-06-04" }, { "kind": "snapshot", "date": null }],
       "officialDomains": ["satsuma.exchange"]
     },
     "aio_extended": {

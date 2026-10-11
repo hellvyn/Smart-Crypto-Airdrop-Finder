@@ -38,7 +38,8 @@ Where each labelled case comes from (texts are not in the repo):
 - `tg_<n>`: post `https://t.me/airdrops_io/<n>`, one post per case, as `collectTelegram` / `parseTelegramPage` parse it.
 - The four original Telegram cases: `tg_flop` = post 7927, `tg_ink` = post 7921, `tg_ledger_negative` = post 7929,
   `tg_weekly_radar` = post 7932 (weekly radar Oct 3 to Oct 9). The original texts were never committed, so these
-  posts were matched to the existing labels by content on 2026-10-10 (see "Label yang perlu review owner").
+  posts were matched to the existing labels by content on 2026-10-10 (see "Label diaudit 2026-10-11 (agent, mandat
+  owner)").
 
 Pages change: a later fetch of an `aio_*` page can differ from the text the labels were made from (2026-10-10). If a
 label no longer fits the current page, relabel it from the new text rather than keeping the old one.
@@ -121,7 +122,7 @@ Labelled on 2026-10-10 from texts fetched that day: 33 cases.
 - 10 Telegram posts: the 4 original ones (`tg_ink` speculative, `tg_flop` announced since the audit, 1 negative, the
   radar) and 6 new ones (`tg_7919` ended, `tg_7908`, `tg_7892` and `tg_7928` speculative, `tg_7832` announced,
   `tg_4899` negative).
-- Every project case carries `deadlines` and `officialDomains` (20 labelled deadlines since the audit, 28 labelled
+- Every project case carries `deadlines` and `officialDomains` (22 labelled deadlines since the audit, 28 labelled
   domains in total).
 
 The texts were fetched with the pipeline's own collectors (airdrops.io home, `/latest/` and `/speculative/` listings,
@@ -134,7 +135,7 @@ On 2026-10-11 the owner delegated the label review. An agent that did not write 
 all 33 cases (status, token, chain, deadlines with kind and date, `officialDomains`, radar slugs) against the case
 text and the prompt's status definitions, and changed a label only where the text clearly supports another value.
 
-Changed (3 labels in 2 cases):
+Changed (5 labels in 4 cases; the last two were added after the review of the audit):
 
 - `tg_flop` status `speculative` → `announced`. The post is an update "from Arthur Hayes and @Flop_Labs": "Genesis
   rewards for miners, agents, validators, builders and creators", "Rewards are designed around real contributions",
@@ -147,6 +148,15 @@ Changed (3 labels in 2 cases):
 - `aio_mint_io` deadlines: added `snapshot null` next to the TGE. "The Season 1 snapshot happens shortly before the
   TGE in Q4 2026, with the exact date announced through MINT's official channels": a named snapshot without a date,
   same rule.
+- `aio_satsuma` deadlines: added `snapshot null` next to the TGE. "If your wallet is in the Genesis snapshot" and "The
+  Genesis snapshot is already taken, so airdrop eligibility is fixed": a named snapshot without a date, same rule.
+  That it is already past does not exclude it: the prompt defines `snapshot` as the date the eligibility snapshot
+  "is or was taken", and past dated events are labelled too (Satsuma's own TGE on 2026-06-04, DeepBook's
+  `campaign_end 2026-04-17`); the past facts the rule leaves out are launch, funding and announcement dates.
+- `aio_collector_crypt` deadlines: added `snapshot null` next to the TGE. "matter most before each snapshot" and
+  "There is no fixed public date for the next one, and snapshot timing is kept undisclosed on purpose": the next
+  quarterly snapshot is named, its date is not. No `claim` is added: the prompt defines `claim` as the last day to
+  claim, and the text gives none (only that the next distribution has no public date).
 
 Checked and kept (the doubtful ones listed before the audit, with the reason):
 
@@ -170,6 +180,9 @@ Checked and kept (the doubtful ones listed before the audit, with the reason):
 - `aio_perptools` deadlines `[]`: "Season 1 balances were snapshotted and archived on October 2, 2026", but the text
   says archived points only "may be used for future rewards, the airdrop or TGE", so it is not clearly an eligibility
   snapshot.
+- `aio_wick` deadlines `[]`: "if Wick ever takes a snapshot" is hypothetical, not a named snapshot. With this and
+  `aio_perptools`, every case text that mentions a snapshot was checked (after review: `aio_satsuma` and
+  `aio_collector_crypt` were labelled above).
 - `aio_mint_io`: the Mint a Bear whitelist closing on 2026-10-27 stays unlabelled (NFT whitelist window).
 - `aio_deepbook` `campaign_end 2026-04-17` (Season 1 "ran from January 22 to April 17, 2026") and `claim null`
   ("30 days after the portal launched") kept; `aio_variational` and `aio_extended` keep their `campaign_end` for the
