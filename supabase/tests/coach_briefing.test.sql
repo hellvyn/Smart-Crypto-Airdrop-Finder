@@ -4,6 +4,20 @@
 -- messages a day (a day is 00:00 to 24:00 WIB, Asia/Jakarta, for everyone). A user message counts
 -- while it has a reply, or while it is less than 2 minutes old. Briefings are read-only for members.
 -- The two-connection race on the last slot is in apps/web/test/coach-quota.int.test.ts (a pgTAP file is one transaction).
+
+-- Fixtures sit up to 3 minutes in the past and must fall on today's WIB date. In the first 5 minutes of a WIB day they
+-- would land on yesterday, so wait until 00:05 WIB first. Before `begin`: now() is fixed when the transaction starts.
+do $$
+declare
+  v_since_midnight interval := (clock_timestamp() at time zone 'Asia/Jakarta')
+    - date_trunc('day', clock_timestamp() at time zone 'Asia/Jakarta');
+begin
+  if v_since_midnight < interval '5 minutes' then
+    perform pg_sleep(extract(epoch from interval '5 minutes' - v_since_midnight) + 1);
+  end if;
+end
+$$;
+
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;

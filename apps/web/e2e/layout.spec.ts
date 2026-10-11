@@ -85,15 +85,26 @@ test("the signed-in header is Indonesian", async ({ page }) => {
   await expect(header.getByText(/Wallets|Settings|Sign out/)).toHaveCount(0);
 });
 
+/** Boxes on the page that scroll sideways on their own (the plan table and the member menu once did). */
+const sideScrollers = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll("body *")]
+      .filter((e) => ["auto", "scroll"].includes(getComputedStyle(e).overflowX) && e.scrollWidth > e.clientWidth + 1)
+      .map((e) => e.className || e.tagName),
+  );
+
 test.describe("360px phone", () => {
   test.use({ viewport: { width: 360, height: 740 } });
 
-  test("visitor pages do not scroll sideways", async ({ page }) => {
-    for (const path of ["/", "/airdrops", "/login"]) {
+  test("visitor pages do not scroll sideways, and neither does any box inside them", async ({ page }) => {
+    for (const path of ["/", "/airdrops", "/coach", "/login"]) {
       await page.goto(path);
       const width = await page.evaluate(() => document.documentElement.scrollWidth);
       expect(width, path).toBeLessThanOrEqual(360);
+      expect(await sideScrollers(page), path).toEqual([]);
     }
+    // The visitor menu is on the phone too, AI Coach included.
+    await expect(page.getByRole("banner").getByRole("link", { name: "AI Coach" })).toBeVisible();
     await expect(page.getByRole("banner").getByRole("link", { name: "Login" })).toBeVisible();
   });
 
@@ -102,5 +113,13 @@ test.describe("360px phone", () => {
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width).toBeLessThanOrEqual(360);
     await expect(page.getByRole("banner").getByRole("link", { name: "Watchlist" })).toBeVisible();
+    // Every menu link shows without swiping, and Logout stays on the logo's row.
+    expect(await sideScrollers(page)).toEqual([]);
+    for (const name of ["Airdrop", "Garapan saya", "AI Coach", "Watchlist", "Wallet", "Akun"]) {
+      await expect(page.getByRole("banner").getByRole("link", { name, exact: true })).toBeInViewport();
+    }
+    const logout = await page.getByRole("button", { name: "Logout" }).boundingBox();
+    const logo = await page.getByRole("banner").getByRole("link", { name: /AirdropIQ/i }).boundingBox();
+    expect(Math.abs(logout!.y - logo!.y)).toBeLessThan(40);
   });
 });

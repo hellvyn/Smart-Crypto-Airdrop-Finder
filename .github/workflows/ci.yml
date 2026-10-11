@@ -1,11 +1,21 @@
 name: CI
 
+# Push only: a pull request's checks are the push run on its head commit, so a branch with an open PR runs once, not twice.
+# Docs-only commits skip CI.
 on:
+  workflow_dispatch:
   push:
-  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
 
 permissions:
   contents: read
+
+# A newer push to the same branch makes the older run moot.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -21,7 +31,10 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
+  # The slow job (local Supabase, pgTAP, Playwright): on main after a merge, on a manual run, or on a branch push whose
+  # commit message says [e2e] (AI, quota, data or pipeline changes). Typecheck and unit tests run on every push.
   e2e:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[e2e]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

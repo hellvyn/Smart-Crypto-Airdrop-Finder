@@ -489,3 +489,5 @@ Ruling: T4 wires `getRunSummary` and `getTrackRecord` into the landing — P7.T4
 
 ## Owner rule (2026-10-11, standing)
 No local e2e runs for small changes (text, styling, layout): edit → typecheck + the touched file's unit tests (<1 min) → push; CI runs e2e. Local e2e only to diagnose a CI failure. AI, quota, data and pipeline changes stay fully gated, through CI. Batch consecutive small asks into one push.
+Update (owner 2026-10-11, "klo sesuatu yang gak di butuhin gak usah"): CI's e2e job (pgTAP, int test, Playwright) runs only on main after a merge, on a manual run, or on a branch commit whose message has `[e2e]`. Use `[e2e]` for AI, quota, data, pipeline and auth changes; small UI changes merge on typecheck + unit tests, and main's run after the merge is the safety net.
+Mobile is the default (owner 2026-10-11): every page change is checked at 360 px for layout (not only "no sideways scroll").
