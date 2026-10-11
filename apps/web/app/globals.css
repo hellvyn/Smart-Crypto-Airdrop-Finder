@@ -1677,7 +1677,55 @@ button:not([class]) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px 16px;
+  gap: 10px 12px;
+}
+
+/* Phone: Watch and Tanya AI side by side, the farming row under them at full width. */
+@media (max-width: 639px) {
+  .project-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .project-actions > form {
+    display: flex;
+  }
+
+  .project-actions > form > button,
+  .project-actions > .ui-button {
+    width: 100%;
+    padding-left: 8px;
+    padding-right: 8px;
+    font-size: 13px;
+  }
+
+  .project-actions > .farm-button {
+    grid-column: 1 / -1;
+  }
+
+  .project-actions > .farm-button > .ui-button,
+  .project-actions > .farm-button > form:only-child,
+  .project-actions > .farm-button > form:only-child > .ui-button {
+    flex: 1;
+    width: 100%;
+  }
+}
+
+/* A secondary action that should not look like one of the main buttons ("Berhenti garap"). */
+.text-button {
+  padding: 8px 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.text-button:hover {
+  color: var(--ink);
 }
 
 /* Garapan saya (mockup CGarapan). */
