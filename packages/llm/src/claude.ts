@@ -15,6 +15,19 @@ export interface ClaudeClient {
 }
 
 /**
+ * What `streamText` uses of the SDK client: the stream is iterated for its events (text deltas), then
+ * `finalMessage()` gives the stop reason and the token usage. Tests pass a fake.
+ */
+export interface ClaudeStreamClient {
+  messages: {
+    stream(
+      body: Anthropic.MessageStreamParams,
+      options?: { signal?: AbortSignal | null; timeout?: number },
+    ): AsyncIterable<Anthropic.MessageStreamEvent> & { finalMessage(): Promise<Anthropic.Message> };
+  };
+}
+
+/**
  * Output budget of one Claude call. With adaptive thinking the thinking tokens count toward it as well; the JSON
  * answers of the analyses are far shorter. A call that still hits it ends with `max_tokens` and falls through.
  */
@@ -30,7 +43,7 @@ const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
  * `REQUEST_TIMEOUT_MS` (see `claudeChat`). `authToken` and `baseURL` are fixed so that `ANTHROPIC_AUTH_TOKEN` or
  * `ANTHROPIC_BASE_URL` in the environment can neither add a second credential nor send the key elsewhere.
  */
-export function createClaudeClient(apiKey: string, fetchFn: typeof fetch): ClaudeClient {
+export function createClaudeClient(apiKey: string, fetchFn: typeof fetch): ClaudeClient & ClaudeStreamClient {
   return new Anthropic({
     apiKey,
     authToken: null,
@@ -42,10 +55,28 @@ export function createClaudeClient(apiKey: string, fetchFn: typeof fetch): Claud
 }
 
 /**
- * Sends `messages` to Claude as one streamed request and returns the text of the final message. The `system`
- * messages become the top-level system prompt, marked for prompt caching (it is the same for every project of an
- * analysis kind), and the `user` messages the conversation. No `temperature`: current Claude models reject
- * non-default sampling parameters.
+ * The request body for `messages`. The `system` messages become the top-level system prompt, marked for prompt
+ * caching (it is the same for every project of an analysis kind), and the `user` and `assistant` messages the
+ * conversation. No `temperature`: current Claude models reject non-default sampling parameters.
+ */
+export function buildClaudeBody(model: ModelConfig, messages: ChatMessage[]): Anthropic.MessageStreamParams {
+  const system = messages
+    .filter((m) => m.role === "system")
+    .map((m) => m.content)
+    .join("\n\n");
+  return {
+    model: model.id,
+    max_tokens: CLAUDE_MAX_TOKENS,
+    ...(system === "" ? {} : { system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] }),
+    messages: messages.flatMap((m) => (m.role === "system" ? [] : [{ role: m.role, content: m.content }])),
+    output_config: { effort: CLAUDE_EFFORT },
+    ...model.extraBody,
+  };
+}
+
+/**
+ * Sends `messages` to Claude as one streamed request (body: `buildClaudeBody`) and returns the text of the final
+ * message.
  *
  * - `finishReason`: `stop` for `end_turn` (a complete answer); any other `stop_reason` (`refusal`, `max_tokens`, ...)
  *   is passed on as it is, so `callStructured` moves on to the next model.
@@ -60,18 +91,7 @@ export async function claudeChat(
   deps: { client: ClaudeClient; apiKey: string },
 ): Promise<ChatResult> {
   const started = Date.now();
-  const system = messages
-    .filter((m) => m.role === "system")
-    .map((m) => m.content)
-    .join("\n\n");
-  const body: Anthropic.MessageStreamParams = {
-    model: model.id,
-    max_tokens: CLAUDE_MAX_TOKENS,
-    ...(system === "" ? {} : { system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] }),
-    messages: messages.filter((m) => m.role === "user").map((m) => ({ role: "user", content: m.content })),
-    output_config: { effort: CLAUDE_EFFORT },
-    ...model.extraBody,
-  };
+  const body = buildClaudeBody(model, messages);
 
   try {
     const stream = deps.client.messages.stream(body, {

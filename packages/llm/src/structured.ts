@@ -31,7 +31,7 @@ export type StructuredOutcome<T> =
   | { ok: false; stopped: boolean; attempts: LlmAttempt[] };
 
 /** Waits before the 1st and 2nd retry of a rate-limited (429) model. */
-const RATE_LIMIT_BACKOFF_MS = [2000, 4000] as const;
+export const RATE_LIMIT_BACKOFF_MS = [2000, 4000] as const;
 
 /** Parses model output: straight JSON first, then the first `{` .. last `}` after removing code fences. */
 export function parseJson(content: string): { ok: true; value: unknown } | { ok: false } {

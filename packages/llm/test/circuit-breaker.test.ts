@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCircuitBreaker } from "../src/llm/circuit-breaker.js";
+import { createCircuitBreaker } from "../src/circuit-breaker.js";
 
 describe("createCircuitBreaker", () => {
   it("opens a model after the threshold of consecutive failures", () => {

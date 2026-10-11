@@ -17,7 +17,8 @@ export function modelKey(model: ModelConfig): string {
 }
 
 export interface ChatMessage {
-  role: "system" | "user";
+  /** `assistant` only appears in a chat history (`streamText`); the pipeline's prompts use `system` and `user`. */
+  role: "system" | "user" | "assistant";
   content: string;
 }
 
@@ -43,9 +44,83 @@ export interface ChatResult {
 export const REQUEST_TIMEOUT_MS = 180_000;
 const ERROR_BODY_MAX_CHARS = 500;
 
-interface StreamChunk {
+export interface StreamChunk {
   model?: unknown;
   choices?: { delta?: { content?: unknown }; finish_reason?: unknown }[];
+  usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
+}
+
+/** URL and `fetch` options of one streamed chat completions request (shared by `streamChat` and `streamText`). */
+export function chatCompletionsRequest(
+  model: ModelConfig,
+  messages: ChatMessage[],
+  deps: { apiKey: string; baseUrl: string },
+  signal: AbortSignal,
+): { url: string; init: RequestInit } {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (deps.apiKey !== "") headers["Authorization"] = `Bearer ${deps.apiKey}`;
+
+  const body = {
+    model: model.id,
+    messages,
+    temperature: 0,
+    max_tokens: 8192,
+    stream: true,
+    stream_options: { include_usage: true },
+    ...model.extraBody,
+  };
+  return { url: `${deps.baseUrl}/chat/completions`, init: { method: "POST", headers, body: JSON.stringify(body), signal } };
+}
+
+/**
+ * The parsed `data:` chunks of an SSE response body, up to `[DONE]` or the end of the stream. The response carries
+ * no charset, so the bytes are always decoded as UTF-8. Unparsable `data:` lines are skipped. A read error is thrown.
+ * The reader is cancelled once the generator is finished or abandoned early.
+ */
+export async function* readSseChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<StreamChunk, void, undefined> {
+  const decoder = new TextDecoder("utf-8");
+  const reader = body.getReader();
+  let buffer = "";
+  let done = false;
+
+  const parseLine = (rawLine: string): StreamChunk | null => {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (!line.startsWith("data:")) return null;
+    const data = line.slice(5).trim();
+    if (data === "[DONE]") {
+      done = true;
+      return null;
+    }
+    try {
+      return JSON.parse(data) as StreamChunk;
+    } catch {
+      return null;
+    }
+  };
+
+  try {
+    while (!done) {
+      const { value, done: streamEnded } = await reader.read();
+      if (streamEnded) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline !== -1 && !done) {
+        const chunk = parseLine(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        if (chunk !== null) yield chunk;
+        newline = buffer.indexOf("\n");
+      }
+    }
+    if (!done) {
+      buffer += decoder.decode();
+      if (buffer !== "") {
+        const chunk = parseLine(buffer);
+        if (chunk !== null) yield chunk;
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
 }
 
 /**
@@ -72,26 +147,9 @@ export async function streamChat(
     return result;
   };
 
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (deps.apiKey !== "") headers["Authorization"] = `Bearer ${deps.apiKey}`;
-
-  const body = {
-    model: model.id,
-    messages,
-    temperature: 0,
-    max_tokens: 8192,
-    stream: true,
-    stream_options: { include_usage: true },
-    ...model.extraBody,
-  };
-
   try {
-    const response = await deps.fetch(`${deps.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    const request = chatCompletionsRequest(model, messages, deps, AbortSignal.timeout(REQUEST_TIMEOUT_MS));
+    const response = await deps.fetch(request.url, request.init);
 
     if (!response.ok) {
       let text = "";
@@ -104,53 +162,16 @@ export async function streamChat(
     }
     if (!response.body) return failed(0);
 
-    // The SSE response carries no charset, so always decode as UTF-8.
-    const decoder = new TextDecoder("utf-8");
-    const reader = response.body.getReader();
     let content = "";
     let finishReason: string | null = null;
     let servedModel: string | null = null;
-    let buffer = "";
-    let done = false;
-
-    const handleLine = (rawLine: string): void => {
-      const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-      if (!line.startsWith("data:")) return;
-      const data = line.slice(5).trim();
-      if (data === "[DONE]") {
-        done = true;
-        return;
-      }
-      let chunk: StreamChunk;
-      try {
-        chunk = JSON.parse(data) as StreamChunk;
-      } catch {
-        return;
-      }
+    for await (const chunk of readSseChunks(response.body)) {
       if (servedModel === null && typeof chunk.model === "string" && chunk.model !== "") servedModel = chunk.model;
       const choice = chunk.choices?.[0];
-      if (!choice) return;
+      if (!choice) continue;
       const piece = choice.delta?.content;
       if (typeof piece === "string") content += piece;
       if (typeof choice.finish_reason === "string") finishReason = choice.finish_reason;
-    };
-
-    while (!done) {
-      const { value, done: streamEnded } = await reader.read();
-      if (streamEnded) break;
-      buffer += decoder.decode(value, { stream: true });
-      let newline = buffer.indexOf("\n");
-      while (newline !== -1 && !done) {
-        handleLine(buffer.slice(0, newline));
-        buffer = buffer.slice(newline + 1);
-        newline = buffer.indexOf("\n");
-      }
-    }
-    if (!done) {
-      buffer += decoder.decode();
-      if (buffer !== "") handleLine(buffer);
-    } else {
-      await reader.cancel().catch(() => {});
     }
 
     return { content, finishReason, latencyMs: Date.now() - started, httpStatus: response.status, servedModel };

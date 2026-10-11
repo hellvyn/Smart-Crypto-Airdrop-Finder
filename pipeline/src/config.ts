@@ -1,4 +1,8 @@
-import type { ModelConfig } from "./llm/nvidia.js";
+import { ANALYZE_MODELS, MODELS } from "@saf/llm";
+import type { ModelConfig } from "@saf/llm";
+
+// The model chains live in `@saf/llm` (the farming coach shares them); every pipeline import keeps using `config`.
+export { ANALYZE_MODELS, MODELS };
 
 /** A VC whose portfolio page is cross-checked for `vc_backer` (curation spec §5.2). */
 export interface VcConfig {
@@ -137,73 +141,6 @@ export const VC_LIST: VcConfig[] = [
   // to remove it, move this entry back to VC_CANDIDATES. Its sister site a16z.com is in NON_PORTFOLIO_DOMAINS.
   { id: "a16z-crypto", name: "a16z crypto", aliases: ["a16z", "Andreessen Horowitz"], tier: 1, portfolioUrl: "https://a16zcrypto.com/portfolio/" },
 ];
-
-/**
- * Model fallback order (curation spec decision #30). `max_tokens` and `temperature` are set by `streamChat`.
- * freellm `auto` routes each request to a free model; the NVIDIA models are the fallback, behind the circuit
- * breaker, for when the router is rate limited or down.
- */
-export const MODELS: ModelConfig[] = [
-  { provider: "freellm", id: "auto", extraBody: {} },
-  // glm-5.3-flash first among the NVIDIA models since 2026-10-10: in the first production run kimi-k3 timed out
-  // on every call after 14:53 UTC while glm answered all 22 calls in 2-31 s.
-  { provider: "nvidia", id: "z-ai/glm-5.3-flash", extraBody: { reasoning_effort: "low" } },
-  { provider: "nvidia", id: "moonshotai/kimi-k3", extraBody: { chat_template_kwargs: { thinking: false } } },
-  { provider: "nvidia", id: "google/gemma-4-31b-it", extraBody: {} },
-];
-
-/**
- * Model order of the AI analyses (`analyze` stage): Claude Sonnet first, then the extraction chain unchanged.
- * Owner decision of 2026-10-11: the analyses use up a prepaid Claude API credit that expires on 2026-10-27. Any
- * Claude failure (no credit left, invalid key, rate limit after the retries, overload, timeout, refusal, cut-off or
- * unusable answer) moves on to freellm `auto` and NVIDIA as before. Without `ANTHROPIC_API_KEY` Claude is left out
- * (`usableModels`); removing this entry restores the old order. Thinking depth and output budget: `claudeChat`.
- */
-export const ANALYZE_MODELS: ModelConfig[] = [{ provider: "anthropic", id: "claude-sonnet-5-5", extraBody: {} }, ...MODELS];
-
-export interface ProviderConfig {
-  /** Without a trailing slash; `/chat/completions` is appended. */
-  baseUrl: string;
-  /** Empty means no `Authorization` header. */
-  apiKey: string;
-}
-
-/** Endpoint and key of each provider. Anthropic is called through its SDK, which knows its own endpoint. */
-export interface Providers {
-  freellm: ProviderConfig;
-  nvidia: ProviderConfig;
-  /** Empty means no key: Claude models are left out of the chain (`usableModels`). */
-  anthropic: { apiKey: string };
-}
-
-const FREELLM_DEFAULT_BASE_URL = "https://freellm.hellvyn.id/v1";
-const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
-
-/**
- * Endpoint and key per provider: freellm from `LLM_BASE_URL` (empty or unset: the default URL) and `LLM_API_KEY`,
- * NVIDIA from `NVIDIA_API_KEY`, Anthropic from `ANTHROPIC_API_KEY` (trimmed: a key pasted with a trailing newline
- * still works, and a blank one counts as no key). A missing key is an empty string.
- */
-export function loadProviders(env: Record<string, string | undefined>): Providers {
-  const withoutTrailingSlash = (url: string): string => url.replace(/\/+$/, "");
-  return {
-    freellm: {
-      baseUrl: withoutTrailingSlash(env.LLM_BASE_URL || FREELLM_DEFAULT_BASE_URL),
-      apiKey: env.LLM_API_KEY ?? "",
-    },
-    nvidia: { baseUrl: NVIDIA_BASE_URL, apiKey: env.NVIDIA_API_KEY ?? "" },
-    anthropic: { apiKey: (env.ANTHROPIC_API_KEY ?? "").trim() },
-  };
-}
-
-/**
- * `models` without the ones that cannot work with these keys: a Claude model needs `ANTHROPIC_API_KEY` (freellm and
- * NVIDIA can go without a key, e.g. behind a proxy that adds it). A model left out costs no request and no circuit
- * breaker failure.
- */
-export function usableModels(models: ModelConfig[], providers: Providers): ModelConfig[] {
-  return models.filter((m) => m.provider !== "anthropic" || providers.anthropic.apiKey !== "");
-}
 
 export const defaultConfig: PipelineConfig = {
   telegramChannels: ["airdrops_io"],

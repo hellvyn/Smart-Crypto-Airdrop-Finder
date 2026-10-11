@@ -20,6 +20,9 @@ importers:
       '@saf/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@saf/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
       '@supabase/ssr':
         specifier: ^0.12.7
         version: 0.12.7(@supabase/supabase-js@2.117.3)
@@ -79,6 +82,19 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
 
+  packages/llm:
+    dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.133.0
+        version: 0.133.0(zod@4.6.5)
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+
   pipeline:
     dependencies:
       '@anthropic-ai/sdk':
@@ -87,6 +103,9 @@ importers:
       '@saf/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@saf/llm':
+        specifier: workspace:*
+        version: link:../packages/llm
       '@supabase/supabase-js':
         specifier: ^2.117.3
         version: 2.117.3

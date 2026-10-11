@@ -3,7 +3,7 @@ import { FORBIDDEN_PHRASES, analystSchema, postProcessAnalyst, stepTranslationGr
 import type { AnalystAnswer } from "@saf/core";
 import type { Analyzer, SourceText } from "../../steps/analyze.js";
 import type { PipelineRepo, ProjectForScoring } from "../../store/repo.js";
-import type { ChatMessage } from "../nvidia.js";
+import type { ChatMessage } from "@saf/llm";
 
 export const ANALYST_PROMPT_VERSION = "analyst-2026-10-10.1";
 

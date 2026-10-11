@@ -481,7 +481,7 @@ Extraction never calls Claude. The owner chose this on 2026-10-11 to use up a pr
 expires on **2026-10-27**.
 
 - **Secret:** `ANTHROPIC_API_KEY` (section 2). Claude is called through the official SDK `@anthropic-ai/sdk`
-  (`pipeline/src/llm/claude.ts`), streamed, with each call cut off after 180 s like the other models. The key is only
+  (`packages/llm/src/claude.ts`), streamed, with each call cut off after 180 s like the other models. The key is only
   sent to the SDK; error bodies kept in memory have it removed, and a failed analysis is reported with failure codes
   only (`http_400`, `finish_refusal`, ...).
 - **Fallback:** any Claude failure moves the same analysis on to `freellm:auto`, then NVIDIA, exactly as before:

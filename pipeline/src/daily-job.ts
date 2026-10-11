@@ -1,10 +1,9 @@
 // The daily job behind `main.ts`: reads the environment, builds the real dependencies, runs the pipeline and
 // returns the process exit code. Split out of the entry point so tests can run it with fakes.
 import { createClient } from "@supabase/supabase-js";
-import { defaultConfig, loadProviders, usableModels } from "./config.js";
+import { createChat, createClaudeClient, loadProviders, usableModels } from "@saf/llm";
+import { defaultConfig } from "./config.js";
 import { createFetchImage, createFetchUntrusted, createHttp } from "./http.js";
-import { createChat } from "./llm/chat.js";
-import { createClaudeClient } from "./llm/claude.js";
 import { runDaily } from "./run.js";
 import type { PipelineDeps } from "./run.js";
 import { runExitCode } from "./stats.js";

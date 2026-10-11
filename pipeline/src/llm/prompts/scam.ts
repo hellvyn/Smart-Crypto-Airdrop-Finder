@@ -4,7 +4,7 @@ import { postProcessScam, scamSchema } from "@saf/core";
 import type { ScamAnswer } from "@saf/core";
 import type { Analyzer, SourceText } from "../../steps/analyze.js";
 import type { ProjectForScoring } from "../../store/repo.js";
-import type { ChatMessage } from "../nvidia.js";
+import type { ChatMessage } from "@saf/llm";
 import { STYLE_RULES, sourceBlocks, stepLines } from "./analyst.js";
 
 export const SCAM_PROMPT_VERSION = "scam-2026-10-11.1";

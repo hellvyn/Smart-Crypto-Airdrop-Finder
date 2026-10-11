@@ -1,0 +1,14 @@
+export { createChat } from "./chat.js";
+export { createCircuitBreaker } from "./circuit-breaker.js";
+export type { CircuitBreaker } from "./circuit-breaker.js";
+export { buildClaudeBody, CLAUDE_EFFORT, CLAUDE_MAX_TOKENS, claudeChat, createClaudeClient } from "./claude.js";
+export type { ClaudeClient, ClaudeStreamClient } from "./claude.js";
+export { ANALYZE_MODELS, COACH_MODELS, MODELS } from "./models.js";
+export { modelKey, REQUEST_TIMEOUT_MS, streamChat } from "./nvidia.js";
+export type { ChatMessage, ChatResult, ModelConfig, ProviderId } from "./nvidia.js";
+export { loadProviders, usableModels } from "./providers.js";
+export type { ProviderConfig, Providers } from "./providers.js";
+export { streamText } from "./stream.js";
+export type { StreamTextDeps, StreamTextEvent } from "./stream.js";
+export { callStructured, parseJson, RATE_LIMIT_BACKOFF_MS } from "./structured.js";
+export type { ChatFn, LlmAttempt, StructuredOutcome } from "./structured.js";

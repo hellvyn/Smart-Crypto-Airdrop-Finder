@@ -1,7 +1,7 @@
 import pLimit from "p-limit";
 import type { ExtractionResult } from "@saf/core";
 import type { PipelineConfig } from "../config.js";
-import { createCircuitBreaker } from "../llm/circuit-breaker.js";
+import { createCircuitBreaker } from "@saf/llm";
 import { extractWithFallback } from "../llm/extract.js";
 import type { ChatFn } from "../llm/extract.js";
 import { PROMPT_VERSION } from "../llm/prompt.js";
