@@ -38,6 +38,9 @@ jobs:
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           # NVIDIA (fallback models).
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          # Anthropic Claude Sonnet, first model of the AI analyses only (prepaid credit, expires 2026-10-27).
+          # Empty or unset: the analyses skip Claude and use the chain above. Any Claude failure falls back too.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: pnpm --silent --filter pipeline start

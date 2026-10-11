@@ -1,9 +1,10 @@
 // The daily job behind `main.ts`: reads the environment, builds the real dependencies, runs the pipeline and
 // returns the process exit code. Split out of the entry point so tests can run it with fakes.
 import { createClient } from "@supabase/supabase-js";
-import { defaultConfig, loadProviders } from "./config.js";
+import { defaultConfig, loadProviders, usableModels } from "./config.js";
 import { createFetchUntrusted, createHttp } from "./http.js";
-import { streamChat } from "./llm/nvidia.js";
+import { createChat } from "./llm/chat.js";
+import { createClaudeClient } from "./llm/claude.js";
 import { runDaily } from "./run.js";
 import type { PipelineDeps } from "./run.js";
 import { runExitCode } from "./stats.js";
@@ -25,6 +26,9 @@ export async function runDailyJob(
     return 1;
   }
   const providers = loadProviders(env);
+  const claude = providers.anthropic.apiKey === "" ? null : createClaudeClient(providers.anthropic.apiKey, fetch);
+  // Without ANTHROPIC_API_KEY the analyses skip Claude entirely: no request and no circuit breaker failure.
+  const config = { ...defaultConfig, analyzeModels: usableModels(defaultConfig.analyzeModels, providers) };
 
   let stats;
   try {
@@ -33,12 +37,12 @@ export async function runDailyJob(
         repo: new SupabaseRepo(createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })),
         http: createHttp(),
         fetchUntrusted: createFetchUntrusted(),
-        chat: (model, messages) => streamChat(model, messages, { fetch, ...providers[model.provider] }),
+        chat: createChat(providers, { fetch, claude }),
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
         now: () => new Date(),
         ...overrides,
       },
-      defaultConfig,
+      config,
     );
   } catch {
     // Full counters (with run_error and failed_step) are stored in pipeline_runs.
