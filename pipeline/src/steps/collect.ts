@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
 import { collectAirdropsIo } from "../collectors/airdrops-io.js";
 import { collectAlphaDrops } from "../collectors/alphadrops.js";
-import { parseProtocols, selectSpeculativeCandidates } from "../collectors/defillama.js";
+import {
+  detailLines,
+  listCarriesDetails,
+  mergeDetails,
+  parseProtocolDetail,
+  parseProtocols,
+  selectSpeculativeCandidates,
+} from "../collectors/defillama.js";
 import type { DefillamaProtocol, SpeculativeCandidate } from "../collectors/defillama.js";
 import { collectTelegram } from "../collectors/telegram.js";
 import type { CollectedDocument, CollectorResult, Http } from "../collectors/types.js";
@@ -11,6 +18,8 @@ import type { DailyStats } from "../stats.js";
 import type { PipelineRepo, StoredDocument } from "../store/repo.js";
 
 const PROTOCOLS_URL = "https://api.llama.fi/protocols";
+const PROTOCOL_URL = "https://api.llama.fi/protocol/";
+const MINUTE_MS = 60_000;
 const DEFILLAMA_KEY = "defillama";
 
 export interface SpeculativeItem {
@@ -25,7 +34,9 @@ export function contentHash(text: string): string {
 /**
  * Document for a DefiLlama candidate. Only stable fields go into the text (and so the hash), so daily TVL
  * moves do not count as a change; TVL and the 7-day change appear only in the evidence quote. The listing
- * date (day precision) is stable and tells the reader how new the protocol is.
+ * date (day precision) is stable and tells the reader how new the protocol is. The labelled detail lines
+ * (Description, Methodology, Audits, GitHub, Raises) follow when DefiLlama has them: the AI analyses read this
+ * text, so a project whose only source is its DefiLlama listing still has something to say.
  */
 export function defillamaDocument(candidate: SpeculativeCandidate, now: Date): CollectedDocument {
   const text = [
@@ -34,6 +45,7 @@ export function defillamaDocument(candidate: SpeculativeCandidate, now: Date): C
     `Chains: ${candidate.chains.length > 0 ? candidate.chains.join(", ") : "n/a"}`,
     `Website: ${candidate.url ?? "n/a"}`,
     `Listed on DefiLlama: ${candidate.listedAt ? candidate.listedAt.toISOString().slice(0, 10) : "n/a"}`,
+    ...detailLines(candidate.details),
     "No token listed on DefiLlama.",
   ].join("\n");
   return {
@@ -51,9 +63,11 @@ interface DefillamaResult {
   /** The full protocol list for the `signals` stage, or null when it could not be fetched. */
   protocols: DefillamaProtocol[] | null;
   candidates: SpeculativeCandidate[];
+  /** The list entries already carry `methodology`, `raises` or `github`: no detail request is needed. */
+  listHasDetails: boolean;
 }
 
-const DEFILLAMA_FAILED: DefillamaResult = { protocols: null, candidates: [] };
+const DEFILLAMA_FAILED: DefillamaResult = { protocols: null, candidates: [], listHasDetails: false };
 
 /**
  * Fetches DefiLlama protocols once: the full list (for signals) and the speculative candidates. `protocols` is null
@@ -73,7 +87,46 @@ async function collectDefillama(http: Http, config: PipelineConfig, now: Date): 
   return {
     protocols: parseProtocols(raw),
     candidates: selectSpeculativeCandidates(raw, { ...config.defillama, now }),
+    listHasDetails: listCarriesDetails(raw),
   };
+}
+
+/**
+ * Adds the `/protocol/{slug}` fields (methodology, github, raises, and what the list lacked) to the candidates, in
+ * candidate order: one request at a time, `delayMs` apart, at most `maxRequests` and none started after
+ * `budgetMinutes` (by `clock`, from the first request's turn). A candidate not asked is counted in
+ * `defillama_details_skipped`, one whose answer is not HTTP 200 JSON in `defillama_details_failed`; either keeps the
+ * fields from the list. Never throws.
+ */
+async function addDetails(
+  deps: { http: Http; sleep: (ms: number) => Promise<void>; clock: () => Date },
+  candidates: SpeculativeCandidate[],
+  limits: PipelineConfig["defillamaDetails"],
+  stats: DailyStats,
+): Promise<SpeculativeCandidate[]> {
+  const deadline = deps.clock().getTime() + limits.budgetMinutes * MINUTE_MS;
+  let asked = 0;
+  const out: SpeculativeCandidate[] = [];
+  for (const candidate of candidates) {
+    if (asked >= limits.maxRequests || deps.clock().getTime() >= deadline) {
+      stats.defillama_details_skipped += 1;
+      out.push(candidate);
+      continue;
+    }
+    if (asked > 0) await deps.sleep(limits.delayMs);
+    asked += 1;
+    try {
+      const res = await deps.http.get(`${PROTOCOL_URL}${encodeURIComponent(candidate.slug)}`);
+      if (res.status !== 200) throw new Error("status");
+      const detail = parseProtocolDetail(JSON.parse(res.body));
+      stats.defillama_details_fetched += 1;
+      out.push({ ...candidate, details: mergeDetails(candidate.details, detail) });
+    } catch {
+      stats.defillama_details_failed += 1;
+      out.push(candidate);
+    }
+  }
+  return out;
 }
 
 /** Stores a collected document when its hash is new or changed. */
@@ -103,7 +156,7 @@ async function ingestSafely(repo: PipelineRepo, doc: CollectedDocument, stats: D
  * pages.
  */
 export async function collectSources(
-  deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void> },
+  deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void>; now?: () => Date },
   config: PipelineConfig,
   now: Date,
   stats: DailyStats,
@@ -137,6 +190,14 @@ export async function collectSources(
     llama = DEFILLAMA_FAILED;
   }
   if (llama.protocols === null) stats.source_failed += 1;
+  if (!llama.listHasDetails && llama.candidates.length > 0) {
+    llama.candidates = await addDetails(
+      { http, sleep: deps.sleep ?? defaultSleep, clock: deps.now ?? (() => new Date()) },
+      llama.candidates,
+      config.defillamaDetails,
+      stats,
+    );
+  }
 
   const items: SpeculativeItem[] = [];
   for (const candidate of llama.candidates) {

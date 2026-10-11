@@ -18,6 +18,13 @@ export interface PipelineConfig {
   telegramChannels: string[];
   defillama: { minTvl: number; excludedCategories: string[]; limit: number; newWithinDays: number };
   /**
+   * The `/protocol/{slug}` detail endpoint (description, methodology, github, raises), asked for the speculative
+   * candidates only, and only when the `/protocols` list does not carry those fields: at most `maxRequests` a run,
+   * `delayMs` apart, none started after `budgetMinutes` from the start of the first (the answers carry full TVL
+   * history, so they are big). Candidates left over keep the list fields.
+   */
+  defillamaDetails: { maxRequests: number; delayMs: number; budgetMinutes: number };
+  /**
    * AlphaDrops collector (curation spec §15.1): at most `maxDetails` detail pages per run, `delayMs` apart.
    * `intermediaryHosts` (exact host match) are never a project's domain: the collector drops a website link that
    * ends there, and extraction and merge refuse them as official URLs and domains (`isNonProjectHost`).
@@ -150,6 +157,7 @@ export const VC_LIST: VcConfig[] = [
 export const defaultConfig: PipelineConfig = {
   telegramChannels: ["airdrops_io"],
   defillama: { minTvl: 1_000_000, excludedCategories: ["CEX"], limit: 80, newWithinDays: 180 },
+  defillamaDetails: { maxRequests: 80, delayMs: 400, budgetMinutes: 2 },
   alphadrops: {
     enabled: true,
     maxDetails: 80,

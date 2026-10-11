@@ -270,6 +270,26 @@ Nothing about a member is sent, and the prompt and the answer are not logged.
 Retention (`purge` stage): coach threads (their messages go with them) and briefings older than 30 days, and
 `coach_usage` rows (the quota ledger) older than 2 days.
 
+### DefiLlama fields for the AI analyses (`collect`)
+
+A project whose only source is its DefiLlama listing used to give the AI analyses a text of five lines (name, category,
+chains, website, listing date). The DefiLlama document (`defillamaDocument`, the text the analyses read) now also
+carries, as labelled lines and only when DefiLlama has them: `Description:`, `Methodology:`, `Audits: <n>` and
+`Audit links:` (3 at most, http(s) only), `GitHub:` and `Raises:` (the 5 latest rounds, one `- round, $amount, date,
+investors: ...` line each; DefiLlama gives amounts in millions of USD). Description and methodology are cut at 600
+characters and put on one line. Nothing in them moves from day to day (no TVL), so the document hash, and with it the
+analyses' input hash, changes only when DefiLlama's data does.
+
+The `/protocols` list is read as before; the new fields are taken from it when it has them (`description`, `audits`,
+`audit_links`). `methodology`, `github` and `raises` are known to come from `https://api.llama.fi/protocol/{slug}`; when no
+entry of the list carries any of those three keys, the collector asks that endpoint for the speculative candidates (the
+only projects with a DefiLlama document) after the list, one request at a time, `defillamaDetails.delayMs` (400 ms)
+apart, at most `maxRequests` (80, the candidate limit) and none started after `budgetMinutes` (2). The answers carry
+the full TVL history, so they are big; only the fields above are read. A failed or not-asked detail keeps the fields
+from the list (the document then lacks the detail lines for that day). Counters: `defillama_details_fetched` /
+`_failed` / `_skipped`. All the schemas are tolerant: a wrongly typed field is left empty, never drops the candidate.
+Expected added time: 0 when the list carries the fields, otherwise about 1 to 2 minutes in `collect`.
+
 ### Project logos (`logos` stage, list cards)
 
 After `score`, the `logos` stage (`pipeline/src/steps/logos.ts`) stores one logo per scored project in
@@ -344,6 +364,7 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `logos_skipped` | projects due for a logo not tried because the 2-minute budget ran out (tried next run) |
 | `logos_x_avatar_requests` / `logos_x_avatar_failed` | unavatar.io requests this run (at most 20) / of those, the ones that gave no logo (404, other answer, refused image) |
 | `logos_x_avatar_deferred` | projects whose X avatar was next after the 20 requests were used; they went on to their favicon, and the X avatar waits for a later run |
+| `defillama_details_fetched` / `_failed` / `_skipped` | DefiLlama `/protocol/{slug}` details read for the speculative candidates (only when the `/protocols` list lacks them) / answers that were not usable / candidates not asked after the 80-request cap or the 2-minute budget |
 | `claim_pages_read` | claim portal pages fetched in `analyze` for the AI Scam Analyst (at most 20 per run; pages fetched in the last 7 days come from `claim_pages`) |
 | `track_record_total` / `_listed` / `_no_token` / `_risk_raised` | the public track record (#43); see "Track record" below |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |

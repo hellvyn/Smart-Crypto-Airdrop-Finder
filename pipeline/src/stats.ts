@@ -4,6 +4,10 @@ import type { RunStats } from "./store/repo.js";
 export interface DailyStats extends RunStats {
   docs_collected: number;
   docs_changed: number;
+  /** DefiLlama `/protocol/{slug}` details fetched for the speculative candidates (when the list lacks them), failed, and not asked (cap or budget). */
+  defillama_details_fetched: number;
+  defillama_details_failed: number;
+  defillama_details_skipped: number;
   extract_ok: number;
   extract_failed: number;
   /** Pending documents left for the next run because the extraction budget ran out. */
@@ -161,6 +165,9 @@ export function emptyStats(): DailyStats {
   return {
     docs_collected: 0,
     docs_changed: 0,
+    defillama_details_fetched: 0,
+    defillama_details_failed: 0,
+    defillama_details_skipped: 0,
     extract_ok: 0,
     extract_failed: 0,
     extract_deferred: 0,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseProtocols, selectSpeculativeCandidates } from "../src/collectors/defillama.js";
+import { EMPTY_DETAILS, parseProtocols, selectSpeculativeCandidates } from "../src/collectors/defillama.js";
 
 const base = {
   url: "https://example.org",
@@ -47,6 +47,7 @@ describe("selectSpeculativeCandidates", () => {
       change7d: 40,
       category: "Dexs",
       listedAt: null,
+      details: EMPTY_DETAILS,
     });
     expect(result[2]?.change7d).toBeNull();
   });
