@@ -14,7 +14,7 @@ const memberCell = (row: HTMLElement) => within(row).getAllByRole("cell")[1]!;
 const freeCell = (row: HTMLElement) => within(row).getAllByRole("cell")[0]!;
 
 describe("PlanComparison", () => {
-  it.each(["Morning briefing", "Farming Coach"])("shows %s as included for members, now that it is live (no Segera)", (title) => {
+  it.each(["Morning briefing", "AI Coach"])("shows %s as included for members, now that it is live (no Segera)", (title) => {
     render(<PlanComparison />);
     const row = rowOf(title);
     expect(within(row).queryByText("Segera")).toBeNull();

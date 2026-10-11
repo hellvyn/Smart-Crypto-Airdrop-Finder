@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import type { CoachProfile } from "@saf/core";
-import { saveCoachProfileAction } from "@/app/(app)/coach/actions";
+import { saveCoachProfileAction } from "@/app/(public)/coach/actions";
 import { Button } from "@/components/ui";
 import { formValuesFrom, validateProfileForm, type ProfileFormErrors, type ProfileFormValues } from "@/lib/coach-text";
 import { coach } from "@/lib/copy";

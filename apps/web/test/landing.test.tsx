@@ -81,7 +81,7 @@ describe("landing page", () => {
       ["AI verdictGarap, pantau, atau skip. Tiap alasan ada kutipan source-nya.", "Gak ada", "Ada"],
       ["Estimasi effortBerapa menit per hari, modal, dan gas fee.", "Gak ada", "Ada"],
       ["Morning briefingAirdrop baru dan update penting, dirangkum sebelum kamu buka grup.", "Gak ada", "Ada"],
-      ["Farming CoachTanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", "Gak ada", "Ada"],
+      ["AI CoachTanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", "Gak ada", "Ada"],
       ["Farming tracker & watchlistDaily checklist, heatmap, dan update kalau ada yang berubah.", "Gak ada", "Ada"],
     ]);
   });

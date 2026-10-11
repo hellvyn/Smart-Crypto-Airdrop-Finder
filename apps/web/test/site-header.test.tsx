@@ -35,7 +35,7 @@ describe("SiteHeader (design C)", () => {
     getUser.mockResolvedValue({ id: "u1", email: "someone@example.test" });
     render(await SiteHeader());
     expect(screen.getByRole("link", { name: "Garapan saya" }).getAttribute("href")).toBe("/garapan");
-    expect(screen.getByRole("link", { name: "Coach" }).getAttribute("href")).toBe("/coach");
+    expect(screen.getByRole("link", { name: "AI Coach" }).getAttribute("href")).toBe("/coach");
     expect(screen.getByRole("link", { name: "Watchlist" }).getAttribute("href")).toBe("/watchlist");
     expect(screen.getByRole("link", { name: "Wallet" }).getAttribute("href")).toBe("/wallets");
     expect(screen.getByRole("link", { name: "Akun" }).getAttribute("href")).toBe("/settings");
@@ -54,6 +54,8 @@ describe("SiteHeader (design C)", () => {
     getUser.mockResolvedValue(null);
     render(await SiteHeader());
     expect(screen.getByRole("link", { name: "Airdrop" }).getAttribute("href")).toBe("/airdrops");
+    // AI Coach shows for visitors too; its page tells them it is for members (owner 2026-10-11).
+    expect(screen.getByRole("link", { name: "AI Coach" }).getAttribute("href")).toBe("/coach");
     expect(screen.getByRole("link", { name: "Kenapa AirdropIQ" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Track record" })).toBeTruthy();
   });

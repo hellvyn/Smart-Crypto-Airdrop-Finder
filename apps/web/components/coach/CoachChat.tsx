@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { startCoachThreadAction } from "@/app/(app)/coach/actions";
+import { startCoachThreadAction } from "@/app/(public)/coach/actions";
 import { Button } from "@/components/ui";
 import { streamCoachChat } from "@/lib/coach-client";
 import { linkify, type CoachLink } from "@/lib/coach-text";

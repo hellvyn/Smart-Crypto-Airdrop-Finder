@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { startCoachThreadAction } from "@/app/(app)/coach/actions";
+import { startCoachThreadAction } from "@/app/(public)/coach/actions";
 import { streamCoachChat } from "@/lib/coach-client";
 import { coach } from "@/lib/copy";
 

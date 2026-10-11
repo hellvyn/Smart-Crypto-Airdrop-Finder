@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const actions = vi.hoisted(() => ({ deleteCoachThread: vi.fn() }));
-vi.mock("@/app/(app)/coach/actions", () => actions);
+vi.mock("@/app/(public)/coach/actions", () => actions);
 
 import { ThreadList } from "@/components/coach/ThreadList";
 import type { ThreadRow } from "@/lib/coach-view";

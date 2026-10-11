@@ -10,9 +10,8 @@ describe("isProtectedPath", () => {
     expect(isProtectedPath("/settings")).toBe(true);
     expect(isProtectedPath("/garapan")).toBe(true);
     expect(isProtectedPath("/garapanx")).toBe(false);
-    expect(isProtectedPath("/coach")).toBe(true);
-    expect(isProtectedPath("/coach/")).toBe(true);
-    expect(isProtectedPath("/coachx")).toBe(false);
+    // /coach is open to visitors: the page itself shows them a KHUSUS MEMBER stamp (owner 2026-10-11).
+    expect(isProtectedPath("/coach")).toBe(false);
   });
 
   it("leaves the public pages and login open", () => {

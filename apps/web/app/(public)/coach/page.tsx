@@ -2,7 +2,8 @@ import Link from "next/link";
 import { LANGKAH_NOL } from "@saf/core";
 import { CoachApp, type RestoredThread } from "@/components/coach/CoachApp";
 import { ThreadList } from "@/components/coach/ThreadList";
-import { requireUser } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
+import { Stamp } from "@/components/ui";
 import { getCoachProfile, remainingQuota } from "@/lib/coach";
 import { getPlanCards, getProjectGate, getThread, listThreads } from "@/lib/coach-view";
 import { coach, notCurated, pageTitle } from "@/lib/copy";
@@ -16,12 +17,24 @@ function first(v: string | string[] | undefined): string | undefined {
 }
 
 /**
- * Farming Coach (spec §5). Members only: `requireUser` sends a visitor to the login page. `?project={id}` is "Tanya AI"
+ * AI Coach (spec §5). Members only: a visitor sees the page with a "KHUSUS MEMBER" stamp and what the Coach does, and
+ * nothing is read for them (owner 2026-10-11: the menu shows for visitors too). `?project={id}` is "Tanya AI"
  * from a project page: a chat about that one project, or, for a project that did not pass curation, its public
  * reason and nothing else (§5.4). `?thread={id}` opens one of the member's earlier threads.
  */
 export default async function CoachPage({ searchParams }: { searchParams: Promise<{ project?: string | string[]; thread?: string | string[] }> }) {
-  const user = await requireUser();
+  const user = await getUser();
+  if (!user) {
+    return (
+      <div className="coach coach-visitor" data-testid="coach-visitor">
+        <h1 className="ui-display coach-title">{coach.heading}</h1>
+        <div className="coach-visitor-stamp">
+          <Stamp top={coach.visitor.stampTop} bottom={coach.visitor.stampBottom} tone="alert" size="lg" rotate={-6} />
+        </div>
+        <p>{coach.visitor.text}</p>
+      </div>
+    );
+  }
   const params = await searchParams;
   const db = await createServerClient();
   const now = new Date();

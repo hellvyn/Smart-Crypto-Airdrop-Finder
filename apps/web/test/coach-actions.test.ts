@@ -27,7 +27,7 @@ import {
   planCardsAction,
   saveCoachProfileAction,
   startCoachThreadAction,
-} from "@/app/(app)/coach/actions";
+} from "@/app/(public)/coach/actions";
 
 beforeEach(() => {
   for (const fn of [requireUser, saveCoachProfile, getPlanCards, rpc, deleteEq, revalidatePath]) fn.mockReset();

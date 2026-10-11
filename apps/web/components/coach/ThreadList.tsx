@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { deleteCoachThread } from "@/app/(app)/coach/actions";
+import { deleteCoachThread } from "@/app/(public)/coach/actions";
 import type { ThreadRow } from "@/lib/coach-view";
 import { coach } from "@/lib/copy";
 
