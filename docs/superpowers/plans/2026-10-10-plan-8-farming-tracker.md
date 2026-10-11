@@ -32,6 +32,11 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
   `start + 364 hari` (1 tahun). Maksimal 364 hari: kalau lebih, `start` dimajukan ke `end − 363 hari`.
   Hari > `today` = sel `upcoming`. Project yang sudah berakhir (spec #40): kalau `endedOn` (tanggal berakhir dari
   curation) ≥ `start` dan lebih awal dari `end`, `end = endedOn` dan `endKind = "ended"`.
+  **Revisi G3 (review menyeluruh, 2026-10-11; owner diminta konfirmasi):** jendela selalu memuat `today` selama project
+  belum berakhir. Deadline yang sudah lewat dilewati (deadline berikutnya dipakai). Kalau gak ada deadline tersisa,
+  dipakai jendela 1 tahun yang digeser maju sampai `today`. Deadline yang lebih dari setahun lagi: 364 sel yang memuat
+  `today`, sementara `endsOn` tetap tanggal deadline untuk hitung mundur. Streak dihitung dari semua check, bukan dari
+  sel yang tampil.
 - Mingguan = minggu ISO (Senin–Minggu) di zona waktu member.
 - Batas: 50 project aktif per member, 30 task aktif per project (pelanggaran → error `23514`, pesan Bahasa Indonesia di UI).
 - Teks UI (gaya "kamu", campur istilah Inggris yang umum, aturan gaya tulisan Plan 6): "Mulai garap", "Berhenti garap",
@@ -109,13 +114,14 @@ konsistensinya sebagai heatmap sepanjang masa garap (sampai snapshot/akhir kampa
   `once` aktif; selesai kalau punya baris check apa pun.
   (`createdDay`/`archivedDay` = tanggal lokal `YYYY-MM-DD`; task aktif di hari `d` kalau `createdDay <= d` dan
   (`archivedDay === null` atau `d < archivedDay`))
-- `heatmapRange(startedDay: string, deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[], today: string, endedOn: string | null = null): { start: string; end: string; endKind: "snapshot" | "campaign_end" | "ended" | null }`
+- `heatmapRange(startedDay: string, deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[], today: string, endedOn: string | null = null): HeatmapRange` dengan `HeatmapRange = { start: string; end: string; endKind: "snapshot" | "campaign_end" | "ended" | null; endsOn: string | null }` (`endsOn` = tanggal deadline/berakhir untuk hitung mundur; bisa beda dari `end`)
   — aturan rentang di Global Constraints.
 - `buildHeatmap(tasks: TrackerTask[], checks: { taskId: string; day: string }[], range: { start: string; end: string }, today: string): { day: string; level: HeatLevel; done: number; total: number; upcoming: boolean }[]`
   — satu sel per hari dari `start` sampai `end`; hari > `today` → `upcoming: true`, `level: null`.
-- `daysLeft(range, today): number | null` — hari dari `today` sampai `end` (inklusif), `null` kalau `endKind` null atau
-  `end` < `today`.
-- `streak(heat: { day: string; level: HeatLevel }[], today: string): number`
+- `daysLeft(range, today): number | null` — hari dari `today` sampai `endsOn` (inklusif), `null` kalau `endsOn` null atau
+  `endsOn` < `today`.
+- `streak(tasks: TrackerTask[], checks: { taskId: string; day: string }[], today: string): number` (revisi G3: gak
+  bergantung jendela tampilan)
 - `weeklyDone(tasks: TrackerTask[], checks: { taskId: string; day: string }[], today: string): Record<string, boolean>` (per task weekly)
 - `localDay(now: Date, timeZone: string): string` (pakai `Intl.DateTimeFormat`, gak butuh `@types/node`)
 
