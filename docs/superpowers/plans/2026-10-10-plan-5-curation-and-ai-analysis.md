@@ -41,7 +41,7 @@ stats cakupan, set uji scam). Plan 6 bergantung ke plan ini (tabel `project_sign
   `curated_source` dan `capital_required = unknown`.
 - Migrasi baru: `0011_curation.sql`. Stats baru tetap angka.
 - **Publik vs member (spec §15.5, #45)** dikunci di database: `project_signals`, `link_checks`, kolom kurasi non-worth
-  (`id, project_id, passed, tab, status_at, ended_on, public_fail_reason, computed_at, seq`; `public_fail_reason` = #55),
+  (`id, project_id, passed, tab, status_at, ended_on, public_fail_reason, coingecko_listed, computed_at, seq`; `public_fail_reason` = #55),
   dan `ai_analyses` kind `contradictions` bisa dibaca `anon`; `curations.worth_level`/`reasons`/`coverage` dan
   `ai_analyses` kind `analyst`/`scam` cuma `authenticated` (#54);
   `vc_portfolios`, `alphadrops_raises` service role saja.
@@ -140,7 +140,7 @@ it("only applies to live, announced and speculative", () => {
   - `project_changes.field` check diperluas jadi `('status','risk_level','curated')`.
   - Baca (#45): `project_signals` dan `link_checks` `for select to anon, authenticated using (true)`; `curations`
     policy select `to anon, authenticated using (true)` + `revoke select on curations from anon` lalu
-    `grant select (id, project_id, passed, tab, status_at, ended_on, public_fail_reason, computed_at, seq) on curations to anon`;
+    `grant select (id, project_id, passed, tab, status_at, ended_on, public_fail_reason, coingecko_listed, computed_at, seq) on curations to anon`;
     `ai_analyses` dua policy: `to anon using (kind = 'contradictions')` dan `to authenticated using (true)` (spec #54:
     hasil scam analyst khusus member; flag scam yang ketemu tetap publik sebagai alasan risiko `ai_scam_pattern`).
     Revoke insert/update/delete/truncate dari anon dan authenticated di semua tabel baru.
