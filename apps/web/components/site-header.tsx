@@ -21,6 +21,7 @@ export async function SiteHeader() {
           </span>
           <span className="brand-name">{header.brand}</span>
         </Link>
+        <span className="brand-beta">{header.beta}</span>
         {user ? (
           <nav className="site-nav site-nav-member" aria-label={header.navLabel}>
             <Link href={LIST_PATH}>{header.airdrops}</Link>
