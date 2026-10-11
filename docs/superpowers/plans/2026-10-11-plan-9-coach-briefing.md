@@ -224,7 +224,7 @@ Each of these has a test in the owning task: 1 in Task 4, 2 in Task 5, 3 and 4 i
   - A quota error from the RPC gives 429 with the `quota` copy.
   - A plan answer with a non-candidate project id: that item is dropped.
   - All models failing gives 503 with `unavailable`, and `coach_finish` is not called.
-  - When the first text delta arrives, call `coach_mark_used(userMessageId)` before forwarding any text, so an aborted, truncated or timed-out answer still counts (Task 3 re-review). Cut the final reply to 16000 characters before `coach_finish`, and cap `max_tokens` so a normal answer fits.
+  - When the first text delta arrives, call `coach_mark_used(userMessageId)` before forwarding any text, so an aborted, truncated or timed-out answer still counts (Task 3 re-review). Cut the final reply to 16000 characters before `coach_finish`, and cap `max_tokens` so a normal answer fits. If `coach_mark_used` raises (`expired`), stop the stream and forward nothing. The plan route (non-streaming `callStructured`) calls `coach_mark_used` as soon as the model returns an answer, before `validatePlan`, so a plan the validator rejects still counts.
   - Chat output "claim di https://evil.xyz" is streamed and stored with `[dihapus: info sensitif]` (Review Focus 2).
   - The prompt sent to the fake never contains the user's email.
 - [ ] **Step 2: Run `pnpm --filter web test`.** Expected: FAIL.
