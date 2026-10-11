@@ -18,6 +18,7 @@ time, so set them before `build`. The third, `NEXT_PUBLIC_SITE_URL`, is only for
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the project's anon (public) key |
 | `NEXT_PUBLIC_SITE_URL` | base URL of the web app (locally `http://127.0.0.1:3000`). The app no longer reads it: only the Playwright config and CI set it, to the e2e server's address |
 | `COINGECKO_API_KEY` | optional, **secret, server-side only**: the CoinGecko Demo API key for token prices (section 6). Read at runtime, never inlined, never a `NEXT_PUBLIC_` name |
+| `ANTHROPIC_API_KEY`, `LLM_API_KEY`, `LLM_BASE_URL`, `NVIDIA_API_KEY` | **secret, server-side only**: the model keys of the Coach (section 7). Read at runtime, never inlined, never a `NEXT_PUBLIC_` name |
 
 The service role key never goes into the web app, its env or the browser. Row Level Security protects user data;
 the anon key is meant to be public.
@@ -227,3 +228,65 @@ with few contributors.
 **e2e.** The Playwright config starts `apps/web/e2e/support/prices-stub.mjs` on `127.0.0.1:3101` and points the web
 server at it with `PRICES_API_BASE`. `lib/prices.ts` honours that variable only for a plain `http://127.0.0.1` or
 `http://localhost` address, so it cannot redirect production requests elsewhere. Do not set it in a deploy.
+
+## 7. Coach ("Coach garapan", `/coach`)
+
+Spec: `docs/superpowers/specs/` (coach and briefing). Code: `apps/web/lib/coach.ts` and the routes
+`apps/web/app/api/coach/plan` and `.../chat` (both `maxDuration = 60`). Members only; every database call runs with
+the member's own session (anon key + cookie), so no service role key is involved.
+
+**Vercel environment variables** (Project Settings > Environment Variables, Production and Preview). All of them are
+**server-only** runtime variables: never a `NEXT_PUBLIC_` name, never committed, never in `.env.example` with a value,
+never pasted into chat.
+
+| Variable | What it is |
+|---|---|
+| `ANTHROPIC_API_KEY` | Claude Sonnet, the first model of the Coach chain. Without it Claude is skipped (no request, no circuit-breaker failure) and the chain starts at freellm. A blank value counts as no key |
+| `LLM_API_KEY` | key of the freellm router (`auto`), second in the chain |
+| `LLM_BASE_URL` | optional, base URL of that router without `/chat/completions`. Empty or unset: `https://freellm.hellvyn.id/v1` |
+| `NVIDIA_API_KEY` | NVIDIA models (glm-5.3-flash, kimi-k3, gemma-4-31b-it), the last fallbacks |
+
+The chain is `COACH_MODELS` in `packages/llm/src/models.ts`. With none of the keys set, Coach answers "Coach lagi gak
+bisa jawab, coba lagi sebentar." (HTTP 503) and the message does not count against the member's quota. A key change
+needs a redeploy (Vercel reads variables at deploy time).
+
+**Deploy step for `0017_coach_briefing.sql`.** The Coach routes call the `coach_*` functions and read the
+`coach_profiles`, `coach_threads` and `coach_messages` tables that this migration creates, so the migration goes in
+**before the web build that contains the Coach is merged and deployed**:
+
+1. Apply `supabase/migrations/0017_coach_briefing.sql` to the production project, through the Supabase MCP connector
+   (`apply_migration`) or by pasting the file into the Supabase SQL editor. (`db push` also works once the migration
+   history is aligned, see `docs/ops/pipeline.md` section 1. If you used the MCP or the SQL editor, keep the history
+   consistent the same way as for 0001 to 0006.)
+2. Check that the tables and functions exist (`coach_profiles`, `coach_threads`, `coach_messages`, `coach_usage`,
+   `coach_begin`, `coach_mark_used`, `coach_finish`, `coach_quota_remaining`) and that the pgTAP file for it passes
+   on a local reset.
+3. Set the four variables above on Vercel, then merge, so the deploy that goes live already has its keys.
+
+A member has 20 messages per WIB day (`coach_begin` enforces it from the `coach_usage` ledger); a plan counts as one.
+
+**Samples and capacity check (G13, G14).** The script generates the 20 fixed Coach answers (6 plans, 14 chat or
+explain-step requests) through the same code the routes use and measures latency per model. It needs no database:
+candidates come from a JSON file, an array shaped like `Candidate` of `@saf/core` (the output of `loadCandidates`
+for any member, or hand-made). It lives in `apps/web/scripts/` so that it can import `apps/web/lib/coach.ts` as is.
+
+```
+ANTHROPIC_API_KEY=... LLM_API_KEY=... NVIDIA_API_KEY=... \
+  pnpm --filter web coach-samples --candidates /path/to/candidates.json
+```
+
+Without any key it prints "No provider keys" and exits 0; `--dry-run` lists the cases and how many candidates each
+gets, `--only <case id>` runs one, `--out <dir>` moves the output. Output (never committed): `apps/web/scripts/out/`
+holds `coach-samples-<UTC time>.json` and `.md` (the request, the model, latency, ok or failed, the text a member
+would see after `validatePlan` and redaction, and the dropped and redaction counts), and the console prints count,
+failures, p50 and p95 latency per model. Cases run one at a time so the latency is not distorted. Nothing in the
+output identifies a member: the profiles are made up and emails, wallet addresses and ids are scrubbed.
+
+**When "Segera" comes off.** "Segera" on Coach (`compare.soon` in `apps/web/lib/copy.ts`) stays until both are true:
+
+- the 20 samples above are judged good for at least 80% (16 of 20) in the controller's quality review (the owner
+  delegated the sign-off for this), and
+- Coach answers in production (a real plan and a real chat answer from the deployed site, with the keys set).
+
+The controller removes the label at deploy; until then `copy.ts` keeps it. The capacity numbers (failures, p50 and
+p95 per model) are read in the same review.
