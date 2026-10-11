@@ -755,8 +755,13 @@ describe("LLM providers", () => {
   it.each([
     ["unset", {}],
     ["empty", { ANTHROPIC_API_KEY: "" }],
+    ["whitespace only", { ANTHROPIC_API_KEY: " \n" }],
   ])("leaves Claude out of a model chain when ANTHROPIC_API_KEY is %s", (_name, env) => {
     expect(usableModels(defaultConfig.analyzeModels, loadProviders(env))).toEqual(defaultConfig.models);
+  });
+
+  it("trims ANTHROPIC_API_KEY (a secret pasted with a trailing newline still works)", () => {
+    expect(loadProviders({ ANTHROPIC_API_KEY: " sk-ant-x\n" }).anthropic.apiKey).toBe("sk-ant-x");
   });
 
   it("keeps Claude in the model chain when ANTHROPIC_API_KEY is set", () => {
@@ -1934,6 +1939,7 @@ describe("runDailyJob LLM providers", () => {
         Array(9).fill(["anthropic:claude-sonnet-5-5", "claude-sonnet-5-5"]),
       );
       expect(repo.extractions.map((e) => e.model).filter((m) => m.startsWith("anthropic:"))).toEqual([]);
+      expect(stats.ai_models_tripped).toBe(0);
       expect(lines.join("\n")).not.toContain(CLAUDE_KEY);
     });
 
@@ -1954,6 +1960,8 @@ describe("runDailyJob LLM providers", () => {
       expect(toClaude(seen).length).toBeLessThan(9);
       expect(stats.ai_analyses_run).toBe(9);
       expect(stats.ai_analyses_failed).toBe(0);
+      // The used-up credit shows in the run stats: Claude's circuit opened (freellm answers 200, so its stays shut).
+      expect(stats.ai_models_tripped).toBe(1);
       expect(new Set(repo.aiAnalyses.map((a) => a.model))).toEqual(new Set(["nvidia:z-ai/glm-5.3-flash"]));
       expect(lines.join("\n")).not.toContain(CLAUDE_KEY);
       expect(warnings).toEqual([]);
@@ -1988,6 +1996,7 @@ describe("runDailyJob LLM providers", () => {
       expect(toClaude(seen)).toEqual([]);
       expect(stats.ai_analyses_run).toBe(9);
       expect(stats.llm_models_tripped).toBe(0);
+      expect(stats.ai_models_tripped).toBe(0);
       expect(new Set(repo.aiAnalyses.map((a) => a.model))).toEqual(new Set(["nvidia:z-ai/glm-5.3-flash"]));
     });
 

@@ -235,6 +235,7 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `extract_ok` / `extract_failed` | extractions that passed the schema / documents where every model failed (retried next run) |
 | `extract_deferred` | pending documents left for the next run because the 35-minute budget ran out (or every model's circuit was open) |
 | `llm_models_tripped` | models skipped for the rest of the run after 3 consecutive failures (timeouts, 5xx, rate limits past their retries) |
+| `ai_models_tripped` | the same for the AI analyses (`analyze` has its own circuit breaker); 1 with `ANTHROPIC_API_KEY` set usually means the Claude credit is used up (section 7.1) |
 | `not_airdrop` | documents the model judged not about an airdrop |
 | `projects_created` / `projects_updated` | merge results |
 | `assessed` | projects that got a new risk assessment |
@@ -404,13 +405,28 @@ expires on **2026-10-27**.
   exhausted credit ("credit balance is too low", HTTP 400), invalid key (401/403), rate limit (429, after the usual
   2 s and 4 s retries), overload or server error (5xx/529), timeout or network error, a refusal
   (`stop_reason: "refusal"`), a cut-off answer (`max_tokens`), or an answer that is not schema-valid JSON. Three
-  non-200 replies in a row open Claude's circuit for the rest of the run, so a used-up credit costs about three
-  failed requests per run, not one per analysis.
+  non-200 replies in a row open Claude's circuit for the rest of the run. Since up to 3 analyses run at once, a few
+  more requests are already in flight when it opens, so a used-up credit costs about 3 to 5 fast failed requests per
+  run, not one per analysis. It then shows as `ai_models_tripped` = 1 in the run stats (section 4).
 - **Settings:** adaptive thinking at effort `low` (`output_config.effort`), `max_tokens` 16,000 (thinking counts
   toward it), no `temperature` (current Claude models reject non-default sampling parameters), and the system prompt
-  marked for prompt caching, since each analysis kind sends the same system prompt for every project.
+  marked for prompt caching. Caching likely saves little: the three analysis system prompts are 2,400 to 3,100
+  characters, by a rough estimate a few hundred tokens each, close to the 512-token minimum below which a prefix is
+  silently not cached (bundled reference, `shared/prompt-caching.md`), and the sources, which differ per project, are
+  most of each prompt.
 - **Which model answered:** `ai_analyses.model` is `anthropic:claude-sonnet-5-5` for an analysis Claude answered, and
-  `served_model` is the model name Claude returned.
+  `served_model` is the model name Claude returned. Per day, in the Supabase SQL editor:
+
+  ```sql
+  select created_at::date as day, model, count(*) as analyses
+  from ai_analyses
+  where created_at > now() - interval '14 days'
+  group by 1, 2
+  order by 1 desc, 3 desc;
+  ```
+
+  A day with no `anthropic:` rows while `ANTHROPIC_API_KEY` is set, together with `ai_models_tripped` > 0 in that
+  run's `pipeline_runs.stats`, means Claude failed every time (usually the credit is used up or expired).
 - **Revert:** delete the `ANTHROPIC_API_KEY` secret (or leave it empty): the analyses skip Claude without a request
   and use the old chain. To remove Claude from the code, delete its entry from `ANALYZE_MODELS`. After the credit
   expires the key keeps failing with HTTP 400 and the fallback covers it, but deleting the secret saves those
@@ -422,4 +438,7 @@ expires on **2026-10-27**.
 prompt carries at most 24,000 source characters plus the system prompt, so with about 4 characters per token
 (more tokens for non-English text) it is in the order of 6,000 to 9,000 input tokens; with a short JSON answer and
 low-effort thinking of perhaps 1,000 to 2,000 output tokens, one call costs about $0.02 to $0.04, and the at most
-60 analyses of a run about $1 to $2.50. Check the real spend in the Anthropic Console after the first runs.
+60 analyses of a run about $1 to $2.50. That is an upper bound: Claude is only called for new or changed inputs,
+because an analysis whose input hash and prompt version are unchanged reuses the stored one (`ai_analyses_cached`).
+Most days will cost less, and the credit may well not be used up by 2026-10-27. Check the real spend in the
+Anthropic Console after the first runs.

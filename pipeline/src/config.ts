@@ -163,7 +163,8 @@ const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 
 /**
  * Endpoint and key per provider: freellm from `LLM_BASE_URL` (empty or unset: the default URL) and `LLM_API_KEY`,
- * NVIDIA from `NVIDIA_API_KEY`, Anthropic from `ANTHROPIC_API_KEY`. A missing key is an empty string.
+ * NVIDIA from `NVIDIA_API_KEY`, Anthropic from `ANTHROPIC_API_KEY` (trimmed: a key pasted with a trailing newline
+ * still works, and a blank one counts as no key). A missing key is an empty string.
  */
 export function loadProviders(env: Record<string, string | undefined>): Providers {
   const withoutTrailingSlash = (url: string): string => url.replace(/\/+$/, "");
@@ -173,7 +174,7 @@ export function loadProviders(env: Record<string, string | undefined>): Provider
       apiKey: env.LLM_API_KEY ?? "",
     },
     nvidia: { baseUrl: NVIDIA_BASE_URL, apiKey: env.NVIDIA_API_KEY ?? "" },
-    anthropic: { apiKey: env.ANTHROPIC_API_KEY ?? "" },
+    anthropic: { apiKey: (env.ANTHROPIC_API_KEY ?? "").trim() },
   };
 }
 

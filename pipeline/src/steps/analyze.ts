@@ -110,7 +110,8 @@ export function analysisInputHash(project: ProjectForScoring, sourceTexts: strin
  *   `maxAnalysesPerRun` analyses start. Analyses not started, or stopped between models, count as
  *   `ai_analyses_deferred`; so does an analysis that finds every model's circuit open.
  * - Models (`config.analyzeModels`: Claude first, then the extraction chain) are tried as in extraction
- *   (`callStructured`), with one circuit breaker for the whole stage. When every
+ *   (`callStructured`), with one circuit breaker for the whole stage; the circuits it opens count in
+ *   `ai_models_tripped`. When every
  *   model fails, or the analysis throws, it counts as `ai_analyses_failed`, is reported through `warn` (project id
  *   and kind), and the previous analysis stays the latest. No failure stops the other analyses.
  * - Style: a new analysis whose stored `indonesianTexts` use a forbidden phrase counts in `ai_style_violations`.
@@ -198,6 +199,7 @@ export async function runAnalyses(
   };
 
   await Promise.all(projects.map((project) => limit(() => analyzeProject(project))));
+  stats.ai_models_tripped = breaker.opened().length;
 }
 
 function errorName(error: unknown): string {

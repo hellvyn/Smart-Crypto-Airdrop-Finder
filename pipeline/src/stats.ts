@@ -61,6 +61,11 @@ export interface DailyStats extends RunStats {
   /** AI analyses not started (or stopped between models) because the analysis budget or limit ran out. */
   ai_analyses_deferred: number;
   /**
+   * Models the `analyze` stage skipped for the rest of the run after repeated failures (its own circuit breaker, apart
+   * from extraction's `llm_models_tripped`). A used-up or invalid Claude key shows here as 1.
+   */
+  ai_models_tripped: number;
+  /**
    * New AI analyses whose Indonesian text uses a phrase the style rules forbid (`FORBIDDEN_PHRASES`). They are stored
    * all the same; the count is for the owner's review of AI writing (gate G13).
    */
@@ -133,6 +138,7 @@ export function emptyStats(): DailyStats {
     ai_analyses_cached: 0,
     ai_analyses_failed: 0,
     ai_analyses_deferred: 0,
+    ai_models_tripped: 0,
     ai_style_violations: 0,
     claim_pages_read: 0,
     link_checks_total: 0,

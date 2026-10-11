@@ -353,6 +353,7 @@ describe("runAnalyses", () => {
     // Each failing project costs every model one failure; after three projects every circuit is open.
     expect(counters(stats)).toEqual({ run: 0, cached: 0, failed: 3, deferred: 1 });
     expect(prompts).toHaveLength(9);
+    expect(stats.ai_models_tripped).toBe(3);
   });
 
   it("does not analyze a project without unpurged source text", async () => {
