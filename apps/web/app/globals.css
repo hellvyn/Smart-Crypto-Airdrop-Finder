@@ -194,8 +194,8 @@ main a:not([class]):hover {
     flex-basis: 100%;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-    font-size: 12px;
+    gap: 4px;
+    font-size: 11px;
     letter-spacing: 0.3px;
   }
 
@@ -208,10 +208,11 @@ main a:not([class]):hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 44px;
-    padding: 0 4px;
-    border: 2px solid var(--ink);
+    min-height: 32px;
+    padding: 2px 4px;
+    border: 1.5px solid var(--ink);
     text-align: center;
+    line-height: 1.15;
   }
 }
 
@@ -221,9 +222,10 @@ main a:not([class]):hover {
   }
 
   .site-actions .ui-button {
-    min-height: 40px;
-    padding: 6px 14px;
-    font-size: 13px;
+    min-height: 34px;
+    padding: 4px 12px;
+    border-width: 2px;
+    font-size: 12px;
   }
 }
 
