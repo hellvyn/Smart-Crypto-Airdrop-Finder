@@ -53,7 +53,7 @@ pengunjung; level worth it, urutan "paling worth it", AI verdict, dan estimasi e
   | status link (#42) `official`/`different_domain`/`phishing`/`unchecked` | "✓ Official domain" / "⚠ Beda domain dari web official" / "Link di-hide: kedeteksi phishing" / "Belum dicek" |
   | badge klaim (#42) | "Claim open · link dicek" |
   | backer laporan (#41) | "Menurut AlphaDrops: {investor} (lead), …" |
-  | rekam jejak (#43) | judul "Track record kami"; tiga cap: "{listed}" "Token listing", "{noToken}" "Ended tanpa token", "{riskRaised}" "Belakangan jadi risky"; catatan "Dari {total} airdrop yang lolos sebelum token listing dan sekarang udah ended." |
+  | rekam jejak (#43) | judul "Track record kami"; tiga cap: "{listed}" "Token listing", "{noToken}" "Ended tanpa token", "{riskRaised}" "Belakangan jadi risky"; catatan "Dari {total} airdrop yang lolos sebelum token listing dan sekarang udah ended atau belakangan jadi risky." |
   | urutan | pengunjung "Baru dicek"; member "Paling worth it"; tab `ended` "Baru ended" |
   | bagian halaman project | "01 · AI verdict", "02 · Sumber yang beda cerita", "03 · Step garap", "04 · Security check", "05 · Estimasi effort", "06 · Kenapa lolos"; samping "Ringkasan", "Update terbaru" |
   | navigasi & akun | "Airdrop", "Kenapa AirdropIQ", "Track record", "Garapan saya", "Watchlist", "Login", "← Balik ke list" |
