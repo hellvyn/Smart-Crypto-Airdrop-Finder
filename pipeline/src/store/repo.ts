@@ -212,6 +212,11 @@ export interface PipelineRepo {
   listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }>;
   /** Replaces the VC's cached domains, all fetched at `at`. */
   saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void>;
+  /**
+   * The AI analysis sources of a project: every document that gave the project evidence and whose text is not purged,
+   * each once, ordered by url.
+   */
+  listProjectSourceTexts(projectId: string): Promise<{ url: string; text: string }[]>;
   /** Latest analysis of one kind (greatest `createdAt`, later insert wins ties), or null. */
   latestAiAnalysis(projectId: string, kind: AiKind): Promise<StoredAiAnalysis | null>;
   saveAiAnalysis(a: NewAiAnalysis): Promise<void>;

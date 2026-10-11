@@ -26,6 +26,13 @@ export interface PipelineConfig {
    */
   goplusBudgetMinutes: number;
   goplusMaxConsecutiveFailures: number;
+  /**
+   * AI analysis budget per run, counted from the start of `analyze`: after it no new LLM call starts. At most
+   * `maxAnalysesPerRun` analyses start per run. Analyses not started stay as they were (counted as
+   * `ai_analyses_deferred`) and run on a later day; an unchanged input reuses the stored analysis without a call.
+   */
+  analyzeBudgetMinutes: number;
+  maxAnalysesPerRun: number;
   scoreActiveSinceDays: number;
   textRetentionDays: number;
 }
@@ -84,6 +91,8 @@ export const defaultConfig: PipelineConfig = {
   extractBudgetMinutes: 35,
   goplusBudgetMinutes: 12,
   goplusMaxConsecutiveFailures: 5,
+  analyzeBudgetMinutes: 10,
+  maxAnalysesPerRun: 60,
   scoreActiveSinceDays: 60,
   textRetentionDays: 90,
 };

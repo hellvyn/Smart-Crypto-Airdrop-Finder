@@ -591,6 +591,22 @@ export class SupabaseRepo implements PipelineRepo {
     );
   }
 
+  async listProjectSourceTexts(projectId: string): Promise<{ url: string; text: string }[]> {
+    const rows = checkOne(
+      "listProjectSourceTexts",
+      await this.db
+        .from("documents")
+        // The inner join keeps documents with evidence for this project; each document comes back once.
+        .select("url, text, evidence!inner(project_id)")
+        .eq("evidence.project_id", projectId)
+        .neq("text", "")
+        // documents.url is collate "C", the same order as MemoryRepo.
+        .order("url")
+        .returns<{ url: string; text: string }[]>(),
+    );
+    return rows.map((r) => ({ url: r.url, text: r.text }));
+  }
+
   async latestAiAnalysis(projectId: string, kind: AiKind): Promise<StoredAiAnalysis | null> {
     type AiAnalysisDb = {
       input_hash: string;

@@ -3,23 +3,13 @@ import type { ExtractionResult } from "@saf/core";
 import { isNonProjectHost } from "../collectors/html-text.js";
 import type { CollectedDocument } from "../collectors/types.js";
 import type { CircuitBreaker } from "./circuit-breaker.js";
-import { modelKey } from "./nvidia.js";
-import type { ChatMessage, ChatResult, ModelConfig } from "./nvidia.js";
+import type { ModelConfig } from "./nvidia.js";
 import { buildMessages } from "./prompt.js";
+import { callStructured } from "./structured.js";
+import type { ChatFn, LlmAttempt } from "./structured.js";
 
-export interface ExtractionAttempt {
-  /** `"<provider>:<id>"` of the configured model, e.g. `freellm:auto`. */
-  model: string;
-  /** The model that actually answered (from the stream), or null when the reply named none. */
-  servedModel: string | null;
-  httpStatus: number;
-  finishReason: string | null;
-  latencyMs: number;
-  /** Short failure code (`http_<status>`, `finish_<reason|null>`, `empty_content`, `json_parse`, `schema`), or null on success. */
-  error: string | null;
-  /** Model output, or the error body of a failed request. */
-  raw: string;
-}
+/** One extraction call, stored as an `extractions` row. */
+export type ExtractionAttempt = LlmAttempt;
 
 export type ExtractOutcome =
   /** `model`: `"<provider>:<id>"` of the model whose answer was used. */
@@ -30,29 +20,8 @@ export type ExtractOutcome =
    */
   | { ok: false; attempts: ExtractionAttempt[]; stopped: boolean };
 
-/** `streamChat` with its transport deps (fetch, API key, base URL) already bound. */
-export type ChatFn = (model: ModelConfig, messages: ChatMessage[]) => Promise<ChatResult>;
-
-/** Waits before the 1st and 2nd retry of a rate-limited (429) model. */
-const RATE_LIMIT_BACKOFF_MS = [2000, 4000] as const;
-
-/** Parses model output: straight JSON first, then the first `{` .. last `}` after removing code fences. */
-export function parseJson(content: string): { ok: true; value: unknown } | { ok: false } {
-  try {
-    return { ok: true, value: JSON.parse(content) };
-  } catch {
-    // Fall through to the lenient path.
-  }
-  const stripped = content.replace(/```[a-zA-Z]*/g, "");
-  const start = stripped.indexOf("{");
-  const end = stripped.lastIndexOf("}");
-  if (start === -1 || end <= start) return { ok: false };
-  try {
-    return { ok: true, value: JSON.parse(stripped.slice(start, end + 1)) };
-  } catch {
-    return { ok: false };
-  }
-}
+export type { ChatFn } from "./structured.js";
+export { parseJson } from "./structured.js";
 
 // A URL inside free text: stops at whitespace, quotes, angle brackets and brackets/parentheses.
 const URL_IN_TEXT_RE = /https?:\/\/[^\s<>"'`()[\]{}]+/g;
@@ -140,12 +109,9 @@ function postProcess(
 }
 
 /**
- * Tries each model in order until one returns a complete, schema-valid extraction.
- * A 429 is retried on the same model after 2 s and then 4 s; any other failure moves on.
- * `shouldStop` is checked before every model call; once it returns true no further call starts.
- * A model whose `breaker` circuit (keyed `"<provider>:<id>"`) is open is skipped; every final non-200 reply counts
- * against its model. An HTTP 200 with an unusable answer (bad JSON, schema, truncated) moves the same document on
- * to the next model at once and is not an endpoint failure.
+ * Tries each model in order until one returns a complete, schema-valid extraction (`callStructured`: 429 retries,
+ * circuit breaker keyed `"<provider>:<id>"`, `shouldStop` checked before every call, and an HTTP 200 with an
+ * unusable answer moving the same document on to the next model without counting as an endpoint failure).
  * `intermediaryHosts` (the config's `alphadrops.intermediaryHosts`) are refused as official URL hosts, next to the
  * aggregator hosts, which are always refused.
  */
@@ -160,66 +126,12 @@ export async function extractWithFallback(
     intermediaryHosts?: readonly string[];
   },
 ): Promise<ExtractOutcome> {
-  const messages = buildMessages(doc);
-  const attempts: ExtractionAttempt[] = [];
-
-  let skipped = 0;
-  for (const model of models) {
-    const key = modelKey(model);
-    if (deps.breaker?.isOpen(key) === true) {
-      skipped += 1;
-      continue;
-    }
-    for (let retry = 0; retry <= RATE_LIMIT_BACKOFF_MS.length; retry++) {
-      if (deps.shouldStop?.() === true) return { ok: false, attempts, stopped: true };
-      const chat = await deps.chat(model, messages);
-      const record = (error: string | null, raw: string): ExtractionAttempt => {
-        const attempt: ExtractionAttempt = {
-          model: key,
-          servedModel: chat.servedModel,
-          httpStatus: chat.httpStatus,
-          finishReason: chat.finishReason,
-          latencyMs: chat.latencyMs,
-          error,
-          raw,
-        };
-        attempts.push(attempt);
-        return attempt;
-      };
-
-      if (chat.httpStatus !== 200) {
-        record(`http_${chat.httpStatus}`, chat.errorBody ?? chat.content);
-        const backoff = RATE_LIMIT_BACKOFF_MS[retry];
-        if (chat.httpStatus === 429 && backoff !== undefined) {
-          await deps.sleep(backoff);
-          continue;
-        }
-        deps.breaker?.recordFailure(key);
-        break;
-      }
-      deps.breaker?.recordSuccess(key);
-      if (chat.finishReason !== "stop") {
-        record(`finish_${chat.finishReason}`, chat.content);
-        break;
-      }
-      if (chat.content.trim() === "") {
-        record("empty_content", chat.content);
-        break;
-      }
-      const parsed = parseJson(chat.content);
-      if (!parsed.ok) {
-        record("json_parse", chat.content);
-        break;
-      }
-      const validated = extractionSchema.safeParse(parsed.value);
-      if (!validated.success) {
-        record("schema", chat.content);
-        break;
-      }
-      record(null, chat.content);
-      return { ok: true, result: postProcess(validated.data, doc, deps.intermediaryHosts ?? []), model: key, attempts };
-    }
-  }
-
-  return { ok: false, attempts, stopped: skipped === models.length };
+  const outcome = await callStructured(buildMessages(doc), extractionSchema, models, deps);
+  if (!outcome.ok) return { ok: false, attempts: outcome.attempts, stopped: outcome.stopped };
+  return {
+    ok: true,
+    result: postProcess(outcome.value, doc, deps.intermediaryHosts ?? []),
+    model: outcome.model,
+    attempts: outcome.attempts,
+  };
 }
