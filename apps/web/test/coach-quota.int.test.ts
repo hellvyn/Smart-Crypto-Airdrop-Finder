@@ -64,7 +64,10 @@ describe.skipIf(!keys)("coach_begin under concurrency (0017)", () => {
   const userIds: string[] = [];
 
   afterAll(async () => {
-    for (const id of userIds) await admin.auth.admin.deleteUser(id);
+    for (const id of userIds) {
+      const { error } = await admin.auth.admin.deleteUser(id);
+      if (error) throw new Error(`cleanup failed for a test user: ${error.message}`);
+    }
   });
 
   async function member(): Promise<{ id: string; db: SupabaseClient }> {
@@ -86,7 +89,7 @@ describe.skipIf(!keys)("coach_begin under concurrency (0017)", () => {
       expect(thread.error).toBeNull();
       const threadId = thread.data as string;
 
-      // 19 answered messages from just now (so a UTC midnight cannot fall between the seed and the calls): one slot left.
+      // 19 answered messages from just now (so a WIB midnight cannot fall between the seed and the calls): one slot left.
       // The quota is counted from coach_usage, so the ledger rows are seeded with the messages.
       const at = new Date(Date.now() - 60_000).toISOString();
       const asked = Array.from({ length: 19 }, () => randomUUID());

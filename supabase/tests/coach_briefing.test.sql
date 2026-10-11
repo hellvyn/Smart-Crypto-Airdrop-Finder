@@ -8,7 +8,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(109);
+select plan(123);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS).
 -- A: ca.., B: cb.. (the other member), C: default timezone, D: Pacific/Kiritimati, E: Pacific/Pago_Pago,
@@ -22,7 +22,11 @@ insert into auth.users (id, email) values
   ('cf000000-0000-4000-8000-00000000000f', 'coach-f@example.test'),
   ('c0000000-0000-4000-8000-000000000001', 'coach-g@example.test'),
   ('c1000000-0000-4000-8000-000000000001', 'coach-h@example.test'),
-  ('c2000000-0000-4000-8000-000000000001', 'coach-i@example.test');
+  ('c2000000-0000-4000-8000-000000000001', 'coach-i@example.test'),
+  ('c3000000-0000-4000-8000-000000000001', 'coach-k@example.test'),
+  ('c4000000-0000-4000-8000-000000000001', 'coach-l@example.test'),
+  ('c5000000-0000-4000-8000-000000000001', 'coach-m@example.test'),
+  ('c6000000-0000-4000-8000-000000000001', 'coach-n@example.test');
 
 insert into projects (id, slug, name, name_key, status, chains, first_seen, last_seen) values
   ('ca100000-0000-4000-8000-000000000001', 'coach-proj', 'Coach Proj', 'coachproj', 'live', '{}', now(), now());
@@ -37,7 +41,11 @@ insert into coach_threads (id, user_id, project_id) values
   ('cd200000-0000-4000-8000-0000000000d1', 'cd000000-0000-4000-8000-00000000000d', null),
   ('ce200000-0000-4000-8000-0000000000e1', 'ce000000-0000-4000-8000-00000000000e', null),
   ('cf200000-0000-4000-8000-0000000000f1', 'cf000000-0000-4000-8000-00000000000f', null),
-  ('c0200000-0000-4000-8000-0000000000f2', 'c0000000-0000-4000-8000-000000000001', null);
+  ('c0200000-0000-4000-8000-0000000000f2', 'c0000000-0000-4000-8000-000000000001', null),
+  ('c3200000-0000-4000-8000-0000000000f3', 'c3000000-0000-4000-8000-000000000001', null),
+  ('c4200000-0000-4000-8000-0000000000f4', 'c4000000-0000-4000-8000-000000000001', null),
+  ('c5200000-0000-4000-8000-0000000000f5', 'c5000000-0000-4000-8000-000000000001', null),
+  ('c6200000-0000-4000-8000-0000000000f6', 'c6000000-0000-4000-8000-000000000001', null);
 
 -- B's message and its reply (A must never see them).
 insert into coach_messages (id, thread_id, user_id, role, kind, content, created_at) values
@@ -155,22 +163,24 @@ select results_eq(
        'public.coach_begin(uuid, text, text)',
        'public.coach_finish(uuid, text, text, integer, integer, integer, integer)',
        'public.coach_save_plan(uuid, jsonb)',
+       'public.coach_mark_used(uuid)',
        'public.coach_new_thread(uuid)']) f
      order by f $$,
   $$ values ('public.coach_begin(uuid, text, text)', false, true, false),
             ('public.coach_finish(uuid, text, text, integer, integer, integer, integer)', false, true, false),
+            ('public.coach_mark_used(uuid)', false, true, false),
             ('public.coach_new_thread(uuid)', false, true, false),
             ('public.coach_save_plan(uuid, jsonb)', false, true, false) $$,
-  'only authenticated may execute the four Coach RPCs');
+  'only authenticated may execute the five Coach RPCs');
 select results_eq(
   $$ select (p.proname::text collate "default"), p.prosecdef, p.proconfig @> array['search_path=""']
      from pg_proc p
      where p.pronamespace = 'public'::regnamespace
-       and p.proname in ('coach_begin', 'coach_finish', 'coach_save_plan', 'coach_new_thread')
+       and p.proname in ('coach_begin', 'coach_finish', 'coach_mark_used', 'coach_save_plan', 'coach_new_thread')
      order by p.proname $$,
-  $$ values ('coach_begin', true, true), ('coach_finish', true, true), ('coach_new_thread', true, true),
-            ('coach_save_plan', true, true) $$,
-  'the four Coach RPCs are security definer with an empty search_path');
+  $$ values ('coach_begin', true, true), ('coach_finish', true, true), ('coach_mark_used', true, true),
+            ('coach_new_thread', true, true), ('coach_save_plan', true, true) $$,
+  'the five Coach RPCs are security definer with an empty search_path');
 select is(pg_get_function_result('public.coach_begin(uuid, text, text)'::regprocedure), 'uuid', 'coach_begin returns the message id');
 select is(pg_get_function_result('public.coach_finish(uuid, text, text, integer, integer, integer, integer)'::regprocedure),
   'uuid', 'coach_finish returns the reply id');
@@ -197,6 +207,8 @@ select throws_ok(
   'anon cannot call coach_finish');
 select throws_ok(
   $$ select coach_save_plan('ca200000-0000-4000-8000-0000000000a1', '{}') $$, '42501', null, 'anon cannot call coach_save_plan');
+select throws_ok(
+  $$ select coach_mark_used('cb300000-0000-4000-8000-0000000000b1') $$, '42501', null, 'anon cannot call coach_mark_used');
 reset role;
 
 -- ---------- member A ----------
@@ -586,6 +598,78 @@ select throws_ok($$ select coach_new_thread(null) $$, 'P0001', 'threads', 'the 5
 reset role;
 select is((select count(*)::int from coach_usage where user_id = 'c2000000-0000-4000-8000-000000000001' and kind = 'thread'), 50,
   'the ledger kept the 50 threads');
+
+-- ---------- coach_mark_used, expiry and the delete trigger ----------
+-- M: two messages through coach_begin; #2 is marked (the model started to answer), then both pass their 2 minutes.
+create temp table m_ids (n int, id uuid);
+grant all on m_ids to authenticated;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c5000000-0000-4000-8000-000000000001","role":"authenticated"}';
+insert into m_ids select 1, coach_begin('c5200000-0000-4000-8000-0000000000f5', 'chat', 'satu');
+insert into m_ids select 2, coach_begin('c5200000-0000-4000-8000-0000000000f5', 'chat', 'dua');
+select coach_mark_used((select id from m_ids where n = 2));
+reset role;
+update coach_usage set created_at = now() - interval '3 minutes' where user_id = 'c5000000-0000-4000-8000-000000000001';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c5000000-0000-4000-8000-000000000001","role":"authenticated"}';
+select throws_ok(
+  format($$ select coach_finish(%L, 'terlambat', 'm', 1, 1, null, null) $$, (select id from m_ids where n = 1)),
+  'P0001', 'expired', 'coach_finish on an unmarked message past its 2 minutes raises expired');
+select lives_ok(
+  format($$ select coach_finish(%L, 'masih boleh', 'm', 1, 1, null, null) $$, (select id from m_ids where n = 2)),
+  'coach_finish on an old message that was marked still works');
+reset role;
+
+-- L: a message that failed (past its 2 minutes, unmarked) stays uncounted when its thread is deleted afterwards.
+create temp table l_ids (id uuid);
+grant all on l_ids to authenticated;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c4000000-0000-4000-8000-000000000001","role":"authenticated"}';
+insert into l_ids select coach_begin('c4200000-0000-4000-8000-0000000000f4', 'chat', 'gagal');
+reset role;
+update coach_usage set created_at = now() - interval '3 minutes' where id = (select id from l_ids);
+update coach_messages set created_at = now() - interval '3 minutes' where id = (select id from l_ids);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c4000000-0000-4000-8000-000000000001","role":"authenticated"}';
+select is(pg_temp.rows_deleted($q$ delete from coach_threads where id = 'c4200000-0000-4000-8000-0000000000f4' $q$), 1::bigint,
+  'L deletes the thread of a failed message');
+reset role;
+select is((select replied from coach_usage where id = (select id from l_ids)), false,
+  'a failed message stays uncounted after its thread is deleted');
+
+-- K: 20 messages past their 2 minutes without a reply (none count); marking one makes it count again for good.
+select pg_temp.seed('c3000000-0000-4000-8000-000000000001', 'c3200000-0000-4000-8000-0000000000f3', 20, now() - interval '3 minutes', false);
+create temp table k_ids as select id from coach_usage where user_id = 'c3000000-0000-4000-8000-000000000001' limit 1;
+grant all on k_ids to authenticated;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c3000000-0000-4000-8000-000000000001","role":"authenticated"}';
+select lives_ok(format($$ select coach_mark_used(%L) $$, (select id from k_ids)), 'K marks their own message');
+select lives_ok(format($$ select coach_mark_used(%L) $$, (select id from k_ids)), 'marking is idempotent');
+select throws_ok(format($$ select coach_mark_used(%L) $$, (select id from m_ids where n = 1)), 'P0001', 'message',
+  'a member cannot mark another member''s message');
+select throws_ok($$ select coach_mark_used('00000000-0000-4000-8000-000000000000') $$, 'P0001', 'message',
+  'marking a message that does not exist raises message');
+select is(pg_temp.begin_n('c3200000-0000-4000-8000-0000000000f3', 19), 19,
+  'with one old marked message counted, 19 more fit in the day');
+select throws_ok(
+  $$ select coach_begin('c3200000-0000-4000-8000-0000000000f3', 'chat', 'ke-21') $$, 'P0001', 'quota',
+  'a marked message with no reply keeps counting after 2 minutes');
+reset role;
+
+-- N: deleting a member together with their messages, in the transaction that made them, does not trip the trigger.
+select pg_temp.seed('c6000000-0000-4000-8000-000000000001', 'c6200000-0000-4000-8000-0000000000f6', 1, now(), false);
+select lives_ok($$ delete from auth.users where id = 'c6000000-0000-4000-8000-000000000001' $$,
+  'deleting a member and their fresh messages in one transaction succeeds');
+select is((select count(*)::int from coach_usage where user_id = 'c6000000-0000-4000-8000-000000000001'), 0,
+  'the member''s ledger rows went with them');
+
+-- I again: the thread cap is the WIB day. The 50 rows from today are backdated to just before today started: the cap is clear.
+update coach_usage set created_at = (date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta') - interval '1 second'
+  where user_id = 'c2000000-0000-4000-8000-000000000001' and kind = 'thread';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c2000000-0000-4000-8000-000000000001","role":"authenticated"}';
+select lives_ok($$ select coach_new_thread(null) $$, 'threads from yesterday WIB do not count against the cap');
+reset role;
 
 -- ---------- delete cascades ----------
 set local role authenticated;

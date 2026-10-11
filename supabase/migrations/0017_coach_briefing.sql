@@ -139,8 +139,9 @@ create policy "own coach messages read" on coach_messages for select to authenti
 -- One row per coach_begin (kind 'message', id = the user message's id) and per coach_new_thread (kind 'thread', id =
 -- the thread's id). No foreign key to threads or messages, so deleting a thread or a message never removes a row; rows
 -- go only with the member (auth.users cascade) or by the pipeline's purge (rows older than 2 days; Plan 9 Task 8).
--- `replied` is true once coach_finish answered the message, and also once a user message was deleted without an answer
--- (trigger below), so deleting a thread mid-answer does not hand the slot back after 2 minutes either.
+-- `replied` ("this message counts for good") is true once coach_finish answered the message, once coach_mark_used
+-- marked it (the model has started to answer), and once a user message still inside its 2 minutes was deleted without
+-- an answer (trigger below), so deleting a thread mid-answer does not hand the slot back after 2 minutes either.
 -- Security definer functions and the service role only: RLS is on with no policy, and the web roles have no grant.
 create table coach_usage (
   id uuid primary key,
@@ -155,7 +156,9 @@ create index coach_usage_created_idx on coach_usage (created_at);
 alter table coach_usage enable row level security;
 revoke all on coach_usage from anon, authenticated;
 
--- A user message deleted without a reply (its thread was deleted, or the purge ran) keeps counting.
+-- A user message deleted while it is still inside its 2 minutes and unanswered (its thread was deleted mid-answer) keeps
+-- counting for good. One that already failed (older than 2 minutes, unmarked) stays uncounted. Nothing is updated when
+-- the member themselves is being deleted (their ledger rows go with them, and an update there can violate the FK).
 create function public.keep_coach_usage_on_delete() returns trigger
   language plpgsql
   security definer
@@ -163,7 +166,11 @@ create function public.keep_coach_usage_on_delete() returns trigger
 as $$
 begin
   if old.role = 'user' then
-    update public.coach_usage set replied = true where id = old.id;
+    update public.coach_usage set replied = true
+      where id = old.id
+        and not replied
+        and created_at > now() - interval '2 minutes'
+        and exists (select 1 from auth.users au where au.id = old.user_id);
   end if;
   return old;
 end;
@@ -194,7 +201,7 @@ create policy "members read briefings" on briefings for select to authenticated
 
 -- ---------- RPCs (security definer, empty search_path, execute for authenticated only) ----------
 
--- A new thread for the caller, about a project or not. At most 50 a day (counted from coach_usage, which survives
+-- A new thread for the caller, about a project or not. At most 50 a WIB day (counted from coach_usage, which survives
 -- deleting threads), so a member cannot fill the table by calling this in a loop (the purge step removes threads after
 -- 30 days).
 create function public.coach_new_thread(p_project_id uuid) returns uuid
@@ -205,14 +212,15 @@ as $$
 declare
   v_uid uuid := (select auth.uid());
   v_id uuid;
+  v_start timestamptz := date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta';
 begin
   if v_uid is null then
     raise exception 'not authenticated' using errcode = '42501';
   end if;
   perform pg_advisory_xact_lock(hashtextextended('coach_new_thread:' || v_uid::text, 0));
-  -- Counted from coach_usage, so deleting threads does not reset it.
+  -- Counted from coach_usage, so deleting threads does not reset it; the day is the WIB day, like the messages.
   if (select count(*) from public.coach_usage u
-      where u.user_id = v_uid and u.kind = 'thread' and u.created_at > now() - interval '1 day') >= 50 then
+      where u.user_id = v_uid and u.kind = 'thread' and u.created_at >= v_start) >= 50 then
     raise exception 'threads' using errcode = 'P0001';
   end if;
   insert into public.coach_threads (user_id, project_id) values (v_uid, p_project_id) returning id into v_id;
@@ -274,7 +282,8 @@ grant execute on function public.coach_begin(uuid, text, text) to authenticated;
 
 -- Insert the reply to one of the caller's own unanswered user messages, in its thread and of its kind, and return the
 -- reply's id. P0001 'message' for a message that is not the caller's user message (or does not exist), P0001
--- 'replied' for one that already has a reply. A member could call this directly to write a made-up "reply" in their
+-- 'replied' for one that already has a reply, P0001 'expired' for one whose 2 minutes ran out without a reply or a
+-- coach_mark_used. A member could call this directly to write a made-up "reply" in their
 -- own thread; that touches only their own data and adds no quota, so it is accepted (spec §4.4).
 create function public.coach_finish(
   p_user_message_id uuid,
@@ -309,6 +318,12 @@ begin
   if exists (select 1 from public.coach_messages r where r.reply_to = p_user_message_id) then
     raise exception 'replied' using errcode = 'P0001';
   end if;
+  -- A message whose 2 minutes ran out unmarked has stopped counting; answering it now would bring it back into the
+  -- day's count. (A message coach_mark_used marked is replied, so it can still be answered.)
+  if exists (select 1 from public.coach_usage u
+             where u.id = p_user_message_id and not u.replied and u.created_at <= now() - interval '2 minutes') then
+    raise exception 'expired' using errcode = 'P0001';
+  end if;
   insert into public.coach_messages
     (thread_id, user_id, role, kind, content, model, input_tokens, output_tokens, cache_read_tokens,
      cache_creation_tokens, reply_to)
@@ -321,6 +336,31 @@ end;
 $$;
 revoke execute on function public.coach_finish(uuid, text, text, integer, integer, integer, integer) from public, anon;
 grant execute on function public.coach_finish(uuid, text, text, integer, integer, integer, integer) to authenticated;
+
+-- The web calls this when the model's first text arrives, before forwarding any of it: from then on the message counts
+-- for good, whatever happens next (the member aborts, the model stops at max_tokens, the reply is too long for
+-- coach_finish, the route times out). Only sets coach_usage.replied; idempotent. P0001 'message' for a message that is
+-- not the caller's user message (or has no ledger row).
+create function public.coach_mark_used(p_user_message_id uuid) returns void
+  language plpgsql
+  security definer
+  set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+begin
+  if v_uid is null then
+    raise exception 'not authenticated' using errcode = '42501';
+  end if;
+  update public.coach_usage set replied = true
+    where id = p_user_message_id and user_id = v_uid and kind = 'message';
+  if not found then
+    raise exception 'message' using errcode = 'P0001';
+  end if;
+end;
+$$;
+revoke execute on function public.coach_mark_used(uuid) from public, anon;
+grant execute on function public.coach_mark_used(uuid) to authenticated;
 
 -- Store the server-validated plan on the caller's thread. P0001 'thread' for a thread that is not the caller's. The
 -- plan must be a JSON object of at most 100,000 characters (the server validates its content; this bounds what a
