@@ -461,3 +461,9 @@ Ruling: T4 wires `getRunSummary` and `getTrackRecord` into the landing — P7.T4
   - New stat `ai_models_tripped`. `daily.yml` passes `ANTHROPIC_API_KEY`.
   - Not tested against the live API (no key in the container). Cost per run is an estimate and an upper bound.
 - G5 complete. Gates on the merged head: core 536, pipeline 727, web 698 unit · typecheck ok · pgTAP 453 · e2e 98/98.
+- Deploy 2026-10-11 (owner said "gas", chose PR + merge):
+  - Signup off, confirmed by the owner.
+  - Migrations applied through the Supabase connector: 0008, 0009, 0010, 0011, 0012, 0013, 0014 (no backfill) and 0015. The connector refuses DROP and mass UPDATE, so the owner ran 0007 and the 0014 backfill in the SQL editor; the history records them as `0007_manual_membership` and `0014b_changes_seen_backfill`.
+  - The combined release script was first tested on a local mirror (0001–0006 + 0008 + 0009): it applied cleanly and pgTAP passed 453/453.
+  - PR hellvyn/Smart-Airdrop-Finder#3 merged right after 0013 (merge commit cdf43f3); the production deploy follows from main.
+  - `daily.yml` dispatched once on main.
