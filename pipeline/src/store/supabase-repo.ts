@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   AiKind,
   CurationRecord,
+  DatePrecision,
+  DeadlineKind,
   ExtractedDeadline,
   NewSignal,
   RiskAssessment,
@@ -415,6 +417,7 @@ export class SupabaseRepo implements PipelineRepo {
     const cutoff = new Date(now.getTime() - activeSinceDays * DAY_MS).toISOString();
     type ScoringDb = ProjectDb & {
       tasks: { description: string; cadence: string }[];
+      deadlines: { kind: DeadlineKind; date: string | null; precision: DatePrecision }[];
       links: { url: string; kind: string }[];
       evidence: { field: string; value: string; quote: string; documents: { source_key: string } | null }[];
       lookalike: { name: string; official_domains: string[] } | null;
@@ -423,7 +426,7 @@ export class SupabaseRepo implements PipelineRepo {
       this.db
         .from("projects")
         .select(
-          `${PROJECT_COLUMNS}, tasks(description, cadence), links(url, kind), ` +
+          `${PROJECT_COLUMNS}, tasks(description, cadence), deadlines(kind, date, precision), links(url, kind), ` +
             "evidence(field, value, quote, documents(source_key)), lookalike:lookalike_of(name, official_domains)",
         )
         .gte("last_seen", cutoff)
@@ -443,6 +446,7 @@ export class SupabaseRepo implements PipelineRepo {
       facts: r.evidence
         .filter((e) => FACT_FIELDS.includes(e.field))
         .map((e) => ({ field: e.field, value: e.value, quote: e.quote })),
+      deadlines: r.deadlines.map((d) => ({ kind: d.kind, date: d.date, precision: d.precision })),
       links: r.links.map((l) => ({ url: l.url, kind: l.kind })),
       sourceCount: new Set(r.evidence.flatMap((e) => (e.documents ? [e.documents.source_key] : []))).size,
       lookalikeOfName: r.lookalike?.name ?? null,

@@ -290,6 +290,9 @@ export class MemoryRepo implements PipelineRepo {
         facts: this.evidence
           .filter((e) => e.projectId === p.id && FACT_FIELDS.includes(e.field))
           .map((e) => ({ field: e.field, value: e.value, quote: e.quote })),
+        deadlines: this.deadlines
+          .filter((d) => d.projectId === p.id)
+          .map((d) => ({ kind: d.kind, date: d.date, precision: d.precision })),
         links: this.links.filter((l) => l.projectId === p.id).map((l) => ({ url: l.url, kind: l.kind })),
         sourceCount: sourceKeys.size,
         lookalikeOfName: other?.name ?? null,

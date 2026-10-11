@@ -1677,3 +1677,61 @@ describe("runDailyJob LLM providers", () => {
     expect(lines.join("\n")).not.toContain("test-key");
   });
 });
+
+describe("runDaily expiry", () => {
+  const deepbookReply = (deadlines: Record<string, unknown>[]): Record<string, unknown> => ({
+    ...REPLIES,
+    [DEEPBOOK]: {
+      is_airdrop_content: true,
+      projects: [
+        project({ name: "DeepBook", status: "live", status_evidence: "Airdrop confirmed", chains: ["Sui"], deadlines }),
+      ],
+    },
+  });
+  const claim = (date: string | null, precision = "exact"): Record<string, unknown> => ({
+    kind: "claim",
+    date,
+    precision,
+    text: "Claim window",
+  });
+  const deepbook = async (repo: MemoryRepo) => (await repo.findProjectsByNameKey("deepbook"))[0];
+
+  it("stores a live project with a past claim and no future deadline as ended and logs the status change", async () => {
+    const { repo, deps, config } = setup({ chat: fakeChat(deepbookReply([claim("2026-10-05")])) });
+    await runDaily(deps, config);
+
+    const stored = await deepbook(repo);
+    expect(stored?.status).toBe("ended");
+    expect(repo.projectChanges.filter((c) => c.field === "status")).toEqual([
+      { projectId: stored?.id, field: "status", oldValue: "live", newValue: "ended", changedAt: NOW },
+    ]);
+  });
+
+  it("keeps a project live while a claim is still ahead", async () => {
+    const { repo, deps, config } = setup({ chat: fakeChat(deepbookReply([claim("2026-10-05"), claim("2026-10-20")])) });
+    await runDaily(deps, config);
+
+    expect((await deepbook(repo))?.status).toBe("live");
+    expect(repo.projectChanges.filter((c) => c.field === "status")).toEqual([]);
+  });
+
+  it("never expires on a deadline without a date or with month precision", async () => {
+    const { repo, deps, config } = setup({
+      chat: fakeChat(deepbookReply([claim(null), claim("2026-09-01", "month")])),
+    });
+    await runDaily(deps, config);
+
+    expect((await deepbook(repo))?.status).toBe("live");
+    expect(repo.projectChanges.filter((c) => c.field === "status")).toEqual([]);
+  });
+
+  it("does not log a second change on the next run once the project is stored as ended", async () => {
+    const { repo, deps, config } = setup({ chat: fakeChat(deepbookReply([claim("2026-10-05")])) });
+    await runDaily(deps, config);
+    const later = new Date(NOW.getTime() + DAY);
+    await runDaily({ ...deps, now: () => later }, config);
+
+    expect((await deepbook(repo))?.status).toBe("ended");
+    expect(repo.projectChanges.filter((c) => c.field === "status")).toHaveLength(1);
+  });
+});
