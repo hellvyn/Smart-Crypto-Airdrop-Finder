@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   capitalLabel,
   checkedLabel,
+  compactUsd,
+  curatedHref,
+  endedLabel,
+  isCheckFrozen,
+  isCheckStale,
+  parseCuratedFilters,
   coverageLine,
   deadlineKindLabel,
   evidenceFieldLabel,
@@ -273,5 +279,91 @@ describe("checkedLabel", () => {
     expect(checkedLabel(new Date("2026-09-28T03:00:00Z"), now, true)).toBe("Last check 28 Sep");
     expect(checkedLabel(new Date("2026-10-10T11:00:00Z"), now, true)).toBe("Last check 10 Okt");
     expect(checkedLabel(new Date("2025-06-01T03:00:00Z"), now, true)).toBe("Last check 1 Jun 2025");
+  });
+});
+
+describe("isCheckFrozen (ruling 6: an ended project stops being re-checked 90 days after it ended)", () => {
+  // The pipeline scores an ended project while ended_on >= the UTC day 90 days back (pipeline ENDED_SCORING_DAYS).
+  // 2026-10-10 minus 90 days is 2026-07-12.
+  const now = new Date("2026-10-10T12:00:00Z");
+  it.each([
+    ["ended 90 days ago: still re-checked", "ended", "2026-07-12", false],
+    ["ended 91 days ago: frozen", "ended", "2026-07-11", true],
+    ["ended last week", "ended", "2026-10-03", false],
+    ["ended a year ago", "ended", "2025-09-01", true],
+    ["ended tab without an end date", "ended", null, false],
+    ["an old end date outside the ended tab", "live_now", "2025-09-01", false],
+    ["early bets", "early_bets", null, false],
+  ] as const)("%s", (_, tab, endedOn, want) => {
+    expect(isCheckFrozen(tab, endedOn, now)).toBe(want);
+  });
+
+  it("a frozen ended row reads Last check, a recent one keeps Dicek", () => {
+    const checkedAt = new Date("2026-04-01T23:00:00Z");
+    expect(checkedLabel(checkedAt, now, isCheckFrozen("ended", "2026-03-20", now))).toBe("Last check 2 Apr");
+    expect(checkedLabel(new Date("2026-10-09T23:00:00Z"), now, isCheckFrozen("ended", "2026-10-01", now))).toBe(
+      "Dicek hari ini",
+    );
+  });
+});
+
+describe("isCheckStale", () => {
+  const now = new Date("2026-10-10T12:00:00Z");
+  it("is stale only past 48 hours, like checkedLabel", () => {
+    expect(isCheckStale(new Date("2026-10-08T12:00:00Z"), now)).toBe(false);
+    expect(isCheckStale(new Date("2026-10-08T11:59:00Z"), now)).toBe(true);
+  });
+});
+
+describe("endedLabel", () => {
+  it("writes the end date as Ended {tanggal}, in UTC whatever the server zone", () => {
+    expect(endedLabel("2025-01-15")).toBe("Ended 15 Jan 2025");
+    expect(endedLabel("2026-10-05")).toBe("Ended 5 Okt 2026");
+  });
+});
+
+describe("compactUsd", () => {
+  it.each([
+    [45_000_000, "45 jt"],
+    [210_400_000, "210,4 jt"],
+    [1_250_000_000, "1,3 M"],
+    [850_000, "850 rb"],
+    [999, "999"],
+  ])("%s -> %s", (n, want) => {
+    expect(compactUsd(n)).toBe(want);
+  });
+});
+
+describe("parseCuratedFilters", () => {
+  const sp = { status: "live", risk: "low", chain: "Base", worth: ["high", "nope", "low"], modal: "free", sort: "worth" };
+  it("gives members the worth filter and the capital option", () => {
+    expect(parseCuratedFilters(sp, true)).toEqual({
+      status: ["live"],
+      risk: ["low"],
+      chain: "base",
+      worth: ["high", "low"],
+      capital: "free",
+    });
+  });
+
+  it("drops worth for visitors, so ?worth=high never reaches a query (#45)", () => {
+    expect(parseCuratedFilters(sp, false)).toEqual({ status: ["live"], risk: ["low"], chain: "base", capital: "free" });
+  });
+
+  it("reads an unknown modal as all", () => {
+    expect(parseCuratedFilters({ modal: "lots" }, true).capital).toBe("all");
+  });
+});
+
+describe("curatedHref", () => {
+  it("always names the tab, keeps every filter and leaves out modal=all and page 1", () => {
+    expect(curatedHref("early_bets", { capital: "all" })).toBe("/airdrops?tab=early_bets");
+    expect(
+      curatedHref(
+        "ended",
+        { status: ["live", "ended"], risk: ["high"], chain: "base", worth: ["high"], capital: "free" },
+        3,
+      ),
+    ).toBe("/airdrops?tab=ended&status=live&status=ended&risk=high&chain=base&worth=high&modal=free&page=3");
   });
 });

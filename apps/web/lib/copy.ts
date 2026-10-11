@@ -2,7 +2,7 @@
 // design C mockups (docs/design/airdropiq-c) second. Style rules: "kamu" tone, no em dash, straight quotes, and none of
 // the banned words; test/copy-style.test.ts checks every string literal in this file.
 // Pure module (no I/O, no server-only imports, type-only imports), so client components can use it too.
-import type { CheckId, DatePrecision, DeadlineKind, RiskLevel, Severity, Status } from "@saf/core";
+import type { CheckId, DatePrecision, DeadlineKind, RiskLevel, Severity, Status, Tab, WorthLevel } from "@saf/core";
 
 const BRAND = "AirdropIQ";
 
@@ -101,6 +101,12 @@ export const labels = {
   /** Coverage of all checks. "{k}/4 security check jalan" is reserved for the 4 key checks (glossary). */
   coverage: (ran: number, total: number, missing: string[]) =>
     missing.length > 0 ? `${ran}/${total} cek jalan. Belum bisa dicek: ${missing.join(", ")}.` : `${ran}/${total} cek jalan`,
+  /** How many of the 4 key checks ran in the latest risk assessment (glossary "cakupan cek"). */
+  keyChecks: (ran: number) => `${ran}/4 security check jalan`,
+  /** End date of a project in the ended tab (#40). */
+  endedOn: (date: string) => `Ended ${date}`,
+  /** Short dollar amounts: "45 jt", "1,2 M". */
+  usdUnits: { thousand: "rb", million: "jt", billion: "M" },
   /** Evidence fields are free-form strings in the database (no core type), so the map stays open. */
   evidenceField: {
     status: "Status",
@@ -130,25 +136,52 @@ export const labels = {
   },
 };
 
-/** The current /airdrops list (Plan 6 Task 4 replaces it with the curated tabs). */
+/** The curated /airdrops list (Plan 6 Task 4); the watchlist reuses its row texts. */
 export const list = {
   title: "Daftar airdrop",
-  heading: "Daftar airdrop",
-  meta: (lastRun: string | null, total: number) =>
-    `Update terakhir: ${lastRun ?? "belum ada"}. ${total} airdrop. Urutannya dari deadline terdekat, lalu yang paling baru kami lihat.`,
+  summary: {
+    title: "Update hari ini",
+    checked: "dicek",
+    passed: "lolos",
+  },
+  tabs: {
+    live_now: "Live sekarang",
+    early_bets: "Early",
+    ended: "Ended",
+  } satisfies Record<Tab, string>,
+  sortLabel: "Urutan:",
+  sort: { visitor: "Baru dicek", member: "Paling worth it", ended: "Baru ended" },
+  capitalLabel: "Modal:",
+  capital: { all: "Semua", free: "Gratis", deposit: "Butuh $" },
+  option: (label: string, count: number) => `${label} · ${count}`,
+  trackRecord: (r: { listed: number; noToken: number; riskRaised: number }) =>
+    `${r.listed} ${landing.trackRecord.listed} · ${r.noToken} ${landing.trackRecord.noToken} · ${r.riskRaised} ${landing.trackRecord.riskRaised}.`,
   filtersLabel: "Filter",
   statusLegend: "Status",
   riskLegend: "Risiko",
   chainLabel: "Chain",
   allChains: "Semua chain",
   noMatches: (chain: string) => `${chain} (gak ada yang cocok)`,
+  worthLabel: "Worth it",
+  worthAll: "Worth it: semua",
   apply: "Terapkan filter",
   clear: "Hapus filter",
   emptyPage: "Gak ada airdrop di halaman ini.",
   emptyFiltered: "Gak ada airdrop yang cocok sama filter ini.",
-  empty: "Belum ada airdrop.",
+  emptyTab: "Belum ada airdrop yang lolos kurasi di tab ini.",
   chainUnknown: "Chain belum diketahui",
   noDeadline: "Belum ada deadline yang jelas",
+  claimOpen: "Claim open · link dicek",
+  /** Signal badges of a row (#41). Only a verified signal gets "✓"; AlphaDrops backers are what AlphaDrops reports. */
+  signals: {
+    vc: (investor: string) => `VC: ${investor} ✓`,
+    reported: (investors: string) => `Menurut AlphaDrops: ${investors}`,
+    lead: (investor: string) => `${investor} (lead)`,
+    more: "…",
+    tvl: (amount: string) => `TVL $${amount}`,
+    coingecko: "Terdaftar di CoinGecko",
+    curatedSource: "Sumber kurasi",
+  },
   pagination: {
     label: "Halaman",
     previous: "Sebelumnya",
@@ -343,7 +376,9 @@ export const landing = {
     listed: "Token listing",
     noToken: "Ended tanpa token",
     riskRaised: "Belakangan jadi risky",
-    note: (total: number) => `Dari ${total} airdrop yang lolos sebelum token listing dan sekarang udah ended.`,
+    /** Not "... udah ended" alone: the population also holds projects that turned risky before ending, so listed and
+     * noToken need not add up to total (spec 15.3, G4 revision). */
+    note: (total: number) => `Dari ${total} airdrop yang lolos sebelum token listing dan sekarang udah ended atau sempat jadi risky.`,
   },
   compare: {
     title: "Apa bedanya gratis sama member?",
@@ -383,6 +418,7 @@ export const ui = {
     high: "Sangat worth it",
     medium: "Worth it",
     low: "Kurang worth it",
-  },
+    insufficient_data: "Data belum cukup",
+  } satisfies Record<WorthLevel, string>,
   tabBarLabel: "Tab daftar",
 };

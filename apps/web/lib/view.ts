@@ -12,6 +12,7 @@ import type {
   WorthLevel,
 } from "@saf/core";
 import { labels } from "./copy";
+import { LIST_PATH } from "./routes";
 
 export type { Tab, WorthLevel } from "@saf/core";
 
@@ -76,6 +77,8 @@ export interface CuratedItem extends ProjectListItem {
   claimOpenChecked: boolean;
   capital: Capital;
   capitalMinUsd: number | null;
+  /** How many of the 4 key checks ran in the latest risk assessment, 0 to 4 ("{k}/4 security check jalan"). */
+  keyChecksRan: number;
   /** Member-only; always null for visitors. */
   worthLevel: WorthLevel | null;
 }
@@ -135,11 +138,49 @@ function checkDate(d: Date, now: Date): string {
  */
 export function checkedLabel(checkedAt: Date, now: Date, frozen: boolean): string {
   if (frozen) return labels.checked.frozen(checkDate(checkedAt, now));
-  if (now.getTime() - checkedAt.getTime() > CHECK_STALE_AFTER_MS) return labels.checked.staleSince(checkDate(checkedAt, now));
+  if (isCheckStale(checkedAt, now)) return labels.checked.staleSince(checkDate(checkedAt, now));
   const days = Math.round((Date.parse(zoneDay.format(now)) - Date.parse(zoneDay.format(checkedAt))) / DAY_MS);
   if (days <= 0) return labels.checked.today;
   if (days === 1) return labels.checked.yesterday;
   return labels.checked.daysAgo(days);
+}
+
+/** Over 48 hours since the last check: "Belum dicek lagi sejak ..." in the warning colour (#44). */
+export function isCheckStale(checkedAt: Date, now: Date): boolean {
+  return now.getTime() - checkedAt.getTime() > CHECK_STALE_AFTER_MS;
+}
+
+/**
+ * Days after `ended_on` that the pipeline keeps re-checking a project that ended after it passed (its
+ * `ENDED_SCORING_DAYS`, curation spec §5.3). After that its last result is frozen.
+ */
+const ENDED_RECHECK_DAYS = 90;
+
+/**
+ * Whether a row's check time is frozen ("Last check {tanggal}", #44): only in the ended tab, once `ended_on` lies before
+ * the UTC day 90 days back, the same cut the pipeline uses (ruling 6). Without an end date the project is still checked.
+ */
+export function isCheckFrozen(tab: Tab, endedOn: string | null, now: Date): boolean {
+  if (tab !== "ended" || endedOn === null) return false;
+  return endedOn < new Date(now.getTime() - ENDED_RECHECK_DAYS * DAY_MS).toISOString().slice(0, 10);
+}
+
+const endedDay = new Intl.DateTimeFormat("id-ID", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
+
+/** "Ended 5 Okt 2026" from a `YYYY-MM-DD` end date; the date is a calendar day, so it is formatted in UTC. */
+export function endedLabel(endedOn: string): string {
+  return labels.endedOn(endedDay.format(new Date(`${endedOn}T00:00:00Z`)));
+}
+
+const ONE_DECIMAL = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 });
+
+/** A dollar amount in short Indonesian units, without the "$": "45 jt", "210,4 jt", "1,3 M", "850 rb". */
+export function compactUsd(n: number): string {
+  const u = labels.usdUnits;
+  if (n >= 1e9) return `${ONE_DECIMAL.format(n / 1e9)} ${u.billion}`;
+  if (n >= 1e6) return `${ONE_DECIMAL.format(n / 1e6)} ${u.million}`;
+  if (n >= 1e3) return `${ONE_DECIMAL.format(n / 1e3)} ${u.thousand}`;
+  return ONE_DECIMAL.format(n);
 }
 
 export const STATUSES: readonly Status[] = ["live", "announced", "speculative", "ended", "unknown"];
@@ -296,14 +337,25 @@ export function parsePage(raw: string | undefined): number {
   return Number(raw);
 }
 
-/** Query string for the list page that keeps the filters; page 1 is left out. Empty string when there is nothing to say. */
-export function listQueryString(f: ListFilters, page: number): string {
+/**
+ * Query string for the list page that keeps the filters: status, risk, chain, worth (only a member's filters carry
+ * it), modal; "Semua" and page 1 are left out. Empty string when there is nothing to say.
+ */
+export function listQueryString(f: CuratedFilters, page: number): string {
   const sp = new URLSearchParams();
   for (const s of f.status ?? []) sp.append("status", s);
   for (const r of f.risk ?? []) sp.append("risk", r);
   if (f.chain) sp.set("chain", f.chain);
+  for (const w of f.worth ?? []) sp.append("worth", w);
+  if (f.capital && f.capital !== "all") sp.set("modal", f.capital);
   if (page > 1) sp.set("page", String(page));
   return sp.toString();
+}
+
+/** A link to a tab of the list that keeps the filters: `/airdrops?tab=early_bets&risk=low&modal=free`. */
+export function curatedHref(tab: Tab, f: CuratedFilters, page = 1): string {
+  const qs = listQueryString(f, page);
+  return `${LIST_PATH}?tab=${tab}${qs ? `&${qs}` : ""}`;
 }
 
 // ---- Query-string parsing ----
@@ -332,6 +384,16 @@ export function parseFilters(sp: SearchParams): ListFilters {
   const risk = many(sp.risk).filter((r): r is RiskLevel => (RISK_LEVELS as readonly string[]).includes(r));
   const chain = parseChain(many(sp.chain)[0]);
   return { status, risk, chain: chain ?? undefined };
+}
+
+/**
+ * Filters of the curated list from the query string: the v1 filters, `?modal=` and, for members only, `?worth=`. A
+ * visitor's `worth` is dropped here, so it never reaches a query or a link (#45).
+ */
+export function parseCuratedFilters(sp: SearchParams, member: boolean): CuratedFilters {
+  const f: CuratedFilters = { ...parseFilters(sp), capital: parseCapital(many(sp.modal)[0]) };
+  if (member) f.worth = many(sp.worth).filter((w): w is WorthLevel => (WORTH_LEVELS as readonly string[]).includes(w));
+  return f;
 }
 
 /** The `chain` value as typed (trimmed, lowercased), valid or not, so the filter form can keep showing it. */

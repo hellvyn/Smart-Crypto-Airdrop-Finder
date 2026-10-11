@@ -319,32 +319,44 @@ describe("unsafe claim link", () => {
 });
 
 describe("Pagination", () => {
-  it("links Sebelumnya and Berikutnya and keeps the filters", () => {
-    render(<Pagination page={2} pageSize={50} total={120} filters={{ status: ["live"], risk: ["high"], chain: "base" }} />);
+  it("links Sebelumnya and Berikutnya and keeps the tab and the filters", () => {
+    render(
+      <Pagination
+        page={2}
+        pageSize={50}
+        total={120}
+        tab="early_bets"
+        filters={{ status: ["live"], risk: ["high"], chain: "base", worth: ["high"], capital: "free" }}
+      />,
+    );
     expect(screen.getByRole("navigation", { name: "Halaman" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sebelumnya" }).getAttribute("href")).toBe("/airdrops?status=live&risk=high&chain=base");
-    expect(screen.getByRole("link", { name: "Berikutnya" }).getAttribute("href")).toBe("/airdrops?status=live&risk=high&chain=base&page=3");
+    expect(screen.getByRole("link", { name: "Sebelumnya" }).getAttribute("href")).toBe(
+      "/airdrops?tab=early_bets&status=live&risk=high&chain=base&worth=high&modal=free",
+    );
+    expect(screen.getByRole("link", { name: "Berikutnya" }).getAttribute("href")).toBe(
+      "/airdrops?tab=early_bets&status=live&risk=high&chain=base&worth=high&modal=free&page=3",
+    );
     expect(screen.getByText("51-100 dari 120")).toBeTruthy();
   });
 
   it("has no Berikutnya on the last page and no Sebelumnya on the first", () => {
-    const { unmount } = render(<Pagination page={1} pageSize={50} total={55} filters={{}} />);
+    const { unmount } = render(<Pagination page={1} pageSize={50} total={55} tab="live_now" filters={{}} />);
     expect(screen.queryByRole("link", { name: "Sebelumnya" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Berikutnya" }).getAttribute("href")).toBe("/airdrops?page=2");
+    expect(screen.getByRole("link", { name: "Berikutnya" }).getAttribute("href")).toBe("/airdrops?tab=live_now&page=2");
     unmount();
-    render(<Pagination page={2} pageSize={50} total={55} filters={{}} />);
+    render(<Pagination page={2} pageSize={50} total={55} tab="live_now" filters={{}} />);
     expect(screen.queryByRole("link", { name: "Berikutnya" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Sebelumnya" }).getAttribute("href")).toBe("/airdrops");
+    expect(screen.getByRole("link", { name: "Sebelumnya" }).getAttribute("href")).toBe("/airdrops?tab=live_now");
   });
 
   it("renders nothing for a single page", () => {
-    const { container } = render(<Pagination page={1} pageSize={50} total={3} filters={{}} />);
+    const { container } = render(<Pagination page={1} pageSize={50} total={3} tab="live_now" filters={{}} />);
     expect(container.textContent).toBe("");
   });
 
   it("links back to the last page when the page is past the end", () => {
-    render(<Pagination page={9} pageSize={50} total={55} filters={{}} />);
-    expect(screen.getByRole("link", { name: "Sebelumnya" }).getAttribute("href")).toBe("/airdrops?page=2");
+    render(<Pagination page={9} pageSize={50} total={55} tab="ended" filters={{}} />);
+    expect(screen.getByRole("link", { name: "Sebelumnya" }).getAttribute("href")).toBe("/airdrops?tab=ended&page=2");
     expect(screen.getByText("Halaman 9 dari 2")).toBeTruthy();
   });
 });

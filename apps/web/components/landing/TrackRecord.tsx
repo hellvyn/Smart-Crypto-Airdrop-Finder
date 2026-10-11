@@ -3,7 +3,10 @@ import { landing } from "@/lib/copy";
 
 const copy = landing.trackRecord;
 
-/** Plan 6 `getTrackRecord`: outcomes of the airdrops that passed before their token listed and have now ended. */
+/**
+ * Plan 6 `getTrackRecord`: outcomes of the airdrops that passed before their token listed and have since ended or
+ * turned risky (listed and noToken need not add up to total).
+ */
 export type TrackRecordSummary = { total: number; listed: number; noToken: number; riskRaised: number };
 
 /** Fewer ended airdrops than this are not shown at all: two or three examples are not proof (spec 15.3, #43). */

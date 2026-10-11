@@ -2,6 +2,7 @@
 // "public read" RLS policies; documents and extractions are not readable here and are never queried.
 import type { RiskCheck, RiskLevel, RiskReason, Severity, Status } from "@saf/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { cache } from "react";
 import {
   RISK_LEVELS,
   SIGNAL_KINDS,
@@ -155,7 +156,8 @@ export interface CuratedPage {
   capitalCounts: { all: number; free: number; deposit: number };
 }
 
-const CURATED_COLUMNS = `${LIST_COLUMNS}, tab, ended_on, checked_at, signals, claim_open_checked, capital, capital_min_usd`;
+const CURATED_COLUMNS =
+  `${LIST_COLUMNS}, tab, ended_on, checked_at, signals, claim_open_checked, capital, capital_min_usd, key_checks_ran`;
 const CAPITALS: readonly Capital[] = ["free", "deposit", "unknown"];
 
 function asSignals(v: unknown): CuratedSignal[] {
@@ -190,6 +192,7 @@ export function toCuratedItem(row: Record<string, unknown>, member: boolean): Cu
     claimOpenChecked: row.claim_open_checked === true,
     capital: CAPITALS.includes(row.capital as Capital) ? (row.capital as Capital) : "unknown",
     capitalMinUsd: asNumber(row.capital_min_usd),
+    keyChecksRan: Math.min(4, Math.max(0, Math.trunc(asNumber(row.key_checks_ran) ?? 0))),
     worthLevel: member && WORTH_LEVELS.includes(row.worth_level as WorthLevel) ? (row.worth_level as WorthLevel) : null,
   };
 }
@@ -352,9 +355,14 @@ export async function getProjectDetail(db: SupabaseClient, slug: string, now: Da
   };
 }
 
-/** The latest successful pipeline run (finished, with no `run_error` key in its stats): finish time and stats.
- * SQL drops rows without the key; the JS check also drops a key present with a null value. */
-async function getLastSuccessfulRun(db: SupabaseClient): Promise<{ at: Date; stats: Record<string, unknown> } | null> {
+/**
+ * The latest successful pipeline run (finished, with no `run_error` key in its stats): finish time and stats.
+ * SQL drops rows without the key; the JS check also drops a key present with a null value. Cached per request and per
+ * client (React `cache`), so a page that shows the stale banner, the run summary and the track record reads it once.
+ */
+type SuccessfulRun = { at: Date; stats: Record<string, unknown> };
+
+const getLastSuccessfulRun = cache(async (db: SupabaseClient): Promise<SuccessfulRun | null> => {
   const { data, error } = await db
     .from("pipeline_runs")
     .select("finished_at, stats")
@@ -366,7 +374,7 @@ async function getLastSuccessfulRun(db: SupabaseClient): Promise<{ at: Date; sta
   return pickLastSuccessfulRunWithStats(
     (data ?? []).map((r) => ({ finishedAt: (r.finished_at as string | null) ?? null, stats: r.stats as unknown })),
   );
-}
+});
 
 /** Finish time of the latest successful pipeline run, or null. */
 export async function getLastSuccessfulRunAt(db: SupabaseClient): Promise<Date | null> {

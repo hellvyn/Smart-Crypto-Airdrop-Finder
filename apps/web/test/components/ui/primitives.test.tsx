@@ -10,6 +10,7 @@ describe("WorthBadge", () => {
     ["high", "Sangat worth it"],
     ["medium", "Worth it"],
     ["low", "Kurang worth it"],
+    ["insufficient_data", "Data belum cukup"],
   ] as const)("level %s reads %s", (level, text) => {
     render(<WorthBadge level={level} />);
     expect(screen.getByText(text).getAttribute("data-level")).toBe(level);

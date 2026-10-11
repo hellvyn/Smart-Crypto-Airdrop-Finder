@@ -29,6 +29,7 @@ const CHECK_IDS = [
 let projectIds: string[] = [];
 let documentIds: string[] = [];
 let runIds: string[] = [];
+let linkCheckUrls: string[] = [];
 
 function must<T>(res: { data: T; error: { message: string } | null }, what: string): NonNullable<T> {
   if (res.error || res.data === null || res.data === undefined) {
@@ -223,9 +224,11 @@ export async function cleanupSeed(): Promise<void> {
   if (projectIds.length) await db.from("projects").delete().in("id", projectIds);
   if (documentIds.length) await db.from("documents").delete().in("id", documentIds);
   if (runIds.length) await db.from("pipeline_runs").delete().in("id", runIds);
+  if (linkCheckUrls.length) await db.from("link_checks").delete().in("url", linkCheckUrls);
   projectIds = [];
   documentIds = [];
   runIds = [];
+  linkCheckUrls = [];
 }
 
 /** Seeds `count` live projects on one unique chain, newest last_seen first by index. Returns the chain name. */
@@ -244,6 +247,160 @@ export async function seedManyProjects(count: number): Promise<{ chain: string; 
     last_seen: new Date(base - i * 60_000).toISOString(),
   }));
   const data = must(await adminClient().from("projects").insert(rows).select("id, slug"), "many projects");
-  projectIds.push(...(data as { id: string }[]).map((r) => r.id));
+  const ids = new Map((data as { id: string; slug: string }[]).map((r) => [r.slug, r.id]));
+  projectIds.push(...ids.values());
+  // Each one passed curation in the live tab; index 0 was checked last, so it is first in the visitor order too.
+  must(
+    await adminClient()
+      .from("curations")
+      .insert(
+        rows.map((r, i) => ({
+          project_id: ids.get(r.slug),
+          passed: true,
+          worth_level: "medium",
+          tab: "live_now",
+          status_at: "live",
+          computed_at: new Date(base - i * 60_000).toISOString(),
+        })),
+      )
+      .select("id"),
+    "many curations",
+  );
   return { chain, slugs: rows.map((r) => r.slug) };
+}
+
+export interface CuratedSeed {
+  /** live_now, free, worth low, every key check ran, VC + AlphaDrops + curated source, open claim with an official link. */
+  live: SeededProject;
+  /** early_bets, capital unknown, worth medium, verified TVL and CoinGecko. */
+  early: SeededProject;
+  /** ended on 2025-01-15 (more than 90 days ago, so its last check is frozen), 2 of 4 key checks ran. */
+  ended: SeededProject;
+  /** Its latest curation failed: in no tab at all. */
+  failed: SeededProject;
+}
+
+/**
+ * The curated list (Plan 6 Task 4): one project per tab that passed curation and one that failed, plus a successful
+ * run with "4 dicek, 3 lolos" and a track record of 12. Seed it after `seedProjects` so its run is the newest.
+ */
+export async function seedCuratedList(): Promise<CuratedSeed> {
+  const db = adminClient();
+  const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+  const now = Date.now();
+  const at = (msAgo: number) => new Date(now - msAgo).toISOString();
+  const project = (key: string, name: string): SeededProject => ({
+    slug: `e2e-cl-${key}-${tag}`,
+    name: `E2E CL ${name} ${tag}`,
+    sourceUrl: `https://source.example/e2e-cl-${key}-${tag}`,
+    claimUrl: `https://claim-${key}-${tag}.example/`,
+  });
+  const seed: CuratedSeed = {
+    live: project("live", "Live"),
+    early: project("early", "Early"),
+    ended: project("ended", "Ended"),
+    failed: project("failed", "Failed"),
+  };
+  const ids: Record<keyof CuratedSeed, string> = {
+    live: await insertProject({ slug: seed.live.slug, name: seed.live.name, name_key: seed.live.slug, chains: ["base"], status: "live" }),
+    early: await insertProject({ slug: seed.early.slug, name: seed.early.name, name_key: seed.early.slug, chains: ["ethereum"], status: "speculative" }),
+    ended: await insertProject({ slug: seed.ended.slug, name: seed.ended.name, name_key: seed.ended.slug, chains: ["base"], status: "ended" }),
+    failed: await insertProject({ slug: seed.failed.slug, name: seed.failed.name, name_key: seed.failed.slug, chains: ["base"], status: "live" }),
+  };
+  const liveDoc = await insertDocument(seed.live.sourceUrl);
+
+  const KEY = ["dangerous_asks", "phishing_list", "domain_age", "lookalike"];
+  const checks = (ran: number) => [...KEY.map((id, i) => ({ id, ran: i < ran })), { id: "hack_history", ran: true }];
+  must(
+    await db
+      .from("risk_assessments")
+      .insert([
+        { project_id: ids.live, level: "low", points: 0, reasons: [], checks: checks(4), computed_at: at(3_600_000) },
+        { project_id: ids.early, level: "low", points: 0, reasons: [], checks: checks(4), computed_at: at(3_600_000) },
+        { project_id: ids.ended, level: "low", points: 0, reasons: [], checks: checks(2), computed_at: "2025-04-01T23:00:00Z" },
+        { project_id: ids.failed, level: "high", points: 60, reasons: [], checks: checks(4), computed_at: at(3_600_000) },
+      ])
+      .select("id"),
+    "curated risk",
+  );
+  must(
+    await db
+      .from("curations")
+      .insert([
+        { project_id: ids.live, passed: true, worth_level: "low", tab: "live_now", status_at: "live", computed_at: at(3_600_000) },
+        { project_id: ids.early, passed: true, worth_level: "medium", tab: "early_bets", status_at: "speculative", computed_at: at(1_800_000) },
+        {
+          project_id: ids.ended,
+          passed: true,
+          worth_level: "medium",
+          tab: "ended",
+          status_at: "ended",
+          ended_on: "2025-01-15",
+          computed_at: "2025-04-01T23:00:00Z",
+        },
+        // Passed once, then failed: the latest curation decides.
+        { project_id: ids.failed, passed: true, worth_level: "high", tab: "live_now", status_at: "live", computed_at: at(86_400_000) },
+        { project_id: ids.failed, passed: false, status_at: "live", public_fail_reason: "Risiko tinggi", computed_at: at(3_600_000) },
+      ])
+      .select("id"),
+    "curations",
+  );
+  must(
+    await db
+      .from("project_signals")
+      .insert([
+        { project_id: ids.live, kind: "vc_backer", value: { investor: "Paradigm", tier: 1 }, source: "vc_portfolio", verified: true, observed_at: at(0) },
+        { project_id: ids.live, kind: "reported_backer", value: { investor: "a16z", lead: true }, source: "alphadrops", verified: false, observed_at: at(0) },
+        { project_id: ids.live, kind: "curated_source", value: { source_kind: "airdrops_io" }, source: "airdrops_io", verified: false, observed_at: at(0) },
+        { project_id: ids.early, kind: "tvl", value: { tvl_usd: 45_000_000 }, source: "defillama", verified: true, observed_at: at(0) },
+        { project_id: ids.early, kind: "coingecko_listed", value: { gecko_id: `e2e-${tag}` }, source: "defillama", verified: true, observed_at: at(0) },
+        { project_id: ids.ended, kind: "curated_source", value: { source_kind: "telegram" }, source: "telegram", verified: false, observed_at: at(0) },
+      ])
+      .select("id"),
+    "signals",
+  );
+  // Live: free (its source says no capital), an open claim whose only claim link is official.
+  must(
+    await db
+      .from("evidence")
+      .insert({ project_id: ids.live, document_id: liveDoc, field: "capital_required", value: "none", quote: "", at: at(0) })
+      .select("id"),
+    "capital",
+  );
+  must(
+    await db
+      .from("deadlines")
+      .insert({ project_id: ids.live, document_id: liveDoc, kind: "claim", date: day(7), precision: "exact", text: "Claim" })
+      .select("id"),
+    "claim deadline",
+  );
+  must(await db.from("links").insert({ project_id: ids.live, url: seed.live.claimUrl, kind: "claim" }).select("id"), "claim link");
+  must(
+    await db.from("link_checks").insert({ url: seed.live.claimUrl, status: "official", checked_at: at(0) }).select("url"),
+    "link check",
+  );
+  linkCheckUrls.push(seed.live.claimUrl);
+
+  const run = must(
+    await db
+      .from("pipeline_runs")
+      .insert({
+        started_at: new Date().toISOString(),
+        finished_at: new Date().toISOString(),
+        stats: {
+          curation_checked: 4,
+          curation_passed: 3,
+          track_record_total: 12,
+          track_record_listed: 5,
+          track_record_no_token: 4,
+          track_record_risk_raised: 3,
+        },
+      })
+      .select("id")
+      .single(),
+    "curated run",
+  );
+  runIds.push(run.id as string);
+  return seed;
 }

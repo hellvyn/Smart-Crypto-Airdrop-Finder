@@ -3,18 +3,23 @@ import { TodayCheck } from "@/components/landing/TodayCheck";
 import { TrackRecord } from "@/components/landing/TrackRecord";
 import { Button, Stamp } from "@/components/ui";
 import { landing as copy } from "@/lib/copy";
+import { getRunSummary, getTrackRecord } from "@/lib/queries";
 import { LIST_PATH } from "@/lib/routes";
+import { createServerClient } from "@/lib/supabase/server";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
 /**
  * The public landing page (mockup docs/design/airdropiq-c/CLanding.dc.html). The list itself is at /airdrops; old
  * list links with a query (`/?status=live`) are sent there by the proxy. `/?deleted=1` is where deleting your
- * account ends up, so that notice lives here.
+ * account ends up, so that notice lives here. "Update hari ini" shows the latest run's numbers, and the track record
+ * renders once `getTrackRecord` has one (10 airdrops or more).
  */
 export default async function LandingPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const { deleted } = await searchParams;
   const accountDeleted = (Array.isArray(deleted) ? deleted[0] : deleted) === "1";
+  const db = await createServerClient();
+  const [summary, trackRecord] = await Promise.all([getRunSummary(db), getTrackRecord(db)]);
 
   return (
     <div className="landing">
@@ -40,8 +45,7 @@ export default async function LandingPage({ searchParams }: { searchParams: Prom
               </Button>
             </div>
           </div>
-          {/* Plan 6 passes getRunSummary() here. */}
-          <TodayCheck summary={null} />
+          <TodayCheck summary={summary} />
         </div>
       </section>
 
@@ -60,8 +64,7 @@ export default async function LandingPage({ searchParams }: { searchParams: Prom
         </div>
       </section>
 
-      {/* Plan 6 Task 4 passes getTrackRecord() here; until then the block does not render. */}
-      <TrackRecord record={null} />
+      <TrackRecord record={trackRecord} />
 
       <PlanComparison />
 

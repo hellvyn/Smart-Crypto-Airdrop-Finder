@@ -1,11 +1,24 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const getRunSummary = vi.fn();
+const getTrackRecord = vi.fn();
+vi.mock("@/lib/supabase/server", () => ({ createServerClient: async () => ({}) }));
+vi.mock("@/lib/queries", () => ({
+  getRunSummary: (...args: unknown[]) => getRunSummary(...args),
+  getTrackRecord: (...args: unknown[]) => getTrackRecord(...args),
+}));
+
 import LandingPage from "@/app/(public)/page";
 import { TodayCheck } from "@/components/landing/TodayCheck";
 import { TrackRecord } from "@/components/landing/TrackRecord";
 
 afterEach(cleanup);
+beforeEach(() => {
+  getRunSummary.mockReset().mockResolvedValue(null);
+  getTrackRecord.mockReset().mockResolvedValue(null);
+});
 
 async function renderLanding(searchParams: Record<string, string | string[] | undefined> = {}) {
   return render(await LandingPage({ searchParams: Promise.resolve(searchParams) }));
@@ -89,12 +102,26 @@ describe("landing page", () => {
     expect(footer.textContent).toContain("Not financial advice. Tetap DYOR sebelum connect wallet.");
   });
 
-  it("does not render the run numbers or the track record until Plan 6 provides them", async () => {
+  it("renders neither the run numbers nor the track record while there are none", async () => {
     const { container } = await renderLanding();
     expect(container.querySelector("#jejak")).toBeNull();
     expect(screen.queryByText("Track record kami")).toBeNull();
     expect(screen.getByText("Update hari ini")).toBeTruthy();
     expect(screen.queryByText("lolos")).toBeNull();
+  });
+
+  it("shows the latest run's numbers in Update hari ini", async () => {
+    getRunSummary.mockResolvedValue({ checked: 96, passed: 12, at: new Date("2026-10-10T23:30:00Z") });
+    await renderLanding();
+    expect(screen.getByTestId("today-checked").textContent).toBe("96airdrop dicek");
+    expect(screen.getByTestId("today-passed").textContent).toBe("12lolos");
+  });
+
+  it("shows the track record once there is one (getTrackRecord gives null below 10)", async () => {
+    getTrackRecord.mockResolvedValue({ total: 14, listed: 6, noToken: 5, riskRaised: 3 });
+    const { container } = await renderLanding();
+    expect(container.querySelector("section#jejak")).not.toBeNull();
+    expect(screen.getByRole("img", { name: "6 Token listing" })).toBeTruthy();
   });
 
   it("tells a user who just deleted their account that it is gone, and nobody else", async () => {
@@ -141,6 +168,9 @@ describe("TrackRecord", () => {
     expect(screen.getByRole("img", { name: "6 Token listing" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "5 Ended tanpa token" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "3 Belakangan jadi risky" })).toBeTruthy();
-    expect(screen.getByText("Dari 14 airdrop yang lolos sebelum token listing dan sekarang udah ended.")).toBeTruthy();
+    // listed + noToken need not add up to total: a project that turned risky counts before it ends (spec 15.3).
+    expect(
+      screen.getByText("Dari 14 airdrop yang lolos sebelum token listing dan sekarang udah ended atau sempat jadi risky."),
+    ).toBeTruthy();
   });
 });

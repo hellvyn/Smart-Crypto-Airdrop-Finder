@@ -8,7 +8,8 @@ export type RunSummary = { checked: number; passed: number };
 
 /**
  * The "Update hari ini" box in the landing hero, with the LOLOS 4/4 CEK stamp. The numbers only show once a run
- * summary is passed in; until Plan 6 provides one, the box shows its title, the run time and the stamp.
+ * summary is passed in; without a successful run that has curation numbers, the box shows its title, the run time
+ * and the stamp.
  */
 export function TodayCheck({ summary }: { summary: RunSummary | null }) {
   return (

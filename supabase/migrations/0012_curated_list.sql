@@ -1,7 +1,8 @@
 -- The curated list (Plan 6, Task 3; curation spec §4.5, §7.1, §15.5): what the web reads for its three tabs.
 -- Public vs member is locked here, not only in the UI, because the anon key is public (#45):
 --   latest_curations  anon + authenticated  the latest curation of each project, public columns only;
---   public_list       anon + authenticated  projects whose latest curation passed, without worth;
+--   public_list       anon + authenticated  projects whose latest curation passed, without worth, with how many of
+--                                           the 4 key checks ran (key_checks_ran, through key_checks_ran());
 --   curated_list      authenticated only    public_list + worth_level (the "Paling worth it" order is member-only).
 -- Every view is security_invoker: it runs with the caller's rights, so RLS and the column grants of 0011 still apply.
 -- That is also why public_list must never reference curations.worth_level/worth_points/reasons/coverage: anon has no
@@ -30,6 +31,36 @@ cross join lateral (
   order by cu.computed_at desc, cu.seq desc
   limit 1
 ) c;
+
+-- How many of the 4 key checks (dangerous_asks, phishing_list, domain_age, lookalike) ran in the latest risk assessment
+-- of a project, for the row text "{k}/4 security check jalan" (Plan 6 Task 4). Security definer because public_list
+-- runs with the caller's rights and 0013 takes risk_assessments.checks away from anon (the advanced checks in it are
+-- member-only, #54): this function hands out only the key-check count, which is public, never the checks themselves.
+-- A check listed twice counts once; "ran" must be the boolean true; a checks value that is not an array counts as 0.
+create function public.key_checks_ran(p_project_id uuid)
+  returns integer
+  language sql
+  stable
+  security definer
+  set search_path = ''
+as $$
+  select count(distinct c->>'id')::integer
+  from (
+    select ra.checks
+    from public.risk_assessments ra
+    where ra.project_id = p_project_id
+    order by ra.computed_at desc, ra.seq desc
+    limit 1
+  ) latest
+  cross join lateral jsonb_array_elements(
+    case when jsonb_typeof(latest.checks) = 'array' then latest.checks else '[]'::jsonb end
+  ) c
+  where c->>'id' in ('dangerous_asks', 'phishing_list', 'domain_age', 'lookalike')
+    and c->'ran' = 'true'::jsonb;
+$$;
+
+revoke all on function public.key_checks_ran(uuid) from public, anon, authenticated;
+grant execute on function public.key_checks_ran(uuid) to anon, authenticated;
 
 create view public.public_list with (security_invoker = true) as
 select
@@ -67,7 +98,9 @@ select
     )
   ) as claim_open_checked,
   cap.capital,
-  capmin.capital_min_usd
+  capmin.capital_min_usd,
+  -- "{k}/4 security check jalan".
+  public.key_checks_ran(pl.id) as key_checks_ran
 from public.project_list pl
 join public.latest_curations lc on lc.project_id = pl.id and lc.passed
 -- Signals curation used: P5 keeps a signal through a source outage but curation ignores one observed more than

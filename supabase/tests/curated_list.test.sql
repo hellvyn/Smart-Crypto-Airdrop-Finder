@@ -1,12 +1,14 @@
 -- pgTAP tests for 0012_curated_list.sql (Plan 6 Task 3; curation spec §4.5, §7.1, §15.5, decisions #40, #42, #44, #45,
--- #52): latest_curations, public_list (visitors, no worth) and curated_list (members, with worth).
+-- #52): latest_curations, public_list (visitors, no worth) and curated_list (members, with worth). Plan 6 Task 4 adds
+-- public_list.key_checks_ran ("{k}/4 security check jalan"), read through a security definer function so the column
+-- keeps working for anon once 0013 takes risk_assessments.checks away from anon (advanced checks are member-only, #54).
 -- Public vs member is locked in the database: anon reads latest_curations and public_list, never curated_list;
 -- public_list has no worth column (the views are security_invoker, so a worth column would refuse anon the whole view).
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(42);
+select plan(49);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS). Project ids end in the project number.
 insert into documents (id, source_kind, source_key, url, text, content_hash, fetched_at) values
@@ -91,6 +93,25 @@ insert into link_checks (url, status, checked_at) values
   ('https://claim.unknown.test/', 'official', now());
   -- https://claim2.unknown.test/ has no link_checks row: not checked, so not official.
 
+-- Key check coverage ("{k}/4 security check jalan"): the latest risk assessment counts, only its 4 key checks.
+insert into risk_assessments (project_id, level, points, reasons, checks, computed_at) values
+  -- cl-pass: an older assessment had all 4; the latest has 3 key checks that ran (one listed twice), domain_age that
+  -- did not, and advanced checks that ran but must not count.
+  ('c1000000-0000-4000-8000-000000000001', 'low', 0, '[]',
+   '[{"id":"dangerous_asks","ran":true},{"id":"phishing_list","ran":true},{"id":"domain_age","ran":true},
+     {"id":"lookalike","ran":true}]', now() - interval '2 days'),
+  ('c1000000-0000-4000-8000-000000000001', 'low', 0, '[]',
+   '[{"id":"dangerous_asks","ran":true},{"id":"dangerous_asks","ran":true},{"id":"phishing_list","ran":true},
+     {"id":"domain_age","ran":false},{"id":"lookalike","ran":true},{"id":"token_security","ran":true},
+     {"id":"hack_history","ran":true}]', now() - interval '1 hour'),
+  -- cl-unknown: all 4 key checks ran ("ran" must be the boolean true; the string "true" is not).
+  ('c1000000-0000-4000-8000-000000000006', 'low', 0, '[]',
+   '[{"id":"lookalike","ran":true},{"id":"domain_age","ran":true},{"id":"phishing_list","ran":true},
+     {"id":"dangerous_asks","ran":true},{"id":"corroboration","ran":"true"}]', now()),
+  -- cl-ended: a malformed checks value counts as none ran, never an error that would take the list down.
+  ('c1000000-0000-4000-8000-000000000007', 'low', 0, '[]', '{"dangerous_asks":true}', now());
+  -- cl-free has no risk assessment: 0.
+
 -- ---------- shape ----------
 -- 1-3.
 select has_view('public', 'latest_curations', 'latest_curations exists');
@@ -111,13 +132,13 @@ select columns_are('public', 'latest_curations',
 select columns_are('public', 'public_list',
   array['id', 'slug', 'name', 'status', 'chains', 'chains_lower', 'last_seen', 'next_deadline_date', 'next_deadline_kind',
         'next_deadline_precision', 'latest_risk_level', 'curation_id', 'tab', 'ended_on', 'checked_at', 'signals',
-        'signal_rank', 'claim_open_checked', 'capital', 'capital_min_usd'],
-  'public_list = project_list + curation columns, signals, claim badge and capital, without worth_level');
+        'signal_rank', 'claim_open_checked', 'capital', 'capital_min_usd', 'key_checks_ran'],
+  'public_list = project_list + curation columns, signals, claim badge, capital and key check count, without worth_level');
 -- 7.
 select columns_are('public', 'curated_list',
   array['id', 'slug', 'name', 'status', 'chains', 'chains_lower', 'last_seen', 'next_deadline_date', 'next_deadline_kind',
         'next_deadline_precision', 'latest_risk_level', 'curation_id', 'tab', 'ended_on', 'checked_at', 'signals',
-        'signal_rank', 'claim_open_checked', 'capital', 'capital_min_usd', 'worth_level', 'worth_rank'],
+        'signal_rank', 'claim_open_checked', 'capital', 'capital_min_usd', 'key_checks_ran', 'worth_level', 'worth_rank'],
   'curated_list = public_list + worth_level and its sort rank');
 
 -- ---------- privileges ----------
@@ -217,7 +238,28 @@ select results_eq(
   $$ values ('unknown'::text, null::numeric) $$,
   'no capital fact: unknown');
 
--- 28-29. curated_list = public_list + worth.
+-- 28-31. Key check coverage (Task 4).
+select results_eq(
+  $$ select slug, key_checks_ran from public_list where slug like 'cl-%' order by slug $$,
+  $$ values ('cl-ended'::text, 0), ('cl-free', 0), ('cl-pass', 3), ('cl-unknown', 4) $$,
+  'key_checks_ran counts the distinct key checks that ran in the latest assessment; advanced checks never count');
+select is(
+  (select array_agg(column_name::text order by column_name) from information_schema.columns
+   where table_schema = 'public' and table_name = 'public_list'
+     and column_name in ('worth_level', 'worth_points', 'worth_rank', 'reasons', 'coverage', 'checks')),
+  null, 'public_list exposes no worth, reasons, coverage or raw checks column');
+select results_eq(
+  $$ select p.prosecdef, array_to_string(p.proconfig, ',') collate "default" from pg_proc p
+     where p.proname = 'key_checks_ran' and p.pronamespace = 'public'::regnamespace $$,
+  $$ values (true, 'search_path=""'::text) $$,
+  'key_checks_ran() is security definer with an empty search_path');
+select results_eq(
+  $$ select r, has_function_privilege(r, 'public.key_checks_ran(uuid)', 'EXECUTE')
+     from unnest(array['anon', 'authenticated']) r order by 1 $$,
+  $$ values ('anon'::text, true), ('authenticated'::text, true) $$,
+  'the web roles may run key_checks_ran() (it is part of public_list)');
+
+-- 32-33. curated_list = public_list + worth.
 select results_eq(
   $$ select slug, worth_level, worth_rank from curated_list where slug like 'cl-%' order by slug $$,
   $$ values ('cl-ended'::text, 'medium'::text, 2), ('cl-free', 'insufficient_data', 4), ('cl-pass', 'high', 1),
@@ -230,7 +272,7 @@ select is(
 
 -- ---------- anon ----------
 set local role anon;
--- 30-34.
+-- 34-39.
 select results_eq(
   $$ select slug, capital from public_list where slug like 'cl-%' order by slug $$,
   $$ values ('cl-ended'::text, 'unknown'::text), ('cl-free', 'free'), ('cl-pass', 'deposit'), ('cl-unknown', 'unknown') $$,
@@ -238,9 +280,13 @@ select results_eq(
 select is(
   (select jsonb_array_length(signals) from public_list where slug = 'cl-pass'), 2, 'anon reads the signals');
 select throws_ok($$ select worth_level from public_list $$, '42703', null, 'public_list has no worth_level for anon');
+select results_eq(
+  $$ select slug, key_checks_ran from public_list where slug like 'cl-%' order by slug $$,
+  $$ values ('cl-ended'::text, 0), ('cl-free', 0), ('cl-pass', 3), ('cl-unknown', 4) $$,
+  'anon reads key_checks_ran');
 select throws_ok($$ select * from curated_list $$, '42501', null, 'anon cannot select curated_list');
 select throws_ok($$ select slug from curated_list $$, '42501', null, 'anon cannot select any curated_list column');
--- 35-36.
+-- 40-41.
 select is(
   (select passed from latest_curations where project_id = 'c1000000-0000-4000-8000-000000000002'), false,
   'anon reads latest_curations');
@@ -253,7 +299,7 @@ reset role;
 -- ---------- authenticated ----------
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"c1000000-0000-4000-8000-00000000aaaa","role":"authenticated"}';
--- 37-40.
+-- 42-45.
 select is((select count(*)::int from public_list where slug like 'cl-%'), 4, 'authenticated reads public_list');
 select results_eq(
   $$ select slug, worth_level from curated_list where slug like 'cl-%' order by slug $$,
@@ -265,10 +311,24 @@ select is(
 select is(
   (select count(*)::int from latest_curations where project_id::text like 'c1000000-%'), 6,
   'authenticated reads one latest curation per curated project');
--- 41-42.
+-- 46-47.
 select throws_ok($$ delete from curations $$, '42501', null, 'authenticated cannot delete curations');
 select is(
   (select claim_open_checked from curated_list where slug = 'cl-pass'), true, 'authenticated reads the claim badge');
+reset role;
+
+-- ---------- after 0013 (Task 5) takes risk_assessments.checks away from anon ----------
+-- 48-49.
+-- The same column grants 0013 plans; rolled back with the rest of this test.
+revoke select on risk_assessments from anon;
+grant select (id, project_id, level, points, reasons, computed_at, seq) on risk_assessments to anon;
+set local role anon;
+select throws_ok($$ select checks from risk_assessments $$, '42501', null,
+  'with the 0013 grants anon cannot read risk_assessments.checks');
+select results_eq(
+  $$ select slug, key_checks_ran, latest_risk_level from public_list where slug in ('cl-pass', 'cl-unknown') order by slug $$,
+  $$ values ('cl-pass'::text, 3, 'low'::text), ('cl-unknown', 4, 'low') $$,
+  'public_list, key_checks_ran included, still works for anon without the checks column');
 reset role;
 
 select * from finish();

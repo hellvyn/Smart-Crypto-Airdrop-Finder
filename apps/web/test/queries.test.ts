@@ -257,6 +257,7 @@ const curatedRow = (over: Record<string, unknown> = {}) => ({
   claim_open_checked: true,
   capital: "deposit",
   capital_min_usd: 1000,
+  key_checks_ran: 4,
   ...over,
 });
 
@@ -312,9 +313,22 @@ describe("listCurated", () => {
       claimOpenChecked: true,
       capital: "deposit",
       capitalMinUsd: 1000,
+      keyChecksRan: 4,
       // A visitor never gets a worth level, even if a row carried one.
       worthLevel: null,
     });
+  });
+
+  it("selects key_checks_ran and reads a missing or out-of-range count as a number from 0 to 4", async () => {
+    const { db, recs } = curatedDb([
+      curatedRow({ key_checks_ran: 3 }),
+      curatedRow({ key_checks_ran: null }),
+      curatedRow({ key_checks_ran: 9 }),
+      curatedRow({ key_checks_ran: "2" }),
+    ]);
+    const { items } = await listCurated(db, "live_now", {}, 1, false);
+    expect(String(pageQuery(recs).calls.find((c) => c[0] === "select")?.[1])).toMatch(/\bkey_checks_ran\b/);
+    expect(items.map((i) => i.keyChecksRan)).toEqual([3, 0, 4, 2]);
   });
 
   it("drops malformed signals and reads odd capital values defensively", async () => {
