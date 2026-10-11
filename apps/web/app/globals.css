@@ -194,10 +194,8 @@ main a:not([class]):hover {
     flex-basis: 100%;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0 0.5rem;
-    padding-top: 0.25rem;
-    border-top: 2px solid var(--ink);
-    font-size: 13px;
+    gap: 6px;
+    font-size: 12px;
     letter-spacing: 0.3px;
   }
 
@@ -205,10 +203,15 @@ main a:not([class]):hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /* Each link is a tile of the same size with its label centred, so the gaps between them are all equal. */
   .site-nav a {
     display: flex;
     align-items: center;
+    justify-content: center;
     min-height: 44px;
+    padding: 0 4px;
+    border: 2px solid var(--ink);
+    text-align: center;
   }
 }
 
