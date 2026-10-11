@@ -18,7 +18,8 @@ export interface CollectorResult {
 }
 
 export interface Http {
-  get(url: string): Promise<{ status: number; body: string }>;
+  /** `headers` (names in lowercase) is given by the real client; fakes may leave it out. */
+  get(url: string): Promise<{ status: number; body: string; headers?: Record<string, string> }>;
   /** Returns the absolute `Location` of the first redirect, or null if there is none. */
   resolveRedirect(url: string): Promise<string | null>;
 }

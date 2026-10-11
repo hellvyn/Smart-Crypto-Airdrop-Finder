@@ -11,7 +11,8 @@ export function createHttp(fetchImpl: typeof fetch = fetch): Http {
     async get(url) {
       try {
         const res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
-        return { status: res.status, body: await res.text() };
+        // Header names come lowercased from the Headers iterator (e.g. `retry-after`).
+        return { status: res.status, body: await res.text(), headers: Object.fromEntries(res.headers.entries()) };
       } catch {
         return { status: 0, body: "" };
       }

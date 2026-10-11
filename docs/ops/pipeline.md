@@ -97,6 +97,32 @@ that rate-limited every domain would cost about 7.1 s per domain (1.8 s + 5.3 s)
 domain (20 s timeout, no retry), which for 250 domains is 30 or 90 minutes. With them, the worst case for the GoPlus
 part is the 12-minute budget plus the last request (under a minute), so the whole job ends at about 54 minutes at most.
 
+### RDAP and crt.sh pacing (domain age)
+
+The first production run (2026-10-11) fired every RDAP lookup back to back, 4 at a time: after the first ~25
+requests rdap.org answered almost nothing (8 of 183), crt.sh got the same burst, and only 29 of 208 projects with an
+official domain got an age, so 203 of 249 were hidden as `insufficient_checks`. Since then (`pipeline/src/steps/score.ts`):
+
+- **RDAP** runs one request at a time with at least `RDAP_MIN_INTERVAL_MS` (1 s) between request starts, retries
+  included, alongside the GoPlus queue (not after it). A 429 or 5xx is retried once after its `Retry-After` (capped at
+  10 s) or else 3 s. Budget `rdapBudgetMinutes` (6), counted from the start of `score`; domains not started by then
+  count as not run (`domain_age_rdap_skipped`). About 250 domains fit in it.
+- A **404** from rdap.org is counted as `domain_age_no_rdap`, not as rate limiting. It covers both a TLD without an
+  RDAP service (`.io`, `.gg`, `.so`, `.sl`, `.co`) and a registry's 404 for a domain it does not know; both go to
+  crt.sh.
+- **crt.sh** is asked only for domains with a 404 or a 200 without a registration date, never for rate-limited or
+  failed ones (the next run asks RDAP again). One request at a time, at least `CRTSH_MIN_INTERVAL_MS` (2 s) apart,
+  each cut off after 20 s (the client timeout). Its budget `crtshBudgetMinutes` (3) counts only the time crt.sh is
+  busy (pacing waits and requests), not the time it sits idle waiting for RDAP to find such a domain, so no-RDAP
+  domains found late in the RDAP run still get their turn.
+- Both queues take **official domains first** (in link order within each group), so a budget cut skips the domains
+  curation does not need before the ones it does.
+
+Worst case: the last RDAP request starts at about 6:01 and, with a timeout, the longest `Retry-After` and a second
+timeout, ends by about 6:51. crt.sh then has at most its 3 busy minutes left plus one last request (2 s pace + 20 s),
+so it ends by about 10.2 minutes, inside the GoPlus 12-minute budget: `score` takes no longer than before.
+`stage_seconds_score` shows the real time.
+
 ### AlphaDrops pacing
 
 The AlphaDrops collector (`pipeline/src/collectors/alphadrops.ts`, config `alphadrops`) reads the listing
@@ -282,6 +308,12 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `projects_with_official_domain` | scored projects that have at least one official domain (the denominator for the two `*_ran` counters) |
 | `domain_age_ran` | of those, projects where the domain-age lookup (RDAP, else the first crt.sh certificate) answered for at least one official domain |
 | `domain_age_from_crtsh` | domains whose age came from crt.sh because RDAP had no answer (`.io` and some other TLDs have none) |
+| `domain_age_rdap_failed` | domains RDAP gave no registration date for, for any reason (the next three are part of it) |
+| `domain_age_rdap_rate_limited` | of those, domains RDAP still answered 429 after the one retry (not sent to crt.sh; retried next run) |
+| `domain_age_no_rdap` | of those, domains rdap.org answered 404 for: a TLD without RDAP service, or a registry that does not know the domain; sent to crt.sh |
+| `domain_age_rdap_skipped` | of those, domains never asked because the 6-minute RDAP budget ran out |
+| `domain_age_crtsh_failed` | domains sent to crt.sh (rdap.org 404, or no registration date) that crt.sh gave no age for |
+| `domain_age_crtsh_skipped` | of those, domains never asked because crt.sh had used its 3 busy minutes |
 | `phishing_list_ran` | of the projects with an official domain, those where the GoPlus phishing check answered for at least one |
 | `phishing_list_failed` | domains the GoPlus check gave no answer for, after one retry (429, HTTP 200 with code 4029, or 5xx; 5 s pause) |
 | `phishing_list_rate_limited` | of those, domains GoPlus still rate-limited (429 or code 4029) after the retry |
@@ -303,6 +335,7 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
+| `stage_seconds_collect` / `_extract` / `_speculative` / `_signals` / `_analyze` / `_score` / `_logos` / `_purge` | seconds each stage took (one decimal), also when it failed; flat keys because the stats are numbers only |
 | `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 8 signals, 9 analyze, 5 score, 10 logos, 6 purge, in run order); the other stages still ran |
 
 Exit code (shown as the workflow status): **failed** when `run_error`, `source_failed`, `ingest_failed`,
@@ -316,9 +349,14 @@ What to do:
 - `merge_failed` > 0: the document is stored as `merge_failed` and is retried only when its content changes. Look at
   `documents` where `extraction_status = 'merge_failed'` in the Supabase SQL editor.
 - `extract_deferred` > 0 every day: lower `maxDocumentsPerRun` or check model latency in `extractions.latency_ms`.
-- `domain_age_ran` low compared to `projects_with_official_domain`: look at `domain_age_from_crtsh`. If it is 0, crt.sh
-  is probably unreachable or too slow from the runner (the check is then counted as not run, never as an error); if
-  it is above 0 but `domain_age_ran` is still low, the remaining TLDs have neither RDAP nor certificates.
+- `domain_age_ran` low compared to `projects_with_official_domain`: look at the `domain_age_rdap_*` counters.
+  `domain_age_rdap_rate_limited` high: rdap.org still limits at 1 request/s; raise `RDAP_MIN_INTERVAL_MS` in
+  `pipeline/src/enrich/rdap.ts` (and `rdapBudgetMinutes` with it). `domain_age_rdap_skipped` > 0: the domain count
+  has outgrown `rdapBudgetMinutes`. `domain_age_no_rdap` high is normal (`.io` and similar); then look at
+  `domain_age_from_crtsh` and `domain_age_crtsh_failed`: if crt.sh fails for nearly all of them it is unreachable or
+  too slow from the runner (the check counts as not run, never as an error); `domain_age_crtsh_skipped` > 0 means
+  crt.sh used up its 3 busy minutes (slow answers; raise `crtshBudgetMinutes` only while the worst case stays under
+  the GoPlus 12 minutes).
   `phishing_list_failed` high: GoPlus is rate-limiting; the domains stay unchecked until the next run. Check
   `phishing_list_rate_limited`: if it is close to `phishing_list_failed`, raise `GOPLUS_MIN_INTERVAL_MS` in
   `pipeline/src/enrich/goplus.ts`; if it is 0, the failures are timeouts or errors, not the rate limit.

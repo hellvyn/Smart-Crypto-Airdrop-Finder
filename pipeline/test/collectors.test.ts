@@ -52,12 +52,20 @@ describe("createHttp", () => {
       seen = { url: String(url), init };
       return new Response("hello", { status: 200 });
     }) as typeof fetch);
-    expect(await http.get("https://a.test/")).toEqual({ status: 200, body: "hello" });
+    expect(await http.get("https://a.test/")).toMatchObject({ status: 200, body: "hello" });
     const headers = new Headers(seen?.init?.headers);
     expect(headers.get("user-agent")).toBe(
       "SmartAirdropFinder/0.1 (+https://github.com/hellvyn/Smart-Airdrop-Finder)",
     );
     expect(seen?.init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("returns the response headers with lowercase names (RDAP reads Retry-After)", async () => {
+    const http = createHttp((async () =>
+      new Response("", { status: 429, headers: { "Retry-After": "2" } })) as typeof fetch);
+    const res = await http.get("https://rdap.org/domain/a.com");
+    expect(res.status).toBe(429);
+    expect(res.headers?.["retry-after"]).toBe("2");
   });
 
   it("turns network errors into status 0 with an empty body", async () => {
