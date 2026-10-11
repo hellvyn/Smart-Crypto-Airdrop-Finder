@@ -31,7 +31,7 @@ export function ThreadList({ threads }: { threads: ThreadRow[] }) {
                 <Link href={`/coach?thread=${thread.id}`}>{copy.open}</Link>
                 <form action={deleteCoachThread}>
                   <input type="hidden" name="threadId" value={thread.id} />
-                  <button type="submit" aria-label={copy.removeLabel(label)}>
+                  <button type="submit" data-tone="danger" aria-label={copy.removeLabel(label)}>
                     {copy.remove}
                   </button>
                 </form>

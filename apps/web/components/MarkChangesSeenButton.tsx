@@ -8,7 +8,7 @@ import { changes as copy } from "@/lib/copy";
 export function MarkChangesSeenButton() {
   const { pending } = useFormStatus();
   return (
-    <Button variant="secondary" type="submit" disabled={pending}>
+    <Button variant="primary" type="submit" disabled={pending}>
       {pending ? copy.markSeenPending : copy.markSeen}
     </Button>
   );

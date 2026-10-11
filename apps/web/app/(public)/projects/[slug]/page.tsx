@@ -67,8 +67,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
       <StaleBanner lastRunAt={lastRunAt} now={now} />
       <div className="project-actions">
         <WatchButton projectId={project.id} slug={project.slug} watching={watching} />
-        <FarmButton projectId={project.id} farming={farming} />
         <AskCoachLink projectId={project.id} member={user !== null} />
+        {/* Last: its quiet "Berhenti garap" closes the row instead of sitting between buttons. */}
+        <FarmButton projectId={project.id} farming={farming} />
       </div>
       <ProjectDetailView project={project} member={user !== null} canExplain={canExplain} now={now} />
       <WalletActivitySection project={project} wallets={wallets} />

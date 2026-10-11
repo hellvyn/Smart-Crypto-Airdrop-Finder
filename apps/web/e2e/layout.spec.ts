@@ -26,7 +26,7 @@ test("page is Indonesian, titled AirdropIQ, and the visitor header offers Login"
   await expect(header.getByRole("link", { name: "Login" })).toBeVisible();
 });
 
-test("the dark Login button keeps readable text on hover", async ({ page }) => {
+test("the green Login button keeps readable text on hover", async ({ page }) => {
   await page.goto("/");
   const login = page.getByRole("banner").getByRole("link", { name: "Login" });
   const colors = () =>
@@ -38,8 +38,9 @@ test("the dark Login button keeps readable text on hover", async ({ page }) => {
   expect(resting.text).not.toBe(resting.fill);
   await login.hover();
   const hovered = await colors();
-  expect(hovered.fill).toBe(resting.fill);
+  // The fill may darken on hover; the text keeps its colour and never matches the fill.
   expect(hovered.text).toBe(resting.text);
+  expect(hovered.text).not.toBe(hovered.fill);
 });
 
 test("the header never links to signup (#46)", async ({ page }) => {

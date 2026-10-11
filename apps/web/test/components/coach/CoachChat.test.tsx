@@ -46,7 +46,7 @@ const ask = (text: string) => {
 describe("CoachChat", () => {
   it("shows the quota line and the disclaimer", () => {
     render(<CoachChat threadId={THREAD} projectId={null} remaining={17} />);
-    expect(screen.getByTestId("coach-remaining").textContent).toBe("Sisa 17/20 pesan hari ini");
+    expect(screen.getByTestId("coach-remaining").textContent).toBe("Sisa 17/100 pesan hari ini");
     expect(screen.getByText("Bukan nasihat keuangan. Tetap DYOR.")).toBeTruthy();
   });
 
@@ -59,7 +59,7 @@ describe("CoachChat", () => {
     fetchMock.mockResolvedValue(streamed(["Mulai dari Alp", "ha, <b>santai</b> aja."], { "X-Coach-Links": linksHeader, "X-Coach-Remaining": "16" }));
     render(<CoachChat threadId={THREAD} projectId={null} remaining={17} />);
     ask("Mulai dari mana?");
-    await waitFor(() => expect(screen.getByTestId("coach-remaining").textContent).toBe("Sisa 16/20 pesan hari ini"));
+    await waitFor(() => expect(screen.getByTestId("coach-remaining").textContent).toBe("Sisa 16/100 pesan hari ini"));
     const answer = screen.getByTestId("coach-answer");
     expect(answer.textContent).toBe("Mulai dari Alpha, <b>santai</b> aja.");
     expect(answer.querySelector("b")).toBeNull();
@@ -73,18 +73,18 @@ describe("CoachChat", () => {
 
   it("shows the routes' quota message and takes the counter to zero", async () => {
     fetchMock.mockResolvedValue(
-      Response.json({ error: "quota", message: "Jatah 20 pesan hari ini habis, reset jam 00.00 WIB." }, { status: 429 }),
+      Response.json({ error: "quota", message: "Jatah 100 pesan hari ini habis, reset jam 00.00 WIB." }, { status: 429 }),
     );
     render(<CoachChat threadId={THREAD} projectId={null} remaining={1} />);
     ask("Satu lagi");
-    expect((await screen.findByRole("alert")).textContent).toBe("Jatah 20 pesan hari ini habis, reset jam 00.00 WIB.");
-    expect(screen.getByTestId("coach-remaining").textContent).toBe("Sisa 0/20 pesan hari ini");
+    expect((await screen.findByRole("alert")).textContent).toBe("Jatah 100 pesan hari ini habis, reset jam 00.00 WIB.");
+    expect(screen.getByTestId("coach-remaining").textContent).toBe("Sisa 0/100 pesan hari ini");
     expect((screen.getByRole("button", { name: "Kirim" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("tells a member who opens the page with nothing left why the chat is closed", () => {
     render(<CoachChat threadId={THREAD} projectId={null} remaining={0} />);
-    expect(screen.getByRole("status").textContent).toBe("Jatah 20 pesan hari ini habis, reset jam 00.00 WIB.");
+    expect(screen.getByRole("status").textContent).toBe("Jatah 100 pesan hari ini habis, reset jam 00.00 WIB.");
     expect((screen.getByRole("button", { name: "Kirim" }) as HTMLButtonElement).disabled).toBe(true);
   });
 

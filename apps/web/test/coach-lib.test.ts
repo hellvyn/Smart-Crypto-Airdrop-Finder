@@ -330,12 +330,12 @@ describe("isCoachCandidate", () => {
     expect(await isCoachCandidate(fakeCoachDb({ tables: tables() }).db, USER, P1, NOW)).toBe(true);
   });
 
-  it("is false for a project the profile filters out (a Pemula and a High-risk project)", async () => {
+  it("is true for a listed project the profile would filter out of a plan: Tanya AI never filters by profile", async () => {
     const t = tables({
       coach_profiles: [{ user_id: USER, ...PROFILE, level: "beginner" }],
       curated_list: candidateTables([{ id: P1, name: "Alpha" }]).curated_list!.map((r) => ({ ...r, latest_risk_level: "high" })),
     });
-    expect(await isCoachCandidate(fakeCoachDb({ tables: t }).db, USER, P1, NOW)).toBe(false);
+    expect(await isCoachCandidate(fakeCoachDb({ tables: t }).db, USER, P1, NOW)).toBe(true);
   });
 
   it("is false for a project that is not on the curated candidate tabs, and for one without points or steps", async () => {
@@ -344,8 +344,8 @@ describe("isCoachCandidate", () => {
     expect(await isCoachCandidate(fakeCoachDb({ tables: t }).db, USER, P1, NOW)).toBe(false);
   });
 
-  it("is false without a coach profile, and when the database fails", async () => {
-    expect(await isCoachCandidate(fakeCoachDb({ tables: tables({ coach_profiles: [] }) }).db, USER, P1, NOW)).toBe(false);
+  it("is true without a coach profile, and false when the database fails", async () => {
+    expect(await isCoachCandidate(fakeCoachDb({ tables: tables({ coach_profiles: [] }) }).db, USER, P1, NOW)).toBe(true);
     const failing = fakeCoachDb({ tables: tables(), tableErrors: { curated_list: { message: "down" } } });
     expect(await isCoachCandidate(failing.db, USER, P1, NOW)).toBe(false);
   });

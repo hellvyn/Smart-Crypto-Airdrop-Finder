@@ -5,7 +5,7 @@
 // still counts. The stream is cleaned per completed sentence (em dash, sensitive text) and the stored reply is redacted
 // once more as a whole and cut to 16000 characters. Project links come as separate metadata (x-coach-links), built
 // from the candidates' slugs, never from the model's text. Nothing here logs an email, a user id, a prompt or an answer.
-import { looksLikeSecret, selectCandidates } from "@saf/core";
+import { askedProject, looksLikeSecret, selectCandidates, type Candidate, type UnfitReason } from "@saf/core";
 import { streamText } from "@saf/llm";
 import type { StreamTextEvent } from "@saf/llm";
 import { getUser } from "@/lib/auth";
@@ -64,11 +64,25 @@ export async function POST(request: Request): Promise<Response> {
     const now = new Date();
     const db = await createServerClient();
     const profile = await getCoachProfile(db, user.id);
-    if (!profile) return coachErrorResponse("bad_input");
     const thread = await loadThread(db, input.threadId);
     if (!thread) return coachErrorResponse("not_member");
+    // A plan thread needs the profile; "Tanya AI" about one project does not (owner 2026-10-11).
+    if (!profile && !thread.projectId) return coachErrorResponse("bad_input");
 
-    const candidates = selectCandidates(await loadCandidates(db, now), profile, thread.projectId ?? undefined);
+    const all = await loadCandidates(db, now);
+    // "Tanya AI": that one listed project, whatever the profile says. The profile never filters it out; a project that
+    // does not fit it is still answered about, with the reason as context.
+    let candidates: Candidate[] = [];
+    let unfit: UnfitReason | null = null;
+    if (thread.projectId) {
+      const asked = askedProject(all, profile, thread.projectId);
+      if (asked !== null) {
+        candidates = [asked.candidate];
+        unfit = asked.unfit;
+      }
+    } else if (profile) {
+      candidates = selectCandidates(all, profile);
+    }
     let turn = input.message;
     if (input.stepId !== null) {
       // The step must belong to a project this thread may talk about (one that passed curation).
@@ -76,7 +90,8 @@ export async function POST(request: Request): Promise<Response> {
       if (step === null || !candidates.some((c) => c.id === step.projectId)) return coachErrorResponse("bad_input");
       turn = explainStepTurn(step.text, input.message);
     }
-    // Nothing to talk about (e.g. a Pemula asking about a High-risk project): the empty state, as a normal answer. No
+    // Nothing to talk about (a general thread the profile filters every project out of, or a project no longer listed):
+    // the empty state, as a normal answer. No
     // coach_begin and no model call, so it costs no quota and no money.
     if (candidates.length === 0) {
       const remaining = await remainingQuota(db);
@@ -94,7 +109,7 @@ export async function POST(request: Request): Promise<Response> {
     const llm = coachLlm();
     const own = new AbortController();
     const signal = AbortSignal.any([request.signal, own.signal]);
-    const events = streamText(llm.chatModels, chatMessages(profile, candidates, now, history, turn), {
+    const events = streamText(llm.chatModels, chatMessages(profile, candidates, now, history, turn, unfit), {
       providers: llm.providers,
       fetch: llm.fetch,
       claude: llm.claude,

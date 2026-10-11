@@ -1,15 +1,15 @@
 import Link from "next/link";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "dark";
+export type ButtonVariant = "primary" | "secondary" | "dark" | "danger";
 
 type Common = { variant: ButtonVariant; children: ReactNode };
 type AsLink = Common & { href: string };
 type AsButton = Common & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & { href?: undefined };
 
 /**
- * primary = orange fill, secondary = outline only, dark = black fill. All have a 3 px black border and capital
- * letters. Pass `href` to get a link that looks the same; otherwise it is a native button.
+ * primary = green fill (the main action, site-wide), danger = red outline (stop, remove, delete), secondary = outline
+ * only, dark = black fill. All have a 3 px border and capital letters. Pass `href` to get a link that looks the same; otherwise it is a native button.
  */
 export function Button(props: AsLink | AsButton) {
   if (props.href !== undefined) {

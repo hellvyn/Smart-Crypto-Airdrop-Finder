@@ -560,7 +560,7 @@ export const garapan = {
 /** Coach: texts of the plan and chat routes (spec §5.7) and of the /coach page (spec §5.1 to §5.5). */
 export const coach = {
   errors: {
-    quota: "Jatah 20 pesan hari ini habis, reset jam 00.00 WIB.",
+    quota: "Jatah 100 pesan hari ini habis, reset jam 00.00 WIB.",
     unavailable: "Coach lagi gak bisa jawab, coba lagi sebentar.",
     bad_input: "Isiannya belum lengkap, atau pesannya kepanjangan (maksimal 1000 karakter). Cek lagi, lalu coba lagi.",
     not_member: "Percakapan ini gak ketemu di akun kamu. Login lagi, atau mulai percakapan baru dari halaman Coach.",
@@ -620,7 +620,7 @@ export const coach = {
     title: "Profil kamu",
     edit: "Ubah profil",
     makePlan: "Bikin rencana baru",
-    makePlanNote: "Ini dihitung 1 dari 20 pesan hari ini.",
+    makePlanNote: "Ini dihitung 1 dari 100 pesan hari ini.",
     planning: "Coach lagi nyusun rencana...",
   },
   plan: {
@@ -638,7 +638,7 @@ export const coach = {
   },
   chat: {
     title: "Tanya Coach",
-    remaining: (left: number) => `Sisa ${left}/20 pesan hari ini`,
+    remaining: (left: number) => `Sisa ${left}/100 pesan hari ini`,
     disclaimer: "Bukan nasihat keuangan. Tetap DYOR.",
     label: "Pertanyaan kamu",
     send: "Kirim",

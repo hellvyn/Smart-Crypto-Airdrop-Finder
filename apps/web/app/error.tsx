@@ -7,7 +7,7 @@ export default function ErrorPage({ reset }: { error: Error & { digest?: string 
   return (
     <>
       <p role="alert">{errors.generic}</p>
-      <button type="button" onClick={() => reset()}>
+      <button type="button" data-tone="primary" onClick={() => reset()}>
         {errors.retry}
       </button>
     </>

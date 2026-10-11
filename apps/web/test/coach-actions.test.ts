@@ -74,7 +74,7 @@ describe("coach actions", () => {
     expect(await startCoachThreadAction(PID)).toEqual({
       ok: false,
       error: "quota",
-      message: "Jatah 20 pesan hari ini habis, reset jam 00.00 WIB.",
+      message: "Jatah 100 pesan hari ini habis, reset jam 00.00 WIB.",
     });
   });
 

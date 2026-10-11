@@ -49,13 +49,13 @@ export async function SiteHeader() {
                 {user.email}
               </span>
               <form action={signOut}>
-                <Button variant="secondary" type="submit">
+                <Button variant="danger" type="submit">
                   {header.logout}
                 </Button>
               </form>
             </>
           ) : (
-            <Button variant="dark" href="/login">
+            <Button variant="primary" href="/login">
               {header.login}
             </Button>
           )}

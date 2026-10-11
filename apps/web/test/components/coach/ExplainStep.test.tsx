@@ -55,10 +55,10 @@ describe("ExplainStep", () => {
   });
 
   it("shows the route's message when the Coach refuses, such as an empty quota", async () => {
-    fetchMock.mockResolvedValue(Response.json({ error: "quota", message: "Jatah 20 pesan hari ini habis, reset jam 00.00 WIB." }, { status: 429 }));
+    fetchMock.mockResolvedValue(Response.json({ error: "quota", message: "Jatah 100 pesan hari ini habis, reset jam 00.00 WIB." }, { status: 429 }));
     render(<ExplainStep projectId={PROJECT} stepId={STEP} />);
     click();
-    expect((await screen.findByRole("alert")).textContent).toBe("Jatah 20 pesan hari ini habis, reset jam 00.00 WIB.");
+    expect((await screen.findByRole("alert")).textContent).toBe("Jatah 100 pesan hari ini habis, reset jam 00.00 WIB.");
   });
 
   it("sends a member without a profile to the Coach page", async () => {

@@ -37,7 +37,7 @@ function Linked({ text, links }: { text: string; links: CoachLink[] }) {
 
 /**
  * The chat under the plan (spec §5.3). The answer streams in as plain text; project names from the candidate list
- * become links built by the server. "Sisa X/20 pesan hari ini" and the disclaimer stay in view. With no thread yet
+ * become links built by the server. "Sisa X/100 pesan hari ini" and the disclaimer stay in view. With no thread yet
  * (the "Tanya AI" page), the first message opens one about `projectId`.
  */
 export function CoachChat({
