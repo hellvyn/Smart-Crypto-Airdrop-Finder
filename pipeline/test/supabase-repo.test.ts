@@ -455,6 +455,7 @@ describe("SupabaseRepo.saveCuration", () => {
           { code: "risk_high", message: "Risiko tinggi", kind: "fail" },
         ],
         coverage: { defillama: false },
+        coingeckoListed: null,
       },
       at,
     );
@@ -476,6 +477,7 @@ describe("SupabaseRepo.saveCuration", () => {
             { code: "risk_high", message: "Risiko tinggi", kind: "fail" },
           ],
           coverage: { defillama: false },
+          coingecko_listed: null,
           public_fail_reason: "Cek kunci belum lengkap",
           computed_at: "2026-10-10T03:00:00.000Z",
         },
@@ -507,7 +509,8 @@ describe("SupabaseRepo.saveCuration", () => {
         statusAt: "ended",
         endedOn: "2026-10-05",
         reasons: [{ code: "ended_after_curation", message: "Berakhir setelah lolos kurasi", kind: "pass" }],
-        coverage: {},
+        coverage: { defillama: true },
+        coingeckoListed: false,
       },
       new Date("2026-10-10T03:00:00Z"),
     );
@@ -515,8 +518,60 @@ describe("SupabaseRepo.saveCuration", () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatchObject({
       table: "curations",
-      row: { worth_level: "high", worth_points: 4, tab: "ended", status_at: "ended", ended_on: "2026-10-05", public_fail_reason: null },
+      row: {
+        worth_level: "high",
+        worth_points: 4,
+        tab: "ended",
+        status_at: "ended",
+        ended_on: "2026-10-05",
+        public_fail_reason: null,
+        coingecko_listed: false,
+      },
     });
+  });
+});
+
+describe("SupabaseRepo.listCurationHistoryForTrackRecord", () => {
+  it("maps each project's first pass, latest tab, current listing and latest high risk", async () => {
+    const firstPass = "2026-06-01T03:00:00+00:00";
+    const { client, reads } = recordingClient({
+      projects: [
+        {
+          id: "p-1",
+          first_pass: [{ computed_at: firstPass, coingecko_listed: false }],
+          latest: [{ tab: "ended" }],
+          last_high_risk: [{ computed_at: "2026-07-01T03:00:00+00:00" }],
+          listing: [{ kind: "coingecko_listed" }],
+        },
+        {
+          id: "p-2",
+          first_pass: [{ computed_at: firstPass, coingecko_listed: null }],
+          latest: [{ tab: null }],
+          // The run of the first pass itself: not after it.
+          last_high_risk: [{ computed_at: firstPass }],
+          listing: [],
+        },
+        { id: "p-3", first_pass: [{ computed_at: firstPass, coingecko_listed: true }], latest: [], last_high_risk: [], listing: [] },
+      ],
+    });
+    const repo = new SupabaseRepo(client);
+
+    expect(await repo.listCurationHistoryForTrackRecord()).toEqual([
+      { projectId: "p-1", firstPassAt: "2026-06-01T03:00:00.000Z", listedAtFirstPass: false, tab: "ended", coingeckoListed: true, riskRaisedAfterPass: true },
+      { projectId: "p-2", firstPassAt: "2026-06-01T03:00:00.000Z", listedAtFirstPass: null, tab: null, coingeckoListed: false, riskRaisedAfterPass: false },
+      { projectId: "p-3", firstPassAt: "2026-06-01T03:00:00.000Z", listedAtFirstPass: true, tab: null, coingeckoListed: false, riskRaisedAfterPass: false },
+    ]);
+    expect(reads.map((r) => [r.table, r.filters])).toEqual([
+      [
+        "projects",
+        [
+          ["first_pass.passed", true],
+          ["last_high_risk.level", ["high", "critical"]],
+          ["listing.kind", "coingecko_listed"],
+          ["listing.verified", true],
+        ],
+      ],
+    ]);
   });
 });
 

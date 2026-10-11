@@ -183,7 +183,7 @@ Set the two variables on the same command line as above, e.g. `SUPABASE_URL=<pro
   - G9 is the mean `curation_passed_live_now` of the 3 runs.
 - `worth-review.ts` prints the top 20 passing projects per tab (`live_now`, `early_bets`, `ended`): name, worth level,
   point total and the worth reasons. The owner marks the entries whose order makes no sense; the final weights and the reasons are
-  then recorded by hand in spec section 6.3. The point total is `curations.worth_points` (migration 0012, written by the
+  then recorded by hand in spec section 6.3. The point total is `curations.worth_points` (migration 0011, written by the
   score step from `worth().points`; "poin n/a" for a curation stored before it existed, until the next daily run
   rewrites it). The order is worth level, then newest `last_seen` (the list view also uses signal strength and deadline
   as tie-breakers).

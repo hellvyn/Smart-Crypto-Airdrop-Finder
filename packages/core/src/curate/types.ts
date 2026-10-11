@@ -44,6 +44,11 @@ export interface CurationRecord {
   endedOn: string | null;
   reasons: CurationReason[];
   coverage: Record<string, boolean>;
+  /**
+   * The project had a verified `coingecko_listed` signal on this run (its token traded); null when that is unknown:
+   * no listing and DefiLlama not checked. The track record reads it from the first passing curation (#43).
+   */
+  coingeckoListed: boolean | null;
 }
 
 /** Everything `curate()` needs (curation spec §6.2). Pure data, no I/O. */

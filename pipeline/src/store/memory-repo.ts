@@ -9,6 +9,7 @@ import type {
   RiskLevel,
   Status,
   StatusEvidence,
+  TrackRecordProject,
 } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { RaisePage } from "../enrich/alphadrops-raises.js";
@@ -507,11 +508,32 @@ export class MemoryRepo implements PipelineRepo {
       endedOn: c.endedOn,
       reasons: c.reasons,
       coverage: c.coverage,
+      coingeckoListed: c.coingeckoListed,
       publicFailReason: publicFailReason(c.passed, c.reasons),
       computedAt: at,
     });
     const change = curatedChange(previous?.passed ?? null, c.passed);
     if (change) this.projectChanges.push({ projectId, field: "curated", ...change, changedAt: at });
+  }
+
+  async listCurationHistoryForTrackRecord(): Promise<(TrackRecordProject & { projectId: string })[]> {
+    const projectIds = new Set(this.curations.filter((c) => c.passed).map((c) => c.projectId));
+    return [...projectIds].map((projectId) => {
+      const curations = this.curations.filter((c) => c.projectId === projectId);
+      // The first passing row: earliest computedAt, the earlier insert wins ties (Postgres: seq).
+      const firstPass = curations.filter((c) => c.passed).reduce((first, c) => (c.computedAt < first.computedAt ? c : first));
+      const latest = latestBy(curations, (c) => c.computedAt);
+      return {
+        projectId,
+        firstPassAt: firstPass.computedAt.toISOString(),
+        listedAtFirstPass: firstPass.coingeckoListed,
+        tab: latest?.tab ?? null,
+        coingeckoListed: this.signals.some((s) => s.projectId === projectId && s.kind === "coingecko_listed" && s.verified),
+        riskRaisedAfterPass: this.riskAssessments.some(
+          (r) => r.projectId === projectId && (r.level === "high" || r.level === "critical") && r.computedAt > firstPass.computedAt,
+        ),
+      };
+    });
   }
 
   async saveLinkCheck(url: string, status: LinkCheckStatus, at: Date): Promise<void> {

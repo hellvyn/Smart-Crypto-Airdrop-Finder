@@ -215,6 +215,7 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `link_checks_total` | distinct claim/app links checked in `score` and written to `link_checks` (status from the GoPlus answers of the run, no extra request) |
 | `link_checks_phishing` | of those, links on the phishing list: never rendered as a link, and the project's risk is high (`phishing_claim_link`) |
 | `claim_pages_read` | claim portal pages fetched in `analyze` for the AI Scam Analyst (at most 20 per run; pages fetched in the last 7 days come from `claim_pages`) |
+| `track_record_total` / `_listed` / `_no_token` / `_risk_raised` | the public track record (#43); see "Track record" below |
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
@@ -254,6 +255,23 @@ What to do:
 - `llm_models_tripped` > 0: a model endpoint failed repeatedly (see `extractions.error`, e.g. `http_0` = 180 s
   timeout). The run continues on the remaining models; if it repeats for days, reorder or replace the model in
   `pipeline/src/config.ts`.
+
+### Track record (#43)
+
+Counted at the end of `score` from the whole curation history (`listCurationHistoryForTrackRecord`), so ended projects
+that are no longer scored (more than 90 days after they ended) still count. The population (`track_record_total`) is
+every project whose **first passing curation** had `curations.coingecko_listed = false` (no verified CoinGecko listing
+while DefiLlama was checked on that run) and whose **latest curation** is in the `ended` tab. Of those:
+
+- `track_record_listed`: projects with a verified `coingecko_listed` signal now (the token trades);
+- `track_record_no_token`: the rest, ended without a traded token;
+- `track_record_risk_raised`: projects with a `high` or `critical` risk assessment after their first pass.
+
+`coingecko_listed` is null on a run where DefiLlama was not checked and no listing was known; a project whose first pass
+has null is left out (unknown is never counted as "before the token traded"). A project that turned risky and is still
+out of the list (latest curation failed) is not in the population, so `track_record_risk_raised` only counts the ones
+that came back. The web (Plan 6) reads these counters from the latest successful run and shows them only from a total
+of 10. A failed read of the history is a stage error (`failed_step` 5) and that run is skipped by the web.
 
 ## 5. LLM eval (after changing the prompt or a model)
 

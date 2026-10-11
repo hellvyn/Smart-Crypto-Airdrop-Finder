@@ -1,5 +1,14 @@
 import pLimit from "p-limit";
-import { aiFlagsFromAnalyses, analystSchema, assessRisk, curate, expireStatus, registrableDomain, worth } from "@saf/core";
+import {
+  aiFlagsFromAnalyses,
+  analystSchema,
+  assessRisk,
+  curate,
+  expireStatus,
+  registrableDomain,
+  trackRecord,
+  worth,
+} from "@saf/core";
 import type { CurationRecord, NewSignal, RiskAssessment, RiskInput, SignalSource, Status, WorthInput } from "@saf/core";
 import type { Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
@@ -95,6 +104,15 @@ function tgePassed(project: ProjectForScoring, today: string): boolean {
 }
 
 /**
+ * Whether the project's token traded on this run (#43): true with a current verified `coingecko_listed` signal, false
+ * without one when DefiLlama was checked, null (unknown) when it was not.
+ */
+function coingeckoListed(signals: NewSignal[], coverage: SignalCoverage): boolean | null {
+  if (signals.some((s) => s.kind === "coingecko_listed" && s.verified)) return true;
+  return coverage.defillama ? false : null;
+}
+
+/**
  * The project's curation (curation spec §5.3, §6.2-6.3): `curate()` on the assessment just made, and `worth()`, which
  * is computed for a failing project too (for its detail page). The AI can only lower either. An `ended` project's end
  * date is the deadline that expired it, else the one its latest curation carries, else `today`.
@@ -139,7 +157,17 @@ async function curation(
     endedOn: ended ? (state.expiredOn ?? (await repo.latestCuration(project.id))?.endedOn ?? today) : null,
     reasons: [...curated.reasons, ...worthResult.reasons],
     coverage: { ...coverage },
+    coingeckoListed: coingeckoListed(signals, coverage),
   };
+}
+
+/** The track record (#43) from the whole curation history, ended projects no longer scored included. */
+async function countTrackRecord(repo: PipelineRepo, stats: DailyStats): Promise<void> {
+  const record = trackRecord(await repo.listCurationHistoryForTrackRecord());
+  stats.track_record_total = record.total;
+  stats.track_record_listed = record.listed;
+  stats.track_record_no_token = record.noToken;
+  stats.track_record_risk_raised = record.riskRaised;
 }
 
 function countCuration(stats: DailyStats, c: CurationRecord): void {
@@ -167,7 +195,8 @@ function countCuration(stats: DailyStats, c: CurationRecord): void {
  * `phishing_claim_link`, high) and, once every project is scored, into `link_checks`. Curation takes the signals the
  * `signals` stage stored and its `coverage` (by project id; a project missing from it had no source checked this run).
  * One project failing to save, whose analyses cannot be read, or whose curation throws, counts as `score_failed` and
- * does not stop the others.
+ * does not stop the others. Last, the track record stats (#43) are counted from the curation history, also when no
+ * project was scored; a failed read of that history is a stage error.
  */
 export async function scoreProjects(
   deps: { repo: PipelineRepo; http: Http; sleep?: (ms: number) => Promise<void>; now: () => Date },
@@ -179,7 +208,10 @@ export async function scoreProjects(
   const { repo, http } = deps;
   const sleep = deps.sleep ?? defaultSleep;
   const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
-  if (projects.length === 0) return;
+  if (projects.length === 0) {
+    await countTrackRecord(repo, stats);
+    return;
+  }
 
   const domainsByProject = new Map(projects.map((p) => [p.id, linkDomains(p)]));
   // Social platforms (x.com, t.me, ...) are not the project's own domains: no phishing or age lookups.
@@ -287,4 +319,5 @@ export async function scoreProjects(
   }
   // After every project is scored, so a link_checks write that fails (a stage error) never keeps a project unscored.
   await saveLinkChecks(repo, claimLinks.byUrl, now, stats);
+  await countTrackRecord(repo, stats);
 }

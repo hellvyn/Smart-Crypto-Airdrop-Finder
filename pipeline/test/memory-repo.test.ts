@@ -563,6 +563,7 @@ function curation(overrides: Partial<CurationRecord> = {}): CurationRecord {
     endedOn: null,
     reasons: [{ code: "official_domain", message: "Domain resmi tercatat", kind: "pass" }],
     coverage: { defillama: true },
+    coingeckoListed: false,
     ...overrides,
   };
 }
@@ -628,8 +629,47 @@ describe("MemoryRepo curations", () => {
       endedOn: null,
       reasons: [{ code: "tvl_high", message: "TVL di atas $100 juta", kind: "worth" }],
       coverage: { defillama: true },
+      coingeckoListed: false,
       publicFailReason: null,
       computedAt: t(2),
+    });
+  });
+
+  it("lists the track record history of every project that ever passed", async () => {
+    const repo = new MemoryRepo();
+    const ended = await repo.createProject(project(), T0);
+    const dropped = await repo.createProject(project({ slug: "dropped", name: "Dropped", nameKey: "dropped" }), T0);
+    const never = await repo.createProject(project({ slug: "never", name: "Never", nameKey: "never" }), T0);
+    // Two passing rows at the same time: the earlier insert is the first pass.
+    await repo.saveCuration(ended.id, curation({ coingeckoListed: false }), t(1));
+    await repo.saveCuration(ended.id, curation({ coingeckoListed: true }), t(1));
+    await repo.saveRiskAssessment(ended.id, assessment("high"), t(2));
+    await repo.saveCuration(ended.id, curation({ statusAt: "ended", tab: "ended", endedOn: "2026-10-05" }), t(3));
+    await repo.replaceSignals(ended.id, [{ kind: "coingecko_listed", value: { gecko_id: "x" }, source: "defillama", verified: true }], t(3));
+    // High risk only on the run of the first pass, then dropped out: not raised after the pass, no tab now.
+    await repo.saveRiskAssessment(dropped.id, assessment("critical"), t(1));
+    await repo.saveCuration(dropped.id, curation({ coingeckoListed: null }), t(1));
+    await repo.saveCuration(dropped.id, failed(), t(2));
+    await repo.saveCuration(never.id, failed(), t(1));
+
+    const history = await repo.listCurationHistoryForTrackRecord();
+
+    expect(history).toHaveLength(2);
+    expect(history).toContainEqual({
+      projectId: ended.id,
+      firstPassAt: t(1).toISOString(),
+      listedAtFirstPass: false,
+      tab: "ended",
+      coingeckoListed: true,
+      riskRaisedAfterPass: true,
+    });
+    expect(history).toContainEqual({
+      projectId: dropped.id,
+      firstPassAt: t(1).toISOString(),
+      listedAtFirstPass: null,
+      tab: null,
+      coingeckoListed: false,
+      riskRaisedAfterPass: false,
     });
   });
 

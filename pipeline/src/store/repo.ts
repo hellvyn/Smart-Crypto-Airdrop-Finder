@@ -14,6 +14,7 @@ import type {
   SignalSource,
   Status,
   StatusEvidence,
+  TrackRecordProject,
 } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { RaisePage } from "../enrich/alphadrops-raises.js";
@@ -292,6 +293,13 @@ export interface PipelineRepo {
    * that passes, also writes a `project_changes` row with field `curated` (see `curatedChange`).
    */
   saveCuration(projectId: string, c: CurationRecord, at: Date): Promise<void>;
+  /**
+   * Every project with at least one passing curation, as `trackRecord()` (#43) needs it: `firstPassAt` and
+   * `listedAtFirstPass` from the first passing curation (earliest `computed_at`, earlier insert wins ties), `tab` of the
+   * latest curation, `coingeckoListed` = a verified `coingecko_listed` signal is stored now, `riskRaisedAfterPass` = a
+   * `high`/`critical` risk assessment computed after the first pass. In no particular order.
+   */
+  listCurationHistoryForTrackRecord(): Promise<(TrackRecordProject & { projectId: string })[]>;
   /** Inserts or replaces the check of one claim/app link (`link_checks`, url is the key), checked at `at`. */
   saveLinkCheck(url: string, status: LinkCheckStatus, at: Date): Promise<void>;
   /** The stored checks of these URLs (URLs never checked are left out), ordered by url. */

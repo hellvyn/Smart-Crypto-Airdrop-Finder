@@ -13,6 +13,8 @@ import type {
   SignalSource,
   Status,
   StatusEvidence,
+  Tab,
+  TrackRecordProject,
 } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { RaisePage } from "../enrich/alphadrops-raises.js";
@@ -860,6 +862,7 @@ export class SupabaseRepo implements PipelineRepo {
         ended_on: c.endedOn,
         reasons: c.reasons,
         coverage: c.coverage,
+        coingecko_listed: c.coingeckoListed,
         public_fail_reason: publicFailReason(c.passed, c.reasons),
         computed_at: at.toISOString(),
       }),
@@ -877,6 +880,58 @@ export class SupabaseRepo implements PipelineRepo {
         }),
       );
     }
+  }
+
+  async listCurationHistoryForTrackRecord(): Promise<(TrackRecordProject & { projectId: string })[]> {
+    // One row per project with a passing curation (inner join), each embed cut to the one row it needs.
+    type HistoryDb = {
+      id: string;
+      first_pass: { computed_at: string; coingecko_listed: boolean | null }[];
+      latest: { tab: Tab | null }[];
+      last_high_risk: { computed_at: string }[];
+      listing: { kind: string }[];
+    };
+    const rows = await this.fetchAll<HistoryDb>("listCurationHistoryForTrackRecord", (from, to) =>
+      this.db
+        .from("projects")
+        .select(
+          "id, first_pass:curations!inner(computed_at, coingecko_listed), latest:curations(tab), " +
+            "last_high_risk:risk_assessments(computed_at), listing:project_signals(kind)",
+        )
+        .eq("first_pass.passed", true)
+        .order("computed_at", { referencedTable: "first_pass" })
+        .order("seq", { referencedTable: "first_pass" })
+        .limit(1, { referencedTable: "first_pass" })
+        .order("computed_at", { referencedTable: "latest", ascending: false })
+        .order("seq", { referencedTable: "latest", ascending: false })
+        .limit(1, { referencedTable: "latest" })
+        .in("last_high_risk.level", ["high", "critical"])
+        .order("computed_at", { referencedTable: "last_high_risk", ascending: false })
+        .limit(1, { referencedTable: "last_high_risk" })
+        .eq("listing.kind", "coingecko_listed")
+        .eq("listing.verified", true)
+        .limit(1, { referencedTable: "listing" })
+        .order("id")
+        .range(from, to)
+        .returns<HistoryDb[]>(),
+    );
+    return rows.flatMap((r) => {
+      const firstPass = r.first_pass[0];
+      if (firstPass === undefined) return [];
+      const firstPassAt = new Date(firstPass.computed_at);
+      const lastHighRisk = r.last_high_risk[0];
+      return [
+        {
+          projectId: r.id,
+          firstPassAt: firstPassAt.toISOString(),
+          listedAtFirstPass: firstPass.coingecko_listed,
+          tab: r.latest[0]?.tab ?? null,
+          coingeckoListed: r.listing.length > 0,
+          // Some high/critical assessment came after the first pass exactly when the latest one did.
+          riskRaisedAfterPass: lastHighRisk !== undefined && new Date(lastHighRisk.computed_at) > firstPassAt,
+        },
+      ];
+    });
   }
 
   async saveLinkCheck(url: string, status: LinkCheckStatus, at: Date): Promise<void> {

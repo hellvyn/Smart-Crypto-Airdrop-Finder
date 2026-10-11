@@ -80,6 +80,15 @@ export interface DailyStats extends RunStats {
   curation_passed_ended: number;
   /** Failed curations with an `insufficient_checks` reason (no official domain, or a key check did not run). */
   curation_hidden_insufficient_checks: number;
+  /**
+   * Track record (curation spec §15.3, #43): projects whose first passing curation came before their token traded
+   * (`coingecko_listed`) and whose latest curation is in the `ended` tab; of those, the ones whose token trades now,
+   * the ones without a traded token, and the ones that were `high`/`critical` risk after their first pass.
+   */
+  track_record_total: number;
+  track_record_listed: number;
+  track_record_no_token: number;
+  track_record_risk_raised: number;
   /** Projects whose risk assessment or curation threw. */
   score_failed: number;
   source_failed: number;
@@ -130,6 +139,10 @@ export function emptyStats(): DailyStats {
     curation_passed_early_bets: 0,
     curation_passed_ended: 0,
     curation_hidden_insufficient_checks: 0,
+    track_record_total: 0,
+    track_record_listed: 0,
+    track_record_no_token: 0,
+    track_record_risk_raised: 0,
     score_failed: 0,
     source_failed: 0,
     ingest_failed: 0,
