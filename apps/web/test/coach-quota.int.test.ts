@@ -60,7 +60,8 @@ if (!keys && process.env.REQUIRE_LOCAL_STACK === "1") {
 const opts = { auth: { autoRefreshToken: false, persistSession: false } };
 
 describe.skipIf(!keys)("coach_begin under concurrency (0017)", () => {
-  const admin: SupabaseClient = createClient(keys!.url, keys!.serviceKey, opts);
+  // describe.skipIf still runs this body to collect the tests, so nothing here may touch `keys` when the stack is down.
+  const admin = (keys ? createClient(keys.url, keys.serviceKey, opts) : null) as SupabaseClient;
   const userIds: string[] = [];
 
   afterAll(async () => {
