@@ -54,6 +54,10 @@ export const auth = {
   errors: {
     invalidCredentials: "Email atau password salah.",
     rateLimited: "Terlalu banyak percobaan login. Tunggu sebentar, lalu coba lagi.",
+    /** 5 wrong attempts under one email or one address (migration 0019): blocked for 15 minutes. */
+    throttled: "Udah 5 kali salah login. Coba lagi 15 menit lagi.",
+    captchaNeeded: "Selesaikan verifikasi \"Aku bukan robot\" dulu, lalu login lagi.",
+    captchaLabel: "Verifikasi",
     network: "Gak bisa nyambung ke server login. Cek koneksi kamu, lalu coba lagi.",
   },
 };

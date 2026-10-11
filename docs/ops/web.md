@@ -291,3 +291,19 @@ output identifies a member: the profiles are made up and emails, wallet addresse
 
 The controller removes the label at deploy; until then `copy.ts` keeps it. The capacity numbers (failures, p50 and
 p95 per model) are read in the same review.
+
+## Login throttle and captcha (owner 2026-10-11)
+
+**Throttle (on as soon as migration 0019 is applied).** 5 wrong passwords for one email inside 15 minutes block that
+email for the rest of the window, even with the right password; one client address has a looser limit of 30 (offices and
+mobile carriers share an address). Only keyed hashes are stored (`login_attempts`: HMAC of the email and of the address,
+never the values). `LOGIN_THROTTLE_SECRET` (optional, server only) is the HMAC key; without it the anon key is used. If the
+throttle's RPC fails the login still goes through (fail open).
+
+**Captcha (Cloudflare Turnstile), needs two settings, in this order** or logins break:
+1. Create a Turnstile widget in Cloudflare (free). Note the site key and the secret key.
+2. Vercel env: set `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (the site key, public) and redeploy. The login form then shows the
+   box and requires its token.
+3. Supabase Dashboard, Authentication, Attack Protection: enable captcha, provider Turnstile, paste the secret key.
+   Until step 3 Supabase ignores the token; if step 3 comes before step 2, every login fails (no token sent).
+The secret key never goes into this repo or the web env, only into the Supabase dashboard.

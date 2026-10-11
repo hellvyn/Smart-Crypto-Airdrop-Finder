@@ -1,3 +1,5 @@
+import { LoginCaptcha } from "@/components/auth/LoginCaptcha";
+import { captchaSiteKey } from "@/lib/captcha";
 import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { getUser } from "@/lib/auth";
@@ -21,7 +23,7 @@ export default async function LoginPage({
   return (
     <>
       <h1>{auth.heading}</h1>
-      <AuthForm action={logIn} submitLabel={auth.submit}>
+      <AuthForm action={logIn} submitLabel={auth.submit} captcha={captchaSiteKey() ? <LoginCaptcha siteKey={captchaSiteKey()!} /> : null}>
         <input type="hidden" name="next" value={next} />
         <label>
           {auth.email}
