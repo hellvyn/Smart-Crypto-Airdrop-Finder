@@ -1874,6 +1874,34 @@ describe("runDaily RDAP and crt.sh pacing", () => {
     expect(stats.domain_age_ran).toBe(30);
   });
 
+  it("handles a crt.sh throw at once, while RDAP is still working, and rethrows it from the stage", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const net = timed({ rdap: () => ({ status: 404, body: "" }) });
+      let crtshCalls = 0;
+      const http: Http = {
+        ...net.http,
+        get: async (url) => {
+          if (url.startsWith(CRT) && ++crtshCalls === 1) throw new Error("crt.sh client broke");
+          // RDAP keeps working in real time (10 ms a request) after the first crt.sh call has thrown.
+          if (url.startsWith(RDAP)) await new Promise((r) => setTimeout(r, 10));
+          return net.http.get(url);
+        },
+      };
+      const { deps } = setup({ config });
+      await expect(runDaily({ ...deps, http, sleep: net.sleep, now: net.now }, config)).rejects.toThrow("crt.sh client broke");
+      // Give Node a turn to report anything left unhandled.
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(unhandled).toEqual([]);
+      expect(net.rdapStarts).toHaveLength(3);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("leaves no RDAP or crt.sh request running after the score stage fails", async () => {
     const net = timed({ rdap: () => ({ status: 404, body: "" }) });
     const http: Http = {

@@ -23,7 +23,6 @@ export const GOPLUS_RETRY_MS = 5000;
  */
 export const GOPLUS_MIN_INTERVAL_MS = 1500;
 
-
 function bodyCode(body: string): unknown {
   try {
     return (JSON.parse(body) as { code?: unknown } | null)?.code;
