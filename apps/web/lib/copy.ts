@@ -185,6 +185,9 @@ export const list = {
   /** The card's logo (owner request 2026-10-11): alt text, and the credit the unavatar.io free plan asks for. */
   logoAlt: (name: string) => `Logo ${name}`,
   logoCredit: "Logo: unavatar.io",
+  /** Under the grid, once, when a card on the page has an X avatar logo: the followable unavatar.io link (free plan). */
+  logoXPrefix: "Logo X dari ",
+  logoXLink: "unavatar.io",
   /** Signal badges of a row (#41). Only a verified signal gets "✓"; AlphaDrops backers are what AlphaDrops reports. */
   signals: {
     vc: (investor: string) => `VC: ${investor} ✓`,

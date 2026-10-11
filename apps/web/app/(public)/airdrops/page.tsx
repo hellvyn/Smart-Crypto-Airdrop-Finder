@@ -75,6 +75,8 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
   // The "Modal:" option is not one of these: it has its own row, and "Hapus filter" keeps it.
   const hasFilters = !!(filters.status?.length || filters.risk?.length || selectedChain || filters.worth?.length);
   const sort = tab === "ended" ? list.sort.ended : member ? list.sort.member : list.sort.visitor;
+  // The unavatar.io free plan needs a followable link, so the credit is a plain link below the grid, not a card line.
+  const hasXAvatarLogo = items.some((item) => item.logoSource === "x_avatar");
 
   return (
     <>
@@ -187,6 +189,14 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
           ))}
         </div>
       )}
+      {hasXAvatarLogo ? (
+        <p className="muted" data-testid="unavatar-attribution">
+          {list.logoXPrefix}
+          <a href="https://unavatar.io" target="_blank" rel="noopener">
+            {list.logoXLink}
+          </a>
+        </p>
+      ) : null}
       <Pagination page={page} pageSize={pageSize} total={total} tab={tab} filters={filters} />
     </>
   );
