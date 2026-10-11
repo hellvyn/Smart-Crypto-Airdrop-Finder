@@ -10,11 +10,10 @@ import { StepsList } from "./detail/StepsList";
 import { WhyListed } from "./detail/WhyListed";
 import { Stamp, Tag, WorthBadge } from "@/components/ui";
 import { detail as copy, labels, landing, list } from "@/lib/copy";
-import { isCheckedKind, sourceName, wibStampDay } from "@/lib/detail";
+import { formatCalendarDay, isCheckedKind, sourceName, wibStampDay } from "@/lib/detail";
 import {
   checkedLabel,
   deadlineKindLabel,
-  formatDay,
   isCheckFrozen,
   isCheckStale,
   precisionLabel,
@@ -37,7 +36,7 @@ function Summary({ project }: { project: ProjectDetail }) {
         <li>{project.chains.length > 0 ? copy.chains(project.chains) : copy.chainUnknown}</li>
         {project.deadlines.map((d, i) => (
           <li key={`d-${i}`}>
-            {s.deadline(deadlineKindLabel(d.kind), d.date ? formatDay(d.date) : s.dateUnknown, precisionLabel(d.precision))}
+            {s.deadline(deadlineKindLabel(d.kind), d.date ? formatCalendarDay(d.date) : s.dateUnknown, precisionLabel(d.precision))}
           </li>
         ))}
         {ownLinks.map((l) => {
@@ -126,7 +125,6 @@ export function ProjectDetailView({ project, member, now }: { project: ProjectDe
           <SafetyBox
             risk={risk}
             links={project.links}
-            sourceUrls={project.sourceUrls}
             member={member}
             scamFlags={member ? project.scamFlags : null}
           />

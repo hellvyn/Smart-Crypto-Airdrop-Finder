@@ -333,7 +333,6 @@ export async function scoreProjects(
         aiFlags: aiFlagsFromAnalyses(scam?.result ?? null, contradictions?.result ?? null),
         claimLinks: claimLinks.byProject.get(project.id) ?? [],
         officialDomainCount,
-        documentsRead: project.documentCount,
       };
       const assessment = assessRisk(input);
       await repo.saveRiskAssessment(project.id, assessment, now);

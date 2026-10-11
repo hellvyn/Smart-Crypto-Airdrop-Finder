@@ -2,7 +2,7 @@
 // `RiskCheck.detail` from its own input, never with a made-up number. `CHECK_OF_REASON` ties every warning back to the
 // check that raised it, so a check can be shown as "found something" (public) without its member-only details (#54).
 import { describe, expect, it } from "vitest";
-import { CHECK_OF_REASON, assessRisk, storedAnalystSchema } from "../src/index.js";
+import { CHECK_OF_REASON, assessRisk, detectDangerousAsks, findDangerousAskSentences, storedAnalystSchema } from "../src/index.js";
 import type { CheckId, RiskInput } from "../src/index.js";
 
 const input: RiskInput = {
@@ -35,7 +35,6 @@ const input: RiskInput = {
     { url: "https://late.nebula.example/", status: "unchecked" },
   ],
   officialDomainCount: 1240,
-  documentsRead: 4,
 };
 
 const detailOf = (i: RiskInput, id: CheckId) => assessRisk(i).checks.find((c) => c.id === id)?.detail;
@@ -55,15 +54,19 @@ describe("assessRisk check details (#53)", () => {
     expect(detailOf(i, "domain_age")).toEqual({ domain: null, ageDays: null });
   });
 
-  it("counts the official domains lookalike was compared with, and the documents the scanner read", () => {
+  it("counts the official domains lookalike was compared with", () => {
     expect(detailOf(input, "lookalike")).toEqual({ compared: 1240 });
-    expect(detailOf(input, "dangerous_asks")).toEqual({ sources: 4 });
+  });
+
+  it("counts the distinct sources the scanner read, not their documents (one channel is one source)", () => {
+    expect(detailOf(input, "dangerous_asks")).toEqual({ sources: 3 });
+    const oneChannel: RiskInput = { ...input, project: { ...input.project, sourceCount: 1 } };
+    expect(detailOf(oneChannel, "dangerous_asks")).toEqual({ sources: 1 });
   });
 
   it("leaves a count it was not given as null instead of guessing", () => {
-    const { officialDomainCount: _c, documentsRead: _d, ...without } = input;
+    const { officialDomainCount: _c, ...without } = input;
     expect(detailOf(without, "lookalike")).toEqual({ compared: null });
-    expect(detailOf(without, "dangerous_asks")).toEqual({ sources: null });
   });
 
   it("counts the domains GoPlus answered plus the claim links it checked, and the domains on the list", () => {
@@ -168,5 +171,19 @@ describe("storedAnalystSchema", () => {
   it("still refuses a result that is not an Analyst answer", () => {
     expect(storedAnalystSchema.safeParse({ ...stored, verdict: "aman" }).success).toBe(false);
     expect(storedAnalystSchema.safeParse({ flags: [] }).success).toBe(false);
+  });
+});
+
+// The project page tells readers which warnings the scanner skips (apps/web/lib/copy.ts, detail.safety.details): the
+// example there must really be skipped, and an Indonesian "jangan" sentence must stay flagged (the scanner knows
+// English negations only, on purpose: "jangan lupa kirim seed phrase" is an ask).
+describe("the warning example the project page quotes", () => {
+  it('does not count "never share your seed phrase"', () => {
+    expect(detectDangerousAsks(["never share your seed phrase"])).toEqual([]);
+    expect(findDangerousAskSentences("Stay alert. never share your seed phrase.")).toEqual([]);
+  });
+
+  it('still flags "jangan share seed phrase"', () => {
+    expect(detectDangerousAsks(["jangan share seed phrase"]).map((r) => r.code)).toEqual(["asks_secret"]);
   });
 });

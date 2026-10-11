@@ -34,7 +34,8 @@ function keyCard(id: KeyId, c: DetailCheck | undefined, computedAt: string): { r
     }
     case "domain_age": {
       const days = num(d.ageDays);
-      if (days === null) return { result, detail: null, tone };
+      // A young domain was found (any link domain, a claim portal's too): never show the official domain's age then.
+      if (days === null || c.flagged) return { result, detail: null, tone };
       return { result: domainAge(days), detail: s.details.domain_age(registeredOn(computedAt, days)), tone };
     }
     case "phishing_list": {
@@ -76,13 +77,11 @@ function Reasons({ reasons }: { reasons: RiskReason[] }) {
 export function SafetyBox({
   risk,
   links,
-  sourceUrls,
   member,
   scamFlags,
 }: {
   risk: ProjectDetail["risk"];
   links: DetailLink[];
-  sourceUrls: string[];
   member: boolean;
   scamFlags: ScamFlag[] | null;
 }) {
@@ -99,7 +98,7 @@ export function SafetyBox({
         </div>
       ) : (
         <>
-          <Strip numbers={safetyStrip(risk, links, sourceUrls)} />
+          <Strip numbers={safetyStrip(risk, links)} />
           <div className="ui-section-body detail-safety-body">
             <p className="muted">{coverageLine(risk.checks.map(({ id, ran }) => ({ id, ran })))}</p>
             <Reasons reasons={risk.reasons} />
@@ -192,12 +191,15 @@ export function SafetyBox({
 }
 
 function Strip({ numbers }: { numbers: ReturnType<typeof safetyStrip> }) {
-  const items = [
-    [s.strip.layers, numbers.layers],
-    [s.strip.sources, numbers.sources],
-    [s.strip.links, numbers.links],
-    [s.strip.redFlags, numbers.redFlags],
-  ] as const;
+  // Sources read is left out when no check said how many distinct sources there were (rows stored before details).
+  const items = (
+    [
+      [s.strip.layers, numbers.layers],
+      [s.strip.sources, numbers.sources],
+      [s.strip.links, numbers.links],
+      [s.strip.redFlags, numbers.redFlags],
+    ] as const
+  ).filter((item): item is readonly [string, number] => item[1] !== null);
   return (
     <ul className="detail-strip" aria-label={s.stripLabel}>
       {items.map(([label, value]) => (

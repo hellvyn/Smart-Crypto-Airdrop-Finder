@@ -328,7 +328,7 @@ test("the security check shows a phishing claim link as a warning, never as a li
   await expect(page.getByText(/Easy/)).toHaveCount(0);
 
   // Deadlines, steps and a non-http link are rendered, but the javascript: URL is plain text, never an anchor.
-  await expect(section(page, "Ringkasan").getByText(/Snapshot: \d{4}-\d{2}-\d{2} \(tanggal tepat\)/)).toBeVisible();
+  await expect(section(page, "Ringkasan").getByText(/^Snapshot: \d{1,2} [A-Z][a-z]{2} \d{4} \(tanggal tepat\)$/)).toBeVisible();
   await expect(page.getByText("Bridge to the main chain")).toBeVisible();
   await expect(page.locator("a[href^='javascript']")).toHaveCount(0);
   await expect(page.getByText("javascript:alert(1)")).toBeVisible();

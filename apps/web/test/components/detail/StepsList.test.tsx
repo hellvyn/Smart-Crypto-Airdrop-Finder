@@ -64,4 +64,16 @@ describe("StepsList", () => {
     expect(container.querySelector("b, a")).toBeNull();
     expect(screen.getByText("<b>Go</b> https://x.example")).toBeTruthy();
   });
+
+  it("matches a link's host in a step only as a whole host, never inside a longer one", () => {
+    const links = [{ url: "https://x.io/claim", kind: "claim", status: "official" as const }];
+    render(<StepsList steps={[{ text: "Swap di max.io dan x.io.evil.example tiap hari.", cadence: "daily" }]} links={links} />);
+    expect(screen.queryByText("✓ Official domain")).toBeNull();
+    cleanup();
+    render(<StepsList steps={[{ text: "Claim lewat x.io, lalu cek points.", cadence: "once" }]} links={links} />);
+    expect(screen.getByText("✓ Official domain")).toBeTruthy();
+    cleanup();
+    render(<StepsList steps={[{ text: "Buka https://x.io/claim.", cadence: "once" }]} links={links} />);
+    expect(screen.getByText("✓ Official domain")).toBeTruthy();
+  });
 });

@@ -100,7 +100,7 @@ export interface ProjectDetail extends ProjectListItem {
   steps: { text: string; cadence: Cadence }[];
   /** v3 extraction facts (key_parameter:*, source_rating:*, latest_update, claimed_backer, capital_required). */
   facts: EvidenceRow[];
-  /** Every other evidence row (status quotes and the like). */
+  /** The `status` evidence rows (newest 100): the quotes of sources that disagree on the status. */
   evidence: EvidenceRow[];
   /** Distinct source document URLs among the evidence: the only URLs an AI `source_url` may link to. */
   sourceUrls: string[];

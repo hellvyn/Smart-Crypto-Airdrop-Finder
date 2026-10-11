@@ -13,12 +13,20 @@ function hostOf(url: string): string | null {
   }
 }
 
+/**
+ * Whether `text` names `host` as a whole host: not inside a longer one ("x.io" is not in "max.io" or in
+ * "x.io.evil.example"). A sentence's full stop or a path after the host still counts.
+ */
+function namesHost(text: string, host: string): boolean {
+  const escaped = host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^a-z0-9.-])${escaped}(?![a-z0-9-]|\\.[a-z0-9])`, "i").test(text);
+}
+
 /** The project's claim/app links whose host the step names, so the step shows each one's check status (#42). */
 function linksOf(text: string, links: DetailLink[]): DetailLink[] {
-  const lower = text.toLowerCase();
   return links.filter((l) => {
     const host = isCheckedKind(l.kind) ? hostOf(l.url) : null;
-    return host !== null && lower.includes(host);
+    return host !== null && namesHost(text, host);
   });
 }
 

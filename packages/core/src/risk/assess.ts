@@ -21,7 +21,7 @@ export type CheckId =
  * One check of an assessment. `detail` says what the check looked at, for the project page's security check block
  * (#53): only the checks below carry one, and a count the check was not given is null, never a guess. Rows stored
  * before details existed have none.
- * - `dangerous_asks` `{ sources }`: documents whose text was scanned;
+ * - `dangerous_asks` `{ sources }`: distinct sources (`source_key`) whose text was scanned, one channel being one;
  * - `lookalike` `{ compared }`: official domains in the database the link domains were compared with;
  * - `domain_age` `{ domain, ageDays }`: the main official domain and its age (null when unknown);
  * - `phishing_list` `{ checked, hits }`: domains GoPlus answered plus claim/app links checked, and domains listed;
@@ -102,8 +102,6 @@ export interface RiskInput {
   claimLinks?: ClaimLink[];
   /** Distinct official domains of every project in the database, for `lookalike.detail.compared`. Missing = unknown. */
   officialDomainCount?: number | null;
-  /** Documents among the project's evidence (whose text was scanned), for `dangerous_asks.detail.sources`. */
-  documentsRead?: number | null;
 }
 
 export interface RiskAssessment {
@@ -390,7 +388,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
   const linksChecked = (input.claimLinks ?? []).filter((l) => l.status !== "unchecked").length;
   const domainsAnswered = Object.values(input.phishingFlags).filter((f) => f !== null && f !== undefined).length;
   const checks: RiskCheck[] = [
-    { id: "dangerous_asks", ran: true, detail: { sources: input.documentsRead ?? null } },
+    { id: "dangerous_asks", ran: true, detail: { sources: project.sourceCount } },
     {
       id: "phishing_list",
       ran: anyNonNull(input.phishingFlags),

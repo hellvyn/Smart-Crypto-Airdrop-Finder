@@ -87,18 +87,22 @@ export function linkableSource(url: string, sourceUrls: string[]): string | null
   return sourceUrls.includes(url) ? url : null;
 }
 
-/** The numbers of the security check strip (#53). */
+/**
+ * The numbers of the security check strip (#53). "Source dibaca" counts distinct sources (`source_key`: one Telegram
+ * channel is one source), as the scanner or the cross-check recorded them; null when neither did (old rows), never a
+ * count of documents.
+ */
 export function safetyStrip(
   risk: { reasons: RiskReason[]; checks: DetailCheck[] },
   links: DetailLink[],
-  sourceUrls: string[],
-): { layers: number; sources: number; links: number; redFlags: number } {
+): { layers: number; sources: number | null; links: number; redFlags: number } {
   const checkedKind = links.filter((l) => isCheckedKind(l.kind));
-  const scanned = risk.checks.find((c) => c.id === "dangerous_asks")?.detail?.sources;
+  const sourcesOf = (id: CheckId) => risk.checks.find((c) => c.id === id)?.detail?.sources;
+  const scanned = [sourcesOf("dangerous_asks"), sourcesOf("corroboration")].find((n) => typeof n === "number");
   return {
     // Every check that ran (the AI scam review included), plus the link check when the project has claim/app links.
     layers: risk.checks.filter((c) => c.ran).length + (checkedKind.length > 0 ? 1 : 0),
-    sources: typeof scanned === "number" ? scanned : sourceUrls.length,
+    sources: typeof scanned === "number" ? scanned : null,
     links: checkedKind.filter((l) => l.status !== null && l.status !== "unchecked").length,
     // An AI scam flag reaches the reasons as `ai_scam_pattern`, so it is counted there, for visitors and members alike.
     redFlags: risk.reasons.filter((r) => r.severity !== "info").length,

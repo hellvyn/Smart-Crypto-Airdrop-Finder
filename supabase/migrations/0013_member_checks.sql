@@ -8,10 +8,11 @@
 -- Every view anon already read keeps working: project_list (0003) reads risk_assessments.level only, and
 -- public_list.key_checks_ran (0012) goes through the security definer function key_checks_ran().
 
--- A column-level REVOKE does not take away a table-level grant, so anon loses the table-level SELECT and gets back every
--- column except checks. A column added later is not readable by anon unless it is listed here. Nothing else changes:
--- 0001 already revoked the writes; REFERENCES and TRIGGER stay as Supabase's default privileges left them.
-revoke select on public.risk_assessments from anon;
+-- A column-level REVOKE does not take away a table-level grant, so anon loses every privilege on the table (like
+-- curations in 0011: the SELECT, and the REFERENCES and TRIGGER Supabase's default privileges left; 0001 already
+-- revoked the writes) and gets back SELECT on every column except checks. A column added later is not readable by anon
+-- unless it is listed here.
+revoke all on public.risk_assessments from anon;
 grant select (id, project_id, level, points, reasons, computed_at, seq) on public.risk_assessments to anon;
 
 -- One row per assessed project, from its latest assessment (greatest computed_at, ties broken by greatest seq).

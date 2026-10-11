@@ -274,7 +274,7 @@ export const detail = {
     },
     details: {
       dangerous_asks: (sources: number) =>
-        `Semua teks dari ${sources} source di-scan, termasuk tiap step garap. Kalimat peringatan kayak "jangan share seed phrase" gak dihitung.`,
+        `Semua teks dari ${sources} source di-scan, termasuk tiap step garap. Kalimat peringatan kayak "never share your seed phrase" gak dihitung.`,
       lookalike: (compared: string) => `Link project ini dibandingin sama ${compared} domain official di database kami.`,
       domain_age: (date: string) =>
         `Terdaftar ${date}. Domain official di bawah 90 hari, atau link claim di bawah 30 hari, langsung bikin risiko naik.`,

@@ -115,8 +115,6 @@ export interface ProjectForScoring extends ProjectRow {
   links: { url: string; kind: string }[];
   /** Number of distinct document source keys among the project's evidence. */
   sourceCount: number;
-  /** Number of distinct documents among the project's evidence (the texts the risk scanner read). */
-  documentCount: number;
   /** Distinct `source_kind`s of the documents among the project's evidence, sorted. */
   sourceKinds: SourceKind[];
   /** Name of the `lookalikeOf` project (null when there is none). */

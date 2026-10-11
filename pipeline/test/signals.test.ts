@@ -36,7 +36,6 @@ function project(overrides: Partial<ProjectForScoring> = {}): ProjectForScoring 
     deadlines: [],
     links: [],
     sourceCount: 0,
-    documentCount: 0,
     sourceKinds: [],
     lookalikeOfName: null,
     lookalikeOfDomains: [],

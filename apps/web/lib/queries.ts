@@ -271,14 +271,21 @@ export async function listChains(db: SupabaseClient): Promise<string[]> {
 
 // ---- Project page (Plan 6 Task 5; spec §7.2, #45, #53, #54) ----
 
-/** v3 extraction facts shown in their own sections (curation spec §4.6): the rest of the evidence stays as it is. */
-function isFact(field: string): boolean {
-  return (
-    field.startsWith("key_parameter:") ||
-    field.startsWith("source_rating:") ||
-    ["latest_update", "claimed_backer", "capital_required"].includes(field)
-  );
-}
+/**
+ * v3 extraction facts shown in their own sections (curation spec §4.6), read with their own query so no other
+ * evidence can push them out of a row window.
+ */
+const FACT_FILTER =
+  "field.in.(latest_update,claimed_backer,capital_required),field.like.key_parameter:*,field.like.source_rating:*";
+/** Row windows of the evidence queries, newest first: status quotes, facts, and the source URL allow-list. */
+const STATUS_QUOTES_LIMIT = 100;
+const FACTS_LIMIT = 200;
+const SOURCE_URLS_LIMIT = 1000;
+/**
+ * A URL `.in()` can send: postgrest-js quotes a value with `,` or parentheses but does not escape `"` or `\` inside
+ * it. A link URL with any of these is left out of the `link_checks` lookup, so it reads as not checked.
+ */
+const IN_SAFE = /^[^",()\\]*$/;
 
 const CADENCES: readonly Cadence[] = ["daily", "weekly", "once"];
 const LINK_STATUSES: readonly LinkCheckStatus[] = ["official", "different_domain", "phishing", "unchecked"];
@@ -361,7 +368,7 @@ export async function getProjectDetail(
       .order("created_at", { ascending: false }).order("seq", { ascending: false }).limit(1);
   const none = Promise.resolve({ data: null, error: null });
 
-  const [risks, publicChecks, curations, signals, analyst, scam, contradictions, deadlines, tasks, links, evidence] =
+  const [risks, publicChecks, curations, signals, analyst, scam, contradictions, deadlines, tasks, links, statusQuotes, facts, sources] =
     await Promise.all([
       db.from("risk_assessments")
         .select(member ? "level, reasons, checks, computed_at, seq" : "level, reasons, computed_at, seq")
@@ -381,8 +388,12 @@ export async function getProjectDetail(
       db.from("tasks").select("description, text_id, cadence, position").eq("project_id", id)
         .order("position", { ascending: true }).order("document_id", { ascending: true }),
       db.from("links").select("url, kind").eq("project_id", id),
-      db.from("evidence").select("field, value, quote, source_url, at, seq").eq("project_id", id)
-        .order("at", { ascending: false }).order("seq", { ascending: false }).limit(200),
+      db.from("evidence").select("field, value, quote, source_url, at, seq").eq("project_id", id).eq("field", "status")
+        .order("at", { ascending: false }).order("seq", { ascending: false }).limit(STATUS_QUOTES_LIMIT),
+      db.from("evidence").select("field, value, quote, source_url, at, seq").eq("project_id", id).or(FACT_FILTER)
+        .order("at", { ascending: false }).order("seq", { ascending: false }).limit(FACTS_LIMIT),
+      db.from("evidence").select("source_url").eq("project_id", id)
+        .order("at", { ascending: false }).order("seq", { ascending: false }).limit(SOURCE_URLS_LIMIT),
     ]);
   throwIf(risks.error, "risk");
   throwIf(publicChecks.error, "risk checks");
@@ -394,10 +405,12 @@ export async function getProjectDetail(
   throwIf(deadlines.error, "deadlines");
   throwIf(tasks.error, "tasks");
   throwIf(links.error, "links");
-  throwIf(evidence.error, "evidence");
+  throwIf(statusQuotes.error, "evidence");
+  throwIf(facts.error, "evidence");
+  throwIf(sources.error, "evidence");
 
   const linkRows = ((links.data ?? []) as Record<string, unknown>[]).map((l) => ({ url: String(l.url), kind: String(l.kind) }));
-  const checkedUrls = linkRows.filter((l) => isCheckedKind(l.kind)).map((l) => l.url);
+  const checkedUrls = linkRows.filter((l) => isCheckedKind(l.kind) && IN_SAFE.test(l.url)).map((l) => l.url);
   const linkChecks = checkedUrls.length > 0
     ? await db.from("link_checks").select("url, status").in("url", checkedUrls)
     : { data: [], error: null };
@@ -440,13 +453,14 @@ export async function getProjectDetail(
     return { ...l, status: status !== undefined && LINK_STATUSES.includes(status) ? status : null };
   });
 
-  const evidenceRows: EvidenceRow[] = ((evidence.data ?? []) as Record<string, unknown>[]).map((e) => ({
-    field: String(e.field),
-    value: String(e.value),
-    quote: String(e.quote),
-    sourceUrl: String(e.source_url),
-    at: String(e.at),
-  }));
+  const evidenceRows = (data: unknown): EvidenceRow[] =>
+    ((data ?? []) as Record<string, unknown>[]).map((e) => ({
+      field: String(e.field),
+      value: String(e.value),
+      quote: String(e.quote),
+      sourceUrl: String(e.source_url),
+      at: String(e.at),
+    }));
 
   return {
     id,
@@ -477,9 +491,9 @@ export async function getProjectDetail(
       text: typeof t.text_id === "string" && t.text_id.trim() !== "" ? t.text_id : String(t.description),
       cadence: CADENCES.includes(t.cadence as Cadence) ? (t.cadence as Cadence) : "once",
     })),
-    facts: evidenceRows.filter((e) => isFact(e.field)),
-    evidence: evidenceRows.filter((e) => !isFact(e.field)),
-    sourceUrls: [...new Set(evidenceRows.map((e) => e.sourceUrl))],
+    facts: evidenceRows(facts.data),
+    evidence: evidenceRows(statusQuotes.data),
+    sourceUrls: [...new Set(((sources.data ?? []) as Record<string, unknown>[]).map((e) => String(e.source_url)))],
     deadlines: deadlineRows,
     links: detailLinks,
     claimOpenChecked: claimOpenChecked(deadlineRows, detailLinks, utcToday(now)),

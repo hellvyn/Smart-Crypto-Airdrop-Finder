@@ -527,7 +527,6 @@ export class SupabaseRepo implements PipelineRepo {
         field: string;
         value: string;
         quote: string;
-        document_id: string;
         documents: { source_key: string; source_kind: SourceKind } | null;
       }[];
       lookalike: { name: string; official_domains: string[] } | null;
@@ -544,7 +543,7 @@ export class SupabaseRepo implements PipelineRepo {
         .from("projects")
         .select(
           `${PROJECT_COLUMNS}, tasks(description, cadence), deadlines(kind, date, precision), links(url, kind), ` +
-            "evidence(field, value, quote, document_id, documents(source_key, source_kind)), lookalike:lookalike_of(name, official_domains), " +
+            "evidence(field, value, quote, documents(source_key, source_kind)), lookalike:lookalike_of(name, official_domains), " +
             "project_signals(kind, value, source, verified, observed_at)",
         );
       const filtered =
@@ -575,7 +574,6 @@ export class SupabaseRepo implements PipelineRepo {
       deadlines: r.deadlines.map((d) => ({ kind: d.kind, date: d.date, precision: d.precision })),
       links: r.links.map((l) => ({ url: l.url, kind: l.kind })),
       sourceCount: new Set(r.evidence.flatMap((e) => (e.documents ? [e.documents.source_key] : []))).size,
-      documentCount: new Set(r.evidence.map((e) => e.document_id)).size,
       // Byte-order sort, same as MemoryRepo.
       sourceKinds: [...new Set(r.evidence.flatMap((e) => (e.documents ? [e.documents.source_kind] : [])))].sort(),
       lookalikeOfName: r.lookalike?.name ?? null,

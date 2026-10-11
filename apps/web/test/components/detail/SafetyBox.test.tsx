@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { SafetyBox } from "@/components/detail/SafetyBox";
 import type { ProjectDetail } from "@/lib/view";
-import { SOURCE_A, SOURCE_B, allChecks, check, projectDetail } from "../../fixtures/project-detail";
+import { allChecks, check, projectDetail } from "../../fixtures/project-detail";
 
 afterEach(cleanup);
 
@@ -16,7 +16,6 @@ function box(over: { risk?: Partial<Risk> | null; member?: boolean; links?: Proj
     <SafetyBox
       risk={risk}
       links={over.links ?? []}
-      sourceUrls={[SOURCE_A, SOURCE_B]}
       member={over.member ?? false}
       scamFlags={over.scamFlags ?? null}
     />,
@@ -74,9 +73,14 @@ describe("SafetyBox", () => {
     expect(screen.getByText("Analisis AI: teks sumber minta seed phrase.")).toBeTruthy();
   });
 
-  it("falls back to the number of source documents when the scanner did not say how many it read", () => {
+  it("counts distinct sources read, from the cross-check when the scanner did not say, and never documents", () => {
     box({ risk: { checks: allChecks().map((c) => (c.id === "dangerous_asks" ? { ...c, detail: null } : c)) } });
-    expect(strip()["Source dibaca"]).toBe("2");
+    // corroboration counted 3 distinct sources; the 2 source document URLs are not a source count.
+    expect(strip()["Source dibaca"]).toBe("3");
+    cleanup();
+    box({ risk: { checks: allChecks().map((c) => ({ ...c, detail: null })) } });
+    expect(strip()["Source dibaca"]).toBeUndefined();
+    expect(strip()["Lapis cek"]).toBe("7");
   });
 
   it("says which checks could not run", () => {
@@ -109,7 +113,7 @@ describe("SafetyBox", () => {
       "Bersih",
     ]);
     expect(cards.map((c) => c.querySelector("[data-part='detail']")?.textContent)).toEqual([
-      'Semua teks dari 4 source di-scan, termasuk tiap step garap. Kalimat peringatan kayak "jangan share seed phrase" gak dihitung.',
+      'Semua teks dari 4 source di-scan, termasuk tiap step garap. Kalimat peringatan kayak "never share your seed phrase" gak dihitung.',
       "Link project ini dibandingin sama 1.240 domain official di database kami.",
       "Terdaftar 12 Jul 2024. Domain official di bawah 90 hari, atau link claim di bawah 30 hari, langsung bikin risiko naik.",
       "8 domain dan link dicocokin satu-satu ke database phishing.",
@@ -139,6 +143,23 @@ describe("SafetyBox", () => {
     expect(cards[1]?.getAttribute("data-tone")).toBe("warn");
     expect(cards[3]?.querySelector("[data-part='result']")?.textContent).toBe("Gak jalan");
     expect(cards[3]?.getAttribute("data-tone")).toBe("warn");
+  });
+
+  it("says there is a new domain when the age check found one, instead of the official domain's reassuring age", () => {
+    box({
+      risk: {
+        level: "high",
+        reasons: [
+          { code: "new_claim_domain", severity: "high", message: "Link claim claim-x.example bukan domain resmi dan baru didaftarkan 5 hari lalu.", source: "rdap" },
+        ],
+        checks: allChecks().map((c) => (c.id === "domain_age" ? { ...c, flagged: true } : c)),
+      },
+    });
+    const card = screen.getAllByTestId("key-check")[2]!;
+    expect(card.querySelector("[data-part='result']")?.textContent).toBe("Ada domain baru");
+    expect(card.getAttribute("data-tone")).toBe("warn");
+    expect(card.textContent).not.toContain("2 tahun");
+    expect(card.textContent).not.toContain("Terdaftar");
   });
 
   it("lists only the advanced checks that ran, never token_security that did not", () => {

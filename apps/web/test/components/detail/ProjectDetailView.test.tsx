@@ -88,7 +88,7 @@ describe("ProjectDetailView", () => {
     });
     const summary = screen.getByRole("heading", { name: "Ringkasan" }).closest("section")!;
     expect(within(summary).getByText("Chain: ethereum, base")).toBeTruthy();
-    expect(within(summary).getByText("Snapshot: 2026-11-30 (tanggal tepat)")).toBeTruthy();
+    expect(within(summary).getByText("Snapshot: 30 Nov 2026 (tanggal tepat)")).toBeTruthy();
     expect(within(summary).getByText("TGE: tanggal belum diketahui (kuartalnya aja)")).toBeTruthy();
     expect(within(summary).getByRole("link", { name: "nebula.example" }).getAttribute("href")).toBe("https://nebula.example/");
     expect(within(summary).getByText("javascript:alert(1)")).toBeTruthy();

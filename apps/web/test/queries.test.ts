@@ -27,7 +27,7 @@ function fakeDb(results: Result[] | ((rec: Recorded) => Result)) {
       const rec: Recorded = { table, calls: [] };
       recs.push(rec);
       const builder: Record<string, unknown> = {};
-      for (const m of ["select", "in", "contains", "order", "range", "eq", "not", "is", "limit", "gte"]) {
+      for (const m of ["select", "in", "contains", "order", "range", "eq", "not", "is", "limit", "gte", "or"]) {
         builder[m] = (...args: unknown[]) => {
           rec.calls.push([m, ...args]);
           return builder;
@@ -267,9 +267,19 @@ describe("getProjectDetail", () => {
     };
     return fakeDb((rec) => {
       const key = rec.table === "ai_analyses" ? `ai_analyses:${String(kindOf(rec))}` : rec.table;
-      return { data: data[key] ?? [], error: null };
+      const rows = data[key] ?? [];
+      if (rec.table !== "evidence" || !Array.isArray(rows)) return { data: rows, error: null };
+      // Each evidence query gets what its filter asks for: the status quotes, the facts, or every row's source URL.
+      const status = rec.calls.some((c) => c[0] === "eq" && c[1] === "field" && c[2] === "status");
+      const facts = rec.calls.some((c) => c[0] === "or");
+      const isFactField = (f: string) => /^(key_parameter:|source_rating:)|^(latest_update|claimed_backer|capital_required)$/.test(f);
+      const typed = rows as { field: string }[];
+      return { data: status ? typed.filter((r) => r.field === "status") : facts ? typed.filter((r) => isFactField(r.field)) : typed, error: null };
     });
   }
+
+  const evidenceQuery = (recs: Recorded[], match: (calls: Call[]) => boolean) =>
+    recs.find((r) => r.table === "evidence" && match(r.calls))?.calls;
 
   it("never asks for member-only data for a visitor: no checks, no worth or reasons, no Analyst or scam result", async () => {
     const { db: client, recs } = db();
@@ -341,16 +351,37 @@ describe("getProjectDetail", () => {
     expect(d?.signals.map((s) => s.kind)).toEqual(["vc_backer"]);
   });
 
-  it("splits the evidence into facts and the rest, and lists the source documents once each", async () => {
+  it("reads the status quotes, the facts and the source URLs with their own queries and limits", async () => {
     const { db: client, recs } = db();
     const d = await getProjectDetail(client, "demo", { member: false, now: NOW });
-    const ev = recs.find((r) => r.table === "evidence")!;
-    expect(ev.calls.some((c) => c[0] === "not")).toBe(false);
-    expect(ev.calls).toContainEqual(["order", "at", { ascending: false }]);
-    expect(ev.calls).toContainEqual(["order", "seq", { ascending: false }]);
+    const status = evidenceQuery(recs, (calls) => calls.some((c) => c[0] === "eq" && c[1] === "field" && c[2] === "status"));
+    expect(status).toContainEqual(["order", "at", { ascending: false }]);
+    expect(status).toContainEqual(["order", "seq", { ascending: false }]);
+    expect(status).toContainEqual(["limit", 100]);
+    // Facts never share a window with other evidence, so no number of status rows can push them out.
+    const facts = evidenceQuery(recs, (calls) => calls.some((c) => c[0] === "or"));
+    expect(facts).toContainEqual([
+      "or",
+      "field.in.(latest_update,claimed_backer,capital_required),field.like.key_parameter:*,field.like.source_rating:*",
+    ]);
+    expect(facts).toContainEqual(["limit", 200]);
+    const urls = evidenceQuery(recs, (calls) => calls.some((c) => c[0] === "select" && c[1] === "source_url"));
+    expect(urls).toContainEqual(["limit", 1000]);
     expect(d?.facts.map((f) => f.field)).toEqual(["claimed_backer", "source_rating:difficulty"]);
     expect(d?.evidence.map((e) => e.field)).toEqual(["status"]);
     expect(d?.sourceUrls).toEqual(["https://s.example/1", "https://s.example/2"]);
+  });
+
+  it("leaves a link whose URL PostgREST cannot quote out of the check lookup, so it reads as not checked", async () => {
+    const odd = ['https://a.example/x"y', "https://b.example/a,b", "https://c.example/(c)"];
+    const { db: client, recs } = db({
+      links: [{ url: "https://claim.demo.example/", kind: "claim" }, ...odd.map((url) => ({ url, kind: "claim" }))],
+      link_checks: [{ url: "https://claim.demo.example/", status: "official" }],
+    });
+    const d = await getProjectDetail(client, "demo", { member: false, now: NOW });
+    expect(recs.find((r) => r.table === "link_checks")?.calls).toContainEqual(["in", "url", ["https://claim.demo.example/"]]);
+    expect(d?.links.map((l) => l.status)).toEqual(["official", null, null, null]);
+    expect(d?.claimOpenChecked).toBe(false);
   });
 
   it("returns null for an unknown slug", async () => {

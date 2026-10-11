@@ -303,10 +303,8 @@ export class MemoryRepo implements PipelineRepo {
       if (p.lastSeen.getTime() < cutoff && !(await this.scoredOutsideWindow(p, cutoff, endedSince))) continue;
       const sourceKeys = new Set<string>();
       const sourceKinds = new Set<SourceKind>();
-      const documentIds = new Set<string>();
       for (const e of this.evidence) {
         if (e.projectId !== p.id) continue;
-        documentIds.add(e.documentId);
         const d = this.documents.get(e.documentId);
         if (d) {
           sourceKeys.add(d.sourceKey);
@@ -329,7 +327,6 @@ export class MemoryRepo implements PipelineRepo {
           .map((d) => ({ kind: d.kind, date: d.date, precision: d.precision })),
         links: this.links.filter((l) => l.projectId === p.id).map((l) => ({ url: l.url, kind: l.kind })),
         sourceCount: sourceKeys.size,
-        documentCount: documentIds.size,
         sourceKinds: [...sourceKinds].sort(compareText),
         lookalikeOfName: other?.name ?? null,
         lookalikeOfDomains: other ? [...other.officialDomains] : [],

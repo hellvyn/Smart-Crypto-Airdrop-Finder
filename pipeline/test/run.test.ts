@@ -1339,14 +1339,14 @@ describe("runDaily domain check coverage", () => {
     return { http, gets };
   }
 
-  it("records what the checks looked at: official domains compared, documents read, the domain's age (#53)", async () => {
+  it("records what the checks looked at: official domains compared, sources read, the domain's age (#53)", async () => {
     const { repo, deps, config } = setup();
     await runDaily(deps, config);
     const checks = (await latestRisk(repo, "ink"))?.checks ?? [];
     const detail = (id: string) => checks.find((c) => c.id === id)?.detail;
     // DeepBook, Ink and Hyperdrive Lend: one official domain each.
     expect(detail("lookalike")).toEqual({ compared: 3 });
-    // The Ink page and the Telegram message that mentions Ink.
+    // Two distinct sources: the airdrops.io page and the Telegram channel.
     expect(detail("dangerous_asks")).toEqual({ sources: 2 });
     // Registered 2020-01-01 (RDAP), checked on 2026-10-10.
     expect(detail("domain_age")).toEqual({ domain: "inkonchain.com", ageDays: 2474 });
