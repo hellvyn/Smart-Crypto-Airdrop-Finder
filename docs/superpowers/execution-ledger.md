@@ -315,3 +315,8 @@ Ruling: AlphaDrops is capped at 120 requests per run — two caps that were neve
 - G4-4d merged. Tests: core 439, pipeline 585, web 352 unit · typecheck ok · pgTAP 279 · e2e 74/74.
 - G4-4e1 started: P5.T12 ∥ P5.T10
 - OWNER DECISION 2026-10-11: AlphaDrops raise pages are capped at 6 per run, following spec §15.1 (~42 per week). This replaces my T11 ruling (40 per run). Done as FX5 in 4e2, in parallel with P5.T13.
+- OWNER DECISION 2026-10-11 (#60): no self-service password change. The G1 "Ganti password" form is removed in FX6 (4e2). The parked "revoke other sessions after a password change" item is moot.
+- OWNER DELEGATION 2026-10-11: the heatmap rule, VC access and the eval/legit review are left to the controller.
+- Ruling (#59): keep the G3 heatmap rule (the window always holds today, and streak is counted from checks). The spec §14 and decision table were updated — a frozen tracker defeats #39 — costs one core function if ever reversed.
+- Ruling: keep `VC_LIST` empty until the portfolio pages can be checked. The owner action stays documented (allow the 15 hosts or run `scripts/vc-portfolio-check.ts` on an open network) — no verified badge from an unread page — costs the `vc_backer` signal being off.
+- Ruling: an independent agent audits the 33 eval labels and `legit.json`, then re-runs the eval twice (default order and NVIDIA first). Done as FX7 in 4e2 — the owner delegated the review, and an independent pass is more honest than the labeller grading itself — costs one opus task and two eval runs.

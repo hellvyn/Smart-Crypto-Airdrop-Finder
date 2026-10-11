@@ -106,6 +106,8 @@ Sub-proyek 2–6 bergantung pada data kurasi dari #1.
 | 56 | Portal klaim dibaca di run yang sama | Halaman portal klaim diambil di tahap `analyze` (sebelum AI Scam Analyst), bukan di `score`, supaya teksnya gak telat satu run. Cek phishing GoPlus dan `link_checks` tetap di `score`. |
 | 57 | Migrasi gak diedit task lain | Plan 6 Task 7 dan 8 dapat migrasi sendiri (`0014_changes_seen.sql`, `0015_farming_results.sql`), gak menambah ke `0012`. |
 | 58 | Pola scam kuat menggugurkan kurasi | Flag AI Scam Analyst dengan pola `secret_request`, `payment_request`, `impersonation`, atau `fake_support` (kutipan lolos `quoteInSource`) → `curate()` gagal dengan alasan `scam_pattern`, apa pun level risikonya. `urgency`, `connect_wallet_to_check`, `other` tetap cuma alasan risiko karena umum di airdrop legit. |
+| 59 | Rentang heatmap selalu memuat hari ini | Revisi #39 (G3, diputuskan controller atas mandat owner 2026-10-11): selama project belum berakhir, jendela heatmap selalu memuat hari ini. Deadline yang sudah lewat dilewati (pakai yang berikutnya); tanpa deadline tersisa = jendela 1 tahun yang digeser sampai hari ini, tanpa hitung mundur; deadline > 1 tahun lagi = 364 sel yang memuat hari ini, hitung mundur tetap ke deadline. Streak dihitung dari semua centang, bukan dari sel yang tampil. |
+| 60 | Gak ada ganti password mandiri | Owner 2026-10-11: member gak bisa mengganti password sendiri di `/settings`. Password diatur owner lewat Supabase Dashboard (runbook `docs/ops/web.md`). Form "Ganti password" yang sempat ditambahkan di review G1 dicabut. |
 | 30 | Provider AI | `freellm.hellvyn.id`, model `auto`; NVIDIA jadi cadangan lewat circuit breaker (dikonfirmasi owner) |
 
 **Ditolak:** LLM yang menilai legit/worth (gampang ditipu teks scam, gak konsisten, gak bisa dijelaskan); kurasi manual
@@ -567,6 +569,9 @@ konsistensinya sebagai heatmap sepanjang masa garap airdrop itu (seperti grafik 
   (364 hari) dari hari mulai, tanpa teks "Sisa n hari"; begitu sumber menyebut snapshot/akhir kampanye, rentang ikut
   berubah (dihitung ulang tiap kali dibuka). Maksimal 52 minggu (yang dipotong bagian paling awal). Project yang sudah
   berakhir (#40): rentang berhenti di `ended_on` kalau itu lebih awal, dengan teks "Berakhir {tanggal}".
+  **Revisi #59:** selama project belum berakhir, jendela selalu memuat hari ini (deadline yang sudah lewat dilewati,
+  tanpa deadline tersisa = 1 tahun yang digeser sampai hari ini, deadline > 1 tahun lagi = 364 sel yang memuat hari ini
+  dengan hitung mundur tetap ke deadline). Streak dihitung dari semua centang.
 - Task Mingguan gak masuk persentase harian; "sudah" kalau dicentang di minggu ISO yang sama (zona waktu member).
 - Task awal = semua langkah dari sumber (terjemahan AI kalau ada) saat "Mulai garap": `once` jadi "Task utama" (#50), `daily`/`weekly` jadi checklist harian/mingguan. Member bisa menambah dan
   mengarsipkan task sendiri. "Ambil ulang langkah dari sumber" menambah langkah baru (berdasar teks) dan mengarsipkan yang
