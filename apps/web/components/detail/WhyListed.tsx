@@ -1,14 +1,10 @@
 import type { CurationReason } from "@saf/core";
 import { SectionCard } from "@/components/ui";
-import { detail as copy, list } from "@/lib/copy";
+import { investorOf, reportedBackersText } from "@/lib/backers";
+import { detail as copy, list, notCurated } from "@/lib/copy";
 import { compactUsd, type CuratedSignal, type EvidenceRow } from "@/lib/view";
 
 const w = copy.why;
-const MAX_REPORTED = 3;
-
-function investorOf(v: Record<string, unknown>): string | null {
-  return typeof v.investor === "string" && v.investor.trim() !== "" ? v.investor.trim() : null;
-}
 
 /**
  * The rows: verified VCs, the backers AlphaDrops reports, verified TVL, a verified CoinGecko listing, curated sources,
@@ -21,27 +17,14 @@ function rows(signals: CuratedSignal[], facts: EvidenceRow[]): Row[] {
   const out: Row[] = [];
   const vcs = new Set<string>();
   for (const s of signals) {
-    const investor = investorOf(s.value);
+    const investor = investorOf(s);
     if (s.kind === "vc_backer" && s.verified && investor !== null && !vcs.has(investor)) {
       vcs.add(investor);
       out.push({ text: list.signals.vc(investor), label: w.verified(w.sources.vc), verified: true });
     }
   }
-  const reported = new Map<string, { name: string; lead: boolean }>();
-  for (const s of signals) {
-    const name = s.kind === "reported_backer" ? investorOf(s.value) : null;
-    if (name === null) continue;
-    const known = reported.get(name.toLowerCase());
-    if (known) known.lead ||= s.value.lead === true;
-    else reported.set(name.toLowerCase(), { name, lead: s.value.lead === true });
-  }
-  if (reported.size > 0) {
-    const all = [...reported.values()];
-    const ordered = [...all.filter((r) => r.lead), ...all.filter((r) => !r.lead)];
-    const names = ordered.slice(0, MAX_REPORTED).map((r) => (r.lead ? list.signals.lead(r.name) : r.name));
-    if (ordered.length > MAX_REPORTED) names.push(list.signals.more);
-    out.push({ text: list.signals.reported(names.join(", ")), label: w.reportedLabel, verified: false });
-  }
+  const reported = reportedBackersText(signals);
+  if (reported !== null) out.push({ text: reported, label: w.reportedLabel, verified: false });
   const tvls = signals.flatMap((s) =>
     s.kind === "tvl" && s.verified && typeof s.value.tvl_usd === "number" && Number.isFinite(s.value.tvl_usd) ? [s.value.tvl_usd] : [],
   );
@@ -60,7 +43,7 @@ function rows(signals: CuratedSignal[], facts: EvidenceRow[]): Row[] {
   }
   const claimed = new Set<string>();
   const claims = [
-    ...signals.filter((s) => s.kind === "claimed_backer").map((s) => ({ investor: investorOf(s.value), quote: s.value.quote })),
+    ...signals.filter((s) => s.kind === "claimed_backer").map((s) => ({ investor: investorOf(s), quote: s.value.quote })),
     ...facts.filter((f) => f.field === "claimed_backer").map((f) => ({ investor: f.value.trim() || null, quote: f.quote })),
   ];
   for (const c of claims) {
@@ -73,24 +56,33 @@ function rows(signals: CuratedSignal[], facts: EvidenceRow[]): Row[] {
 }
 
 /**
- * "06 · Kenapa lolos" ("Kenapa gak lolos" when the latest curation did not pass): the signals behind the listing, each
- * with its source label, and for a member the notes of our assessment (`curations.reasons`, member-only, #55; null
- * for a visitor).
+ * "06 · Kenapa lolos" ("Kenapa gak lolos" when the latest curation did not pass): for a failed or unrated project
+ * first the public reason, in the banner's words ("Gak masuk list: {alasan}", `failReason` from `notCuratedReason`,
+ * G5 M5), then the signals behind the listing, each with its source label, and for a member the notes of our
+ * assessment (`curations.reasons`, member-only, #55; null for a visitor).
  */
 export function WhyListed({
   passed,
   signals,
   facts,
   reasons,
+  failReason = null,
 }: {
   passed: boolean;
   signals: CuratedSignal[];
   facts: EvidenceRow[];
   reasons: CurationReason[] | null;
+  /** The public reason the project is not on the list (null when it is). */
+  failReason?: string | null;
 }) {
   const items = rows(signals, facts);
   return (
     <SectionCard number="06" title={passed ? copy.sections.why : copy.sections.whyNot}>
+      {failReason !== null ? (
+        <p className="detail-why-not" data-testid="why-not-reason">
+          {notCurated.banner(failReason)}
+        </p>
+      ) : null}
       {items.length === 0 ? (
         <p className="muted">{w.empty}</p>
       ) : (

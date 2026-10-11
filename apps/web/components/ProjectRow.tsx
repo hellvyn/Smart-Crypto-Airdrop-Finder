@@ -7,9 +7,9 @@ import { labels, list, notCurated, ui } from "@/lib/copy";
 import {
   capitalLabel,
   checkedLabel,
+  dayLabel,
   deadlineKindLabel,
   endedLabel,
-  formatDay,
   isCheckFrozen,
   isCheckStale,
   precisionLabel,
@@ -45,7 +45,7 @@ export function ProjectRow({
 }) {
   const curated = isCurated(item) ? item : null;
   const d = item.nextDeadline;
-  const deadline = d ? `${deadlineKindLabel(d.kind)} ${formatDay(d.date)} (${precisionLabel(d.precision)})` : list.noDeadline;
+  const deadline = d ? `${deadlineKindLabel(d.kind)} ${dayLabel(d.date)} (${precisionLabel(d.precision)})` : list.noDeadline;
   const when = curated?.tab === "ended" && curated.endedOn ? endedLabel(curated.endedOn) : deadline;
   const checkedAt = curated ? new Date(curated.checkedAt) : null;
   const frozen = curated ? isCheckFrozen(curated.tab, curated.endedOn, now) : false;

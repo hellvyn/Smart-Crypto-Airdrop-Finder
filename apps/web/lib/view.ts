@@ -239,9 +239,12 @@ export function isCheckFrozen(tab: Tab, endedOn: string | null, now: Date): bool
 
 const calendarDay = new Intl.DateTimeFormat("id-ID", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
 
-/** "5 Okt 2026" from a `YYYY-MM-DD` calendar day (formatted in UTC, so the day never shifts). */
+/**
+ * "5 Okt 2026" from a `YYYY-MM-DD` calendar day (formatted in UTC, so the day never shifts); anything else as it is.
+ * Every date of a list row uses it: "Ended {tanggal}" and the next deadline.
+ */
 export function dayLabel(day: string): string {
-  return calendarDay.format(new Date(`${day}T00:00:00Z`));
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? calendarDay.format(new Date(`${day}T00:00:00Z`)) : day;
 }
 
 /** "Ended 5 Okt 2026" from a `YYYY-MM-DD` end date. */
@@ -341,12 +344,6 @@ export function safeHttpUrl(raw: string): string | null {
   } catch {
     return null;
   }
-}
-
-/** `2026-10-10` (UTC) from a date or timestamp string. */
-export function formatDay(value: string): string {
-  const t = Date.parse(value);
-  return Number.isNaN(t) ? value : new Date(t).toISOString().slice(0, 10);
 }
 
 /** `2026-10-10 12:00 UTC`. */

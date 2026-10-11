@@ -17,6 +17,7 @@ import {
   endedLabel,
   isCheckFrozen,
   isCheckStale,
+  notCuratedReason,
   precisionLabel,
   riskLabel,
   safeHttpUrl,
@@ -140,6 +141,7 @@ export function ProjectDetailView({ project, member, now }: { project: ProjectDe
             signals={project.signals}
             facts={project.facts}
             reasons={member ? (curation?.reasons ?? null) : null}
+            failReason={notCuratedReason(curation)}
           />
         </div>
         <aside className="detail-aside">

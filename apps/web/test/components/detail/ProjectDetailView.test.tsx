@@ -139,6 +139,26 @@ describe("ProjectDetailView", () => {
       expect(screen.queryByRole("heading", { name: "06 · Kenapa gak lolos" })).toBeNull();
     });
 
+    // G5 M5: section 06 of a failed or unrated project opens with the public reason, the banner's text, then the signals.
+    it.each([
+      ["a failed project", { curation: failed() }, "Gak masuk list: Risiko tinggi"],
+      ["an unrated project", { curation: null }, "Gak masuk list: belum dinilai"],
+      ["a failure stored without a public reason", { curation: { ...failed(), publicFailReason: null } }, "Gak masuk list: alasannya belum tercatat"],
+    ])("opens 'Kenapa gak lolos' of %s with the public reason, before the signals", (_what, over, text) => {
+      const signals = [{ kind: "vc_backer" as const, value: { investor: "Paradigm" }, verified: true, source: "vc_portfolio", observedAt: NOW.toISOString() }];
+      view({ ...over, signals });
+      const section = screen.getByRole("heading", { name: "06 · Kenapa gak lolos" }).closest("section")!;
+      const reason = within(section).getByTestId("why-not-reason");
+      expect(reason.textContent).toBe(text);
+      const firstRow = within(section).getAllByTestId("why-row")[0]!;
+      expect(reason.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("has no public fail reason in 'Kenapa lolos'", () => {
+      view({});
+      expect(screen.queryByTestId("why-not-reason")).toBeNull();
+    });
+
     it("gives a member the reasons under 'Kenapa gak lolos' and a visitor none", () => {
       const reasons = [{ code: "x", kind: "fail" as const, message: "Teks khusus member" }];
       view({ curation: { ...failed(), reasons } }, true);

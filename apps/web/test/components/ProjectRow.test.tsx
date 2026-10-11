@@ -43,7 +43,7 @@ describe("ProjectRow (curated list)", () => {
     expect(screen.getByText("Dicek hari ini")).toBeTruthy();
     expect(screen.getByText("Gratis").getAttribute("data-tone")).toBe("verified");
     expect(screen.getByText("VC: Paradigm ✓")).toBeTruthy();
-    expect(screen.getByText("Snapshot 2026-11-01 (tanggal tepat)", { exact: false })).toBeTruthy();
+    expect(screen.getByText("Snapshot 1 Nov 2026 (tanggal tepat)", { exact: false })).toBeTruthy();
     expect(row().textContent).not.toMatch(/worth it|data belum cukup/i);
     expect(within(row()).getByText("Member only")).toBeTruthy();
   });

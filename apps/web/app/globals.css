@@ -286,6 +286,13 @@ button:disabled {
   color: var(--warn);
 }
 
+/* Section 06 of a failed or unrated project opens with the public reason (G5 M5). */
+.detail-why-not {
+  margin: 0 0 0.75rem;
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .banner h2 {
   margin: 0 0 0.25rem;
   font-size: 1.05rem;

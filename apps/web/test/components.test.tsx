@@ -102,7 +102,7 @@ describe("ProjectRow", () => {
     expect(screen.getByRole("link", { name: "Demo Protocol" }).getAttribute("href")).toBe("/projects/demo");
     expect(screen.getByText("Belum pasti")).toBeTruthy();
     expect(screen.getByText("Kritis")).toBeTruthy();
-    expect(screen.getByText("Claim 2026-11-01 (tanggal tepat)")).toBeTruthy();
+    expect(screen.getByText("Claim 1 Nov 2026 (tanggal tepat)")).toBeTruthy();
     expect(screen.getByText("ethereum, base")).toBeTruthy();
   });
 

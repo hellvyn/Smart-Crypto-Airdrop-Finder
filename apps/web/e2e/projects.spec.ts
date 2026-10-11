@@ -55,7 +55,8 @@ test("the default tab shows only the live_now project, with its badges, key chec
   await expect(row).toContainText("VC: Paradigm ✓");
   await expect(row).toContainText("Menurut AlphaDrops: a16z (lead)");
   await expect(row).toContainText("Sumber kurasi");
-  await expect(row).toContainText(/Claim \d{4}-\d{2}-\d{2} \(tanggal tepat\)/);
+  // The next deadline in the id-ID calendar format, like "Ended {tanggal}" (G5 M4).
+  await expect(row).toContainText(/Claim \d{1,2} [A-Z][a-z]{2} \d{4} \(tanggal tepat\)/);
   for (const other of [curated.early, curated.ended, curated.failed, seed.main]) await expect(rowFor(page, other.slug)).toHaveCount(0);
   await expect(page.getByRole("status")).toHaveCount(0);
 });
@@ -383,6 +384,8 @@ test("a project whose latest curation failed shows the warning right after the b
   await expect(banner(page)).toHaveText("Gak masuk list: Risiko tinggi");
   expect(await bannerLeadsThePage(page)).toBe(true);
   await expect(noindex(page)).toHaveAttribute("content", "noindex");
+  // Section 06 opens with the same public reason (G5 M5).
+  await expect(section(page, "06 · Kenapa gak lolos").getByTestId("why-not-reason")).toHaveText("Gak masuk list: Risiko tinggi");
   // Not a tab project: no pass stamp either.
   await expect(page.getByRole("img", { name: /LOLOS/ })).toHaveCount(0);
 });
@@ -392,6 +395,7 @@ test("a project without any curation opens with 'belum dinilai' and is noindex",
   expect(res?.status()).toBe(200);
   await expect(banner(page)).toHaveText("Gak masuk list: belum dinilai");
   await expect(noindex(page)).toHaveAttribute("content", "noindex");
+  await expect(section(page, "06 · Kenapa gak lolos").getByTestId("why-not-reason")).toHaveText("Gak masuk list: belum dinilai");
 });
 
 test("a project that passed has no warning and is indexable, also after it ended", async ({ page }) => {

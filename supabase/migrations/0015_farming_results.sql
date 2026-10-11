@@ -16,7 +16,7 @@ create table farming_results (
   no_reward boolean not null default false,
   claimed_on date,
   -- amount x the token's USD price on claimed_on, written by the web; null when no price was found. Bounded so one
-  -- absurd value cannot be stored (the web refuses it first).
+  -- absurd value cannot be stored or reach the member average.
   usd_at_claim numeric check (usd_at_claim >= 0 and usd_at_claim <= 1e13),
   share_anonymous boolean not null default false,
   updated_at timestamptz not null default now(),
