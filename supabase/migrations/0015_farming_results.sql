@@ -2,11 +2,11 @@
 -- got (or "Gak dapet"), and the web stores its USD value at the claim date. Private per member like the rest of the
 -- tracker (0010_farming.sql): every row is readable and writable only by its owner, anon gets nothing.
 -- Members may opt in (share_anonymous) to an anonymous average per project, read only through
--- farming_result_stats(), which returns a count and an average and nothing per person.
+-- farming_result_stats(), which returns a count and a coarse trimmed average and nothing per person.
 --
--- Also: archived_at on farming_tasks and farming_projects is the server's now() whenever it is set or changed. The
--- column grants of 0010 let a member write any value there, and a backdated archive rewrites past heatmap totals
--- ("hari lalu gak bisa diubah").
+-- Also: archived_at on farming_tasks and farming_projects is the server's now() whenever it is set or changed, and an
+-- archived task cannot be restored. The column grants of 0010 let a member write any value there, and a backdated
+-- archive or a restored task rewrites past heatmap totals ("hari lalu gak bisa diubah").
 
 create table farming_results (
   user_id uuid not null,
@@ -15,8 +15,9 @@ create table farming_results (
   amount numeric check (amount > 0 and amount <= 1e15),
   no_reward boolean not null default false,
   claimed_on date,
-  -- amount x the token's USD price on claimed_on, written by the web; null when no price was found.
-  usd_at_claim numeric check (usd_at_claim >= 0),
+  -- amount x the token's USD price on claimed_on, written by the web; null when no price was found. Bounded so one
+  -- absurd value cannot be stored (the web refuses it first).
+  usd_at_claim numeric check (usd_at_claim >= 0 and usd_at_claim <= 1e13),
   share_anonymous boolean not null default false,
   updated_at timestamptz not null default now(),
   primary key (user_id, project_id),
@@ -63,7 +64,12 @@ create trigger farming_results_updated_at
   for each row execute function public.stamp_farming_result_updated_at();
 
 -- Anonymous member average for one project: the results whose owner opted in (share_anonymous) and that have a USD
--- value, a "Gak dapet" counting as $0. avg_usd is null below 5 contributors, so no single result can be read off it.
+-- value, a "Gak dapet" counting as $0. So that no single result can be read off it:
+-- - avg_usd is null below 5 contributors;
+-- - it is a trimmed mean: the single highest and the single lowest value are dropped (one each, even when tied), and
+--   the rest averaged, so one outlier neither moves it much nor can be recovered from it;
+-- - it is rounded to 2 significant figures (1,236 -> 1,200; 3.456 -> 3.5; 0 stays 0), so a result added or changed
+--   rarely shows as a change of the average. Never a median (that would be one person's value).
 -- Security definer because RLS shows a member only their own rows; it returns two aggregates and never a user id or
 -- an amount of one person. Members only (authenticated); anon cannot execute it.
 create function public.farming_result_stats(p_project_id uuid)
@@ -78,27 +84,42 @@ begin
     raise exception 'not authenticated' using errcode = '42501';
   end if;
   return query
-    select s.n::integer,
-           case when s.n >= 5 then round(s.total / s.n, 2) end
+    select t.n::integer,
+           case
+             when t.n < 5 then null
+             when t.mean = 0 then 0::numeric
+             else round(t.mean, 1 - floor(log(t.mean))::integer)
+           end
     from (
-      select count(*) as n, sum(case when r.no_reward then 0 else r.usd_at_claim end) as total
-      from public.farming_results r
-      where r.project_id = p_project_id
-        and r.share_anonymous
-        and (r.no_reward or r.usd_at_claim is not null)
-    ) s;
+      select s.n, (s.total - s.high - s.low) / nullif(s.n - 2, 0) as mean
+      from (
+        select count(*) as n, sum(v.usd) as total, max(v.usd) as high, min(v.usd) as low
+        from (
+          select case when r.no_reward then 0 else r.usd_at_claim end as usd
+          from public.farming_results r
+          where r.project_id = p_project_id
+            and r.share_anonymous
+            and (r.no_reward or r.usd_at_claim is not null)
+        ) v
+      ) s
+    ) t;
 end;
 $$;
 revoke execute on function public.farming_result_stats(uuid) from public, anon;
 grant execute on function public.farming_result_stats(uuid) to authenticated;
 
--- archived_at is the server's now() whenever it is set or changed (controller ruling, Plan 8 wave review M3). Clearing
--- it (resume) stays possible, and an update that leaves it alone keeps it. Applies to every writer.
+-- archived_at is the server's now() whenever it is set or changed (controller ruling, Plan 8 wave review M3), and an
+-- update that leaves it alone keeps it. Clearing it is allowed for a farming project (resume, "Garap lagi") but not
+-- for a task: an archived task stays archived (check_violation), since the web offers no restore and bringing one
+-- back would change past days. Applies to every writer.
 create function public.stamp_archived_at() returns trigger
   language plpgsql
   set search_path = ''
 as $$
 begin
+  if tg_table_name = 'farming_tasks' and old.archived_at is not null and new.archived_at is null then
+    raise exception 'an archived task cannot be restored' using errcode = '23514';
+  end if;
   if new.archived_at is not null and new.archived_at is distinct from old.archived_at then
     new.archived_at := now();
   end if;

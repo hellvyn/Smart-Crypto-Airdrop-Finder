@@ -1,12 +1,13 @@
 -- pgTAP tests for 0015_farming_results.sql: airdrop results ("Hasil garapan", #51). Owner-only RLS for every
 -- operation and no anon access at all; farming_result_stats() hands out only a count and an average (null under 5
--- contributors), never a user id or one person's amount; archived_at on farming_tasks and farming_projects is always
--- the server's now(), so a member cannot backdate it and rewrite past heatmap totals.
+-- contributors, a trimmed mean rounded to 2 significant figures), never a user id or one person's amount; archived_at
+-- on farming_tasks and farming_projects is always the server's now(), so a member cannot backdate it and rewrite past
+-- heatmap totals, and an archived task cannot be restored.
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(46);
+select plan(50);
 
 -- Fixtures (run as the migration/test owner role, which bypasses RLS).
 -- A: 81..., B: 82..., C-G: 83...-87... (contributors for the stats). Everyone farms p1; only A farms p2.
@@ -98,7 +99,7 @@ select results_eq(
   $$ values (false, false, false, false) $$,
   'authenticated cannot write updated_at, nor move a result to another user or project');
 
--- 7-12. Table constraints.
+-- 7-13. Table constraints.
 select throws_ok(
   $$ insert into farming_results (user_id, project_id, amount)
      values ('81818181-8181-8181-8181-818181818181', 'abababab-0000-0000-0000-000000000002', 0) $$,
@@ -120,16 +121,20 @@ select throws_ok(
      values ('81818181-8181-8181-8181-818181818181', 'abababab-0000-0000-0000-000000000002', 10, -1) $$,
   '23514', null, 'a negative USD value is rejected');
 select throws_ok(
+  $$ insert into farming_results (user_id, project_id, amount, usd_at_claim)
+     values ('81818181-8181-8181-8181-818181818181', 'abababab-0000-0000-0000-000000000002', 10, 1e13 + 1) $$,
+  '23514', null, 'a USD value above 1e13 is rejected');
+select throws_ok(
   $$ insert into farming_results (user_id, project_id, amount)
      values ('81818181-8181-8181-8181-818181818181', 'abababab-0000-0000-0000-000000000003', 10) $$,
   '23503', null, 'a result needs a farming project of the same member');
 
--- 13. The fixture row exists, so zero below means hidden.
+-- 14. The fixture row exists, so zero below means hidden.
 select is(pg_temp.visible_rows('public.farming_results'), 1::bigint, 'fixtures: B''s result exists');
 
 -- ---------- anon ----------
 set local role anon;
--- 14-18.
+-- 15-19.
 select is(pg_temp.visible_rows('public.farming_results'), 0::bigint, 'anon cannot read farming_results');
 select throws_ok(
   $$ insert into farming_results (user_id, project_id, amount)
@@ -141,7 +146,7 @@ select throws_ok($$ select * from public.farming_result_stats('abababab-0000-000
   '42501', null, 'anon cannot execute farming_result_stats');
 reset role;
 
--- 19. A caller without a user id is refused.
+-- 20. A caller without a user id is refused.
 set local role authenticated;
 set local request.jwt.claims = '{"role":"authenticated"}';
 select throws_ok($$ select * from public.farming_result_stats('abababab-0000-0000-0000-000000000001') $$,
@@ -152,12 +157,12 @@ reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"81818181-8181-8181-8181-818181818181","role":"authenticated"}';
 
--- 20-21. A cannot read B's result.
+-- 21-22. A cannot read B's result.
 select is(pg_temp.visible_rows('public.farming_results'), 0::bigint, 'A sees no result before entering one');
 select is((select count(*)::int from farming_results where user_id = '82828282-8282-8282-8282-828282828282'), 0,
   'A cannot select B''s result');
 
--- 22-25. A cannot write B's result: insert in B's name fails, update and delete touch nothing.
+-- 23-26. A cannot write B's result: insert in B's name fails, update and delete touch nothing.
 select throws_ok(
   $$ insert into farming_results (user_id, project_id, amount)
      values ('82828282-8282-8282-8282-828282828282', 'abababab-0000-0000-0000-000000000001', 1) $$,
@@ -173,7 +178,7 @@ select throws_ok(
   $$ update farming_results set updated_at = '2020-01-01' where user_id = '81818181-8181-8181-8181-818181818181' $$,
   '42501', null, 'A cannot set updated_at');
 
--- 26-29. A writes, reads, changes and deletes their own result.
+-- 27-30. A writes, reads, changes and deletes their own result.
 select lives_ok(
   $$ insert into farming_results (user_id, project_id, amount, claimed_on, usd_at_claim)
      values ('81818181-8181-8181-8181-818181818181', 'abababab-0000-0000-0000-000000000002', 1250, date '2026-10-07', 412) $$,
@@ -193,14 +198,14 @@ select results_eq(
   'A can delete their own result');
 reset role;
 
--- 30. B's result survived A's attempts.
+-- 31. B's result survived A's attempts.
 select results_eq(
   $$ select amount, usd_at_claim, share_anonymous from farming_results
      where user_id = '82828282-8282-8282-8282-828282828282' $$,
   $$ values (3000::numeric, 300::numeric, true) $$,
   'B''s result is untouched by A''s attempts');
 
--- 31. updated_at is stamped by the server on every update.
+-- 32. updated_at is stamped by the server on every update.
 update farming_results set share_anonymous = true where user_id = '82828282-8282-8282-8282-828282828282';
 select is((select updated_at from farming_results where user_id = '82828282-8282-8282-8282-828282828282'), now(),
   'updated_at is set to now() on update, whatever the writer sent');
@@ -218,33 +223,65 @@ insert into farming_results (user_id, project_id, amount, no_reward, claimed_on,
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"81818181-8181-8181-8181-818181818181","role":"authenticated"}';
 
--- 32. 4 contributors (B, C, D, E): no average yet.
+-- 33. 4 contributors (B, C, D, E): no average yet.
 select results_eq(
   $$ select contributors, avg_usd from public.farming_result_stats('abababab-0000-0000-0000-000000000001') $$,
   $$ values (4, null::numeric) $$,
   'with 4 contributors avg_usd is null; F (no price) and G (not shared) are not counted');
 reset role;
 
--- A 5th contributor: A shares $400 on p1.
+-- A 5th contributor: A shares $1,400 on p1.
 insert into farming_results (user_id, project_id, amount, claimed_on, usd_at_claim, share_anonymous) values
-  ('81818181-8181-8181-8181-818181818181', 'abababab-0000-0000-0000-000000000001', 4000, date '2026-10-01', 400, true);
+  ('81818181-8181-8181-8181-818181818181', 'abababab-0000-0000-0000-000000000001', 4000, date '2026-10-01', 1400, true);
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"81818181-8181-8181-8181-818181818181","role":"authenticated"}';
 
--- 33. 5 contributors: (300 + 100 + 200 + 0 + 400) / 5 = 200. G's unshared $1,000,000 would make it 166,833.33.
+-- 34. 5 contributors $0, $100, $200, $300, $1,400: the lowest ($0) and the highest ($1,400) are dropped, so
+-- (100 + 200 + 300) / 3 = 200 (the plain mean would be 400). G's unshared $1,000,000 is never counted.
 select results_eq(
   $$ select contributors, avg_usd from public.farming_result_stats('abababab-0000-0000-0000-000000000001') $$,
-  $$ values (5, 200.00::numeric) $$,
-  'with 5 contributors avg_usd is the average, "Gak dapet" as $0, unshared rows left out');
+  $$ values (5, 200::numeric) $$,
+  'with 5 contributors avg_usd drops the single highest and lowest value; "Gak dapet" is $0, unshared rows left out');
 
--- 34. A project nobody entered a result for.
+-- 35. A project nobody entered a result for.
 select results_eq(
   $$ select contributors, avg_usd from public.farming_result_stats('abababab-0000-0000-0000-000000000003') $$,
   $$ values (0, null::numeric) $$,
   'a project without results has 0 contributors and no average');
+reset role;
 
--- 35. Turning sharing off takes the row out again.
+-- 36-37. Rounding to 2 significant figures, on p3 (5 shared results of B..F, set up as the owner).
+insert into farming_projects (user_id, project_id)
+select u.id, 'abababab-0000-0000-0000-000000000003'::uuid
+from auth.users u where u.email in ('rb@example.test', 'rc@example.test', 'rd@example.test', 're@example.test', 'rf@example.test');
+insert into farming_results (user_id, project_id, amount, usd_at_claim, share_anonymous)
+select u.id, 'abababab-0000-0000-0000-000000000003'::uuid, 1, v.usd, true
+from auth.users u
+join (values ('rb@example.test', 1::numeric), ('rc@example.test', 1234), ('rd@example.test', 1236),
+             ('re@example.test', 1238), ('rf@example.test', 90000)) v(email, usd) on v.email = u.email;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"81818181-8181-8181-8181-818181818181","role":"authenticated"}';
+-- Trimmed: (1234 + 1236 + 1238) / 3 = 1236, to 2 significant figures 1200.
+select results_eq(
+  $$ select contributors, avg_usd from public.farming_result_stats('abababab-0000-0000-0000-000000000003') $$,
+  $$ values (5, 1200::numeric) $$,
+  'avg_usd of $1,236 is rounded to 2 significant figures: $1,200');
+reset role;
+update farming_results set usd_at_claim = v.usd
+from auth.users u
+join (values ('rc@example.test', 3.4), ('rd@example.test', 3.468), ('re@example.test', 3.5)) v(email, usd) on v.email = u.email
+where farming_results.user_id = u.id and farming_results.project_id = 'abababab-0000-0000-0000-000000000003';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"81818181-8181-8181-8181-818181818181","role":"authenticated"}';
+-- Trimmed: (3.4 + 3.468 + 3.5) / 3 = 3.456, to 2 significant figures 3.5.
+select results_eq(
+  $$ select contributors, avg_usd from public.farming_result_stats('abababab-0000-0000-0000-000000000003') $$,
+  $$ values (5, 3.5::numeric) $$,
+  'avg_usd of $3.456 is rounded to 2 significant figures: $3.5');
+
+-- 38. Turning sharing off takes the row out again.
 update farming_results set share_anonymous = false where project_id = 'abababab-0000-0000-0000-000000000001';
 select results_eq(
   $$ select contributors, avg_usd from public.farming_result_stats('abababab-0000-0000-0000-000000000001') $$,
@@ -256,7 +293,7 @@ reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"81818181-8181-8181-8181-818181818181","role":"authenticated"}';
 
--- 36-38. Archiving a task with a backdated (or future) value stores now().
+-- 39-41. Archiving a task with a backdated (or future) value stores now().
 update farming_tasks set archived_at = '2020-01-01T00:00:00Z' where id = 'ab000000-0000-0000-0000-000000000001';
 select is((select archived_at from farming_tasks where id = 'ab000000-0000-0000-0000-000000000001'), now(),
   'a backdated farming_tasks.archived_at is overwritten with now()');
@@ -271,7 +308,7 @@ update farming_tasks set archived_at = '2999-01-01T00:00:00Z' where id = 'ab0000
 select is((select archived_at from farming_tasks where id = 'ab000000-0000-0000-0000-000000000001'), now(),
   'changing an archived task''s archived_at stores now(), not the sent value');
 
--- 39-40. The same for farming_projects ("Berhenti garap").
+-- 42-43. The same for farming_projects ("Berhenti garap").
 update farming_projects set archived_at = '2020-01-01T00:00:00Z'
 where user_id = '81818181-8181-8181-8181-818181818181' and project_id = 'abababab-0000-0000-0000-000000000002';
 select is((select archived_at from farming_projects
@@ -283,7 +320,7 @@ select is((select archived_at from farming_projects
            where user_id = '81818181-8181-8181-8181-818181818181' and project_id = 'abababab-0000-0000-0000-000000000002'),
   now(), 'changing a stopped project''s archived_at stores now(), not the sent value');
 
--- 41. Resuming (archived_at back to null) still works.
+-- 44. Resuming a project (archived_at back to null) still works.
 select results_eq(
   $$ update farming_projects set archived_at = null
      where user_id = '81818181-8181-8181-8181-818181818181' and project_id = 'abababab-0000-0000-0000-000000000002'
@@ -291,13 +328,19 @@ select results_eq(
   $$ values (null::timestamptz) $$,
   'resuming a stopped project still clears archived_at');
 
--- 42. An update that leaves archived_at alone keeps it (reordering a task archived on 2026-01-01).
+-- 45. An update that leaves archived_at alone keeps it (reordering a task archived on 2026-01-01).
 update farming_tasks set position = 5 where id = 'ab000000-0000-0000-0000-000000000002';
 select is((select archived_at from farming_tasks where id = 'ab000000-0000-0000-0000-000000000002'),
   '2026-01-01T00:00:00Z'::timestamptz, 'an update of another column leaves archived_at as it was');
+
+-- 46. An archived task stays archived: clearing archived_at would bring back a task whose past days are counted as
+-- archived ("hari lalu gak bisa diubah").
+select throws_ok(
+  $$ update farming_tasks set archived_at = null where id = 'ab000000-0000-0000-0000-000000000002' $$,
+  '23514', null, 'an archived task cannot be restored');
 reset role;
 
--- 43-44. The stamping functions are not callable by the web roles.
+-- 47-48. The stamping functions are not callable by the web roles.
 select results_eq(
   $$ select has_function_privilege('authenticated', 'public.stamp_archived_at()', 'execute'),
             has_function_privilege('anon', 'public.stamp_archived_at()', 'execute') $$,
@@ -310,7 +353,7 @@ select results_eq(
   'archived_at is stamped on farming_projects and farming_tasks');
 
 -- ---------- cascade ----------
--- 45-46. Deleting a project, or stopping-and-deleting the farming row, takes the results along.
+-- 49-50. Deleting a project, or stopping-and-deleting the farming row, takes the results along.
 select lives_ok($$ delete from projects where id = 'abababab-0000-0000-0000-000000000001' $$,
   'deleting a project with results raises no error');
 select is((select count(*)::int from farming_results where project_id = 'abababab-0000-0000-0000-000000000001'), 0,
