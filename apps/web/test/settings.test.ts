@@ -21,9 +21,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import {
-  changePassword,
   deleteAccount,
-  submitChangePassword,
   submitDeleteAccount,
   submitUpdateSettings,
   updateSettings,
@@ -34,28 +32,22 @@ const USER = { id: "11111111-1111-4111-8111-111111111111", email: "member@exampl
 
 type Call = [method: string, ...args: unknown[]];
 type Result = { data: unknown; error: { message: string } | null };
-/** The shape auth-js gives an AuthApiError. */
-type AuthErr = { name: string; message: string; status: number; code: string };
-const authError = (code: string, status = 400): AuthErr => ({ name: "AuthApiError", message: `auth: ${code}`, status, code });
 interface Recorded {
   table: string;
   calls: Call[];
 }
 
-/** Fake PostgREST builder + rpc + auth: records calls, resolves to `respond(rec)`. */
+/** Fake PostgREST builder + rpc + signOut: records calls, resolves to `respond(rec)`. */
 function fakeDb(
   opts: {
     respond?: (rec: Recorded) => Result;
     rpc?: Result;
     signOut?: () => Promise<{ error: null }>;
-    signInError?: AuthErr;
-    updateUserError?: AuthErr;
   } = {},
 ) {
   const respond = opts.respond ?? (() => ({ data: [{ user_id: USER.id }], error: null }));
   const recs: Recorded[] = [];
   const order: string[] = [];
-  const authCalls: [method: string, arg: unknown][] = [];
   const db = {
     from(table: string) {
       const rec: Recorded = { table, calls: [] };
@@ -83,23 +75,9 @@ function fakeDb(
         order.push("signOut");
         return (opts.signOut ?? (() => Promise.resolve({ error: null })))();
       },
-      signInWithPassword: (arg: unknown) => {
-        authCalls.push(["signInWithPassword", arg]);
-        const error = opts.signInError ?? null;
-        return Promise.resolve(
-          error
-            ? { data: { user: null, session: null }, error }
-            : { data: { user: USER, session: { access_token: "a", refresh_token: "r", user: USER } }, error: null },
-        );
-      },
-      updateUser: (arg: unknown) => {
-        authCalls.push(["updateUser", arg]);
-        const error = opts.updateUserError ?? null;
-        return Promise.resolve(error ? { data: { user: null }, error } : { data: { user: USER }, error: null });
-      },
     },
   };
-  return { db: db as unknown as SupabaseClient, recs, order, authCalls };
+  return { db: db as unknown as SupabaseClient, recs, order };
 }
 
 async function redirected(p: Promise<unknown>): Promise<string> {
@@ -251,99 +229,5 @@ describe("deleteAccount", () => {
     f = fakeDb();
     serverDb = f.db;
     expect(await redirected(submitDeleteAccount(new FormData()))).toBe("/settings?error=confirmation");
-  });
-});
-
-describe("changePassword", () => {
-  const input = { currentPassword: "old-secret-1", newPassword: "new-secret-2", confirmPassword: "new-secret-2" };
-
-  it("re-checks the current password for the signed-in user's email, then sets the new one", async () => {
-    const f = fakeDb();
-    serverDb = f.db;
-    expect(await changePassword(input)).toEqual({ ok: true });
-    expect(f.authCalls).toEqual([
-      ["signInWithPassword", { email: "member@example.test", password: "old-secret-1" }],
-      ["updateUser", { password: "new-secret-2" }],
-    ]);
-  });
-
-  it("refuses a wrong current password and changes nothing", async () => {
-    const f = fakeDb({ signInError: authError("invalid_credentials") });
-    serverDb = f.db;
-    expect(await changePassword(input)).toEqual({ ok: false, error: "wrong_password" });
-    expect(f.authCalls.map(([m]) => m)).toEqual(["signInWithPassword"]);
-  });
-
-  it("refuses an empty current password without asking Supabase", async () => {
-    const f = fakeDb();
-    serverDb = f.db;
-    expect(await changePassword({ ...input, currentPassword: "" })).toEqual({ ok: false, error: "wrong_password" });
-    expect(f.authCalls).toEqual([]);
-  });
-
-  it("refuses a confirmation that differs from the new password, before checking anything", async () => {
-    const f = fakeDb();
-    serverDb = f.db;
-    expect(await changePassword({ ...input, confirmPassword: "new-secret-3" })).toEqual({
-      ok: false,
-      error: "password_mismatch",
-    });
-    expect(f.authCalls).toEqual([]);
-  });
-
-  it("refuses an empty new password without asking Supabase", async () => {
-    const f = fakeDb();
-    serverDb = f.db;
-    expect(await changePassword({ ...input, newPassword: "", confirmPassword: "" })).toEqual({
-      ok: false,
-      error: "weak_password",
-    });
-    expect(f.authCalls).toEqual([]);
-  });
-
-  it("reports a new password that Supabase finds too weak or equal to the old one", async () => {
-    serverDb = fakeDb({ updateUserError: authError("weak_password", 422) }).db;
-    expect(await changePassword(input)).toEqual({ ok: false, error: "weak_password" });
-    serverDb = fakeDb({ updateUserError: authError("same_password", 422) }).db;
-    expect(await changePassword(input)).toEqual({ ok: false, error: "same_password" });
-  });
-
-  it("throws on any other Auth failure", async () => {
-    serverDb = fakeDb({ signInError: authError("over_request_rate_limit", 429) }).db;
-    await expect(changePassword(input)).rejects.toThrow(/over_request_rate_limit/);
-    serverDb = fakeDb({ updateUserError: authError("unexpected_failure", 500) }).db;
-    await expect(changePassword(input)).rejects.toThrow(/unexpected_failure/);
-  });
-
-  it("does nothing for a signed-out user (requireUser redirects to /login)", async () => {
-    requireUser.mockReset().mockRejectedValue(new Redirect("/login"));
-    const f = fakeDb();
-    serverDb = f.db;
-    expect(await redirected(changePassword(input))).toBe("/login");
-    expect(f.authCalls).toEqual([]);
-  });
-});
-
-describe("submitChangePassword (form)", () => {
-  it("changes the password and redirects with password=changed", async () => {
-    const f = fakeDb();
-    serverDb = f.db;
-    const to = await redirected(
-      submitChangePassword(form({ currentPassword: "old-secret-1", newPassword: "new-secret-2", confirmPassword: "new-secret-2" })),
-    );
-    expect(to).toBe("/settings?password=changed");
-    expect(f.authCalls).toContainEqual(["updateUser", { password: "new-secret-2" }]);
-  });
-
-  it("redirects with the error code when the change is refused", async () => {
-    serverDb = fakeDb({ signInError: authError("invalid_credentials") }).db;
-    const to = await redirected(
-      submitChangePassword(form({ currentPassword: "nope", newPassword: "new-secret-2", confirmPassword: "new-secret-2" })),
-    );
-    expect(to).toBe("/settings?error=wrong_password");
-    const f = fakeDb();
-    serverDb = f.db;
-    expect(await redirected(submitChangePassword(new FormData()))).toBe("/settings?error=wrong_password");
-    expect(f.authCalls).toEqual([]);
   });
 });

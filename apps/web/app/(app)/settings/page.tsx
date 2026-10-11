@@ -3,14 +3,12 @@ import {
   CONFIRMATION_ERROR_MESSAGE,
   DELETE_CONFIRMATION,
   getSettings,
-  isPasswordError,
   isSettingsError,
-  PASSWORD_ERROR_MESSAGES,
   SETTINGS_ERROR_MESSAGES,
   timezoneOptions,
 } from "@/lib/settings";
 import { createServerClient } from "@/lib/supabase/server";
-import { submitChangePassword, submitDeleteAccount, submitUpdateSettings } from "./actions";
+import { submitDeleteAccount, submitUpdateSettings } from "./actions";
 
 export const metadata = { title: "Settings · Smart Airdrop Finder" };
 
@@ -19,7 +17,7 @@ const first = (v: string | string[] | undefined) => (typeof v === "string" ? v :
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string | string[]; password?: string | string[]; error?: string | string[] }>;
+  searchParams: Promise<{ saved?: string | string[]; error?: string | string[] }>;
 }) {
   await requireUser();
   const params = await searchParams;
@@ -52,35 +50,6 @@ export default async function SettingsPage({
         ) : null}
         <button type="submit">Save settings</button>
       </form>
-
-      <section aria-labelledby="change-password">
-        <h2 id="change-password">Ganti password</h2>
-        <form action={submitChangePassword} className="auth-form">
-          <label>
-            Password sekarang
-            <input type="password" name="currentPassword" autoComplete="current-password" required />
-          </label>
-          <label>
-            Password baru
-            <input type="password" name="newPassword" autoComplete="new-password" required />
-          </label>
-          <label>
-            Ulangi password baru
-            <input type="password" name="confirmPassword" autoComplete="new-password" required />
-          </label>
-          {isPasswordError(error) ? (
-            <p role="alert" className="form-error">
-              {PASSWORD_ERROR_MESSAGES[error]}
-            </p>
-          ) : null}
-          {first(params.password) === "changed" ? (
-            <p role="status" className="form-message">
-              Password udah diganti.
-            </p>
-          ) : null}
-          <button type="submit">Ganti password</button>
-        </form>
-      </section>
 
       <section aria-labelledby="delete-account">
         <h2 id="delete-account">Delete account</h2>
