@@ -18,7 +18,12 @@ Spec: section 4 (pipeline), 5 (data model), 9 (privacy) and 11 (errors and testi
    ```
 
    `db push` applies everything in `supabase/migrations/` (`0001_pipeline.sql`: tables, RLS, public read
-   policies; later files add users, web views and more, through `0007_manual_membership.sql`, which drops the email-digest tables and columns). Run it again after pulling a new migration.
+   policies; later files add users, web views and more: `0007_manual_membership.sql` drops the email-digest tables
+   and columns, `0008_served_model.sql` through `0011_curation.sql` add the served model, extraction v3 steps, the
+   farming tracker and curation, and `0012_curated_list.sql` through `0015_farming_results.sql` add the curated list
+   views, check details, changes seen and farming results). Run it again after pulling a new migration. For the
+   0007–0015 release, follow the deploy checklist in `docs/ops/web.md` section 5: the web build must go out right
+   after `db push`.
 
    **Production project (`smart-airdrop-finder`, created 2026-10-10):** 0001–0006 were applied through the
    Supabase MCP connector, not `db push`, so the remote migration history holds timestamped entries (0002 split
@@ -188,16 +193,17 @@ that fails a condition stays in `VC_CANDIDATES` with a one-line reason comment i
 Record every result in the table below.
 
 **Check of 2026-10-11** (pipeline client, through the development egress proxy after the owner allowed the VC hosts):
-only **a16z crypto** is used, so **`VC_LIST` holds a16z crypto (tier 1) alone, awaiting the owner's confirmation.**
+only **a16z crypto** is used, so **`VC_LIST` holds a16z crypto (tier 1) alone, confirmed by the owner on 2026-10-11
+(clause risk accepted).**
 Its page answers 200 with 121 portfolio domains in the HTML (every one from the portfolio grid; the only other outbound
 links are its sister site `a16z.com`, now in `NON_PORTFOLIO_DOMAINS`, and social hosts) and `robots.txt` allows
 `/portfolio/`. Its terms (linked from `a16zcrypto.com/legal` to `a16z.com/terms-of-use/`) have no automation or
 scraping ban and no personal/noncommercial restriction, but they contain a general clause: "all content and material
 on the Services — including information, […] — are the property of a16z Capital Management, LLC […] and should not
 be used, modified, or reproduced without our prior written consent." For a commercial product that clause is
-ambiguous (the pipeline keeps only the linked domains, never page text). Decision of 2026-10-11: used, pending the
-owner's confirmation; if the owner rejects it, move the entry from `VC_LIST` back to `VC_CANDIDATES` in `config.ts`
-(the next run then drops its `vc_backer` signals). Five pages pass conditions 1–3 and `robots.txt` but their terms forbid automated reading (Paradigm,
+ambiguous (the pipeline keeps only the linked domains, never page text). Decision of 2026-10-11: used; the owner
+confirmed it the same day and accepted the clause risk. To stop using it, move the entry from `VC_LIST` back to
+`VC_CANDIDATES` in `config.ts` (the next run then drops its `vc_backer` signals). Five pages pass conditions 1–3 and `robots.txt` but their terms forbid automated reading (Paradigm,
 Variant, Electric Capital) or limit the site to personal, noncommercial use (Framework, Placeholder). Jump Crypto is
 the same: its terms (`jumptrading.com/policies/terms-of-use`, linked from the `jumpcrypto.com` footer) license the
 site for private, non-commercial use only. If Jump Crypto ever moves to `VC_LIST`, first add its parent

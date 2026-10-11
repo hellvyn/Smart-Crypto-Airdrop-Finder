@@ -116,10 +116,33 @@ users.
 Order matters: signup is shut before anything else, and the web app expects the database objects of every migration,
 so the database goes before the web build.
 
+### Checklist for the 0007 through 0015 release
+
+The hosted database has 0001–0006 only. Follow these steps in this order, without a pause between 3 and 4:
+
+1. **Signup off** (Supabase Dashboard > Authentication > Sign In / Providers > **Allow new users to sign up** off).
+2. **Migration history.** If not done yet, run the one-time `migration repair` in `docs/ops/pipeline.md` section 1:
+   0001–0006 were applied through the Supabase MCP connector, so the remote history holds timestamped entries
+   (`pipeline`, `users_part1`, `users_part2`, `users_part3`, `web_views`, `wallet_rate_limit`, `notifications`,
+   `project_changes_seq`). Check with `migration list` that local and remote match.
+3. **`db push`**, which applies `0007_manual_membership.sql` through `0015_farming_results.sql`.
+4. **Deploy the web build immediately.** The web build that is live now reads `risk_assessments.checks` as anon;
+   `0013_member_checks.sql` revokes that column from anon, so every project page errors for visitors from the moment
+   0013 lands until the new build is live.
+5. **Secrets.** `COINGECKO_API_KEY` on the web host (section 6; the owner has set it already) and the GitHub
+   Secrets in `docs/ops/pipeline.md` section 2.
+6. **Run the pipeline once** by hand: Actions > **Daily pipeline** > **Run workflow** (`workflow_dispatch`), or
+   `gh workflow run daily.yml`. Until this run finishes there are no `curations` rows: `/airdrops` is empty, and
+   every project page shows "Gak masuk list: belum dinilai" with `noindex`.
+7. **Check `/airdrops`** after the run: the tabs list projects, and a listed project's page has no "Gak masuk list"
+   banner.
+
+The numbered steps below describe each part in more detail.
+
 1. **Signup off (Supabase Dashboard, before anything else).** Authentication > Sign In / Providers: turn off
    **Allow new users to sign up**. Until this is off, anyone can create an account through the Auth API with the
    public anon key.
-2. **Migrations.** Apply `supabase/migrations/0001` through `0007` to the hosted project before deploying the web app:
+2. **Migrations.** Apply `supabase/migrations/0001` through `0015` to the hosted project before deploying the web app:
 
    ```
    npx -y supabase@2.120.0 link --project-ref <ref>
@@ -130,8 +153,13 @@ so the database goes before the web build.
    miss; a web build without it answers every uncached check with "Data lagi gak tersedia. Coba lagi nanti.".
    `0007_manual_membership.sql` removes what only the email flow used (`notification_log`, `unsubscribe_digest()` and the
    `profiles` columns for the email preferences and the unsubscribe token). Existing user data stays. The previous
-   web build still reads those columns, so deploy the new build right after applying it. See
-   `docs/ops/pipeline.md` section 1 for aligning the production migration history before the first `db push`.
+   web build still reads those columns, so deploy the new build right after applying it. The later files:
+   `0008_served_model.sql` (the model that answered an extraction), `0009_extraction_v3.sql` (ordered steps with a
+   cadence), `0010_farming.sql` ("Garapan saya"), `0011_curation.sql` (curations, signals, link checks, AI analyses),
+   `0012_curated_list.sql` (the public list views), `0013_member_checks.sql` (check details; anon loses
+   `risk_assessments.checks`, see the checklist above), `0014_changes_seen.sql` (changes since the last visit) and
+   `0015_farming_results.sql` ("Hasil garapan"). See `docs/ops/pipeline.md` section 1 for aligning the production
+   migration history before the first `db push`.
 3. **Build-time env.** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are inlined by `next build`:
    set them in the host's build environment, and rebuild after changing either of them. `NEXT_PUBLIC_SITE_URL` is
    not needed for a deploy. The only secret the web app may hold is `COINGECKO_API_KEY` (section 6), a runtime
