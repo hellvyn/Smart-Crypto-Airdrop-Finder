@@ -560,6 +560,7 @@ export const coach = {
     unavailable: "Coach lagi gak bisa jawab, coba lagi sebentar.",
     bad_input: "Isiannya belum lengkap, atau pesannya kepanjangan (maksimal 1000 karakter). Cek lagi, lalu coba lagi.",
     not_member: "Percakapan ini gak ketemu di akun kamu. Login lagi, atau mulai percakapan baru dari halaman Coach.",
+    secret: "Jangan pernah kirim seed phrase atau private key ke siapa pun, termasuk ke Coach. Pesan ini gak dikirim.",
   },
   empty: {
     noCandidates:

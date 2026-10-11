@@ -1,10 +1,10 @@
 // POST /api/coach/chat  { threadId, message, kind: "chat" | "explain_step", stepId? }  ->  the Coach's answer, streamed
-// as text/plain (spec §5.3, §6). Order: member, input, profile, thread, candidates, step, quota (coach_begin), the model;
+// as text/plain (spec §5.3, §6). Order: member, input (a seed phrase or private key is refused here), profile, thread, candidates, step, quota (coach_begin), the model;
 // on the first text coach_mark_used runs before any of it is forwarded, so an aborted, truncated or timed-out answer
 // still counts. The stream is cleaned per completed sentence (em dash, sensitive text) and the stored reply is redacted
 // once more as a whole and cut to 16000 characters. Project links come as separate metadata (x-coach-links), built
 // from the candidates' slugs, never from the model's text. Nothing here logs an email, a user id, a prompt or an answer.
-import { selectCandidates } from "@saf/core";
+import { looksLikeSecret, selectCandidates } from "@saf/core";
 import { streamText } from "@saf/llm";
 import type { StreamTextEvent } from "@saf/llm";
 import { getUser } from "@/lib/auth";
@@ -53,6 +53,8 @@ export async function POST(request: Request): Promise<Response> {
   const raw = await readJsonObject(request);
   const input = raw === null ? null : parseBody(raw);
   if (input === null) return coachErrorResponse("bad_input");
+  // A seed phrase or a private key is never sent on: no database call, no model call, nothing stored.
+  if (looksLikeSecret(input.message)) return coachErrorResponse("secret");
 
   try {
     const now = new Date();

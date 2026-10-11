@@ -49,16 +49,17 @@ const ROWS_PER_CHUNK = 1000;
 
 // ---- Errors ----
 
-export type CoachError = "quota" | "unavailable" | "bad_input" | "not_member";
+export type CoachError = "quota" | "unavailable" | "bad_input" | "not_member" | "secret";
 
-export const COACH_STATUS: Record<CoachError, number> = { quota: 429, unavailable: 503, bad_input: 400, not_member: 403 };
+export const COACH_STATUS: Record<CoachError, number> = { quota: 429, unavailable: 503, bad_input: 400, not_member: 403, secret: 400 };
 
 type DbError = { code?: string | undefined; message?: string | undefined };
 
 /**
  * The Coach error a failed RPC or write stands for. `quota` is the daily message cap and the daily thread cap (both
  * mean "come back after 00.00 WIB"); `not_member` is a thread or message that is not the caller's, or no session;
- * `bad_input` is a content CHECK; everything else (including `expired` and `replied`, which only a race produces) is
+ * `bad_input` is a content CHECK; `secret` (never from a database error) is a message that looks like a seed phrase
+ * or a private key; everything else (including `expired` and `replied`, which only a race produces) is
  * `unavailable`.
  */
 export function coachErrorFrom(error: DbError | null | undefined): CoachError {

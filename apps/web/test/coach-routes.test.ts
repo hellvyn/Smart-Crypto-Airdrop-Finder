@@ -428,6 +428,29 @@ describe("POST /api/coach/chat: input", () => {
     expect(streamText).not.toHaveBeenCalled();
   });
 
+  const SEED = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+  const KEY = "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318";
+  it.each([
+    ["a 12 word seed phrase", chatBody({ message: SEED })],
+    ["a seed phrase on separate lines", chatBody({ message: SEED.split(" ").join("\n") })],
+    ["a private key", chatBody({ message: `ini key aku ${KEY}` })],
+    ["a seed phrase in an explain_step message", chatBody({ kind: "explain_step", stepId: STEP_ID, message: SEED })],
+  ])("is 400 secret for %s, before any database read, RPC or model call", async (_n, body) => {
+    const res = await post(chatPOST, body);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "secret", message: coach.errors.secret });
+    expect(fake.rpcCalls).toHaveLength(0);
+    expect(fake.reads).toHaveLength(0);
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
+  it("does not take a 12 word Indonesian sentence for a seed phrase", async () => {
+    streamText.mockReturnValue(events({ delta: "Oke. " }, DONE()));
+    const res = await post(chatPOST, chatBody({ message: "tolong jelasin langkah bridge ini dengan bahasa yang gampang banget buat pemula" }));
+    expect(res.status).toBe(200);
+    await res.text();
+  });
+
   it("accepts a message of exactly 1000 characters", async () => {
     streamText.mockReturnValue(events({ delta: "Oke. " }, DONE()));
     const res = await post(chatPOST, chatBody({ message: "x".repeat(1000) }));

@@ -214,3 +214,54 @@ export function redactSensitive(text: string, context: string): { text: string; 
   });
   return { text: parts.join(""), redactions };
 }
+
+// ---- Secrets in what a member types ----
+
+/** Seed phrase lengths (BIP39). */
+const SEED_LENGTHS = [12, 15, 18, 21, 24] as const;
+const SEED_WORD_RE = /^[a-z]{3,8}$/;
+const SEED_SEPARATOR_RE = /[\s,]+/;
+const PRIVATE_KEY_RE = /(?<![0-9a-fA-F])(?:0x)?[0-9a-fA-F]{64}(?![0-9a-fA-F])/;
+/**
+ * Common Indonesian chat words. A seed phrase is made of English words, so a run that has one of these is a
+ * sentence, however plain it is written. None of them is a BIP39 word.
+ */
+const CHAT_WORDS: ReadonlySet<string> = new Set(
+  `yang dengan untuk dari atau pada dalam adalah akan juga sudah udah belum tidak bukan bisa mau apa kenapa gimana
+  bagaimana dong deh sih nih banget aja saja ini itu dan ada gak nggak tolong saya aku kamu kita mereka dia anda buat
+  bantu jelasin jelaskan langkah caranya cara kalau kalo karena tapi tetapi sama lagi masih lebih sangat semua setiap
+  seperti sebagai terus lalu habis setelah sebelum supaya biar agar harus perlu boleh minta kasih tanya project proyek
+  airdrop wallet modal berapa kapan dimana siapa mana bahasa gampang pemula aman`.split(/\s+/),
+);
+
+/**
+ * Whether `text` looks like a secret a member must never send: a private key (64 hex characters, `0x` optional), or a
+ * seed phrase, that is 12, 15, 18, 21 or 24 (or more) consecutive words of 3 to 8 lowercase letters a to z, split by
+ * spaces, commas or newlines only. A word with a capital, a digit or any other punctuation ends the run, and so does
+ * a run with an Indonesian chat word in it: ordinary chat is not blocked. Built to refuse, not to be exact: the
+ * sender is told to rewrite the message.
+ */
+export function looksLikeSecret(text: string): boolean {
+  if (PRIVATE_KEY_RE.test(text)) return true;
+  let run: string[] = [];
+  const phraseInRun = (): boolean => {
+    const shortest = SEED_LENGTHS[0];
+    if (run.length < shortest) return false;
+    // Any window of a seed length without a chat word, so a phrase typed after a few words of chat is still found.
+    for (const length of SEED_LENGTHS) {
+      for (let start = 0; start + length <= run.length; start += 1) {
+        if (!run.slice(start, start + length).some((word) => CHAT_WORDS.has(word))) return true;
+      }
+    }
+    return false;
+  };
+  for (const token of text.split(SEED_SEPARATOR_RE)) {
+    if (SEED_WORD_RE.test(token)) {
+      run.push(token);
+      continue;
+    }
+    if (phraseInRun()) return true;
+    run = [];
+  }
+  return phraseInRun();
+}

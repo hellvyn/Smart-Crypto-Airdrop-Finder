@@ -60,7 +60,7 @@ export type { ContradictionsAnswer, ScamAnswer } from "./curate/ai-flags.js";
 export { BANNED_WORDS, cleanStyle, findBanned } from "./style.js";
 export { GLOSSARY } from "./coach/glossary.js";
 export type { GlossaryEntry } from "./coach/glossary.js";
-export { groundedAgainst, redactSensitive } from "./coach/guard.js";
+export { groundedAgainst, looksLikeSecret, redactSensitive } from "./coach/guard.js";
 export { COACH_CAPITAL_BANDS, COACH_GOALS, COACH_LEVELS, COACH_MINUTES, coachProfileSchema } from "./coach/profile.js";
 export type { CoachProfile } from "./coach/profile.js";
 export { MAX_CANDIDATES, selectCandidates } from "./coach/candidates.js";
