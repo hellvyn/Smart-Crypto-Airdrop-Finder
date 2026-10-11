@@ -15,7 +15,8 @@ import { extractPending } from "./steps/extract.js";
 import { readClaimPages } from "./steps/link-checks.js";
 import { mergeDocument } from "./steps/merge.js";
 import type { ProjectInput } from "./steps/merge.js";
-import { purgeOldText } from "./steps/purge.js";
+import { purgeCoach, purgeOldText } from "./steps/purge.js";
+import { runBriefing } from "./steps/briefing.js";
 import { refreshLogos } from "./steps/logos.js";
 import { scoreProjects } from "./steps/score.js";
 import { refreshSignals } from "./steps/signals.js";
@@ -48,9 +49,10 @@ export interface PipelineDeps {
  * stage (each document is merged as soon as it is extracted), so 3 is no longer reported. 7 was a stage that
  * no longer exists; the numbers of the other stages stay as they were. New stages get new numbers: `signals` (8)
  * runs between `speculative` and `analyze`, `analyze` (9) runs after `signals` and before `score`, and `logos` (10)
- * runs after `score` (it needs that run's phishing answers) and before `purge`.
+ * runs after `score` (it needs that run's phishing answers) and before `purge`, and `briefing` (11) runs after `score`
+ * (it reads the changes and curations that run wrote) and before `logos`.
  */
-const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6, signals: 8, analyze: 9, logos: 10 } as const;
+const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6, signals: 8, analyze: 9, logos: 10, briefing: 11 } as const;
 
 type ExtractedProject = ExtractionResult["projects"][number];
 
@@ -117,7 +119,7 @@ function speculativeInput(c: SpeculativeCandidate): ProjectInput {
 
 /**
  * One daily pipeline run: collect, extract (each document merged right after its extraction), DefiLlama
- * speculative merge, signals, AI analyses, score, logos, purge.
+ * speculative merge, signals, AI analyses, score, briefing, logos, purge.
  *
  * Merges go through a single-slot queue: they run one at a time, in the order extractions finish, while
  * other extractions continue. The extract stage waits for the queue to drain, even when it fails.
@@ -235,11 +237,15 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   const phishing = await stage("score", new Map<string, boolean | null>(), () =>
     scoreProjects(deps, config, now, stats, coverage),
   );
+  await stage("briefing", undefined, () => runBriefing(deps, config, stats));
   await stage("logos", undefined, async () => {
     const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
     await refreshLogos(deps, config, projects, { protocols: collected.protocols, phishing }, now, stats);
   });
-  await stage("purge", undefined, () => purgeOldText(repo, config.textRetentionDays, now, stats));
+  await stage("purge", undefined, async () => {
+    await purgeOldText(repo, config.textRetentionDays, now, stats);
+    await purgeCoach(repo, now, stats);
+  });
 
   if (failure.failed) {
     try {

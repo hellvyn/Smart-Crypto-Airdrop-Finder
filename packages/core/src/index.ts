@@ -68,3 +68,19 @@ export type { Candidate } from "./coach/candidates.js";
 export { MAX_RECOMMENDATIONS, coachPlanAnswerSchema, serverCapitalNote, validatePlan } from "./coach/plan.js";
 export type { CoachPlanAnswer, ValidPlanItem } from "./coach/plan.js";
 export { BANNED_LINE_PREFIX, LANGKAH_NOL, buildCoachSystemPrompt } from "./coach/prompt.js";
+export {
+  MAX_BRIEFING_ITEMS,
+  briefingAnswerSchema,
+  briefingBanned,
+  briefingInputs,
+  fallbackBriefing,
+  validateBriefing,
+} from "./coach/briefing.js";
+export type {
+  BriefingAnswer,
+  BriefingChange,
+  BriefingDeadline,
+  BriefingFact,
+  BriefingFactKind,
+  BriefingItem,
+} from "./coach/briefing.js";

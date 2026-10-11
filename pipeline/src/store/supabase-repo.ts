@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   AiKind,
+  BriefingChange,
+  BriefingDeadline,
+  BriefingItem,
   CurationRecord,
   DatePrecision,
   DeadlineKind,
@@ -1067,6 +1070,95 @@ export class SupabaseRepo implements PipelineRepo {
     return rows
       .map((r) => ({ projectId: r.project_id, outcome: r.outcome, attemptedAt: new Date(r.attempted_at) }))
       .sort((a, b) => (a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0));
+  }
+
+  async listBriefingChanges(since: Date): Promise<BriefingChange[]> {
+    type Row = {
+      project_id: string;
+      field: BriefingChange["field"];
+      old_value: string | null;
+      new_value: string;
+      project: { slug: string; name: string } | null;
+    };
+    const rows = await this.fetchAll<Row>("listBriefingChanges", (from, to) =>
+      this.db
+        .from("project_changes")
+        .select("project_id, field, old_value, new_value, project:projects(slug, name)")
+        .gte("changed_at", since.toISOString())
+        .order("changed_at")
+        .order("seq")
+        .range(from, to)
+        .returns<Row[]>(),
+    );
+    return rows.flatMap((r) =>
+      r.project === null
+        ? []
+        : [
+            {
+              projectId: r.project_id,
+              slug: r.project.slug,
+              name: r.project.name,
+              field: r.field,
+              oldValue: r.old_value,
+              newValue: r.new_value,
+            },
+          ],
+    );
+  }
+
+  async listBriefingDeadlines(from: string, to: string): Promise<BriefingDeadline[]> {
+    type Row = {
+      project_id: string;
+      kind: BriefingDeadline["kind"];
+      date: string;
+      project: { slug: string; name: string } | null;
+    };
+    const rows = await this.fetchAll<Row>("listBriefingDeadlines", (start, end) =>
+      this.db
+        .from("deadlines")
+        .select("project_id, kind, date, project:projects(slug, name)")
+        .in("kind", ["claim", "snapshot", "campaign_end"])
+        .in("precision", ["exact", "approximate"])
+        .gte("date", from)
+        .lte("date", to)
+        .order("date")
+        .order("id")
+        .range(start, end)
+        .returns<Row[]>(),
+    );
+    return rows.flatMap((r) =>
+      r.project === null
+        ? []
+        : [{ projectId: r.project_id, slug: r.project.slug, name: r.project.name, kind: r.kind, date: r.date }],
+    );
+  }
+
+  async saveBriefing(day: string, items: BriefingItem[], model: string | null, ai: boolean): Promise<void> {
+    check(
+      "saveBriefing",
+      await this.db.from("briefings").upsert({ day, items, model, ai }, { onConflict: "day" }),
+    );
+  }
+
+  async purgeCoachAndBriefings(olderThan: Date): Promise<{ threads: number; briefings: number }> {
+    // coach_messages go with their thread (on delete cascade).
+    const threads = await this.db
+      .from("coach_threads")
+      .delete({ count: "exact" })
+      .lt("created_at", olderThan.toISOString());
+    check("purgeCoach.threads", threads);
+    const briefings = await this.db
+      .from("briefings")
+      .delete({ count: "exact" })
+      .lt("day", olderThan.toISOString().slice(0, 10));
+    check("purgeCoach.briefings", briefings);
+    return { threads: threads.count ?? 0, briefings: briefings.count ?? 0 };
+  }
+
+  async purgeCoachUsage(olderThan: Date): Promise<number> {
+    const usage = await this.db.from("coach_usage").delete({ count: "exact" }).lt("created_at", olderThan.toISOString());
+    check("purgeCoach.usage", usage);
+    return usage.count ?? 0;
   }
 
   async listListedProjects(projectIds: string[]): Promise<string[]> {

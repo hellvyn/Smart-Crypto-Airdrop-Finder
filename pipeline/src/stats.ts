@@ -119,6 +119,14 @@ export interface DailyStats extends RunStats {
   /** Collected documents that could not be stored (the other documents still were). */
   ingest_failed: number;
   purged: number;
+  /** Items in the briefing saved this run (0 when there were no facts and nothing was saved). */
+  briefing_items: number;
+  /** 1 when this run's briefing came from the model, 0 when it is the version without the AI or none was saved. */
+  briefing_ai: number;
+  /** Coach threads deleted by retention (30 days); their messages go with them. */
+  coach_threads_purged: number;
+  /** Quota ledger rows (`coach_usage`) deleted by retention (2 days). */
+  coach_usage_purged: number;
   /** Logos stored this run (`logos` stage), all sources together, and per source. */
   logos_fetched: number;
   logos_defillama: number;
@@ -143,6 +151,7 @@ export interface DailyStats extends RunStats {
   stage_seconds_signals: number;
   stage_seconds_analyze: number;
   stage_seconds_score: number;
+  stage_seconds_briefing: number;
   stage_seconds_logos: number;
   stage_seconds_purge: number;
 }
@@ -204,6 +213,10 @@ export function emptyStats(): DailyStats {
     source_failed: 0,
     ingest_failed: 0,
     purged: 0,
+    briefing_items: 0,
+    briefing_ai: 0,
+    coach_threads_purged: 0,
+    coach_usage_purged: 0,
     logos_fetched: 0,
     logos_defillama: 0,
     logos_x_avatar: 0,
@@ -219,6 +232,7 @@ export function emptyStats(): DailyStats {
     stage_seconds_signals: 0,
     stage_seconds_analyze: 0,
     stage_seconds_score: 0,
+    stage_seconds_briefing: 0,
     stage_seconds_logos: 0,
     stage_seconds_purge: 0,
   };

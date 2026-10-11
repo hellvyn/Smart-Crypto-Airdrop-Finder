@@ -2166,7 +2166,7 @@ describe("runDaily RDAP and crt.sh pacing", () => {
 });
 
 describe("runDaily stage durations", () => {
-  const STAGES = ["collect", "extract", "speculative", "signals", "analyze", "score", "purge"];
+  const STAGES = ["collect", "extract", "speculative", "signals", "analyze", "score", "briefing", "purge"];
 
   it("reports the seconds each stage took as numbers in the run stats", async () => {
     let t = NOW.getTime();
@@ -2303,9 +2303,10 @@ describe("runDailyJob LLM providers", () => {
     expect(lines.join("\n")).not.toContain("test-key");
     // The 3 analyses (Analyst, Scam Analyst, contradictions) of each of the 3 projects follow the same chain:
     // freellm auto, then NVIDIA.
+    // The briefing (one call, same chain) comes after them: 10 calls in all.
     const analysis = requests.filter((r) => r.analysis);
-    expect(analysis.filter((r) => r.url.startsWith("https://llm.test/"))).toHaveLength(9);
-    expect(analysis.filter((r) => !r.url.startsWith("https://llm.test/"))).toHaveLength(9);
+    expect(analysis.filter((r) => r.url.startsWith("https://llm.test/"))).toHaveLength(10);
+    expect(analysis.filter((r) => !r.url.startsWith("https://llm.test/"))).toHaveLength(10);
     expect(stats.ai_analyses_run).toBe(9);
     // No ANTHROPIC_API_KEY in this environment: Claude is never asked.
     expect(requests.filter((r) => r.url.startsWith("https://api.anthropic.com/"))).toEqual([]);
@@ -2406,7 +2407,8 @@ describe("runDailyJob LLM providers", () => {
 
       expect(code).toBe(0);
       expect(toClaude(seen)).toEqual(
-        Array.from({ length: 9 }, () => ({ url: "https://api.anthropic.com/v1/messages", analysis: true, apiKey: CLAUDE_KEY })),
+        // 9 analyses and the briefing's one call.
+        Array.from({ length: 10 }, () => ({ url: "https://api.anthropic.com/v1/messages", analysis: true, apiKey: CLAUDE_KEY })),
       );
       // Analyses answered by Claude go nowhere else; extraction keeps freellm, then NVIDIA.
       expect(seen.filter((r) => r.analysis && !r.url.startsWith("https://api.anthropic.com/"))).toEqual([]);
@@ -2922,7 +2924,8 @@ describe("runDaily AI analyses", () => {
 
     expect(calls.filter((c) => !c.analysis).length).toBeGreaterThan(0);
     expect(calls.filter((c) => !c.analysis && c.provider === "anthropic")).toEqual([]);
-    expect(calls.filter((c) => c.analysis).map((c) => c.provider)).toEqual(Array(9).fill("anthropic"));
+    // 9 analyses and the briefing's one call.
+    expect(calls.filter((c) => c.analysis).map((c) => c.provider)).toEqual(Array(10).fill("anthropic"));
     expect(stats.ai_analyses_run).toBe(9);
     expect(new Set(repo.aiAnalyses.map((a) => a.model))).toEqual(new Set(["anthropic:claude-sonnet-5-5"]));
   });
@@ -3094,6 +3097,40 @@ describe("runDaily AI analyses", () => {
 
     expect(repo.runs[0]?.stats.failed_step).toBe(9);
     expect(repo.runs[0]?.stats.assessed).toBe(3);
+  });
+});
+
+describe("runDaily briefing and coach retention", () => {
+  it("saves the day's briefing after scoring and purges old coach data in the purge stage", async () => {
+    const repo = new MemoryRepo();
+    repo.coachThreads.push({ id: "t-old", createdAt: new Date(NOW.getTime() - 40 * 86_400_000) });
+    repo.coachUsage.push({ id: "u-old", createdAt: new Date(NOW.getTime() - 3 * 86_400_000) });
+    const { deps, config } = setup({ repo });
+
+    const stats = await runDaily(deps, config);
+
+    // The three curated projects are new today: the fake model's answer fits no briefing, so the version without the AI.
+    expect([...repo.briefings.values()].map((b) => b.ai)).toEqual([false]);
+    expect(stats.briefing_items).toBe(3);
+    expect(stats.briefing_ai).toBe(0);
+    expect(repo.coachThreads).toEqual([]);
+    expect(stats.coach_threads_purged).toBe(1);
+    expect(stats.coach_usage_purged).toBe(1);
+  });
+
+  it("reports a failing briefing stage as failed_step 11 and still runs logos and purge", async () => {
+    const repo = new MemoryRepo();
+    repo.listBriefingChanges = async () => {
+      throw new Error("db down");
+    };
+    repo.coachThreads.push({ id: "t-old", createdAt: new Date(NOW.getTime() - 40 * 86_400_000) });
+    const { deps, config } = setup({ repo });
+
+    await expect(runDaily(deps, config)).rejects.toThrow("db down");
+
+    expect(repo.runs[0]?.stats.failed_step).toBe(11);
+    expect(repo.runs[0]?.stats.assessed).toBe(3);
+    expect(repo.coachThreads).toEqual([]);
   });
 });
 

@@ -256,6 +256,20 @@ portfolio company).
 | Delphi Ventures | 2 | ditunda | JavaScript-rendered: `/portfolio-crypto` has only the first 10 companies in the HTML, the rest load with "Load More" |
 | Jump Crypto | 2 | ditunda | terms (on `jumptrading.com`) license the site for private, non-commercial use only. List at `/invest` (200, 21 domains), `robots.txt` allows |
 
+### Morning briefing (`briefing` stage)
+
+After `score` and before `logos`, the `briefing` stage (`pipeline/src/steps/briefing.ts`) writes the day's briefing into
+`briefings` (one row per WIB day, members read it on `/airdrops`). Facts, for projects on the list only: risk raises,
+status changes and newly curated projects of the last 24 hours, and claim, snapshot and campaign_end deadlines in the
+next 48 hours. One model call (the `analyze` chain: Claude Sonnet first, then freellm/NVIDIA) turns the facts into at
+most 5 points; each point must name a fact's project and restate only what the facts say (`groundedAgainst`). A banned
+word gets one rewrite call, then the version without the AI (the fact texts as they are, `ai` false). All models failing
+gives the same version. No facts: no call and nothing saved, so the web keeps showing the latest briefing with its date.
+Nothing about a member is sent, and the prompt and the answer are not logged.
+
+Retention (`purge` stage): coach threads (their messages go with them) and briefings older than 30 days, and
+`coach_usage` rows (the quota ledger) older than 2 days.
+
 ### Project logos (`logos` stage, list cards)
 
 After `score`, the `logos` stage (`pipeline/src/steps/logos.ts`) stores one logo per scored project in
@@ -335,8 +349,10 @@ The same counters are stored in `pipeline_runs.stats` with `started_at`/`finishe
 | `source_failed` | sources that failed or returned nothing usable (often a changed page structure) |
 | `ingest_failed` / `merge_failed` / `score_failed` | single documents or projects that could not be stored, merged or assessed |
 | `purged` | documents whose text passed the 90-day retention and was blanked |
-| `stage_seconds_collect` / `_extract` / `_speculative` / `_signals` / `_analyze` / `_score` / `_logos` / `_purge` | seconds each stage took (one decimal), also when it failed; flat keys because the stats are numbers only |
-| `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 8 signals, 9 analyze, 5 score, 10 logos, 6 purge, in run order); the other stages still ran |
+| `briefing_items` / `briefing_ai` | items in the briefing saved this run (0 when there were no facts) / 1 when the model wrote it, 0 for the version without the AI |
+| `coach_threads_purged` / `coach_usage_purged` | coach threads older than 30 days / quota ledger rows older than 2 days deleted this run |
+| `stage_seconds_collect` / `_extract` / `_speculative` / `_signals` / `_analyze` / `_score` / `_briefing` / `_logos` / `_purge` | seconds each stage took (one decimal), also when it failed; flat keys because the stats are numbers only |
+| `run_error`, `failed_step` | a whole stage failed (1 collect, 2 extract and merge, 4 DefiLlama merge, 8 signals, 9 analyze, 5 score, 11 briefing, 10 logos, 6 purge, in run order); the other stages still ran |
 
 Exit code (shown as the workflow status): **failed** when `run_error`, `source_failed`, `ingest_failed`,
 `merge_failed` or `score_failed` is above 0, or when the Supabase settings are missing (`{"config_error":1}`). Everything is

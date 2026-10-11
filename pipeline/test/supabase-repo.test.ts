@@ -19,7 +19,7 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
   const deletes: { table: string; filters: [string, unknown][] }[] = [];
   const updates: { table: string; row: unknown; filters: [string, unknown][] }[] = [];
   const reads: { table: string; columns: string; filters: [string, unknown][]; orders: string[] }[] = [];
-  const ok = { data: null, error: null, count: null, status: 204, statusText: "No Content" };
+  const ok: { data: null; error: null; count: number | null; status: number; statusText: string } = { data: null, error: null, count: null, status: 204, statusText: "No Content" };
   const client = {
     from: (table: string) => ({
       // A read answers `selectRows[table]` (or no row) whatever its filters, ordering or limit.
@@ -42,7 +42,7 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
             return query;
           },
         };
-        for (const method of ["neq", "gte", "limit", "range", "returns", "maybeSingle", "single"]) {
+        for (const method of ["neq", "gte", "lte", "limit", "range", "returns", "maybeSingle", "single"]) {
           query[method] = () => query;
         }
         return query;
@@ -83,7 +83,11 @@ function recordingClient(selectRows: Record<string, unknown> = {}): {
             filters.push(["or", conditions]);
             return query;
           },
-          then: (resolve: (value: typeof ok) => unknown) => resolve(ok),
+          lt: (column: string, value: unknown) => {
+            filters.push([column, `lt.${String(value)}`]);
+            return query;
+          },
+          then: (resolve: (value: typeof ok) => unknown) => resolve({ ...ok, count: 2 }),
         };
         return query;
       },
@@ -970,5 +974,57 @@ describe("SupabaseRepo logo attempts and listed projects", () => {
     expect(reads).toEqual([
       { table: "latest_curations", columns: "project_id", filters: [["project_id", ["p-3", "p-1", "p-2"]], ["passed", true]], orders: [] },
     ]);
+  });
+});
+
+describe("SupabaseRepo briefing and coach retention", () => {
+  it("saves a briefing by day", async () => {
+    const { client, upserts } = recordingClient();
+    const items = [{ projectId: "p-1", slug: "alpha", name: "Alpha", text: "Alpha baru masuk list." }];
+
+    await new SupabaseRepo(client).saveBriefing("2026-10-11", items, "anthropic:claude-sonnet-5-5", true);
+
+    expect(upserts).toEqual([
+      {
+        table: "briefings",
+        row: { day: "2026-10-11", items, model: "anthropic:claude-sonnet-5-5", ai: true },
+        options: { onConflict: "day" },
+      },
+    ]);
+  });
+
+  it("deletes threads and briefings older than the cutoff and the usage ledger rows, counting them", async () => {
+    const { client, deletes } = recordingClient();
+    const repo = new SupabaseRepo(client);
+
+    const old = await repo.purgeCoachAndBriefings(new Date("2026-09-10T23:00:00Z"));
+    const usage = await repo.purgeCoachUsage(new Date("2026-10-08T23:00:00Z"));
+
+    expect(deletes).toEqual([
+      { table: "coach_threads", filters: [["created_at", "lt.2026-09-10T23:00:00.000Z"]] },
+      { table: "briefings", filters: [["day", "lt.2026-09-10"]] },
+      { table: "coach_usage", filters: [["created_at", "lt.2026-10-08T23:00:00.000Z"]] },
+    ]);
+    expect(old).toEqual({ threads: 2, briefings: 2 });
+    expect(usage).toBe(2);
+  });
+
+  it("reads the changes since a time and the near deadlines with their project", async () => {
+    const { client, reads } = recordingClient({
+      project_changes: [
+        { project_id: "p-1", field: "status", old_value: "announced", new_value: "live", project: { slug: "alpha", name: "Alpha" } },
+        { project_id: "p-2", field: "status", old_value: null, new_value: "live", project: null },
+      ],
+      deadlines: [{ project_id: "p-1", kind: "claim", date: "2026-10-12", project: { slug: "alpha", name: "Alpha" } }],
+    });
+    const repo = new SupabaseRepo(client);
+
+    expect(await repo.listBriefingChanges(new Date("2026-10-10T00:00:00Z"))).toEqual([
+      { projectId: "p-1", slug: "alpha", name: "Alpha", field: "status", oldValue: "announced", newValue: "live" },
+    ]);
+    expect(await repo.listBriefingDeadlines("2026-10-10", "2026-10-12")).toEqual([
+      { projectId: "p-1", slug: "alpha", name: "Alpha", kind: "claim", date: "2026-10-12" },
+    ]);
+    expect(reads.map((r) => r.table)).toEqual(["project_changes", "deadlines"]);
   });
 });
