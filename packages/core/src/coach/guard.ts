@@ -222,6 +222,19 @@ const SEED_LENGTHS = [12, 15, 18, 21, 24] as const;
 const SEED_WORD_RE = /^[a-z]{3,8}$/;
 const SEED_SEPARATOR_RE = /[\s,]+/;
 const PRIVATE_KEY_RE = /(?<![0-9a-fA-F])(?:0x)?[0-9a-fA-F]{64}(?![0-9a-fA-F])/;
+/** A Solana-style secret key (base58, 64 to 88 characters) and a WIF private key (51 or 52 characters, 5, K or L first). */
+const BASE58_KEY_RE = /(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{64,88}(?![1-9A-HJ-NP-Za-km-z])/g;
+const WIF_KEY_RE = /(?<![1-9A-HJ-NP-Za-km-z])[5KL][1-9A-HJ-NP-Za-km-z]{50,51}(?![1-9A-HJ-NP-Za-km-z])/g;
+
+/** Random-looking: digits, lower and upper case all present and many distinct characters (not "aaaa..." or a long word). */
+function keyLike(candidate: string): boolean {
+  return /\d/.test(candidate) && /[a-z]/.test(candidate) && /[A-Z]/.test(candidate) && new Set(candidate).size >= 20;
+}
+
+function hasEncodedKey(text: string): boolean {
+  return [...text.matchAll(BASE58_KEY_RE), ...text.matchAll(WIF_KEY_RE)].some((m) => keyLike(m[0]));
+}
+
 /**
  * Common Indonesian chat words. A seed phrase is made of English words, so a run that has one of these is a
  * sentence, however plain it is written. None of them is a BIP39 word.
@@ -236,13 +249,16 @@ const CHAT_WORDS: ReadonlySet<string> = new Set(
 
 /**
  * Whether `text` looks like a secret a member must never send: a private key (64 hex characters, `0x` optional), or a
- * seed phrase, that is 12, 15, 18, 21 or 24 (or more) consecutive words of 3 to 8 lowercase letters a to z, split by
- * spaces, commas or newlines only. A word with a capital, a digit or any other punctuation ends the run, and so does
+ * seed phrase, that is 12, 15, 18, 21 or 24 (or more) consecutive words of 3 to 8 letters a to z (any case, with list numbers
+ * and hyphens ignored), split by spaces, commas or newlines. Any other punctuation ends the run, and so does
  * a run with an Indonesian chat word in it: ordinary chat is not blocked. Built to refuse, not to be exact: the
  * sender is told to rewrite the message.
  */
 export function looksLikeSecret(text: string): boolean {
-  if (PRIVATE_KEY_RE.test(text)) return true;
+  if (PRIVATE_KEY_RE.test(text) || hasEncodedKey(text)) return true;
+  // A seed phrase exported as a numbered list ("1. word", "2) Word"), in capitals or joined by hyphens is the same
+  // phrase: list numbers and joiners become spaces and case is dropped before the words are counted.
+  const plain = text.toLowerCase().replace(/\b\d+\s*[.):-]?(?=\s|$)/g, " ").replace(/[-_]/g, " ");
   let run: string[] = [];
   const phraseInRun = (): boolean => {
     const shortest = SEED_LENGTHS[0];
@@ -255,7 +271,7 @@ export function looksLikeSecret(text: string): boolean {
     }
     return false;
   };
-  for (const token of text.split(SEED_SEPARATOR_RE)) {
+  for (const token of plain.split(SEED_SEPARATOR_RE)) {
     if (SEED_WORD_RE.test(token)) {
       run.push(token);
       continue;

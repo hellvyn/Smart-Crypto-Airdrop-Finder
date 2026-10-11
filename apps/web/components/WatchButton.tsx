@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Button } from "@/components/ui";
 import { submitWatch } from "@/app/(app)/watchlist/actions";
 import { detail } from "@/lib/copy";
 
@@ -10,7 +10,11 @@ import { detail } from "@/lib/copy";
 export function WatchButton({ projectId, slug, watching }: { projectId: string; slug: string; watching: boolean | null }) {
   if (watching === null) {
     const next = encodeURIComponent(`/projects/${slug}`);
-    return <Link href={`/login?next=${next}`}>{detail.loginToWatch}</Link>;
+    return (
+      <Button variant="primary" href={`/login?next=${next}`}>
+        {detail.loginToWatch}
+      </Button>
+    );
   }
   return (
     <form action={submitWatch}>

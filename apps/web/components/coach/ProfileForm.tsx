@@ -39,7 +39,7 @@ function Select({
   return (
     <div className="coach-field">
       <label htmlFor={id}>{label}</label>
-      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={error ? true : undefined}>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined}>
         <option value="">{copy.choose}</option>
         {options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>
@@ -48,7 +48,11 @@ function Select({
         ))}
       </select>
       {children}
-      {error ? <p className="form-error">{error}</p> : null}
+      {error ? (
+        <p id={`${id}-error`} className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

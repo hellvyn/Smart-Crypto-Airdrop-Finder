@@ -29,7 +29,7 @@
   --fg: var(--ink);
   --bg: var(--ground);
   --border: var(--line-soft);
-  --error: #b42318;
+  --error: #b91c1c;
   --ok: var(--pass);
   --warn: #93370d;
   --warn-bg: #fffaeb;
@@ -257,7 +257,7 @@ button {
 
 button:disabled {
   opacity: 0.6;
-  cursor: progress;
+  cursor: not-allowed;
 }
 
 .form-error {
@@ -471,6 +471,9 @@ button:disabled {
 }
 
 .filter-clear {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-size: 14px;
   white-space: nowrap;
 }
@@ -857,6 +860,11 @@ blockquote {
   margin: 1rem 0;
 }
 
+.wallet-list li,
+code {
+  overflow-wrap: anywhere;
+}
+
 .wallet-list {
   list-style: none;
   padding: 0;
@@ -866,6 +874,7 @@ blockquote {
 
 .inline-form {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
 }
@@ -1106,6 +1115,11 @@ blockquote {
   border-bottom: 3px solid var(--ink);
 }
 
+.ui-tab:focus-visible {
+  /* The tab bar clips (overflow-x), so the ring sits inside. */
+  outline-offset: -3px;
+}
+
 .ui-tab {
   display: inline-flex;
   align-items: center;
@@ -1245,6 +1259,7 @@ button:not([class]) {
 
 .auth-form input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
 .auth-form select {
+  font-family: inherit;
   width: 100%;
   min-height: 44px;
   padding: 8px 12px;
@@ -1670,7 +1685,7 @@ button[data-tone="danger"]:hover:not(:disabled) {
   border-top: 3px solid var(--ink);
 }
 
-.landing-footer-row {
+.landing-wrap.landing-footer-row {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -2027,6 +2042,7 @@ button[data-tone="danger"]:hover:not(:disabled) {
 
 .farm-task {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
   border-bottom: 2px dashed var(--line-soft);
@@ -2156,7 +2172,7 @@ button[data-tone="danger"]:hover:not(:disabled) {
   border-radius: 0;
   background: var(--surface);
   font: inherit;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .farm-refresh {
@@ -2275,7 +2291,7 @@ button[data-tone="danger"]:hover:not(:disabled) {
   border-radius: 0;
   background: var(--surface);
   font: inherit;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .farm-share {
@@ -2822,6 +2838,7 @@ button[data-tone="danger"]:hover:not(:disabled) {
 
 .coach-title {
   margin: 0;
+  font-size: clamp(36px, 8vw, 56px);
 }
 
 .coach p {

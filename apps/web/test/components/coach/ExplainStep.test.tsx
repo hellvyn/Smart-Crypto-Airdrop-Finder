@@ -66,6 +66,6 @@ describe("ExplainStep", () => {
     render(<ExplainStep projectId={PROJECT} stepId={STEP} />);
     click();
     expect((await screen.findByRole("alert")).textContent).toContain("profil kamu belum diisi");
-    expect(screen.getByRole("link", { name: "Buka Coach" }).getAttribute("href")).toBe("/coach");
+    expect(screen.getByRole("link", { name: "Buka AI Coach" }).getAttribute("href")).toBe("/coach");
   });
 });

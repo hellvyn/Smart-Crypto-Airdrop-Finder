@@ -1,3 +1,4 @@
+import { sessionCookieOptions } from "./cookie-options";
 import { createServerClient as createSsrServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAnonKey, supabaseUrl } from "../env";
@@ -15,6 +16,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   let response = NextResponse.next({ request });
 
   const supabase = createSsrServerClient(supabaseUrl(), supabaseAnonKey(), {
+    cookieOptions: sessionCookieOptions(),
     cookies: {
       getAll() {
         return request.cookies.getAll();

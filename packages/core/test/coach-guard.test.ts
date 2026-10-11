@@ -242,6 +242,20 @@ describe("redactSensitive: plain text", () => {
 });
 
 describe("looksLikeSecret", () => {
+  const WORDS = "legal winner thank year wave sausage worth useful legal winner thank yellow".split(" ");
+  it("finds a phrase exported as a numbered list, in capitals, or joined by hyphens", () => {
+    expect(looksLikeSecret(WORDS.map((w, i) => `${i + 1}. ${w}`).join("\n"))).toBe(true);
+    expect(looksLikeSecret(WORDS.map((w, i) => `${i + 1} ${w}`).join(" "))).toBe(true);
+    expect(looksLikeSecret(WORDS.map((w) => w[0]!.toUpperCase() + w.slice(1)).join(" "))).toBe(true);
+    expect(looksLikeSecret(WORDS.join("-"))).toBe(true);
+  });
+  it("finds a base58 secret key and a WIF key, but not a short id or an ordinary sentence", () => {
+    expect(looksLikeSecret("5Kb8kLf9zgWQnogidDA76MzPL6TsZZY36hWXMssSzNydYXYB9KF")).toBe(true);
+    expect(looksLikeSecret("4NMwxzmYj2uvHuq8xoqhY8RXg63KSVJM1DXkpbmkUY7YQWuoyQgFnnzn6yo3CMnqZasnNPNuAT7TLgDcN3sG8xnb".slice(0, 88))).toBe(true);
+    expect(looksLikeSecret("Project ini ok gak? Status: live, chain base, modal 100 dollar")).toBe(false);
+    expect(looksLikeSecret("Daftar 1. bridge 2. swap 3. stake ke pool resmi di app")).toBe(false);
+  });
+
   const SEED12 = "legal winner thank year wave sausage worth useful legal winner thank yellow";
   const SEED24 =
     "void come effort suffer camp survey warrior heavy shoot primary clutch crush open amazing screen patrol group space point ten exist slush involve unfold";
@@ -264,9 +278,8 @@ describe("looksLikeSecret", () => {
     expect(looksLikeSecret(`Tolong cek ini. ${SEED12}`)).toBe(true);
   });
 
-  it("does not flag 11 words, or a phrase with a capital or punctuation inside", () => {
+  it("does not flag 11 words, or a phrase with punctuation inside", () => {
     expect(looksLikeSecret(SEED12.split(" ").slice(0, 11).join(" "))).toBe(false);
-    expect(looksLikeSecret(SEED12.replace("wave", "Wave"))).toBe(false);
     expect(looksLikeSecret(SEED12.replace("wave", "wave."))).toBe(false);
     expect(looksLikeSecret(SEED12.replace("wave", "wa-ve"))).toBe(false);
     expect(looksLikeSecret(SEED12.replace("wave", "wa"))).toBe(false);
