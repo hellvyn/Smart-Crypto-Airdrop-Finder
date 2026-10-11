@@ -57,7 +57,7 @@ describe("landing page", () => {
     ).toBeTruthy();
   });
 
-  it("compares free and member in 12 rows, 6 free and 6 member only", async () => {
+  it("compares free and member in 12 rows, 6 free and 6 member only, 2 of those coming soon", async () => {
     await renderLanding();
     const table = screen.getByRole("table", { name: "Apa bedanya gratis sama member?" });
     const rows = within(table).getAllByRole("row").slice(1);
@@ -66,7 +66,8 @@ describe("landing page", () => {
       return [
         within(row).getByRole("rowheader").textContent,
         cells[0]!.querySelector("[role=img]")?.getAttribute("aria-label"),
-        cells[1]!.querySelector("[role=img]")?.getAttribute("aria-label"),
+        // A feature that is not there yet says "Segera" for members instead of a check mark.
+        cells[1]!.querySelector("[role=img]")?.getAttribute("aria-label") ?? cells[1]!.textContent,
       ];
     });
     expect(summary).toEqual([
@@ -79,8 +80,8 @@ describe("landing page", () => {
       ["Level worth itSepadan gak sama effort-nya, plus urutan dari yang paling worth it.", "Gak ada", "Ada"],
       ["AI verdictGarap, pantau, atau skip. Tiap alasan ada kutipan source-nya.", "Gak ada", "Ada"],
       ["Estimasi effortBerapa menit per hari, modal, dan gas fee.", "Gak ada", "Ada"],
-      ["Morning briefingAirdrop baru dan update penting, dirangkum sebelum kamu buka grup.", "Gak ada", "Ada"],
-      ["Farming CoachTanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", "Gak ada", "Ada"],
+      ["Morning briefingSegeraAirdrop baru dan update penting, dirangkum sebelum kamu buka grup.", "Gak ada", "Segera"],
+      ["Farming CoachSegeraTanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", "Gak ada", "Segera"],
       ["Farming tracker & watchlistDaily checklist, heatmap, dan update kalau ada yang berubah.", "Gak ada", "Ada"],
     ]);
   });

@@ -1282,6 +1282,22 @@ blockquote {
   font-weight: 700;
 }
 
+/* A feature that is not there yet: its title with a "Segera" tag, and "Segera" in the member column. */
+.landing-feature-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.landing-soon {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .landing-feature-note {
   display: block;
   margin-top: 2px;

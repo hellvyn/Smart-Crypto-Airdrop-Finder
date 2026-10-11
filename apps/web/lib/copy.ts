@@ -578,6 +578,8 @@ export const landing = {
     member: "Member",
     included: "Ada",
     notIncluded: "Gak ada",
+    /** A member feature that is not there yet (owner, 2026-10-11): the tag by its title and its member cell. */
+    soon: "Segera",
     rows: [
       { title: "List airdrop yang lolos check", note: "Yang live sekarang, early, dan yang udah ended.", free: true },
       { title: "Security check", note: "4 check utama, plus warning kalau ada pola scam.", free: true },
@@ -588,8 +590,8 @@ export const landing = {
       { title: "Level worth it", note: "Sepadan gak sama effort-nya, plus urutan dari yang paling worth it.", free: false },
       { title: "AI verdict", note: "Garap, pantau, atau skip. Tiap alasan ada kutipan source-nya.", free: false },
       { title: "Estimasi effort", note: "Berapa menit per hari, modal, dan gas fee.", free: false },
-      { title: "Morning briefing", note: "Airdrop baru dan update penting, dirangkum sebelum kamu buka grup.", free: false },
-      { title: "Farming Coach", note: "Tanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", free: false },
+      { title: "Morning briefing", note: "Airdrop baru dan update penting, dirangkum sebelum kamu buka grup.", free: false, soon: true },
+      { title: "Farming Coach", note: "Tanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", free: false, soon: true },
       { title: "Farming tracker & watchlist", note: "Daily checklist, heatmap, dan update kalau ada yang berubah.", free: false },
     ],
   },
