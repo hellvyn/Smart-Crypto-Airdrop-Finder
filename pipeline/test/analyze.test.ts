@@ -8,7 +8,7 @@ import type { PipelineConfig } from "../src/config.js";
 import type { ChatFn, ChatMessage, ChatResult, ModelConfig } from "@saf/llm";
 import { buildContradictionsMessages } from "../src/llm/prompts/contradictions.js";
 import { buildScamMessages } from "../src/llm/prompts/scam.js";
-import { ANALYZERS, analysisInputHash, runAnalyses } from "../src/steps/analyze.js";
+import { ANALYZERS, analysisInputHash, listedFirst, runAnalyses } from "../src/steps/analyze.js";
 import type { Analyzer, SourceText } from "../src/steps/analyze.js";
 import { emptyStats } from "../src/stats.js";
 import { MemoryRepo } from "../src/store/memory-repo.js";
@@ -692,5 +692,13 @@ describe("the default analyzers", () => {
     const stats = await runDefault(repo, chatByKind(over).chat);
 
     expect(stats.ai_style_violations).toBe(1);
+  });
+});
+
+describe("listedFirst", () => {
+  it("puts the listed projects first and keeps the order inside both groups", () => {
+    const ps = ["a", "b", "c", "d", "e"].map((id) => ({ id }));
+    expect(listedFirst(ps, ["d", "b"]).map((p) => p.id)).toEqual(["b", "d", "a", "c", "e"]);
+    expect(listedFirst(ps, []).map((p) => p.id)).toEqual(["a", "b", "c", "d", "e"]);
   });
 });

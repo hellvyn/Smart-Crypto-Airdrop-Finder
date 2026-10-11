@@ -101,6 +101,15 @@ export function analysisInputHash(project: ProjectForScoring, sourceTexts: strin
 }
 
 /**
+ * `projects` with those on the list first (both groups keep their order). A run starts at most `maxAnalysesPerRun`
+ * analyses, so the projects members can see must get them before the ones that are not listed.
+ */
+export function listedFirst<T extends { id: string }>(projects: T[], listedIds: Iterable<string>): T[] {
+  const listed = new Set(listedIds);
+  return [...projects.filter((p) => listed.has(p.id)), ...projects.filter((p) => !listed.has(p.id))];
+}
+
+/**
  * Runs every analyzer on every project, `llmConcurrency` projects at a time, and stores each new analysis.
  *
  * - The input of an analysis is the project's unpurged source documents (`listProjectSourceTexts`) plus the

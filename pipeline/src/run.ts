@@ -6,7 +6,7 @@ import { countAlphaDropsRequests, loadRaises } from "./enrich/alphadrops-raises.
 import { refreshPortfolios } from "./enrich/vc-portfolios.js";
 import type { ChatFn } from "./llm/extract.js";
 import type { FetchImage, FetchUntrusted } from "./http.js";
-import { ANALYZERS, claimPageSources, runAnalyses } from "./steps/analyze.js";
+import { ANALYZERS, claimPageSources, listedFirst, runAnalyses } from "./steps/analyze.js";
 import type { Analyzer, SourceText } from "./steps/analyze.js";
 import { collectSources } from "./steps/collect.js";
 import type { SpeculativeItem } from "./steps/collect.js";
@@ -225,7 +225,9 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
   const analyzers = deps.analyzers ?? ANALYZERS;
   await stage("analyze", undefined, async () => {
     if (analyzers.length === 0) return;
-    const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
+    // Listed projects first: the per-run cap must not go to projects members never see.
+    const all = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
+    const projects = listedFirst(all, await repo.listListedProjects(all.map((p) => p.id)));
     // Claim portal pages are read here, before the scam analyst, so it sees them in this run (#56).
     const claimPages = analyzers.some((a) => a.kind === "scam")
       ? await readClaimPages({ repo, fetchUntrusted: deps.fetchUntrusted }, projects, now, stats)
