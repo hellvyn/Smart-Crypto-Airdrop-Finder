@@ -21,8 +21,8 @@
       "officialDomains": ["raycash.xyz"]
     },
     "tg_flop": {
-      "kind": "project", "project": "flop", "status": "speculative", "token": "FLOP", "chain": null,
-      "deadlines": [], "officialDomains": []
+      "kind": "project", "project": "flop", "status": "announced", "token": "FLOP", "chain": null,
+      "deadlines": [{ "kind": "snapshot", "date": null }], "officialDomains": []
     },
     "tg_ink": {
       "kind": "project", "project": "ink", "status": "speculative", "token": "INK", "chain": null,
@@ -81,7 +81,7 @@
     },
     "aio_mint_io": {
       "kind": "project", "project": "mint", "status": "live", "token": "MNTD", "chain": "robinhood chain",
-      "deadlines": [{ "kind": "tge", "date": "2026-10-20" }],
+      "deadlines": [{ "kind": "tge", "date": "2026-10-20" }, { "kind": "snapshot", "date": null }],
       "officialDomains": ["mint.io", "getminted.io"]
     },
     "aio_tastyco": {
