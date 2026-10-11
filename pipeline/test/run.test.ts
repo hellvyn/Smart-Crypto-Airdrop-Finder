@@ -2057,6 +2057,36 @@ describe("runDaily AlphaDrops reported backers", () => {
     ]);
   });
 
+  it("fetches only 6 raise pages in a run, pages never cached first, then the oldest", async () => {
+    const repo = new MemoryRepo();
+    const slugs = Array.from({ length: 12 }, (_, i) => `raise${i}`);
+    for (const [i, slug] of slugs.entries()) {
+      await repo.createProject(
+        { slug, name: `Raise${i}`, nameKey: slug, tokenSymbol: null, chains: [], officialDomains: [`${slug}.xyz`], status: "live", conflict: false, lookalikeOf: null },
+        NOW,
+      );
+    }
+    // raise0..2 were never cached; raise3..8 are cached but older than 7 days; raise9..11 were cached 3 days ago.
+    const cachedDaysAgo: Record<number, number> = { 3: 9, 4: 20, 5: 12, 6: 30, 7: 15, 8: 10, 9: 3, 10: 3, 11: 3 };
+    for (const [i, days] of Object.entries(cachedDaysAgo)) {
+      const slug = `raise${i}`;
+      await repo.saveAlphaRaise(slug, { officialDomain: `${slug}.xyz`, rounds: [] }, new Date(NOW.getTime() - days * DAY));
+    }
+    const pages = basePages();
+    pages[ALPHA_LLMS_FULL] = { status: 200, body: llmsFull(slugs.map((slug, i) => [`Raise${i}`, slug])) };
+    for (const slug of slugs) pages[raisePage(slug)] = { status: 200, body: raiseHtml(`https://${slug}.xyz/`, "Paradigm") };
+    const { http, deps, config } = setup({ repo, pages });
+
+    const stats = await runDaily(deps, config);
+
+    // 9 pages are due (3 never cached, 6 stale), so 3 wait for the next run: the 3 that were cached most recently.
+    const fetched = http.gets.filter((u) => u.startsWith("https://alphadrops.net/raises/"));
+    expect(fetched).toHaveLength(6);
+    expect(fetched.slice(0, 3).sort()).toEqual([raisePage("raise0"), raisePage("raise1"), raisePage("raise2")]);
+    expect(fetched.slice(3)).toEqual([raisePage("raise6"), raisePage("raise4"), raisePage("raise7")]);
+    expect(stats.raises_fetched).toBe(6);
+  });
+
   it("sends no raise request when the AlphaDrops source is disabled, and keeps the earlier reported backers", async () => {
     const pages = basePages();
     pages[ALPHA_LLMS_FULL] = { status: 200, body: llmsFull([["DeepBook", "deepbook"]]) };
