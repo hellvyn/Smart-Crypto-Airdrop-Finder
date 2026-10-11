@@ -699,6 +699,21 @@ describe("config", () => {
       newWithinDays: 180,
     });
   });
+
+  it("trusts only the VCs that passed the portfolio and terms check (a16z crypto, tier 1)", () => {
+    expect(defaultConfig.vcs).toEqual([
+      {
+        id: "a16z-crypto",
+        name: "a16z crypto",
+        aliases: ["a16z", "Andreessen Horowitz"],
+        tier: 1,
+        portfolioUrl: "https://a16zcrypto.com/portfolio/",
+      },
+    ]);
+    // A verified VC is never also a candidate, and Jump Crypto (terms: private, non-commercial use only) stays one.
+    expect(VC_CANDIDATES.map((vc) => vc.id)).not.toContain("a16z-crypto");
+    expect(VC_CANDIDATES.map((vc) => vc.id)).toContain("jump-crypto");
+  });
 });
 
 describe("LLM providers", () => {
@@ -1872,12 +1887,15 @@ describe("runDaily signals", () => {
     for (const vc of VC_CANDIDATES) {
       pages[vc.portfolioUrl] = { status: 200, body: '<a href="https://deepbook.tech/">DeepBook</a>' };
     }
+    // The verified VC's page answers with a portfolio that does not include DeepBook.
+    pages["https://a16zcrypto.com/portfolio/"] = { status: 200, body: '<a href="https://uniswap.org/">Uniswap</a>' };
     const { repo, deps, http } = setup({ pages });
 
     const stats = await runDaily(deps, defaultConfig);
 
     expect((await signalsOf(repo, "deepbook")).filter((s) => s.kind === "vc_backer")).toEqual([]);
     expect(http.gets.filter((u) => VC_CANDIDATES.some((vc) => vc.portfolioUrl === u))).toEqual([]);
+    expect(http.gets.filter((u) => u === "https://a16zcrypto.com/portfolio/")).toEqual(["https://a16zcrypto.com/portfolio/"]);
     expect(stats).toMatchObject({ signals_vc_backer: 0, vc_portfolios_failed: 0 });
   });
 

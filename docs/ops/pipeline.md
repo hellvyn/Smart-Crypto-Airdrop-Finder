@@ -148,7 +148,8 @@ The `signals` stage gives a project a verified `vc_backer` (`{investor, tier}`, 
 registrable domain of one of its official domains is linked from the portfolio page of a verified VC (`VC_LIST`)
 (`pipeline/src/config.ts`). A name match or a "backed by" claim never counts. The page's outbound `<a href>` links are
 reduced to registrable domains (`parsePortfolioDomains` in `pipeline/src/enrich/vc-portfolios.ts`; the VC's own
-domain and social, hiring and aggregator hosts are left out) and only the domains are cached in `vc_portfolios`.
+domain, a listed VC's sister sites and social, hiring and aggregator hosts are left out) and only the domains are
+cached in `vc_portfolios`.
 
 - A cache up to 7 days old is used without a request, so each page is fetched about once a week (one request per
   VC in `VC_LIST`).
@@ -184,17 +185,20 @@ that fails a condition stays in `VC_CANDIDATES` with a one-line reason comment i
 Record every result in the table below.
 
 **Check of 2026-10-11** (pipeline client, through the development egress proxy after the owner allowed the VC hosts):
-no candidate passed every condition, so **`VC_LIST` stays empty and the pipeline gives no `vc_backer` yet.**
-Five pages pass conditions 1–3 and `robots.txt` but their terms forbid automated reading (Paradigm, Variant, Electric
-Capital) or limit the site to personal, noncommercial use (Framework, Placeholder). Two pages pass conditions 1–3 and
-`robots.txt` but their terms are on hosts the proxy still refuses (CONNECT 403): a16z crypto (terms on `a16z.com`) and
-Jump Crypto (terms on `jumptrading.com`). If those terms allow automated reading, they can move to `VC_LIST`; before
-that, add the non-portfolio links their pages carry to `NON_PORTFOLIO_DOMAINS` (a16z crypto links its sister site
-`a16z.com`; Jump Crypto links its parent `jumptrading.com` and its web agency in the footer).
+only **a16z crypto** passed every condition, so **`VC_LIST` holds a16z crypto (tier 1) alone.** Its page answers 200
+with 121 portfolio domains in the HTML (every one from the portfolio grid; the only other outbound links are its sister
+site `a16z.com`, now in `NON_PORTFOLIO_DOMAINS`, and social hosts), `robots.txt` allows `/portfolio/`, and its terms
+(linked from `a16zcrypto.com/legal` to `a16z.com/terms-of-use/`) neither forbid automated reading nor limit the site
+to personal use. Five pages pass conditions 1–3 and `robots.txt` but their terms forbid automated reading (Paradigm,
+Variant, Electric Capital) or limit the site to personal, noncommercial use (Framework, Placeholder). Jump Crypto is
+the same: its terms (`jumptrading.com/policies/terms-of-use`, linked from the `jumpcrypto.com` footer) license the
+site for private, non-commercial use only. If Jump Crypto ever moves to `VC_LIST`, first add its parent
+`jumptrading.com` and the web agency credited in its footer to `NON_PORTFOLIO_DOMAINS` (not `securitize.io`, a
+portfolio company).
 
 | VC | Tier | Status (2026-10-11) | Reason |
 |---|---|---|---|
-| a16z crypto | 1 | ditunda | terms not checked: they are on `a16z.com`, refused by the egress proxy (CONNECT 403). Page 200, 122 domains, `robots.txt` allows |
+| a16z crypto | 1 | dipakai | passed every condition: page 200, 121 portfolio domains (after dropping `a16z.com`), `robots.txt` allows, terms on `a16z.com` do not forbid automated reading or limit use to personal use |
 | Paradigm | 1 | ditunda | terms forbid accessing or collecting data from the site by automated means. Page moved to `/investments` (200, 95 domains) |
 | Polychain Capital | 1 | ditunda | 404: no portfolio page on `polychain.capital` (the homepage links only to job boards) |
 | Pantera Capital | 1 | ditunda | JavaScript-rendered: the list is not in the HTML (3 domains, all investor-portal links) |
@@ -208,7 +212,7 @@ that, add the non-portfolio links their pages carry to `NON_PORTFOLIO_DOMAINS` (
 | Hack VC | 2 | ditunda | no company domains: the list (`www.hack.vc/portfolio`) links only to Hack VC's own detail pages |
 | Placeholder | 2 | ditunda | terms: personal, noncommercial use only, any other use needs written permission. The list is on the homepage (200, 28 domains) |
 | Delphi Ventures | 2 | ditunda | JavaScript-rendered: `/portfolio-crypto` has only the first 10 companies in the HTML, the rest load with "Load More" |
-| Jump Crypto | 2 | ditunda | terms not checked: they are on `jumptrading.com`, refused by the egress proxy (CONNECT 403). List at `/invest` (200, 21 domains), `robots.txt` allows |
+| Jump Crypto | 2 | ditunda | terms (on `jumptrading.com`) license the site for private, non-commercial use only. List at `/invest` (200, 21 domains), `robots.txt` allows |
 
 ## 4. Read the result
 
