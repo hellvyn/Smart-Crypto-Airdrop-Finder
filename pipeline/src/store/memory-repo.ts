@@ -300,11 +300,7 @@ export class MemoryRepo implements PipelineRepo {
     const endedSince = endedScoringSince(now);
     const result: ProjectForScoring[] = [];
     for (const p of this.projects.values()) {
-      if (p.lastSeen.getTime() < cutoff) {
-        const latest = p.status === "ended" ? await this.latestCuration(p.id) : null;
-        const endedOn = latest?.passed ? latest.endedOn : null;
-        if (endedOn === null || endedOn < endedSince) continue;
-      }
+      if (p.lastSeen.getTime() < cutoff && !(await this.scoredOutsideWindow(p, cutoff, endedSince))) continue;
       const sourceKeys = new Set<string>();
       const sourceKinds = new Set<SourceKind>();
       for (const e of this.evidence) {
@@ -478,6 +474,20 @@ export class MemoryRepo implements PipelineRepo {
 
   async saveAiAnalysis(a: NewAiAnalysis): Promise<void> {
     this.aiAnalyses.push({ ...a });
+  }
+
+  /**
+   * A project last seen before the active window is still scored when its latest curation passed and either it is
+   * `ended` with an `ended_on` since `endedSince`, or it is open (no `ended_on`) and has a passing open curation
+   * computed in the window (same candidates as SupabaseRepo).
+   */
+  private async scoredOutsideWindow(p: ProjectRow, cutoff: number, endedSince: string): Promise<boolean> {
+    const latest = await this.latestCuration(p.id);
+    if (!latest?.passed) return false;
+    if (latest.endedOn !== null) return p.status === "ended" && latest.endedOn >= endedSince;
+    return this.curations.some(
+      (c) => c.projectId === p.id && c.passed && c.statusAt !== "ended" && c.computedAt.getTime() >= cutoff,
+    );
   }
 
   async latestCuration(projectId: string): Promise<{ passed: boolean; endedOn: string | null } | null> {

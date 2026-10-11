@@ -2774,6 +2774,26 @@ describe("runDaily curation", () => {
     expect((await latestCurationOf(repo, "deepbook"))?.computedAt).toEqual(at("2026-10-15"));
   });
 
+  it("keeps re-checking a listed open project after it leaves the active window, until it drops out", async () => {
+    const config = { ...defaultConfig, scoreActiveSinceDays: 2 };
+    const { repo, deps, http } = setup({ config });
+    const day = (n: number) => new Date(NOW.getTime() + n * DAY);
+    await runDaily(deps, config);
+    await runDaily({ ...deps, now: () => day(1) }, config);
+    // DeepBook's pages do not change: it is last seen on the first run, outside the 2-day window from day 3 on.
+    expect((await repo.findProjectsByNameKey("deepbook"))[0]?.lastSeen).toEqual(NOW);
+
+    await runDaily({ ...deps, http: phishingFor(http, "deepbook.tech"), now: () => day(3) }, config);
+
+    const curation = await latestCurationOf(repo, "deepbook");
+    expect(curation).toMatchObject({ passed: false, tab: null, statusAt: "live", computedAt: day(3) });
+    expect(codes(curation)).toContain("risk_too_high");
+
+    // Out of the list and out of the window: no longer scored.
+    await runDaily({ ...deps, now: () => day(5) }, config);
+    expect((await latestCurationOf(repo, "deepbook"))?.computedAt).toEqual(day(3));
+  });
+
   it("gives curate and worth only signals observed in the last 14 days", async () => {
     const LLAMA_DEEPBOOK = {
       name: "DeepBook", slug: "deepbook", url: "https://deepbook.tech", chains: ["Sui"], tvl: 3e7, change_7d: 1, category: "Dexs", gecko_id: "deepbook", symbol: "DEEP",

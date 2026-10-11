@@ -280,6 +280,16 @@ What to do:
   timeout). The run continues on the remaining models; if it repeats for days, reorder or replace the model in
   `pipeline/src/config.ts`.
 
+### Which projects are scored
+
+`signals`, `analyze` and `score` take the projects `listProjectsForScoring` returns: those last seen (a document
+merged) within `scoreActiveSinceDays` (60), plus two kinds last seen earlier. An **open project still in the list**
+(latest curation passed, not ended) keeps being scored every run, so a page that stops changing cannot freeze it in
+`live_now`: it is re-checked until a curation fails or it ends. It is found through a passing open curation computed
+within the same 60 days, so after a pipeline outage longer than that such a project stays frozen with its last result
+(the web then shows it as not checked recently). An **ended project** whose latest curation passed is scored until 90
+days after `ended_on`, then frozen.
+
 ### Track record (#43)
 
 Counted at the end of `score` from the whole curation history (`listCurationHistoryForTrackRecord`), so ended projects

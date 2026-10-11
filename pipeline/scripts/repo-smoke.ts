@@ -343,6 +343,19 @@ async function main(): Promise<void> {
   assert.equal(failReasons.error, null);
   assert.deepEqual((failReasons.data ?? []).map((r) => r.public_fail_reason), [null, null, "Cek kunci belum lengkap"]);
 
+  // An open project last seen before the window is still scored while its latest curation passed within the window.
+  const open = await repo.createProject(
+    { slug: `smoke-open-${suffix}`, name: "Smoke Open", nameKey: `smokeopen${suffix}`, tokenSymbol: null, chains: [], officialDomains: [], status: "live", conflict: false, lookalikeOf: null },
+    T0,
+  );
+  const afterDays = (n: number) => new Date(T0.getTime() + n * day);
+  const openScored = async () => (await repo.listProjectsForScoring(30, afterDays(60))).some((x) => x.id === open.id);
+  assert.equal(await openScored(), false);
+  await repo.saveCuration(open.id, passing, afterDays(50));
+  assert.equal(await openScored(), true);
+  await repo.saveCuration(open.id, failing, afterDays(55));
+  assert.equal(await openScored(), false);
+
   // track record history (#43), on the twin: first pass (earlier insert wins a tie), latest tab, listing now, and only
   // a high/critical risk after the first pass counts.
   const at = (s: number) => new Date(T0.getTime() + s * 1000);
@@ -427,7 +440,7 @@ async function main(): Promise<void> {
 
   // cleanup (fail loudly so a broken cleanup is not silent)
   const cleanup = [
-    await admin.from("projects").delete().in("id", [p.id, twin.id]),
+    await admin.from("projects").delete().in("id", [p.id, twin.id, open.id]),
     await admin.from("documents").delete().like("source_key", `%${suffix}%`),
     await admin.from("documents").delete().like("url", `https://t.me/${channel}/%`),
     await admin.from("pipeline_runs").delete().eq("id", runId),

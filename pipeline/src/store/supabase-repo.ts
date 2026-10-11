@@ -465,7 +465,7 @@ export class SupabaseRepo implements PipelineRepo {
     // Ended projects outside the window: candidates are those with a passing curation that ended within the window,
     // kept only when their latest curation is still such a one (a later failed curation freezes the project).
     const endedSince = endedScoringSince(now);
-    const candidates = await this.fetchAll<{ project_id: string }>("listProjectsForScoring.endedCandidates", (from, to) =>
+    const endedCandidates = await this.fetchAll<{ project_id: string }>("listProjectsForScoring.endedCandidates", (from, to) =>
       this.db
         .from("curations")
         .select("project_id")
@@ -474,21 +474,50 @@ export class SupabaseRepo implements PipelineRepo {
         .order("seq")
         .range(from, to),
     );
+    // Open projects outside the window (their pages stopped changing): candidates are those with a passing open
+    // curation computed within the window, kept while their latest curation still passes and is open, so a listed
+    // project keeps being re-checked until it fails or ends. A project still passing is curated on every run, and the
+    // window bound keeps the candidates from growing with every project that ever passed.
+    const openCandidates = await this.fetchAll<{ project_id: string }>("listProjectsForScoring.openCandidates", (from, to) =>
+      this.db
+        .from("curations")
+        .select("project_id")
+        .eq("passed", true)
+        .neq("status_at", "ended")
+        .gte("computed_at", cutoff)
+        .order("seq")
+        .range(from, to),
+    );
     const activeIds = new Set(active.map((p) => p.id));
+    const latestOf = new Map<string, Awaited<ReturnType<SupabaseRepo["latestCuration"]>>>();
+    const latest = async (id: string) => {
+      if (!latestOf.has(id)) latestOf.set(id, await this.latestCuration(id));
+      return latestOf.get(id) ?? null;
+    };
     const endedIds: string[] = [];
-    for (const id of new Set(candidates.map((c) => c.project_id))) {
+    for (const id of new Set(endedCandidates.map((c) => c.project_id))) {
       if (activeIds.has(id)) continue;
-      const latest = await this.latestCuration(id);
-      if (latest?.passed && latest.endedOn !== null && latest.endedOn >= endedSince) endedIds.push(id);
+      const l = await latest(id);
+      if (l?.passed && l.endedOn !== null && l.endedOn >= endedSince) endedIds.push(id);
     }
-    if (endedIds.length === 0) return active;
-    return [...active, ...(await this.scoringProjects("listProjectsForScoring.ended", { endedIds }))];
+    const openIds: string[] = [];
+    for (const id of new Set(openCandidates.map((c) => c.project_id))) {
+      if (activeIds.has(id)) continue;
+      // `ended_on` is set exactly when the curation's status is `ended`.
+      const l = await latest(id);
+      if (l?.passed && l.endedOn === null) openIds.push(id);
+    }
+    const extra = [
+      ...(endedIds.length === 0 ? [] : await this.scoringProjects("listProjectsForScoring.ended", { endedIds })),
+      ...(openIds.length === 0 ? [] : await this.scoringProjects("listProjectsForScoring.open", { openIds })),
+    ];
+    return [...active, ...extra];
   }
 
-  /** `ProjectForScoring` rows of the projects last seen since a time, or of the given ended projects. */
+  /** `ProjectForScoring` rows of the projects last seen since a time, of the given ended projects, or of the given ids. */
   private async scoringProjects(
     op: string,
-    filter: { lastSeenSince: string } | { endedIds: string[] },
+    filter: { lastSeenSince: string } | { endedIds: string[] } | { openIds: string[] },
   ): Promise<ProjectForScoring[]> {
     type ScoringDb = ProjectDb & {
       tasks: { description: string; cadence: string }[];
@@ -520,7 +549,9 @@ export class SupabaseRepo implements PipelineRepo {
       const filtered =
         "lastSeenSince" in filter
           ? query.gte("last_seen", filter.lastSeenSince)
-          : query.eq("status", "ended").in("id", filter.endedIds);
+          : "endedIds" in filter
+            ? query.eq("status", "ended").in("id", filter.endedIds)
+            : query.in("id", filter.openIds);
       return (
         filtered
           .order("id")

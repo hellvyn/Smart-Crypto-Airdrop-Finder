@@ -252,7 +252,9 @@ gak menggagalkan run.
 
 Per project aktif, urut (project berstatus `ended` yang curation terbarunya lolos tetap ikut di-score sampai 90 hari
 setelah `ended_on`, karena masa klaim adalah waktu paling rawan situs klaim palsu; setelah itu hasil terakhir dibekukan
-dan halaman menampilkan tanggal cek terakhir):
+dan halaman menampilkan tanggal cek terakhir. Project yang belum `ended` dan curation terbarunya lolos juga tetap ikut
+di-score walau `last_seen`-nya sudah di luar jendela aktif, sampai curation-nya gagal atau project-nya berakhir, supaya
+project yang halamannya gak berubah gak membeku di "Live now" tanpa cek ulang; revisi review G4, 2026-10-11):
 1. `expireStatus()`: status kedaluwarsa (§6.1). Perubahan status masuk `project_changes`.
 2. `assessRisk()`: tetap seperti v1.
 3. `curate()` + `worth()`: hasil masuk `curations`. Perubahan `passed` masuk `project_changes` (`field = curated`).

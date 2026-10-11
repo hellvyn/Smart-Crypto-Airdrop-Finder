@@ -711,6 +711,22 @@ describe("MemoryRepo curations", () => {
     expect(await repo.passedBeforeEnd(p.id)).toBe(false);
   });
 
+  it("keeps scoring an open project seen before the window while its latest curation passed within the window", async () => {
+    const repo = new MemoryRepo();
+    const listed = await repo.createProject(project(), daysBefore(T0, 40));
+    const dropped = await repo.createProject(project({ slug: "drop", nameKey: "drop", name: "Drop" }), daysBefore(T0, 40));
+    const stale = await repo.createProject(project({ slug: "stale", nameKey: "stale", name: "Stale" }), daysBefore(T0, 40));
+    await repo.saveCuration(listed.id, curation(), daysBefore(T0, 1));
+    await repo.saveCuration(dropped.id, curation(), daysBefore(T0, 2));
+    await repo.saveCuration(dropped.id, failed(), daysBefore(T0, 1));
+    // Its last passing curation is older than the window (no run for that long): not a candidate any more.
+    await repo.saveCuration(stale.id, curation(), daysBefore(T0, 31));
+
+    const scored = await repo.listProjectsForScoring(30, T0);
+
+    expect(scored.map((p) => p.slug)).toEqual(["ink"]);
+  });
+
   it("passedBeforeEnd follows the latest curation before the end, not any earlier pass", async () => {
     const repo = new MemoryRepo();
     const p = await repo.createProject(project(), T0);
