@@ -39,7 +39,9 @@ async function userIdOf(email: string): Promise<string> {
   return user.id;
 }
 
-const pick = (page: Page, name: string) => page.getByRole("radio", { name, exact: true }).check();
+/** Chooses the option labelled `name` in the dropdown that has it. */
+const pick = (page: Page, name: string) =>
+  page.locator("select", { has: page.getByRole("option", { name, exact: true }) }).selectOption({ label: name });
 
 /** Fills the form as an experienced member with two wallets and a whole hour a day. */
 async function fillProPlan(page: Page): Promise<void> {
@@ -47,7 +49,7 @@ async function fillProPlan(page: Page): Promise<void> {
   await pick(page, "Pro");
   await pick(page, "> $1.000");
   await pick(page, "Udah");
-  await page.getByLabel("Jumlah wallet").fill("2");
+  await page.getByLabel("Jumlah wallet").selectOption("2");
   await pick(page, "60 menit");
   await pick(page, "Jangka panjang");
   await page.getByRole("button", { name: "Simpan dan bikin rencana" }).click();

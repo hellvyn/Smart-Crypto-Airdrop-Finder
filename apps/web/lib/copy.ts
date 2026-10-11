@@ -577,6 +577,8 @@ export const coach = {
   explainRequest: "Jelasin langkah ini dong.",
   form: {
     privacy: "Kami gak minta email, alamat wallet, atau saldo kamu.",
+    /** The empty first option of every dropdown. */
+    choose: "Pilih...",
     level: { legend: "Level kamu", beginner: "Pemula", intermediate: "Menengah", pro: "Pro" },
     capital: {
       legend: "Modal yang siap dipakai",
@@ -716,8 +718,8 @@ export const landing = {
       { title: "Level worth it", note: "Sepadan gak sama effort-nya, plus urutan dari yang paling worth it.", free: false },
       { title: "AI verdict", note: "Garap, pantau, atau skip. Tiap alasan ada kutipan source-nya.", free: false },
       { title: "Estimasi effort", note: "Berapa menit per hari, modal, dan gas fee.", free: false },
-      { title: "Morning briefing", note: "Airdrop baru dan update penting, dirangkum sebelum kamu buka grup.", free: false, soon: true },
-      { title: "Farming Coach", note: "Tanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", free: false, soon: true },
+      { title: "Morning briefing", note: "Airdrop baru dan update penting, dirangkum sebelum kamu buka grup.", free: false },
+      { title: "Farming Coach", note: "Tanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", free: false },
       { title: "Farming tracker & watchlist", note: "Daily checklist, heatmap, dan update kalau ada yang berubah.", free: false },
     ],
   },

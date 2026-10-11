@@ -57,7 +57,7 @@ describe("landing page", () => {
     ).toBeTruthy();
   });
 
-  it("compares free and member in 12 rows, 6 free and 6 member only, 2 of those coming soon", async () => {
+  it("compares free and member in 12 rows, 6 free and 6 member only, all live", async () => {
     await renderLanding();
     const table = screen.getByRole("table", { name: "Apa bedanya gratis sama member?" });
     const rows = within(table).getAllByRole("row").slice(1);
@@ -80,8 +80,8 @@ describe("landing page", () => {
       ["Level worth itSepadan gak sama effort-nya, plus urutan dari yang paling worth it.", "Gak ada", "Ada"],
       ["AI verdictGarap, pantau, atau skip. Tiap alasan ada kutipan source-nya.", "Gak ada", "Ada"],
       ["Estimasi effortBerapa menit per hari, modal, dan gas fee.", "Gak ada", "Ada"],
-      ["Morning briefingSegeraAirdrop baru dan update penting, dirangkum sebelum kamu buka grup.", "Gak ada", "Segera"],
-      ["Farming CoachSegeraTanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", "Gak ada", "Segera"],
+      ["Morning briefingAirdrop baru dan update penting, dirangkum sebelum kamu buka grup.", "Gak ada", "Ada"],
+      ["Farming CoachTanya mau garap yang mana dulu, sesuai modal dan jumlah wallet kamu.", "Gak ada", "Ada"],
       ["Farming tracker & watchlistDaily checklist, heatmap, dan update kalau ada yang berubah.", "Gak ada", "Ada"],
     ]);
   });
