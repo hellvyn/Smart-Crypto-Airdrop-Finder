@@ -83,6 +83,37 @@ describe("WhyListed", () => {
     expect(container.textContent).not.toContain("✓");
   });
 
+  it("shows a claimed-backer quote once when two documents repeat it (whitespace and case aside), keeping the first text", () => {
+    const quote = "Investors like Coinbase Ventures and DragonFly Capital have given LI.FI $52 million in funding.";
+    render(
+      <WhyListed
+        passed
+        signals={[signal("claimed_backer", { investor: "Coinbase Ventures", quote }, false, "llm_text")]}
+        facts={[
+          claimFact("DragonFly Capital", `  ${quote.toUpperCase().replace(" ", "   ")} `),
+          claimFact("Coinbase Ventures", quote),
+        ]}
+        reasons={null}
+      />,
+    );
+    expect(rows()).toEqual([[`"${quote}"`, "Klaim project, belum verified"]]);
+  });
+
+  it("still shows two claimed backers whose quotes differ", () => {
+    render(
+      <WhyListed
+        passed
+        signals={[]}
+        facts={[claimFact("Coinbase Ventures", "Coinbase Ventures invested"), claimFact("DragonFly Capital", "DragonFly Capital invested")]}
+        reasons={null}
+      />,
+    );
+    expect(rows()).toEqual([
+      ['"Coinbase Ventures invested"', "Klaim project, belum verified"],
+      ['"DragonFly Capital invested"', "Klaim project, belum verified"],
+    ]);
+  });
+
   it("leaves out an unverified VC signal", () => {
     render(<WhyListed passed signals={[signal("vc_backer", { investor: "Paradigm" }, false)]} facts={[]} reasons={null} />);
     expect(screen.queryByText(/Paradigm/)).toBeNull();
