@@ -1,5 +1,5 @@
 // AI Analyst prompt (curation spec §13 A1 and A6): verdict, effort estimate and Indonesian steps per project.
-import { FORBIDDEN_PHRASES, analystSchema, postProcessAnalyst } from "@saf/core";
+import { FORBIDDEN_PHRASES, analystSchema, postProcessAnalyst, stepTranslationGrounded } from "@saf/core";
 import type { AnalystAnswer } from "@saf/core";
 import type { Analyzer, SourceText } from "../../steps/analyze.js";
 import type { PipelineRepo, ProjectForScoring } from "../../store/repo.js";
@@ -111,10 +111,14 @@ export const analystAnalyzer: Analyzer<AnalystAnswer, AnalystAnswer> = {
   /**
    * Writes the translations only when they line up with the project's steps: same count and the same cadence at
    * every position. A model that merged one step and split another must not put a translation on the wrong task.
+   * `text_id` is public and replaces the step in the member tracker, so the whole set is also refused when one
+   * translation adds a link, handle, address, number, secret or payment ask its step does not have
+   * (`stepTranslationGrounded`): a prompt injection in the source must not reach it.
    */
   async saveDerived(repo: PipelineRepo, project: ProjectForScoring, result: AnalystAnswer): Promise<void> {
     if (result.steps_id.length === 0 || result.steps_id.length !== project.steps.length) return;
     if (result.steps_id.some((s, i) => s.cadence !== project.steps[i]?.cadence)) return;
+    if (result.steps_id.some((s, i) => !stepTranslationGrounded(project.steps[i]?.text ?? "", s.text))) return;
     await repo.saveStepTranslations(
       project.id,
       result.steps_id.map((s) => s.text),

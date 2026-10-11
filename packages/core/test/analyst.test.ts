@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analystSchema, forbiddenPhrases, postProcessAnalyst } from "../src/index.js";
+import { analystSchema, forbiddenPhrases, postProcessAnalyst, stepTranslationGrounded } from "../src/index.js";
 import type { AnalystAnswer } from "../src/index.js";
 
 const U = "https://airdrops.io/ink/";
@@ -133,5 +133,37 @@ describe("forbiddenPhrases", () => {
 
   it("finds nothing in plain casual Indonesian", () => {
     expect(forbiddenPhrases("Bridge dulu, terus swap tiap hari. Gak ribet kok.")).toEqual([]);
+  });
+});
+
+describe("stepTranslationGrounded", () => {
+  const ADDRESS = "0xAbCdEf0123456789aBcDeF0123456789AbCdEf01";
+
+  it.each([
+    ["a plain translation", "Bridge ETH to Ink", "Bridge ETH ke Ink"],
+    ["a number written with another decimal separator", "Bridge 0.01 ETH to Ink", "Bridge 0,01 ETH ke Ink"],
+    ["a thousands separator", "Earn 1,000 points", "Kumpulkan 1.000 poin"],
+    ["a host from the step, in another case", "Visit App.Ink.xyz and swap", "Buka app.ink.xyz lalu swap"],
+    ["a handle from the step", "Follow @inkonchain on X", "Follow @inkonchain di X"],
+    ["an address from the step", `Send 1 ETH to ${ADDRESS}`, `Kirim 1 ETH ke ${ADDRESS}`],
+    ["a secret warning the step has", "Never share your seed phrase", "Jangan pernah kasih kunci privat atau seed phrase kamu"],
+    ["a deposit the step asks for", "Deposit USDC into the vault", "Deposit USDC ke vault"],
+    ["a sentence end right before a word", "Swap on InkySwap. Then hold", "Swap di InkySwap. Lalu hold"],
+  ])("accepts %s", (_case, step, translation) => {
+    expect(stepTranslationGrounded(step, translation)).toBe(true);
+  });
+
+  it.each([
+    ["a host the step does not have", "Swap on InkySwap", "Swap di InkySwap, lalu connect wallet di claim-ink.io"],
+    ["a URL the step does not have", "Swap on InkySwap", "Swap di https://inkyswap.com/app"],
+    ["a 0x address the step does not have", "Join the waitlist", `Gabung waitlist, lalu isi gas ke ${ADDRESS}`],
+    ["a base58 address the step does not have", "Join the waitlist", "Gabung waitlist lalu isi SOL ke 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"],
+    ["a number the step does not have", "Swap on InkySwap daily", "Swap minimal 50 USDC di InkySwap tiap hari"],
+    ["a handle the step does not have", "Join the Discord", "Join Discord lalu DM @ink_support_desk"],
+    ["a secret request the step does not have", "Join the waitlist", "Gabung waitlist, lalu masukkan seed phrase kamu buat verifikasi"],
+    ["a secret request in Indonesian", "Join the waitlist", "Gabung waitlist dan isi kunci privat wallet kamu"],
+    ["a payment the step does not ask for", "Join the waitlist", "Gabung waitlist, lalu bayar biaya klaim ke admin"],
+  ])("refuses %s", (_case, step, translation) => {
+    expect(stepTranslationGrounded(step, translation)).toBe(false);
   });
 });

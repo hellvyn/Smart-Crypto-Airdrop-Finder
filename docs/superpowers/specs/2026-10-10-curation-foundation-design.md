@@ -578,7 +578,7 @@ dari "Data terverifikasi"; semua output Bahasa Indonesia (keputusan #29); hasil 
 | A3 | **Deteksi kontradiksi** | Membandingkan fakta antar sumber dan di dalam satu sumber (label vs teks) | #1 |
 | A4 | **Daily Briefing + Change Detector** | Membandingkan versi dokumen (hash konten sudah disimpan) dan merangkum perubahan yang penting; briefing pagi per member | #3 |
 | A5 | **Farming Coach (chat)** | Rencana farming personal dari modal, jumlah wallet, dan waktu member, berdasar data kurasi. Tiap project yang direkomendasikan punya tombol **"Mulai garap"** (aksi `startFarming` dari §14) | #4 |
-| A6 | **Estimasi effort + terjemahan langkah** | Menit per hari, modal, gas; langkah diringkas ke Bahasa Indonesia | #1 |
+| A6 | **Estimasi effort + terjemahan langkah** | Menit per hari, modal, gas; langkah diringkas ke Bahasa Indonesia. Terjemahan (publik, `tasks.text_id`) ditolak semuanya kalau satu langkah terjemahan memuat host/URL, `@handle`, alamat `0x`/base58, atau angka yang gak ada di langkah aslinya, atau minta seed phrase/kunci privat atau pembayaran yang gak diminta langkah aslinya (review G4, 2026-10-11) | #1 |
 
 **Provider (keputusan #30):** AI pribadi owner `https://freellm.hellvyn.id/v1`, model **`auto`** (keputusan owner:
 pakai `auto`, tanpa eval sekarang). Fakta dari pengecekan 2026-10-10:
