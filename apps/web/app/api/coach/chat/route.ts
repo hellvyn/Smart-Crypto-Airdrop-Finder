@@ -1,5 +1,6 @@
 // POST /api/coach/chat  { threadId, message, kind: "chat" | "explain_step", stepId? }  ->  the Coach's answer, streamed
-// as text/plain (spec §5.3, §6). Order: member, input (a seed phrase or private key is refused here), profile, thread, candidates, step, quota (coach_begin), the model;
+// as text/plain (spec §5.3, §6). Order: member, input (a seed phrase or private key is refused here), profile, thread,
+// candidates (none: the empty-state copy, no coach_begin, no model), step, quota (coach_begin), the model;
 // on the first text coach_mark_used runs before any of it is forwarded, so an aborted, truncated or timed-out answer
 // still counts. The stream is cleaned per completed sentence (em dash, sensitive text) and the stored reply is redacted
 // once more as a whole and cut to 16000 characters. Project links come as separate metadata (x-coach-links), built
@@ -30,6 +31,7 @@ import {
   remainingQuota,
   unauthorizedResponse,
 } from "@/lib/coach";
+import { coach } from "@/lib/copy";
 import { createServerClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 
@@ -73,6 +75,14 @@ export async function POST(request: Request): Promise<Response> {
       const step = await loadStep(db, input.stepId);
       if (step === null || !candidates.some((c) => c.id === step.projectId)) return coachErrorResponse("bad_input");
       turn = explainStepTurn(step.text, input.message);
+    }
+    // Nothing to talk about (e.g. a Pemula asking about a High-risk project): the empty state, as a normal answer. No
+    // coach_begin and no model call, so it costs no quota and no money.
+    if (candidates.length === 0) {
+      const remaining = await remainingQuota(db);
+      const headers: Record<string, string> = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
+      if (remaining !== null) headers["X-Coach-Remaining"] = String(remaining);
+      return new Response(coach.empty.noCandidates, { status: 200, headers });
     }
     const history = await loadHistory(db, input.threadId);
 

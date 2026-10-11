@@ -784,6 +784,33 @@ describe("POST /api/coach/chat: explain_step and project threads", () => {
     expect(rpcNames()).toHaveLength(0);
   });
 
+  it("answers a thread with no candidate with the empty-state copy, without coach_begin or a model call", async () => {
+    // A Pemula asking about a High-risk project: the thread's project is filtered out of the member's candidates.
+    setup({
+      tables: {
+        coach_profiles: [{ user_id: USER.id, ...PROFILE, level: "beginner" }],
+        coach_threads: [{ id: THREAD, user_id: USER.id, project_id: P2 }],
+        curated_list: candidateTables([{ id: P2, name: "Beta" }]).curated_list!.map((r) => ({ ...r, latest_risk_level: "high" })),
+      },
+    });
+    const res = await post(chatPOST, chatBody());
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/plain");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toBe(coach.empty.noCandidates);
+    expect(flowCalls()).toEqual([]);
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
+  it("does the same when the profile filters every candidate out of a general thread", async () => {
+    setup({ tables: { curated_list: [] } });
+    const res = await post(chatPOST, chatBody());
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(coach.empty.noCandidates);
+    expect(flowCalls()).toEqual([]);
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
   it("narrows the candidates to the thread's project", async () => {
     setup({ tables: { coach_threads: [{ id: THREAD, user_id: USER.id, project_id: P2 }] } });
     streamText.mockReturnValue(events({ delta: "Oke. " }, DONE()));
