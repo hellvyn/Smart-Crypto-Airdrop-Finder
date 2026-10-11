@@ -161,3 +161,27 @@ test("signing up through the auth API with the anon key is refused", async () =>
   expect(data.user).toBeNull();
   expect(data.session).toBeNull();
 });
+
+test("5 wrong passwords block that email for a while, even for the right password", async ({ page }) => {
+  const email = uniqueEmail("throttle");
+  await createConfirmedUser(email, PASSWORD);
+  await page.goto("/login");
+  // The same message repeats, so wait for each answer itself rather than for the text.
+  const attempt = async (password: string) => {
+    const answered = page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/login");
+    await logIn(page, email, password);
+    await answered;
+  };
+  for (let i = 0; i < 5; i++) await attempt("wrong-password");
+  await expect(formError(page)).toHaveText("Email atau password salah.");
+  await attempt(PASSWORD);
+  await expect(formError(page)).toHaveText("Udah 5 kali salah login. Coba lagi 15 menit lagi.");
+  await expect(page.getByTestId("user-email")).toHaveCount(0);
+  // Another account from the same machine is not affected.
+  const other = uniqueEmail("throttle-other");
+  await createConfirmedUser(other, PASSWORD);
+  await page.getByLabel("Email").fill(other);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Login", exact: true }).click();
+  await expectSignedInAs(page, other);
+});
