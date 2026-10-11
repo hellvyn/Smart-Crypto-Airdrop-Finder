@@ -20,6 +20,9 @@ const db = createClient(url, serviceKey, { auth: { persistSession: false } });
 const repo = new SupabaseRepo(db);
 const fixture = (name: string): string => readFileSync(new URL(`../test/fixtures/${name}`, import.meta.url), "utf8");
 
+// The fake HTTP serves no AlphaDrops page, so the run sends AlphaDrops nothing (collector and raise pages alike).
+const config = { ...defaultConfig, alphadrops: { ...defaultConfig.alphadrops, enabled: false } };
+
 const T0 = new Date("2026-10-10T23:00:00Z");
 const T1 = new Date("2026-10-11T23:00:00Z");
 
@@ -91,9 +94,9 @@ async function count(table: string): Promise<number> {
 async function main(): Promise<void> {
   // No claim portal is linked in this data; a request for one would be a 404.
   const deps = { repo, chat, sleep: async () => {}, fetchUntrusted: async () => ({ status: 404, body: "" }) };
-  const first = await runDaily({ ...deps, http: fakeHttp(telegram("")), now: () => T0 }, defaultConfig);
+  const first = await runDaily({ ...deps, http: fakeHttp(telegram("")), now: () => T0 }, config);
   console.log(JSON.stringify(first));
-  const second = await runDaily({ ...deps, http: fakeHttp(telegram(endedPost)), now: () => T1 }, defaultConfig);
+  const second = await runDaily({ ...deps, http: fakeHttp(telegram(endedPost)), now: () => T1 }, config);
   console.log(JSON.stringify(second));
 
   assert.equal(first.source_failed, 0);
