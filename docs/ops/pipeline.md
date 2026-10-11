@@ -1,7 +1,8 @@
 # Daily pipeline runbook
 
 How to set up, run and check the daily pipeline (`pipeline/`). It collects airdrops.io, Telegram, AlphaDrops and DefiLlama,
-extracts with LLMs (freellm `auto` first, NVIDIA-hosted models as fallback; see section 7), merges into Supabase, scores risk and purges old text. It sends no email.
+extracts with LLMs (freellm `auto` first, NVIDIA-hosted models as fallback; see section 7), runs the AI analyses (Claude
+Sonnet first while its prepaid credit lasts, then the same chain; section 7.1), merges into Supabase, scores risk and purges old text. It sends no email.
 Spec: section 4 (pipeline), 5 (data model), 9 (privacy) and 11 (errors and testing) of
 `docs/superpowers/specs/2026-10-10-smart-airdrop-finder-design.md`.
 
@@ -43,13 +44,14 @@ In **Settings > Secrets and variables > Actions**, add repository secrets:
 | `LLM_API_KEY` | freellm key; may be left empty (then no `Authorization` header is sent) |
 | `LLM_BASE_URL` | freellm base URL; may be left unset (default `https://freellm.hellvyn.id/v1`) |
 | `NVIDIA_API_KEY` | NVIDIA API key (`integrate.api.nvidia.com`) |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude Sonnet, first model of the AI analyses only (section 7.1); may be left unset (then the analyses skip Claude) |
 | `SUPABASE_URL` | `https://<ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | the `service_role` key from step 1.3 |
 
 The workflow installs dependencies without these secrets and only passes them to the pipeline step. Only a
 missing `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` stops the run with `{"config_error":1}` before anything is
-collected. The pipeline reads no other secret (`pipeline/src/daily-job.ts` reads exactly these five, and
-`.github/workflows/daily.yml` passes exactly these five). The email digest was removed: a leftover
+collected. The pipeline reads no other secret (`pipeline/src/daily-job.ts` reads exactly these six, and
+`.github/workflows/daily.yml` passes exactly these six). The email digest was removed: a leftover
 `BREVO_API_KEY`, `EMAIL_FROM` or `SITE_URL` in the environment or in the repository secrets is ignored and can
 be deleted.
 
@@ -386,3 +388,38 @@ order by attempts desc;
 ```
 
 A drop in quality (eval or `extract_failed`) that lines up with one `served_model` points at that model.
+
+### 7.1 Claude Sonnet for the AI analyses
+
+The AI analyses (`analyze` stage: AI Analyst, Scam Analyst, contradictions) try `ANALYZE_MODELS` in
+`pipeline/src/config.ts`: `anthropic:claude-sonnet-5-5` first, then the four extraction models above in the same order.
+Extraction never calls Claude. The owner chose this on 2026-10-11 to use up a prepaid Claude API credit that
+expires on **2026-10-27**.
+
+- **Secret:** `ANTHROPIC_API_KEY` (section 2). Claude is called through the official SDK `@anthropic-ai/sdk`
+  (`pipeline/src/llm/claude.ts`), streamed, with each call cut off after 180 s like the other models. The key is only
+  sent to the SDK; error bodies kept in memory have it removed, and a failed analysis is reported with failure codes
+  only (`http_400`, `finish_refusal`, ...).
+- **Fallback:** any Claude failure moves the same analysis on to `freellm:auto`, then NVIDIA, exactly as before:
+  exhausted credit ("credit balance is too low", HTTP 400), invalid key (401/403), rate limit (429, after the usual
+  2 s and 4 s retries), overload or server error (5xx/529), timeout or network error, a refusal
+  (`stop_reason: "refusal"`), a cut-off answer (`max_tokens`), or an answer that is not schema-valid JSON. Three
+  non-200 replies in a row open Claude's circuit for the rest of the run, so a used-up credit costs about three
+  failed requests per run, not one per analysis.
+- **Settings:** adaptive thinking at effort `low` (`output_config.effort`), `max_tokens` 16,000 (thinking counts
+  toward it), no `temperature` (current Claude models reject non-default sampling parameters), and the system prompt
+  marked for prompt caching, since each analysis kind sends the same system prompt for every project.
+- **Which model answered:** `ai_analyses.model` is `anthropic:claude-sonnet-5-5` for an analysis Claude answered, and
+  `served_model` is the model name Claude returned.
+- **Revert:** delete the `ANTHROPIC_API_KEY` secret (or leave it empty): the analyses skip Claude without a request
+  and use the old chain. To remove Claude from the code, delete its entry from `ANALYZE_MODELS`. After the credit
+  expires the key keeps failing with HTTP 400 and the fallback covers it, but deleting the secret saves those
+  requests.
+
+**Cost.** Anthropic lists Claude Sonnet 5.5 at $2 per million input tokens and $10 per million output tokens, with
+5-minute cache writes at $2.50 and cache reads at $0.20 per million tokens (bundled Claude API reference,
+`shared/model-migration.md`, "Migrating to Claude Sonnet 5.5"). A rough **estimate**, not a measurement: an analysis
+prompt carries at most 24,000 source characters plus the system prompt, so with about 4 characters per token
+(more tokens for non-English text) it is in the order of 6,000 to 9,000 input tokens; with a short JSON answer and
+low-effort thinking of perhaps 1,000 to 2,000 output tokens, one call costs about $0.02 to $0.04, and the at most
+60 analyses of a run about $1 to $2.50. Check the real spend in the Anthropic Console after the first runs.

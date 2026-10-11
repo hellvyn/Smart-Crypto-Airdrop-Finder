@@ -1,5 +1,8 @@
-/** The OpenAI-compatible endpoints the pipeline can call (base URL and key come from `loadProviders`). */
-export type ProviderId = "freellm" | "nvidia";
+/**
+ * The providers the pipeline can call: the OpenAI-compatible endpoints freellm and NVIDIA (`streamChat`), and
+ * Anthropic through its SDK (`claudeChat`). Base URLs and keys come from `loadProviders`.
+ */
+export type ProviderId = "freellm" | "nvidia" | "anthropic";
 
 export interface ModelConfig {
   provider: ProviderId;

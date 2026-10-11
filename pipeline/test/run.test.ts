@@ -5,7 +5,7 @@ import type { Http } from "../src/collectors/types.js";
 import type { ChatFn } from "../src/llm/extract.js";
 import type { ChatResult } from "../src/llm/nvidia.js";
 import { defaultConfig, VC_CANDIDATES } from "../src/config.js";
-import { loadProviders } from "../src/config.js";
+import { loadProviders, usableModels } from "../src/config.js";
 import type { PipelineConfig } from "../src/config.js";
 import { runDailyJob } from "../src/daily-job.js";
 import { runDaily } from "../src/run.js";
@@ -727,14 +727,42 @@ describe("LLM providers", () => {
   });
 
   it("loads provider URLs and keys from the environment", () => {
-    expect(loadProviders({ LLM_BASE_URL: "https://x.test/v1/", LLM_API_KEY: "", NVIDIA_API_KEY: "n" })).toEqual({
+    expect(
+      loadProviders({ LLM_BASE_URL: "https://x.test/v1/", LLM_API_KEY: "", NVIDIA_API_KEY: "n", ANTHROPIC_API_KEY: "a" }),
+    ).toEqual({
       freellm: { baseUrl: "https://x.test/v1", apiKey: "" },
       nvidia: { baseUrl: "https://integrate.api.nvidia.com/v1", apiKey: "n" },
+      anthropic: { apiKey: "a" },
     });
     expect(loadProviders({})).toEqual({
       freellm: { baseUrl: "https://freellm.hellvyn.id/v1", apiKey: "" },
       nvidia: { baseUrl: "https://integrate.api.nvidia.com/v1", apiKey: "" },
+      anthropic: { apiKey: "" },
     });
+  });
+
+  it("tries Claude Sonnet first for the AI analyses, then the extraction chain unchanged", () => {
+    expect(defaultConfig.analyzeModels.map((m) => `${m.provider}:${m.id}`)).toEqual([
+      "anthropic:claude-sonnet-5-5",
+      "freellm:auto",
+      "nvidia:z-ai/glm-5.3-flash",
+      "nvidia:moonshotai/kimi-k3",
+      "nvidia:google/gemma-4-31b-it",
+    ]);
+    expect(defaultConfig.analyzeModels.slice(1)).toEqual(defaultConfig.models);
+  });
+
+  it.each([
+    ["unset", {}],
+    ["empty", { ANTHROPIC_API_KEY: "" }],
+  ])("leaves Claude out of a model chain when ANTHROPIC_API_KEY is %s", (_name, env) => {
+    expect(usableModels(defaultConfig.analyzeModels, loadProviders(env))).toEqual(defaultConfig.models);
+  });
+
+  it("keeps Claude in the model chain when ANTHROPIC_API_KEY is set", () => {
+    expect(usableModels(defaultConfig.analyzeModels, loadProviders({ ANTHROPIC_API_KEY: "a" }))).toEqual(
+      defaultConfig.analyzeModels,
+    );
   });
 
   it("falls back to the default freellm URL when LLM_BASE_URL is empty", () => {
@@ -1797,6 +1825,183 @@ describe("runDailyJob LLM providers", () => {
     expect(analysis.filter((r) => r.url.startsWith("https://llm.test/"))).toHaveLength(9);
     expect(analysis.filter((r) => !r.url.startsWith("https://llm.test/"))).toHaveLength(9);
     expect(stats.ai_analyses_run).toBe(9);
+    // No ANTHROPIC_API_KEY in this environment: Claude is never asked.
+    expect(requests.filter((r) => r.url.startsWith("https://api.anthropic.com/"))).toEqual([]);
+  });
+
+  describe("Claude for the AI analyses", () => {
+    const CLAUDE_KEY = "sk-ant-run-test-key";
+    const CREDIT_LOW =
+      "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.";
+
+    /** A Messages API stream (server-sent events) whose final message is `text`, answered by `model`. */
+    const claudeSse = (model: string, text: string): Response => {
+      const events: [string, unknown][] = [
+        [
+          "message_start",
+          {
+            type: "message_start",
+            message: {
+              id: "msg_run_test",
+              type: "message",
+              role: "assistant",
+              model,
+              content: [],
+              stop_reason: null,
+              stop_sequence: null,
+              usage: { input_tokens: 900, output_tokens: 1 },
+            },
+          },
+        ],
+        ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }],
+        ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } }],
+        ["content_block_stop", { type: "content_block_stop", index: 0 }],
+        [
+          "message_delta",
+          { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 40 } },
+        ],
+        ["message_stop", { type: "message_stop" }],
+      ];
+      return new Response(events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(""), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+
+    interface Seen {
+      url: string;
+      analysis: boolean;
+      apiKey: string | null;
+    }
+
+    /**
+     * Stubs the global fetch: Claude answers with `claude(system)`, freellm with unparsable text, NVIDIA with the
+     * right answer (extraction by document URL, analysis by its system prompt).
+     */
+    function stubNetwork(claude: (system: string) => Response, nvidiaAnalysis?: () => Response): Seen[] {
+      const seen: Seen[] = [];
+      vi.stubGlobal("fetch", async (input: unknown, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.startsWith("https://api.anthropic.com/")) {
+          const body = JSON.parse(String(init?.body)) as { system?: { text: string }[] };
+          seen.push({ url, analysis: true, apiKey: new Headers(init?.headers).get("x-api-key") });
+          return claude(body.system?.[0]?.text ?? "");
+        }
+        const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
+        const source = /^Source: (\S+)/.exec(body.messages[1]?.content ?? "")?.[1] ?? "";
+        seen.push({ url, analysis: source === "", apiKey: null });
+        if (url.startsWith("https://llm.test/")) return sse("gpt-oss:120b", "not json");
+        if (source === "") {
+          if (nvidiaAnalysis) return nvidiaAnalysis();
+          return sse("glm-served", JSON.stringify(analysisReply(body.messages[0]?.content ?? "")));
+        }
+        const reply = REPLIES[source];
+        if (reply === undefined) return new Response("unknown", { status: 500 });
+        return sse("glm-served", JSON.stringify(reply));
+      });
+      return seen;
+    }
+
+    async function run(env: Record<string, string>) {
+      const { repo, http } = setup();
+      const lines: string[] = [];
+      const warnings: string[] = [];
+      const code = await runDailyJob(
+        { ...ENV, ...env },
+        { repo, http, sleep: async () => {}, now: () => NOW, warn: (line) => warnings.push(line) },
+        (line) => lines.push(line),
+      );
+      const stats = JSON.parse(lines[0] ?? "{}") as Record<string, number>;
+      return { code, repo, lines, stats, warnings };
+    }
+
+    const toClaude = (seen: Seen[]): Seen[] => seen.filter((r) => r.url.startsWith("https://api.anthropic.com/"));
+
+    it("asks Claude Sonnet first for every analysis, with the key, and never for an extraction", async () => {
+      const seen = stubNetwork((system) => claudeSse("claude-sonnet-5-5", JSON.stringify(analysisReply(system))));
+
+      const { code, repo, lines, stats } = await run({ ANTHROPIC_API_KEY: CLAUDE_KEY });
+
+      expect(code).toBe(0);
+      expect(toClaude(seen)).toEqual(
+        Array.from({ length: 9 }, () => ({ url: "https://api.anthropic.com/v1/messages", analysis: true, apiKey: CLAUDE_KEY })),
+      );
+      // Analyses answered by Claude go nowhere else; extraction keeps freellm, then NVIDIA.
+      expect(seen.filter((r) => r.analysis && !r.url.startsWith("https://api.anthropic.com/"))).toEqual([]);
+      expect(seen.filter((r) => !r.analysis)).toHaveLength(8);
+      expect(stats.ai_analyses_run).toBe(9);
+      expect(repo.aiAnalyses.map((a) => [a.model, a.servedModel])).toEqual(
+        Array(9).fill(["anthropic:claude-sonnet-5-5", "claude-sonnet-5-5"]),
+      );
+      expect(repo.extractions.map((e) => e.model).filter((m) => m.startsWith("anthropic:"))).toEqual([]);
+      expect(lines.join("\n")).not.toContain(CLAUDE_KEY);
+    });
+
+    it("falls back to the old chain for every analysis when the Claude credit is used up (HTTP 400)", async () => {
+      const seen = stubNetwork(
+        () =>
+          new Response(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: CREDIT_LOW } }), {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+
+      const { code, repo, lines, stats, warnings } = await run({ ANTHROPIC_API_KEY: CLAUDE_KEY });
+
+      expect(code).toBe(0);
+      // Three failures in a row open Claude's circuit; the analyses after that skip it.
+      expect(toClaude(seen).length).toBeGreaterThanOrEqual(3);
+      expect(toClaude(seen).length).toBeLessThan(9);
+      expect(stats.ai_analyses_run).toBe(9);
+      expect(stats.ai_analyses_failed).toBe(0);
+      expect(new Set(repo.aiAnalyses.map((a) => a.model))).toEqual(new Set(["nvidia:z-ai/glm-5.3-flash"]));
+      expect(lines.join("\n")).not.toContain(CLAUDE_KEY);
+      expect(warnings).toEqual([]);
+    });
+
+    it("reports the Claude failure codes, never the key, when every model fails an analysis", async () => {
+      stubNetwork(
+        () =>
+          new Response(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }), {
+            status: 401,
+            headers: { "content-type": "application/json" },
+          }),
+        () => new Response("down", { status: 503 }),
+      );
+
+      const { warnings, stats } = await run({ ANTHROPIC_API_KEY: CLAUDE_KEY });
+
+      expect(stats.ai_analyses_run).toBe(0);
+      expect(warnings[0]).toMatch(/failed \(http_401, json_parse, http_503, http_503, http_503\)$/);
+      expect(warnings.join("\n")).not.toContain(CLAUDE_KEY);
+    });
+
+    it.each([
+      ["unset", {}],
+      ["empty", { ANTHROPIC_API_KEY: "" }],
+    ])("never calls Claude and trips no circuit when ANTHROPIC_API_KEY is %s", async (_name, env) => {
+      const seen = stubNetwork(() => new Response("unexpected", { status: 500 }));
+
+      const { code, repo, stats } = await run(env);
+
+      expect(code).toBe(0);
+      expect(toClaude(seen)).toEqual([]);
+      expect(stats.ai_analyses_run).toBe(9);
+      expect(stats.llm_models_tripped).toBe(0);
+      expect(new Set(repo.aiAnalyses.map((a) => a.model))).toEqual(new Set(["nvidia:z-ai/glm-5.3-flash"]));
+    });
+
+    it("leaves Claude out of a failing analysis when ANTHROPIC_API_KEY is empty: only the other models' failures", async () => {
+      stubNetwork(
+        () => new Response("unexpected", { status: 500 }),
+        () => new Response("down", { status: 503 }),
+      );
+
+      const { warnings } = await run({ ANTHROPIC_API_KEY: "" });
+
+      expect(warnings.length).toBeGreaterThan(0);
+      expect(warnings[0]).toMatch(/failed \(json_parse, http_503, http_503, http_503\)$/);
+    });
   });
 });
 
@@ -2211,8 +2416,29 @@ describe("runDaily AI analyses", () => {
     expect(stats.assessed).toBe(3);
     expect(order).toEqual(["analysis", "analysis", "analysis", "risk", "risk", "risk"]);
     expect(repo.aiAnalyses.map((a) => [a.model, a.servedModel])).toEqual(
-      Array(3).fill(["freellm:auto", "gpt-oss:120b"]),
+      Array(3).fill(["anthropic:claude-sonnet-5-5", "gpt-oss:120b"]),
     );
+  });
+
+  it("asks Claude first for every analysis and never for an extraction", async () => {
+    const base = fakeChat();
+    const calls: { provider: string; analysis: boolean }[] = [];
+    const chat: FakeChat = {
+      ...base,
+      chat: async (model, messages) => {
+        calls.push({ provider: model.provider, analysis: !/^Source: /.test(messages[1]?.content ?? "") });
+        return base.chat(model, messages);
+      },
+    };
+    const { repo, deps, config } = setup({ chat });
+
+    const stats = await runDaily(deps, config);
+
+    expect(calls.filter((c) => !c.analysis).length).toBeGreaterThan(0);
+    expect(calls.filter((c) => !c.analysis && c.provider === "anthropic")).toEqual([]);
+    expect(calls.filter((c) => c.analysis).map((c) => c.provider)).toEqual(Array(9).fill("anthropic"));
+    expect(stats.ai_analyses_run).toBe(9);
+    expect(new Set(repo.aiAnalyses.map((a) => a.model))).toEqual(new Set(["anthropic:claude-sonnet-5-5"]));
   });
 
   it("uses the stored analyses without any AI call when the router is out of quota the next day", async () => {

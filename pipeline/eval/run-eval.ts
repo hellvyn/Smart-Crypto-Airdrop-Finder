@@ -5,7 +5,8 @@ import type { ExtractionResult } from "@saf/core";
 import type { CollectedDocument } from "../src/collectors/types.js";
 import { defaultConfig, loadProviders } from "../src/config.js";
 import { extractWithFallback } from "../src/llm/extract.js";
-import { modelKey, streamChat } from "../src/llm/nvidia.js";
+import { createChat } from "../src/llm/chat.js";
+import { modelKey } from "../src/llm/nvidia.js";
 import { PROMPT_VERSION } from "../src/llm/prompt.js";
 import { evaluatePass, rawOfficialUrlsOfOutcome, scoreCase } from "./score.js";
 import type { CaseScore, GroundTruth } from "./score.js";
@@ -38,8 +39,8 @@ async function run(): Promise<number> {
 
   const providers = loadProviders(process.env);
   const models = defaultConfig.models;
-  const chat = (model: Parameters<typeof streamChat>[0], messages: Parameters<typeof streamChat>[1]) =>
-    streamChat(model, messages, { fetch, ...providers[model.provider] });
+  // Extraction models only (no Claude), so no Claude client.
+  const chat = createChat(providers, { fetch, claude: null });
 
   if (providers.nvidia.apiKey === "" && process.env["NODE_USE_ENV_PROXY"] !== "1") {
     console.warn(

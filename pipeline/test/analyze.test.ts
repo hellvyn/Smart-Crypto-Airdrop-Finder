@@ -23,7 +23,7 @@ const MODELS: ModelConfig[] = [
   { provider: "nvidia", id: "m/two", extraBody: {} },
   { provider: "nvidia", id: "m/three", extraBody: {} },
 ];
-const CONFIG: PipelineConfig = { ...defaultConfig, models: MODELS };
+const CONFIG: PipelineConfig = { ...defaultConfig, models: MODELS, analyzeModels: MODELS };
 
 const summarySchema = z.object({ summary: z.string() });
 type Summary = z.infer<typeof summarySchema>;
@@ -195,6 +195,30 @@ describe("runAnalyses", () => {
         createdAt: NOW,
       },
     ]);
+  });
+
+  it("tries the analysis models (config.analyzeModels), never the extraction models", async () => {
+    const repo = new MemoryRepo();
+    await seed(repo, ["Ink"]);
+    const tried: string[] = [];
+    const { chat } = fakeChat((model) => {
+      tried.push(`${model.provider}:${model.id}`);
+      return model.provider === "anthropic" ? SERVER_ERROR : ok({ summary: "Ringkasan" });
+    });
+    const config: PipelineConfig = {
+      ...CONFIG,
+      models: [{ provider: "nvidia", id: "extract/only", extraBody: {} }],
+      analyzeModels: [
+        { provider: "anthropic", id: "claude-sonnet-5-5", extraBody: {} },
+        { provider: "freellm", id: "auto", extraBody: {} },
+      ],
+    };
+
+    const stats = await analyze(repo, chat, { config });
+
+    expect(counters(stats)).toEqual({ run: 1, cached: 0, failed: 0, deferred: 0 });
+    expect(tried).toEqual(["anthropic:claude-sonnet-5-5", "freellm:auto"]);
+    expect(repo.aiAnalyses[0]?.model).toBe("freellm:auto");
   });
 
   it("skips a project whose input hash and prompt version are unchanged", async () => {

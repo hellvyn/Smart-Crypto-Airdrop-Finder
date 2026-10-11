@@ -17,7 +17,7 @@ const MODELS: ModelConfig[] = [
   { provider: "freellm", id: "auto", extraBody: {} },
   { provider: "nvidia", id: "m/two", extraBody: {} },
 ];
-const CONFIG: PipelineConfig = { ...defaultConfig, models: MODELS };
+const CONFIG: PipelineConfig = { ...defaultConfig, models: MODELS, analyzeModels: MODELS };
 
 const SRC = "https://airdrops.io/ink/";
 const SRC_TEXT =
