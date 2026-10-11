@@ -69,7 +69,18 @@ function Summary({ project }: { project: ProjectDetail }) {
  * never queried for a visitor (lib/queries.ts). Every AI text is plain text. Steps are `project.steps` for every
  * reader (the grounded `tasks.text_id`, else the source step), never the Analyst's raw `steps_id` (G5 C1).
  */
-export function ProjectDetailView({ project, member, now }: { project: ProjectDetail; member: boolean; now: Date }) {
+export function ProjectDetailView({
+  project,
+  member,
+  canExplain = false,
+  now,
+}: {
+  project: ProjectDetail;
+  member: boolean;
+  /** The project is among this member's Coach candidates: only then do the steps offer "Jelasin langkah ini". */
+  canExplain?: boolean;
+  now: Date;
+}) {
   const { risk, curation } = project;
   const keyChecksRan = risk ? risk.checks.filter((c) => c.ran && (KEY_CHECKS as readonly string[]).includes(c.id)).length : 0;
   const checkedAt = curation ? new Date(curation.checkedAt) : null;
@@ -128,7 +139,7 @@ export function ProjectDetailView({ project, member, now }: { project: ProjectDe
             statusQuotes={project.conflict ? project.evidence.filter((e) => e.field === "status") : []}
             sourceUrls={project.sourceUrls}
           />
-          <StepsList steps={project.steps} links={project.links} />
+          <StepsList steps={project.steps} links={project.links} canExplain={member && canExplain} projectId={project.id} />
           <SafetyBox
             risk={risk}
             links={project.links}

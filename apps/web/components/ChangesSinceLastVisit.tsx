@@ -1,24 +1,9 @@
 import Link from "next/link";
 import { markChangesSeen } from "@/app/(app)/changes/actions";
 import { MarkChangesSeenButton } from "@/components/MarkChangesSeenButton";
-import type { ChangeFeed, ChangeItem, ChangeProject, DeadlineItem } from "@/lib/changes";
+import { changeText, type ChangeFeed, type ChangeProject, type DeadlineItem } from "@/lib/changes";
 import { changes as copy } from "@/lib/copy";
-import { dayLabel, deadlineKindLabel, riskLabel, statusLabel } from "@/lib/view";
-
-function changeText(item: Exclude<ChangeItem, { kind: "curated_in_many" }>): string {
-  switch (item.kind) {
-    case "curated_in":
-      return copy.curatedIn;
-    case "curated_out":
-      return copy.curatedOut;
-    case "ended":
-      return copy.ended;
-    case "status":
-      return copy.status(statusLabel(item.from), statusLabel(item.to));
-    case "risk":
-      return copy.risk(riskLabel(item.from), riskLabel(item.to));
-  }
-}
+import { dayLabel, deadlineKindLabel } from "@/lib/view";
 
 function deadlineText(item: DeadlineItem): string {
   const date = dayLabel(item.date);

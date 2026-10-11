@@ -3,14 +3,12 @@ import pLimit from "p-limit";
 import type { z } from "zod";
 import { forbiddenPhrases } from "@saf/core";
 import type { AiKind } from "@saf/core";
+import { callStructured, createCircuitBreaker } from "@saf/llm";
+import type { ChatFn, ChatMessage } from "@saf/llm";
 import type { PipelineConfig } from "../config.js";
-import { createCircuitBreaker } from "../llm/circuit-breaker.js";
-import type { ChatMessage } from "../llm/nvidia.js";
 import { analystAnalyzer } from "../llm/prompts/analyst.js";
 import { contradictionsAnalyzer } from "../llm/prompts/contradictions.js";
 import { scamAnalyzer } from "../llm/prompts/scam.js";
-import { callStructured } from "../llm/structured.js";
-import type { ChatFn } from "../llm/structured.js";
 import type { DailyStats } from "../stats.js";
 import type { PipelineRepo, ProjectForScoring } from "../store/repo.js";
 import { CIRCUIT_BREAKER_THRESHOLD } from "./extract.js";
@@ -72,6 +70,11 @@ export interface AnalyzeDeps {
    * the project's own source texts. They go into that analyzer's prompt and input hash only.
    */
   extraSources?: (project: ProjectForScoring, kind: AiKind) => Promise<SourceText[]>;
+  /**
+   * Projects whose analyses `maxAnalysesPerRun` does not limit: the listed ones, which members see and which must not
+   * show an empty AI section. The time budget (`analyzeBudgetMinutes`) still applies to them.
+   */
+  uncapped?: ReadonlySet<string>;
   /** Where a failed analysis is reported (project id and kind only, never source text); defaults to console.warn. */
   warn?: (line: string) => void;
 }
@@ -100,6 +103,15 @@ export function analysisInputHash(project: ProjectForScoring, sourceTexts: strin
     sources: [...sourceTexts].sort(),
   });
   return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+/**
+ * `projects` with those on the list first (both groups keep their order). A run starts at most `maxAnalysesPerRun`
+ * analyses, so the projects members can see must get them before the ones that are not listed.
+ */
+export function listedFirst<T extends { id: string }>(projects: T[], listedIds: Iterable<string>): T[] {
+  const listed = new Set(listedIds);
+  return [...projects.filter((p) => listed.has(p.id)), ...projects.filter((p) => !listed.has(p.id))];
 }
 
 /**
@@ -149,7 +161,7 @@ export async function runAnalyses(
       stats.ai_analyses_cached += 1;
       return;
     }
-    if (budgetSpent() || started >= config.maxAnalysesPerRun) {
+    if (budgetSpent() || (started >= config.maxAnalysesPerRun && deps.uncapped?.has(project.id) !== true)) {
       stats.ai_analyses_deferred += 1;
       return;
     }

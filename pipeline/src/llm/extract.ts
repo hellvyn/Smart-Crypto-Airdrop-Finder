@@ -2,11 +2,9 @@ import { cleanUrl, extractionSchema, filterUrlsInSource, normalizeDeadline, quot
 import type { ExtractionResult } from "@saf/core";
 import { isNonProjectHost } from "../collectors/html-text.js";
 import type { CollectedDocument } from "../collectors/types.js";
-import type { CircuitBreaker } from "./circuit-breaker.js";
-import type { ModelConfig } from "./nvidia.js";
+import { callStructured } from "@saf/llm";
+import type { ChatFn, CircuitBreaker, LlmAttempt, ModelConfig } from "@saf/llm";
 import { buildMessages } from "./prompt.js";
-import { callStructured } from "./structured.js";
-import type { ChatFn, LlmAttempt } from "./structured.js";
 
 /** One extraction call, stored as an `extractions` row. */
 export type ExtractionAttempt = LlmAttempt;
@@ -20,8 +18,8 @@ export type ExtractOutcome =
    */
   | { ok: false; attempts: ExtractionAttempt[]; stopped: boolean };
 
-export type { ChatFn } from "./structured.js";
-export { parseJson } from "./structured.js";
+export type { ChatFn } from "@saf/llm";
+export { parseJson } from "@saf/llm";
 
 // A URL inside free text: stops at whitespace, quotes, angle brackets and brackets/parentheses.
 const URL_IN_TEXT_RE = /https?:\/\/[^\s<>"'`()[\]{}]+/g;

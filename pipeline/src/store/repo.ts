@@ -1,5 +1,8 @@
 import type {
   AiKind,
+  BriefingChange,
+  BriefingDeadline,
+  BriefingItem,
   CurationReason,
   CurationRecord,
   DatePrecision,
@@ -333,4 +336,17 @@ export interface PipelineRepo {
   listLogoAttempts(projectIds: string[]): Promise<{ projectId: string; outcome: LogoAttemptOutcome; attemptedAt: Date }[]>;
   /** Those of these projects whose latest curation passed (they are on the list), sorted. */
   listListedProjects(projectIds: string[]): Promise<string[]>;
+  /** `project_changes` rows with `changed_at` at or after `since`, with their project, oldest first. */
+  listBriefingChanges(since: Date): Promise<BriefingChange[]>;
+  /**
+   * Claim, snapshot and campaign_end deadlines (exact or approximate) dated from `from` to `to` (`YYYY-MM-DD`, both
+   * included), with their project, by date.
+   */
+  listBriefingDeadlines(from: string, to: string): Promise<BriefingDeadline[]>;
+  /** Inserts or replaces the briefing of `day` (`YYYY-MM-DD`, the WIB day); `model` is null for the version without the AI. */
+  saveBriefing(day: string, items: BriefingItem[], model: string | null, ai: boolean): Promise<void>;
+  /** Deletes coach threads created before `olderThan` (their messages go with them) and briefings of days before its UTC day. */
+  purgeCoachAndBriefings(olderThan: Date): Promise<{ threads: number; briefings: number }>;
+  /** Deletes `coach_usage` rows created before `olderThan` (the quota ledger only counts the current WIB day). Returns how many. */
+  purgeCoachUsage(olderThan: Date): Promise<number>;
 }

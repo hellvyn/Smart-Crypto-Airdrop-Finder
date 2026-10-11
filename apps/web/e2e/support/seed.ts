@@ -31,6 +31,7 @@ let projectIds: string[] = [];
 let documentIds: string[] = [];
 let runIds: string[] = [];
 let linkCheckUrls: string[] = [];
+let briefingDays: string[] = [];
 
 function must<T>(res: { data: T; error: { message: string } | null }, what: string): NonNullable<T> {
   if (res.error || res.data === null || res.data === undefined) {
@@ -233,10 +234,12 @@ export async function cleanupSeed(): Promise<void> {
   if (documentIds.length) await db.from("documents").delete().in("id", documentIds);
   if (runIds.length) await db.from("pipeline_runs").delete().in("id", runIds);
   if (linkCheckUrls.length) await db.from("link_checks").delete().in("url", linkCheckUrls);
+  if (briefingDays.length) await db.from("briefings").delete().in("day", briefingDays);
   projectIds = [];
   documentIds = [];
   runIds = [];
   linkCheckUrls = [];
+  briefingDays = [];
 }
 
 /** Seeds `count` live projects on one unique chain, newest last_seen first by index. Returns the chain name. */
@@ -275,6 +278,64 @@ export async function seedManyProjects(count: number): Promise<{ chain: string; 
     "many curations",
   );
   return { chain, slugs: rows.map((r) => r.slug) };
+}
+
+export interface CoachSeedProject {
+  id: string;
+  slug: string;
+  name: string;
+  /** The text of its first step, which the stub model quotes. */
+  step: string;
+  /** The id of that step (`tasks.id`), for "Jelasin langkah ini". */
+  stepId: string;
+}
+
+/**
+ * Projects the Coach may recommend (Plan 9 Task 6): each is live, free (its source says no capital), has a low risk
+ * assessment, passed curation in the Live sekarang tab with worth "high", and has two steps. Cleaned up by `cleanupSeed`.
+ */
+export async function seedCoachProjects(count = 3): Promise<CoachSeedProject[]> {
+  const db = adminClient();
+  const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const now = new Date().toISOString();
+  const out: CoachSeedProject[] = [];
+  for (let i = 0; i < count; i++) {
+    const slug = `e2e-coach-${tag}-${i}`;
+    const name = `E2E Coach ${tag.toUpperCase()} ${String.fromCharCode(65 + i)}`;
+    const doc = await insertDocument(`https://source.example/${slug}`);
+    const id = await insertProject({ slug, name, name_key: slug, chains: ["base"], status: "live" });
+    const step = `Bridge sedikit ETH ke Base lalu swap di ${name}`;
+    const tasks = must(
+      await db
+        .from("tasks")
+        .insert([
+          { project_id: id, document_id: doc, description: step, cadence: "weekly", position: 0 },
+          { project_id: id, document_id: doc, description: `Cek halaman points ${name} tiap minggu`, cadence: "weekly", position: 1 },
+        ])
+        .select("id, position"),
+      "coach tasks",
+    ) as { id: string; position: number }[];
+    must(
+      await db.from("evidence").insert({ project_id: id, document_id: doc, field: "capital_required", value: "none", quote: "", at: now }).select("id"),
+      "coach capital",
+    );
+    must(
+      await db
+        .from("risk_assessments")
+        .insert({ project_id: id, level: "low", points: 0, reasons: [], checks: [], computed_at: now })
+        .select("id"),
+      "coach risk",
+    );
+    must(
+      await db
+        .from("curations")
+        .insert({ project_id: id, reasons: [], passed: true, worth_level: "high", tab: "live_now", status_at: "live", computed_at: now })
+        .select("id"),
+      "coach curation",
+    );
+    out.push({ id, slug, name, step, stepId: tasks.find((t) => t.position === 0)!.id });
+  }
+  return out;
 }
 
 export interface CuratedSeed {
@@ -647,4 +708,16 @@ export async function seedCardGrid(count: number): Promise<CardGridSeed> {
     "card logos",
   );
   return { chain, slugs: rows.map((r) => r.slug), names: rows.map((r) => r.name), ids, png: PNG_1X1 };
+}
+
+/** The morning briefing of one day (`YYYY-MM-DD`), as the pipeline writes it; removed by `cleanupSeed`. */
+export async function seedBriefing(
+  day: string,
+  items: { projectId: string; slug: string; name: string; text: string }[],
+): Promise<void> {
+  must(
+    await adminClient().from("briefings").upsert({ day, items, model: null, ai: false }, { onConflict: "day" }).select("day").single(),
+    "briefing",
+  );
+  briefingDays.push(day);
 }

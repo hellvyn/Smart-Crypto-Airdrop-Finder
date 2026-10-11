@@ -1,10 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
-import { createConfirmedUser, deleteCreatedUsers, uniqueEmail } from "./support/admin";
+import { adminClient, createConfirmedUser, deleteCreatedUsers, uniqueEmail } from "./support/admin";
 import {
   cleanupSeed,
+  seedBriefing,
+  seedCoachProjects,
   seedCuratedList,
   seedProjectPage,
   seedProjects,
+  type CoachSeedProject,
   type CuratedSeed,
   type ProjectPageSeed,
   type Seed,
@@ -13,12 +16,18 @@ import {
 let seed: Seed;
 let curated: CuratedSeed;
 let detailPage: ProjectPageSeed;
+let coachProject: CoachSeedProject;
 
 test.beforeAll(async () => {
   seed = await seedProjects();
   // After seedProjects, so its run ("4 dicek, 3 lolos") is the newest.
   curated = await seedCuratedList();
   detailPage = await seedProjectPage();
+  coachProject = (await seedCoachProjects(1))[0]!;
+  // An old day, so the box also shows that a briefing that is not today's carries its own date.
+  await seedBriefing("2026-10-01", [
+    { projectId: curated.live.slug, slug: curated.live.slug, name: curated.live.name, text: "Project ini baru masuk list." },
+  ]);
 });
 
 test.afterAll(async () => {
@@ -135,6 +144,32 @@ test("a visitor sees no Worth it, and ?sort=worth&worth=high is ignored", async 
   await expect(page.getByText("Baru dicek")).toBeVisible();
   await expect(page.getByText(/worth it/i)).toHaveCount(0);
   await expect(page.locator("a[href*='worth']")).toHaveCount(0);
+});
+
+test("a visitor's page, raw HTML included, has no briefing box", async ({ page }) => {
+  const html = await (await page.request.get("/airdrops")).text();
+  expect(html).not.toContain("Briefing pagi");
+  expect(html).not.toContain("Project ini baru masuk list.");
+  await page.goto("/airdrops");
+  await expect(page.getByRole("region", { name: /^Briefing pagi/ })).toHaveCount(0);
+});
+
+test("a member sees the briefing with its own date and a link to the project, and the fold survives a reload", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/airdrops");
+  const box = page.getByRole("region", { name: "Briefing pagi · 1 Okt 2026" });
+  await expect(box).toBeVisible();
+  await expect(box.getByRole("link", { name: curated.live.name })).toHaveAttribute("href", `/projects/${curated.live.slug}`);
+  await expect(box).toContainText("Project ini baru masuk list.");
+
+  await box.getByRole("button", { name: "Ciutkan briefing" }).click();
+  await expect(box.getByRole("button", { name: "Buka briefing" })).toHaveAttribute("aria-expanded", "false");
+  await expect(box.getByText("Project ini baru masuk list.")).toBeHidden();
+  await page.reload();
+  await expect(box.getByRole("button", { name: "Buka briefing" })).toBeVisible();
+  await expect(box.getByText("Project ini baru masuk list.")).toBeHidden();
+  await box.getByRole("button", { name: "Buka briefing" }).click();
+  await expect(box.getByText("Project ini baru masuk list.")).toBeVisible();
 });
 
 test("a member sees Worth it on each row and can filter by it", async ({ page }) => {
@@ -426,4 +461,89 @@ test("a visitor's page for a failed project carries none of its member-only text
   const res = await request.get(`/projects/${curated.failed.slug}`);
   expect(res.status()).toBe(200);
   expect(await res.text()).not.toContain(curated.failedMemberReason);
+});
+
+// ---- Tanya AI and Jelasin langkah ini (Plan 9 Task 7); the model is the local stub (e2e/support/llm-stub.mjs) ----
+
+/** Signs in a new member who already has a Coach profile, so the Coach can answer right away. */
+async function signInWithProfile(page: Page): Promise<void> {
+  const email = uniqueEmail("coach-ask");
+  await createConfirmedUser(email, "correct-horse-1");
+  const { data, error } = await adminClient().auth.admin.listUsers({ perPage: 1000 });
+  if (error) throw error;
+  const user = data.users.find((u) => u.email === email);
+  if (!user) throw new Error("test user not found");
+  const saved = await adminClient().from("coach_profiles").insert({
+    user_id: user.id,
+    level: "intermediate",
+    capital_band: "over_1000",
+    has_wallet: true,
+    wallet_count: 1,
+    minutes_per_day: 60,
+    goal: "long_term",
+    chains: [],
+  });
+  if (saved.error) throw saved.error;
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill("correct-horse-1");
+  await page.getByRole("button", { name: "Login", exact: true }).click();
+  await expect(page).not.toHaveURL(/\/login/);
+}
+
+test("a member sees Tanya AI and Jelasin langkah ini on a project page, a visitor neither, in the raw HTML too", async ({ page }) => {
+  const url = `/projects/${coachProject.slug}`;
+  await page.goto(url);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(coachProject.name);
+  await expect(page.getByRole("link", { name: "Tanya AI" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Jelasin langkah ini" })).toHaveCount(0);
+  const visitorHtml = await (await page.request.get(url)).text();
+  expect(visitorHtml).not.toContain("Tanya AI");
+  expect(visitorHtml).not.toContain("Jelasin langkah ini");
+
+  await signInWithProfile(page);
+  await page.goto(url);
+  await expect(page.getByRole("link", { name: "Tanya AI" })).toHaveAttribute("href", `/coach?project=${coachProject.id}`);
+  // One button under each of the project's two steps.
+  await expect(section(page, "03 · Step garap").getByRole("button", { name: "Jelasin langkah ini" })).toHaveCount(2);
+  const memberHtml = await (await page.request.get(url)).text();
+  expect(memberHtml).toContain("Tanya AI");
+  expect(memberHtml).toContain("Jelasin langkah ini");
+});
+
+test("Jelasin langkah ini shows the answer right under the step", async ({ page }) => {
+  await signInWithProfile(page);
+  await page.goto(`/projects/${coachProject.slug}`);
+  const step = section(page, "03 · Step garap").locator("li").filter({ hasText: coachProject.step });
+  await step.getByRole("button", { name: "Jelasin langkah ini" }).click();
+  await expect(step.getByTestId("explain-answer")).toHaveText(
+    "Langkah ini artinya kamu mengerjakan satu hal kecil dulu, tanpa buru-buru. Pelan-pelan aja.",
+  );
+});
+
+test("Tanya AI on a project that passed opens a chat about that project alone, without a plan", async ({ page }) => {
+  await signInWithProfile(page);
+  await page.goto(`/projects/${coachProject.slug}`);
+  await page.getByRole("link", { name: "Tanya AI" }).click();
+  await expect(page).toHaveURL(new RegExp(`/coach\\?project=${coachProject.id}$`));
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Tanya Coach soal ${coachProject.name}`);
+  await expect(page.getByRole("button", { name: "Mulai garap" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Rencana garapan kamu" })).toHaveCount(0);
+  await page.getByLabel("Pertanyaan kamu").fill("Apa yang harus aku kerjain dulu?");
+  await page.getByRole("button", { name: "Kirim" }).click();
+  const answer = page.getByTestId("coach-answer");
+  await expect(answer).toContainText(`Coba mulai dari ${coachProject.name}.`);
+  await expect(answer.getByRole("link", { name: coachProject.name })).toHaveAttribute("href", `/projects/${coachProject.slug}`);
+});
+
+test("Tanya AI on a project that failed shows its public reason, with no plan, no chat and no Mulai garap", async ({ page }) => {
+  await signInWithProfile(page);
+  await page.goto(`/projects/${curated.failed.slug}`);
+  await page.getByRole("link", { name: "Tanya AI" }).click();
+  await expect(page).toHaveURL(/\/coach\?project=/);
+  await expect(page.getByTestId("coach-not-listed")).toHaveText("Gak masuk list: Risiko tinggi");
+  await expect(page.getByTestId("coach-not-listed")).not.toContainText(curated.failedMemberReason);
+  await expect(page.getByRole("button", { name: "Mulai garap" })).toHaveCount(0);
+  await expect(page.getByLabel("Pertanyaan kamu")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Rencana garapan kamu" })).toHaveCount(0);
 });

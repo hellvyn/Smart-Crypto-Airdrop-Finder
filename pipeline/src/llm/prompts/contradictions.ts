@@ -4,7 +4,7 @@ import { contradictionsSchema, postProcessContradictions } from "@saf/core";
 import type { ContradictionsAnswer } from "@saf/core";
 import type { Analyzer, SourceText } from "../../steps/analyze.js";
 import type { ProjectForScoring } from "../../store/repo.js";
-import type { ChatMessage } from "../nvidia.js";
+import type { ChatMessage } from "@saf/llm";
 import { STYLE_RULES, sourceBlocks } from "./analyst.js";
 
 export const CONTRADICTIONS_PROMPT_VERSION = "contradictions-2026-10-11.1";

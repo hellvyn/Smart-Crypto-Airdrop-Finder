@@ -18,8 +18,8 @@ const nextConfig: NextConfig = {
       { source: "/logo/:projectId", headers: [{ key: "Content-Security-Policy", value: "default-src 'none'; sandbox" }] },
     ];
   },
-  // @saf/core is consumed from TypeScript source (its package exports point at src/index.ts).
-  transpilePackages: ["@saf/core"],
+  // @saf/core and @saf/llm are consumed from TypeScript source (their package exports point at src/index.ts).
+  transpilePackages: ["@saf/core", "@saf/llm"],
   experimental: {
     // @saf/core imports its own modules as "./x.js" (ESM style) while the files are "./x.ts". Only webpack can
     // map that (Turbopack has no extensionAlias), which is why `dev` and `build` run with --webpack.

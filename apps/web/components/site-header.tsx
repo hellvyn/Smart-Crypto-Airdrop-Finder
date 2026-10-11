@@ -25,6 +25,7 @@ export async function SiteHeader() {
           <nav className="site-nav site-nav-member" aria-label={header.navLabel}>
             <Link href={LIST_PATH}>{header.airdrops}</Link>
             <Link href="/garapan">{header.garapan}</Link>
+            <Link href="/coach">{header.coach}</Link>
             <Link href="/watchlist">{header.watchlist}</Link>
             <Link href="/wallets">{header.wallets}</Link>
             <Link href="/settings">{header.account}</Link>

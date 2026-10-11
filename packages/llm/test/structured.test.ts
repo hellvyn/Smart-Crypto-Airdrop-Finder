@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { defaultConfig } from "../src/config.js";
-import { createCircuitBreaker } from "../src/llm/circuit-breaker.js";
-import type { ChatMessage, ChatResult, ModelConfig } from "../src/llm/nvidia.js";
-import { callStructured } from "../src/llm/structured.js";
-import type { ChatFn } from "../src/llm/structured.js";
+import { MODELS as PRODUCTION_MODELS } from "../src/models.js";
+import { createCircuitBreaker } from "../src/circuit-breaker.js";
+import type { ChatMessage, ChatResult, ModelConfig } from "../src/nvidia.js";
+import { callStructured } from "../src/structured.js";
+import type { ChatFn } from "../src/structured.js";
+
+const defaultConfig = { models: PRODUCTION_MODELS };
 
 const MODELS: ModelConfig[] = [
   { provider: "nvidia", id: "m/one", extraBody: {} },

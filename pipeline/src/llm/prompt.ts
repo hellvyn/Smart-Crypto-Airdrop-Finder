@@ -1,5 +1,5 @@
 import type { CollectedDocument } from "../collectors/types.js";
-import type { ChatMessage } from "./nvidia.js";
+import type { ChatMessage } from "@saf/llm";
 
 export const PROMPT_VERSION = "2026-10-10.3";
 

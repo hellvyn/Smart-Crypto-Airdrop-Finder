@@ -1,18 +1,22 @@
+import { coachProfileSchema } from "@saf/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import {
   getChangeFeed,
   getChangesSeenAt,
+  getLatestBriefing,
   getLastSuccessfulRunAt,
   getProjectDetail,
   getRunSummary,
   getTrackRecord,
   listChains,
+  listCoachChains,
   listChangesSince,
   listCurated,
   listProjects,
 } from "../lib/queries";
 import { PAGE_SIZE } from "../lib/view";
+import { PROFILE } from "./coach-fakes";
 
 type Call = [method: string, ...args: unknown[]];
 interface Recorded {
@@ -183,6 +187,28 @@ describe("listChains", () => {
   });
 });
 
+describe("listCoachChains", () => {
+  it("offers only chain names the profile schema accepts, so one odd name cannot break the whole save", async () => {
+    const { db } = fakeDb([
+      {
+        data: [
+          { chain: "arbitrum one" },
+          { chain: "base" },
+          { chain: "hyper_evm" },
+          { chain: "x".repeat(41) },
+          { chain: "a".repeat(26) },
+          { chain: "zksync-era" },
+        ],
+        error: null,
+      },
+    ]);
+    const offered = await listCoachChains(db);
+    expect(offered).toEqual(["arbitrum one", "base", "zksync-era"]);
+    // Whatever is offered, a profile with all of it saves.
+    expect(coachProfileSchema.safeParse({ ...PROFILE, chains: offered }).success).toBe(true);
+  });
+});
+
 describe("getLastSuccessfulRunAt", () => {
   it("filters finished runs without run_error in SQL and takes the newest", async () => {
     const { db, recs } = fakeDb([{ data: [{ finished_at: "2026-10-10T05:00:00Z", stats: {} }], error: null }]);
@@ -255,8 +281,8 @@ describe("getProjectDetail", () => {
       "ai_analyses:scam": [{ result: { flags: [{ pattern: "urgency", quote: "Only 2 hours", explanation: "Buru-buru." }] }, created_at: "2026-10-09T23:00:00Z" }],
       "ai_analyses:contradictions": [{ result: { items: [{ topic: "t", quote_a: "a", url_a: "https://s.example/1", quote_b: "b", url_b: "https://s.example/2", explanation: "e" }] }, created_at: "2026-10-09T23:00:00Z" }],
       tasks: [
-        { description: "Bridge to Base", text_id: "Bridge ke Base", cadence: "once", position: 0 },
-        { description: "Swap daily", text_id: null, cadence: "daily", position: 1 },
+        { id: "55555555-5555-4555-8555-555555555551", description: "Bridge to Base", text_id: "Bridge ke Base", cadence: "once", position: 0 },
+        { id: "55555555-5555-4555-8555-555555555552", description: "Swap daily", text_id: null, cadence: "daily", position: 1 },
       ],
       links: [{ url: "https://claim.demo.example/", kind: "claim" }],
       link_checks: [{ url: "https://claim.demo.example/", status: "official" }],
@@ -345,8 +371,8 @@ describe("getProjectDetail", () => {
     expect(d?.contradictions).toHaveLength(1);
     expect(recs.find((r) => r.table === "tasks")?.calls).toContainEqual(["order", "position", { ascending: true }]);
     expect(d?.steps).toEqual([
-      { text: "Bridge ke Base", cadence: "once" },
-      { text: "Swap daily", cadence: "daily" },
+      { id: "55555555-5555-4555-8555-555555555551", text: "Bridge ke Base", cadence: "once" },
+      { id: "55555555-5555-4555-8555-555555555552", text: "Swap daily", cadence: "daily" },
     ]);
     expect(d?.links).toEqual([{ url: "https://claim.demo.example/", kind: "claim", status: "official" }]);
     expect(d?.claimOpenChecked).toBe(true);
@@ -826,4 +852,44 @@ describe("getChangeFeed", () => {
       expect(await getChangeFeed(db, "u1", now)).toEqual({ changes: [], deadlines: [] });
     },
   );
+});
+
+describe("getLatestBriefing", () => {
+  const row = {
+    day: "2026-10-11",
+    ai: true,
+    items: [
+      { projectId: "p-1", slug: "alpha", name: "Alpha", text: "Alpha baru masuk list." },
+      { projectId: "p-2", slug: "beta", name: "Beta" },
+      "junk",
+      { projectId: "p-3", slug: "gamma", name: "Gamma", text: "Gamma live." },
+    ],
+  };
+
+  it("reads the newest briefing and keeps the items it can read", async () => {
+    const { db, recs } = fakeDb([{ data: row, error: null }]);
+    expect(await getLatestBriefing(db)).toEqual({
+      day: "2026-10-11",
+      ai: true,
+      items: [
+        { projectId: "p-1", slug: "alpha", name: "Alpha", text: "Alpha baru masuk list." },
+        { projectId: "p-3", slug: "gamma", name: "Gamma", text: "Gamma live." },
+      ],
+    });
+    expect(recs[0]!.table).toBe("briefings");
+    expect(recs[0]!.calls).toContainEqual(["select", "day, items, ai"]);
+    expect(recs[0]!.calls).toContainEqual(["order", "day", { ascending: false }]);
+    expect(recs[0]!.calls).toContainEqual(["limit", 1]);
+  });
+
+  it("returns null when there is no briefing, or the row is not one", async () => {
+    expect(await getLatestBriefing(fakeDb([{ data: null, error: null }]).db)).toBeNull();
+    expect(await getLatestBriefing(fakeDb([{ data: { day: "soon", items: [], ai: false }, error: null }]).db)).toBeNull();
+  });
+
+  it("throws on a database error", async () => {
+    await expect(getLatestBriefing(fakeDb([{ data: null, error: { message: "boom" } }]).db)).rejects.toThrow(
+      "Failed to load the briefing: boom",
+    );
+  });
 });

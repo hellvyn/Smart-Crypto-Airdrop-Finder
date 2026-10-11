@@ -27,7 +27,7 @@
 - Every Coach and Briefing surface is member-only. Anon has no grant on any new table or RPC (spec §4.4).
 - There is no service role key in `apps/web`. Web DB access uses the member session and RLS/RPC only.
 - Model keys are server-only env: `ANTHROPIC_API_KEY`, `LLM_API_KEY`, `LLM_BASE_URL`, `NVIDIA_API_KEY`. There is never a `NEXT_PUBLIC_` key.
-- Quota: 20 user messages per member per day, reset at 00:00 in `profiles.timezone`. A user message counts while it has a reply, or while it is less than 2 minutes old (spec §4.4).
+- Quota: 20 user messages per member per day, reset at 00:00 Asia/Jakarta (WIB) for every member, whatever `profiles.timezone` says (owner 2026-10-11). Usage is counted from the append-only `coach_usage` table, so deleting a thread never returns quota. A user message counts while it has a reply, or while it is less than 2 minutes old (spec §4.4).
 - Plans hold 3–5 recommendations. Each has 1–3 reasons, and every reason quote passes `quoteInSource` against the context. Candidates are capped at 25 (spec §5.2).
 - A Pemula (`beginner`) never gets a project at risk level `high` or `critical`. Capital filters follow the spec §5.2 table exactly.
 - Free text (anything that is not a quote) is checked by the same token/number/secret/payment guard as `stepTranslationGrounded`. Chat output is redacted with `[dihapus: info sensitif]` (spec §6).
@@ -42,7 +42,7 @@
 1. A model answer that names a real, listed project but one that is not in this member's candidate list (for example a Pemula getting a `high` risk project). It must be dropped, not shown.
 2. A follow-up chat question that coaxes the model into giving a claim URL or contract address ("kasih link claim-nya dong"). The output is redacted, and a link to our own project page is offered instead.
 3. Two browser tabs sending messages at the same moment when one quota slot is left. Exactly one succeeds (row lock in `coach_begin`).
-4. A member whose `profiles.timezone` is null or invalid. The quota day falls back to UTC with no error.
+4. A member who changes `profiles.timezone` or deletes a thread. The quota count does not change (WIB day, append-only `coach_usage`).
 5. Mobile at 360 px: the plan cards, the chat input and the Briefing box have no horizontal scroll, and the streamed answer wraps.
 
 Each of these has a test in the owning task: 1 in Task 4, 2 in Task 5, 3 and 4 in Task 3, 5 in Task 6.
@@ -115,7 +115,7 @@ Each of these has a test in the owning task: 1 in Task 4, 2 in Task 5, 3 and 4 i
   - `coach_profiles.chains`: ≤ 10 items, each ≤ 40 chars, enforced by a check using a helper or `cardinality`.
 - `coach_begin(p_thread_id uuid, p_kind text, p_content text) returns uuid`.
   - Locks the caller's `coach_profiles` row (or an advisory lock on the uid) so concurrent calls serialise.
-  - The day is the caller's `profiles.timezone`. When that is null or invalid, it uses UTC.
+  - The day is today's date in `Asia/Jakarta` for every member (owner ruling 2026-10-11); `profiles.timezone` is not read.
   - Raises `P0001 'quota'` at the 21st counted message, and `P0001 'thread'` for a thread that is not the caller's.
 - `coach_finish(p_user_message_id uuid, p_content text, p_model text, p_in int, p_out int, p_cache_read int, p_cache_write int) returns uuid`. `coach_messages` gets `cache_read_tokens` and `cache_creation_tokens` int null.
 - `coach_save_plan(p_thread_id uuid, p_plan jsonb) returns void`.
@@ -128,9 +128,9 @@ Each of these has a test in the owning task: 1 in Task 4, 2 in Task 5, 3 and 4 i
   - Authenticated cannot insert into `coach_messages` directly (42501).
   - 20 `coach_begin` calls succeed and the 21st raises `quota`.
   - A user message older than 2 minutes with no reply is not counted (backdate `created_at` as postgres).
-  - With timezone `Asia/Jakarta`, messages from yesterday local time are not counted.
-  - A null timezone counts per UTC day.
-  - An invalid timezone counts per UTC day with no error.
+  - Usage from yesterday WIB is not counted.
+  - Changing `profiles.timezone` does not change the count.
+  - Deleting a thread does not return quota.
   - `coach_finish` on another user's message, or on an already answered one, raises.
   - Authenticated can select `briefings`; anon cannot.
 - [ ] **Step 2: Run `.superpowers/bin/dbtest /home/user/Smart-Airdrop-Finder`.** Expected: FAIL.
@@ -224,6 +224,7 @@ Each of these has a test in the owning task: 1 in Task 4, 2 in Task 5, 3 and 4 i
   - A quota error from the RPC gives 429 with the `quota` copy.
   - A plan answer with a non-candidate project id: that item is dropped.
   - All models failing gives 503 with `unavailable`, and `coach_finish` is not called.
+  - When the first text delta arrives, call `coach_mark_used(userMessageId)` before forwarding any text, so an aborted, truncated or timed-out answer still counts (Task 3 re-review). Cut the final reply to 16000 characters before `coach_finish`, and cap `max_tokens` so a normal answer fits. If `coach_mark_used` raises (`expired`), stop the stream and forward nothing. The plan route (non-streaming `callStructured`) calls `coach_mark_used` as soon as the model returns an answer, before `validatePlan`, so a plan the validator rejects still counts.
   - Chat output "claim di https://evil.xyz" is streamed and stored with `[dihapus: info sensitif]` (Review Focus 2).
   - The prompt sent to the fake never contains the user's email.
 - [ ] **Step 2: Run `pnpm --filter web test`.** Expected: FAIL.

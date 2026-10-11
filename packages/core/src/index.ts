@@ -57,7 +57,30 @@ export {
   scamSchema,
 } from "./curate/ai-flags.js";
 export type { ContradictionsAnswer, ScamAnswer } from "./curate/ai-flags.js";
-export { BANNED_WORDS, cleanStyle, findBanned } from "./style.js";
+export { BANNED_WORDS, cleanStyle, findBanned, plainChatText } from "./style.js";
 export { GLOSSARY } from "./coach/glossary.js";
 export type { GlossaryEntry } from "./coach/glossary.js";
-export { groundedAgainst, redactSensitive } from "./coach/guard.js";
+export { groundedAgainst, looksLikeSecret, redactSensitive } from "./coach/guard.js";
+export { COACH_CAPITAL_BANDS, COACH_GOALS, COACH_LEVELS, COACH_MINUTES, coachChainSchema, coachProfileSchema, isCoachChain } from "./coach/profile.js";
+export type { CoachProfile } from "./coach/profile.js";
+export { MAX_CANDIDATES, selectCandidates } from "./coach/candidates.js";
+export type { Candidate } from "./coach/candidates.js";
+export { MAX_RECOMMENDATIONS, coachPlanAnswerSchema, serverCapitalNote, validatePlan } from "./coach/plan.js";
+export type { CoachPlanAnswer, ValidPlanItem } from "./coach/plan.js";
+export { BANNED_LINE_PREFIX, LANGKAH_NOL, buildCoachSystemPrompt } from "./coach/prompt.js";
+export {
+  MAX_BRIEFING_ITEMS,
+  briefingAnswerSchema,
+  briefingBanned,
+  briefingInputs,
+  fallbackBriefing,
+  validateBriefing,
+} from "./coach/briefing.js";
+export type {
+  BriefingAnswer,
+  BriefingChange,
+  BriefingDeadline,
+  BriefingFact,
+  BriefingFactKind,
+  BriefingItem,
+} from "./coach/briefing.js";

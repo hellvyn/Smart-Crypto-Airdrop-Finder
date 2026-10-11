@@ -1,6 +1,6 @@
 // Read-only queries for the public pages. They use the anon client (or the signed-in user's session) and rely on the
 // "public read" RLS policies; documents and extractions are not readable here and are never queried.
-import { contradictionsSchema, scamSchema, storedAnalystSchema } from "@saf/core";
+import { contradictionsSchema, isCoachChain, scamSchema, storedAnalystSchema } from "@saf/core";
 import type { CheckId, CurationReason, LinkCheckStatus, RiskLevel, RiskReason, Severity, Status } from "@saf/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cache } from "react";
@@ -12,6 +12,7 @@ import {
   type ChangeFeed,
   type ChangeProject,
 } from "./changes";
+import type { Briefing } from "./briefing";
 import { claimOpenChecked, isCheckedKind, isFlagged } from "./detail";
 import { isUuid } from "./uuid";
 import {
@@ -285,6 +286,14 @@ export async function listChains(db: SupabaseClient): Promise<string[]> {
     .filter((chain) => parseChain(chain) === chain);
 }
 
+/**
+ * The chains the Coach profile form offers: `listChains` minus the names `coachProfileSchema` rejects (an underscore,
+ * more than 40 characters, ...). One rejected name would make the whole profile fail to save.
+ */
+export async function listCoachChains(db: SupabaseClient): Promise<string[]> {
+  return (await listChains(db)).filter(isCoachChain);
+}
+
 // ---- Project page (Plan 6 Task 5; spec §7.2, #45, #53, #54) ----
 
 /**
@@ -401,7 +410,7 @@ export async function getProjectDetail(
       member ? latestAi("scam") : none,
       latestAi("contradictions"),
       db.from("deadlines").select("kind, date, precision, text").eq("project_id", id),
-      db.from("tasks").select("description, text_id, cadence, position").eq("project_id", id)
+      db.from("tasks").select("id, description, text_id, cadence, position").eq("project_id", id)
         .order("position", { ascending: true }).order("document_id", { ascending: true }),
       db.from("links").select("url, kind").eq("project_id", id),
       db.from("evidence").select("field, value, quote, source_url, at, seq").eq("project_id", id).eq("field", "status")
@@ -504,6 +513,8 @@ export async function getProjectDetail(
     scamFlags: scamRow ? (scamRow.success ? scamRow.data.flags : []) : null,
     contradictions: contradictionsRow.success ? contradictionsRow.data.items : [],
     steps: ((tasks.data ?? []) as Record<string, unknown>[]).map((t) => ({
+      // The task id lets a member ask the Coach about this step; it is never rendered for a visitor.
+      ...(isUuid(t.id) ? { id: t.id } : {}),
       text: typeof t.text_id === "string" && t.text_id.trim() !== "" ? t.text_id : String(t.description),
       cadence: CADENCES.includes(t.cadence as Cadence) ? (t.cadence as Cadence) : "once",
     })),
@@ -684,4 +695,30 @@ export async function getChangeFeed(db: SupabaseClient, userId: string, now: Dat
   } catch {
     return EMPTY_CHANGE_FEED;
   }
+}
+
+/**
+ * The newest briefing (the pipeline writes one a day; a day without facts has none, so this can be an older one), or
+ * null when there is none. Items the pipeline did not write in the expected shape are skipped. Throws when the read
+ * fails: the caller decides what that means for the page.
+ */
+export async function getLatestBriefing(db: SupabaseClient): Promise<Briefing | null> {
+  const { data, error } = await db
+    .from("briefings")
+    .select("day, items, ai")
+    .order("day", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  throwIf(error, "the briefing");
+  if (!isRecord(data) || typeof data.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(data.day)) return null;
+  const items = (Array.isArray(data.items) ? data.items : []).flatMap((item: unknown) =>
+    isRecord(item) &&
+    typeof item.projectId === "string" &&
+    typeof item.slug === "string" &&
+    typeof item.name === "string" &&
+    typeof item.text === "string"
+      ? [{ projectId: item.projectId, slug: item.slug, name: item.name, text: item.text }]
+      : [],
+  );
+  return { day: data.day, items, ai: data.ai === true };
 }

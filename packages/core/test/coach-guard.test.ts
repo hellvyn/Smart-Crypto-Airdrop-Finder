@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groundedAgainst, redactSensitive, stepTranslationGrounded } from "../src/index.js";
+import { groundedAgainst, looksLikeSecret, redactSensitive, stepTranslationGrounded } from "../src/index.js";
 
 const MARK = "[dihapus: info sensitif]";
 
@@ -238,5 +238,60 @@ describe("redactSensitive: plain text", () => {
       text: "Bridge ETH ke Ink, 10 menit per hari",
       redactions: 0,
     });
+  });
+});
+
+describe("looksLikeSecret", () => {
+  const SEED12 = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+  const SEED24 =
+    "void come effort suffer camp survey warrior heavy shoot primary clutch crush open amazing screen patrol group space point ten exist slush involve unfold";
+
+  it("flags a 12 and a 24 word seed phrase", () => {
+    expect(looksLikeSecret(SEED12)).toBe(true);
+    expect(looksLikeSecret(SEED24)).toBe(true);
+  });
+
+  it.each([15, 18, 21])("flags a %i word seed phrase", (n) => {
+    const words = SEED24.split(" ").slice(0, n).join(" ");
+    expect(looksLikeSecret(words)).toBe(true);
+  });
+
+  it("flags words split by newlines, commas and extra spaces, and one inside a longer message", () => {
+    expect(looksLikeSecret(SEED12.split(" ").join("\n"))).toBe(true);
+    expect(looksLikeSecret(SEED12.split(" ").join(", "))).toBe(true);
+    expect(looksLikeSecret(SEED12.split(" ").join("  "))).toBe(true);
+    expect(looksLikeSecret(`  ${SEED12}\n`)).toBe(true);
+    expect(looksLikeSecret(`Tolong cek ini. ${SEED12}`)).toBe(true);
+  });
+
+  it("does not flag 11 words, or a phrase with a capital or punctuation inside", () => {
+    expect(looksLikeSecret(SEED12.split(" ").slice(0, 11).join(" "))).toBe(false);
+    expect(looksLikeSecret(SEED12.replace("wave", "Wave"))).toBe(false);
+    expect(looksLikeSecret(SEED12.replace("wave", "wave."))).toBe(false);
+    expect(looksLikeSecret(SEED12.replace("wave", "wa-ve"))).toBe(false);
+    expect(looksLikeSecret(SEED12.replace("wave", "wa"))).toBe(false);
+    expect(looksLikeSecret(SEED12.replace("wave", "waveeeeee"))).toBe(false);
+  });
+
+  it("flags a 64 hex private key, with or without 0x", () => {
+    const hex = "4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318";
+    expect(looksLikeSecret(hex)).toBe(true);
+    expect(looksLikeSecret(`0x${hex}`)).toBe(true);
+    expect(looksLikeSecret(`key gue: 0x${hex.toUpperCase()} tolong`)).toBe(true);
+  });
+
+  it("does not flag a wallet address, a shorter hex or a longer hex run", () => {
+    expect(looksLikeSecret("0x52908400098527886E0F7030069857D2E4169EE7")).toBe(false);
+    expect(looksLikeSecret("a".repeat(63))).toBe(false);
+    expect(looksLikeSecret("a".repeat(65))).toBe(false);
+  });
+
+  it("does not flag ordinary Indonesian chat", () => {
+    expect(looksLikeSecret("Tolong jelasin langkah bridge ini, soalnya aku masih bingung banget nih.")).toBe(false);
+    expect(looksLikeSecret("Project mana yang paling aman buat pemula, dan berapa menit per hari yang perlu aku siapin?")).toBe(false);
+    // Twelve lowercase words of 3 to 8 letters and no punctuation: still chat, not a phrase of random words.
+    expect(looksLikeSecret("tolong jelasin langkah bridge ini dengan bahasa yang gampang banget buat pemula")).toBe(false);
+    expect(looksLikeSecret("kalau modal aku cuma segini apa masih bisa ikut airdrop yang butuh deposit awal")).toBe(false);
+    expect(looksLikeSecret("")).toBe(false);
   });
 });

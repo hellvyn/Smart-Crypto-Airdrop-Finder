@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import { AskCoachLink } from "@/components/coach/AskCoachLink";
 import { FarmButton } from "@/components/farming/FarmButton";
 import { NotCuratedBanner } from "@/components/NotCuratedBanner";
 import { ProjectDetailView } from "@/components/ProjectDetailView";
@@ -9,6 +10,7 @@ import { StaleBanner } from "@/components/StaleBanner";
 import { WalletActivitySection } from "@/components/WalletActivitySection";
 import { WatchButton } from "@/components/WatchButton";
 import { getUser } from "@/lib/auth";
+import { isCoachCandidate } from "@/lib/coach";
 import { isFarming } from "@/lib/farming";
 import { detail } from "@/lib/copy";
 import { getLastSuccessfulRunAt, getProjectDetail } from "@/lib/queries";
@@ -49,9 +51,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
   ]);
   if (!project) notFound();
   // Only a signed-in user gets the watch and farming state (null = signed out).
-  const [watching, farming] = user
-    ? await Promise.all([isWatching(db, project.id), isFarming(db, project.id)])
-    : [null, null];
+  const [watching, farming, canExplain] = user
+    ? await Promise.all([isWatching(db, project.id), isFarming(db, project.id), isCoachCandidate(db, user.id, project.id, now)])
+    : [null, null, false];
   // Wallet activity is for signed-in users (null = signed out); see WalletActivitySection for what each case shows.
   const wallets = user ? await listWallets(db) : null;
   const notListed = notCuratedReason(project.curation);
@@ -66,8 +68,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
       <div className="project-actions">
         <WatchButton projectId={project.id} slug={project.slug} watching={watching} />
         <FarmButton projectId={project.id} farming={farming} />
+        <AskCoachLink projectId={project.id} member={user !== null} />
       </div>
-      <ProjectDetailView project={project} member={user !== null} now={now} />
+      <ProjectDetailView project={project} member={user !== null} canExplain={canExplain} now={now} />
       <WalletActivitySection project={project} wallets={wallets} />
     </>
   );

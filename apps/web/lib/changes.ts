@@ -2,7 +2,8 @@
 // near deadlines into what the member sees. Pure; lib/queries.ts reads the rows. Two groups: the changes since the
 // member last pressed "Tandai sudah dibaca", and the near deadlines, which are reminders and never marked seen.
 import type { RiskLevel, Status } from "@saf/core";
-import { RISK_LEVELS, STATUSES, isFirmPrecision, utcToday } from "./view";
+import { changes as copy } from "./copy";
+import { RISK_LEVELS, STATUSES, isFirmPrecision, riskLabel, statusLabel, utcToday } from "./view";
 
 export interface ChangeProject {
   slug: string;
@@ -198,4 +199,20 @@ export function buildChangeFeed(
       .map((s) => s.item),
     deadlines: deadlineItems(deadlines, now),
   };
+}
+
+/** The words of one change of the feed (everything but the collapsed first-run line, which links to the watchlist). */
+export function changeText(item: Exclude<ChangeItem, { kind: "curated_in_many" }>): string {
+  switch (item.kind) {
+    case "curated_in":
+      return copy.curatedIn;
+    case "curated_out":
+      return copy.curatedOut;
+    case "ended":
+      return copy.ended;
+    case "status":
+      return copy.status(statusLabel(item.from), statusLabel(item.to));
+    case "risk":
+      return copy.risk(riskLabel(item.from), riskLabel(item.to));
+  }
 }

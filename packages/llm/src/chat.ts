@@ -1,4 +1,4 @@
-import type { Providers } from "../config.js";
+import type { Providers } from "./providers.js";
 import { claudeChat } from "./claude.js";
 import type { ClaudeClient } from "./claude.js";
 import { streamChat } from "./nvidia.js";

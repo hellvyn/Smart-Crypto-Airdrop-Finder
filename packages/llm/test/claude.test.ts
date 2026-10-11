@@ -2,12 +2,12 @@ import { APIConnectionError, APIConnectionTimeoutError, APIError } from "@anthro
 import type Anthropic from "@anthropic-ai/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { createChat } from "../src/llm/chat.js";
-import { claudeChat, createClaudeClient } from "../src/llm/claude.js";
-import type { ClaudeClient } from "../src/llm/claude.js";
-import type { ChatMessage, ModelConfig } from "../src/llm/nvidia.js";
-import { callStructured } from "../src/llm/structured.js";
-import type { ChatFn } from "../src/llm/structured.js";
+import { createChat } from "../src/chat.js";
+import { claudeChat, createClaudeClient } from "../src/claude.js";
+import type { ClaudeClient } from "../src/claude.js";
+import type { ChatMessage, ModelConfig } from "../src/nvidia.js";
+import { callStructured } from "../src/structured.js";
+import type { ChatFn } from "../src/structured.js";
 
 type Message = Anthropic.Message;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BANNED_WORDS, GLOSSARY, cleanStyle, findBanned } from "../src/index.js";
+import { BANNED_WORDS, GLOSSARY, cleanStyle, findBanned, plainChatText } from "../src/index.js";
 
 describe("findBanned", () => {
   it("lists each banned word found, in list order", () => {
@@ -53,5 +53,25 @@ describe("GLOSSARY", () => {
       expect(findBanned(row.term)).toEqual([]);
       expect(row.text).not.toContain("—");
     }
+  });
+});
+
+describe("plainChatText", () => {
+  it("removes markdown emphasis, code ticks and heading marks but keeps the words", () => {
+    expect(plainChatText("TGE itu **Token Generation Event**. Pakai `wallet` *resmi*.")).toBe(
+      "TGE itu Token Generation Event. Pakai wallet resmi.",
+    );
+    expect(plainChatText("## Ringkasan\n* satu\n- dua")).toBe("Ringkasan\n- satu\n- dua");
+    expect(plainChatText("__penting__ dan sisa ** tanda")).toBe("penting dan sisa  tanda");
+  });
+
+  it("drops JSON structure lines so a JSON plan never shows in a chat", () => {
+    const text = 'Langkah 0: bikin wallet dulu.\n\n{\n  "tasks": [\n    {\n      "name": "Buat wallet",\n    }\n  ],\n}\nSelamat mencoba!';
+    expect(plainChatText(text)).toBe("Langkah 0: bikin wallet dulu.\n\nSelamat mencoba!");
+  });
+
+  it("leaves ordinary text, multiplication and lone asterisks alone", () => {
+    expect(plainChatText("Modal 2 * 5 = 10, catatan: lihat poin 3.")).toBe("Modal 2 * 5 = 10, catatan: lihat poin 3.");
+    expect(plainChatText("Kalimat biasa tanpa format.")).toBe("Kalimat biasa tanpa format.");
   });
 });

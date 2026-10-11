@@ -24,7 +24,7 @@ Ukuran berhasil:
 |---|---|---|
 | 61 | Satu paket | Coach dan Briefing dibuat dalam satu spec dan satu rencana kerja. |
 | 62 | Model AI | Coach dan Briefing pakai Claude Sonnet (`claude-sonnet-5-5`) selama credit ada, lalu otomatis ke freellm `auto` lalu NVIDIA (rantai yang sama dengan analyze). |
-| 63 | Jatah Coach | 20 pesan per member per hari, reset tengah malam di zona waktu profil member. Rencana awal, chat, "Tanya AI", dan "Jelasin langkah ini" masing-masing dihitung 1. |
+| 63 | Jatah Coach | 20 pesan per member per hari, reset jam 00:00 WIB (Asia/Jakarta) untuk semua member, apa pun zona waktu di profil (owner 2026-10-11: menutup celah ganti zona waktu). Rencana awal, chat, "Tanya AI", dan "Jelasin langkah ini" masing-masing dihitung 1. |
 | 64 | Briefing | Satu ringkasan AI per hari untuk semua member, ditambah bagian personal tanpa AI (watchlist dan garapan). |
 | 65 | Bentuk Coach | Form profil, lalu rencana 3 sampai 5 proyek dengan tombol "Mulai garap", lalu chat lanjutan. |
 | 66 | Penyimpanan | Profil farming disimpan sampai diubah atau dihapus member. Thread dan pesan dihapus otomatis setelah 30 hari. Cuma pemiliknya yang bisa baca. |
@@ -100,7 +100,7 @@ tabel di bawah. Migrasi gak memakai DROP atau UPDATE massal (connector Supabase 
 
 RPC (security definer, `search_path = ''`, execute cuma untuk authenticated, semua cek `auth.uid()`):
 - `coach_begin(p_thread_id, p_kind, p_content)`: mengunci dan menghitung jatah, lalu menyisipkan pesan user dan
-  mengembalikan id-nya. Jatah dihitung dari pesan user hari ini (zona waktu profil) yang sudah punya balasan, atau
+  mengembalikan id-nya. Jatah dihitung dari pesan user hari ini (tanggal WIB, Asia/Jakarta) yang sudah punya balasan, atau
   yang dibuat kurang dari 2 menit lalu. Pesan yang gagal dijawab otomatis gak dihitung setelah 2 menit, jadi gak perlu
   RPC "kembalikan jatah" yang bisa disalahgunakan. Pesan ke-21 ditolak dengan kode `P0001` dan pesan `quota`.
 - `coach_finish(p_user_message_id, p_content, p_model, p_in, p_out)`: menyisipkan balasan untuk pesan user milik
@@ -185,7 +185,7 @@ Kotak "Briefing pagi · {tanggal}" di atas `/airdrops` untuk member:
 
 ### 5.7 Keadaan khusus
 
-- Jatah habis: "Jatah 20 pesan hari ini habis, reset jam 00.00 waktu kamu."
+- Jatah habis: "Jatah 20 pesan hari ini habis, reset jam 00.00 WIB."
 - Semua model gagal: "Coach lagi gak bisa jawab, coba lagi sebentar." Pesan itu otomatis gak dihitung setelah 2 menit.
 - Kandidat kosong (misal modal Gratis aja dan gak ada project Gratis): pesan jujur tanpa memanggil AI, dan gak
   memotong jatah.
@@ -274,7 +274,7 @@ gak tersedia.
 ## 10. Pengujian
 
 TDD seperti Plan 4 sampai 8. Semua test memakai model tiruan, tanpa panggilan API asli.
-- pgTAP: jatah 20 dan reset per zona waktu; pesan gagal gak dihitung setelah 2 menit; member A gak bisa membaca atau
+- pgTAP: jatah 20 dan reset 00:00 WIB, ganti zona waktu profil gak mengubah hitungan; hapus thread gak mengembalikan jatah; pesan gagal gak dihitung setelah 2 menit; member A gak bisa membaca atau
   menulis thread member B; anon gak punya akses apa pun; `coach_finish` cuma untuk pesan milik pemanggil yang belum
   dibalas; briefings cuma bisa dibaca authenticated.
 - Pengaman: project di luar kandidat dibuang; kutipan palsu dibuang; URL luar, alamat `0x`, dan ajakan seed phrase

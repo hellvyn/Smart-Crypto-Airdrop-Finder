@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type {
   AiKind,
+  BriefingChange,
+  BriefingDeadline,
+  BriefingItem,
   CurationRecord,
   ExtractedDeadline,
   LinkCheckStatus,
@@ -119,6 +122,12 @@ export class MemoryRepo implements PipelineRepo {
   readonly signals: SignalRow[] = [];
   readonly curations: CurationRow[] = [];
   readonly aiAnalyses: StoredAiAnalysis[] = [];
+  /** `briefings` by day. */
+  readonly briefings = new Map<string, { items: BriefingItem[]; model: string | null; ai: boolean }>();
+  /** Coach tables the pipeline only purges; tests fill them. */
+  readonly coachThreads: { id: string; createdAt: Date }[] = [];
+  readonly coachMessages: { id: string; threadId: string }[] = [];
+  readonly coachUsage: { id: string; createdAt: Date }[] = [];
 
   private readonly documents = new Map<string, StoredDocument>();
   private readonly projects = new Map<string, ProjectRow>();
@@ -586,6 +595,55 @@ export class MemoryRepo implements PipelineRepo {
       const row = this.logoAttempts.get(projectId);
       return row === undefined ? [] : [{ projectId, ...row }];
     });
+  }
+
+  async listBriefingChanges(since: Date): Promise<BriefingChange[]> {
+    return this.projectChanges
+      .filter((c) => c.changedAt.getTime() >= since.getTime())
+      .flatMap((c) => {
+        const p = this.projects.get(c.projectId);
+        return p === undefined
+          ? []
+          : [{ projectId: p.id, slug: p.slug, name: p.name, field: c.field, oldValue: c.oldValue, newValue: c.newValue }];
+      });
+  }
+
+  async listBriefingDeadlines(from: string, to: string): Promise<BriefingDeadline[]> {
+    return this.deadlines
+      .filter(
+        (d) =>
+          (d.kind === "claim" || d.kind === "snapshot" || d.kind === "campaign_end") &&
+          (d.precision === "exact" || d.precision === "approximate") &&
+          d.date !== null &&
+          d.date >= from &&
+          d.date <= to,
+      )
+      .flatMap((d) => {
+        const p = this.projects.get(d.projectId);
+        return p === undefined || d.date === null
+          ? []
+          : [{ projectId: p.id, slug: p.slug, name: p.name, kind: d.kind, date: d.date }];
+      })
+      .sort((a, b) => compareText(a.date, b.date) || compareText(a.slug, b.slug));
+  }
+
+  async saveBriefing(day: string, items: BriefingItem[], model: string | null, ai: boolean): Promise<void> {
+    this.briefings.set(day, { items: items.map((i) => ({ ...i })), model, ai });
+  }
+
+  async purgeCoachAndBriefings(olderThan: Date): Promise<{ threads: number; briefings: number }> {
+    const gone = new Set(this.coachThreads.filter((t) => t.createdAt < olderThan).map((t) => t.id));
+    removeWhere(this.coachThreads, (t) => gone.has(t.id));
+    removeWhere(this.coachMessages, (m) => gone.has(m.threadId));
+    const oldDays = [...this.briefings.keys()].filter((day) => day < olderThan.toISOString().slice(0, 10));
+    for (const day of oldDays) this.briefings.delete(day);
+    return { threads: gone.size, briefings: oldDays.length };
+  }
+
+  async purgeCoachUsage(olderThan: Date): Promise<number> {
+    const before = this.coachUsage.length;
+    removeWhere(this.coachUsage, (u) => u.createdAt < olderThan);
+    return before - this.coachUsage.length;
   }
 
   async listListedProjects(projectIds: string[]): Promise<string[]> {

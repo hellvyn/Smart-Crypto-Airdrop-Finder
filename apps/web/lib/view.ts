@@ -102,7 +102,7 @@ export interface ProjectDetail extends ProjectListItem {
   /** Latest contradiction analysis (public). */
   contradictions: Contradiction[];
   /** Source steps in `position` order; `text_id` (Indonesian) when there is one. */
-  steps: { text: string; cadence: Cadence }[];
+  steps: { id?: string; text: string; cadence: Cadence }[];
   /** v3 extraction facts (key_parameter:*, source_rating:*, latest_update, claimed_backer, capital_required). */
   facts: EvidenceRow[];
   /** The `status` evidence rows (newest 100): the quotes of sources that disagree on the status. */
