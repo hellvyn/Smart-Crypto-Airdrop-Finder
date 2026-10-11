@@ -12,10 +12,11 @@ import {
 import type { CurationRecord, NewSignal, RiskAssessment, RiskInput, SignalSource, Status, WorthInput } from "@saf/core";
 import type { Http } from "../collectors/types.js";
 import type { PipelineConfig } from "../config.js";
-import { firstCertificateAgeDays } from "../enrich/crtsh.js";
+import { CRTSH_MIN_INTERVAL_MS, firstCertificateAgeDays } from "../enrich/crtsh.js";
 import { GOPLUS_MIN_INTERVAL_MS, checkPhishingSite, defaultSleep } from "../enrich/goplus.js";
 import { countHacks, fetchHacks } from "../enrich/hacks.js";
-import { domainAgeDays } from "../enrich/rdap.js";
+import { pacedHttp } from "../enrich/paced.js";
+import { RDAP_MIN_INTERVAL_MS, rdapDomainAge } from "../enrich/rdap.js";
 import type { DailyStats } from "../stats.js";
 import type { PipelineRepo, ProjectForScoring } from "../store/repo.js";
 import { checkClaimLinks, saveLinkChecks } from "./link-checks.js";
@@ -23,9 +24,10 @@ import { LINK_KINDS } from "./merge.js";
 import type { LinkKind } from "./merge.js";
 import type { SignalCoverage } from "./signals.js";
 
-/** Maximum parallel enrichment requests (RDAP and crt.sh domain age, DefiLlama hacks). */
-const ENRICH_CONCURRENCY = 4;
-/** GoPlus rate-limits hard, so it has its own limiter and runs one request at a time. */
+/**
+ * GoPlus rate-limits hard, so it has its own limiter and runs one request at a time. RDAP and crt.sh have their own
+ * one-at-a-time queues too (`scoreProjects`).
+ */
 const GOPLUS_CONCURRENCY = 1;
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
@@ -220,7 +222,11 @@ function countCuration(stats: DailyStats, c: CurationRecord): void {
  * ended after passing curation at most 90 days ago): expiry, risk assessment, then curation (`curations`). Enrichment
  * is fetched once per registrable domain per run (the job is daily, so this replaces a longer-lived cache), and hacks
  * once per run.
- * Domain age comes from RDAP, and from the first crt.sh certificate when RDAP has no answer.
+ * Domain age comes from RDAP, and from the first crt.sh certificate when RDAP has no RDAP service for the TLD (404) or
+ * answers without a registration date; a rate-limited or failed RDAP lookup is not sent to crt.sh (the next run asks
+ * RDAP again). RDAP runs one request at a time, `RDAP_MIN_INTERVAL_MS` apart, alongside GoPlus, and starts no request
+ * after `rdapBudgetMinutes` (from the start of this step). crt.sh runs one at a time, `CRTSH_MIN_INTERVAL_MS` apart,
+ * for `crtshBudgetMinutes` from its first request. Domains not asked count as not run.
  * GoPlus stops starting requests after `goplusBudgetMinutes` (by `deps.now()`, from the start of this step) or after
  * `goplusMaxConsecutiveFailures` domains in a row without an answer; the domains not asked count as not run.
  * The latest `scam` and `contradictions` analyses (from the `analyze` stage, earlier in the same run) go into
@@ -253,7 +259,6 @@ export async function scoreProjects(
     [...new Set(links.filter((l) => l.kind !== "social").map((l) => l.domain))];
   const domains = [...new Set([...domainsByProject.values()].flatMap(enrichDomains))];
 
-  const limit = pLimit(ENRICH_CONCURRENCY);
   const goplusLimit = pLimit(GOPLUS_CONCURRENCY);
   const phishing = new Map<string, boolean | null>();
   let goplusStarted = false;
@@ -263,8 +268,57 @@ export async function scoreProjects(
     deps.now().getTime() >= goplusDeadline || goplusFailuresInARow >= config.goplusMaxConsecutiveFailures;
   const ages = new Map<string, number | null>();
   const agesFromCrtsh = new Set<string>();
+  const clock = (): number => deps.now().getTime();
+
+  // RDAP: one request at a time, at least RDAP_MIN_INTERVAL_MS between starts (retries included), until its budget.
+  const rdapLimit = pLimit(1);
+  const rdapHttp = pacedHttp(http, RDAP_MIN_INTERVAL_MS, clock, sleep);
+  const rdapDeadline = clock() + config.rdapBudgetMinutes * MINUTE_MS;
+  // crt.sh: only the domains RDAP has no date for, as RDAP finds them; its own limiter, pace and budget, counted from
+  // its first request.
+  const crtshLimit = pLimit(1);
+  const crtshHttp = pacedHttp(http, CRTSH_MIN_INTERVAL_MS, clock, sleep);
+  let crtshDeadline: number | null = null;
+  const crtshTasks: Promise<void>[] = [];
+  const askCrtsh = (domain: string): Promise<void> =>
+    crtshLimit(async () => {
+      crtshDeadline ??= clock() + config.crtshBudgetMinutes * MINUTE_MS;
+      if (clock() >= crtshDeadline) {
+        stats.domain_age_crtsh_skipped += 1;
+        stats.domain_age_crtsh_failed += 1;
+        return;
+      }
+      const age = await firstCertificateAgeDays(crtshHttp, domain, now);
+      if (age === null) {
+        stats.domain_age_crtsh_failed += 1;
+        return;
+      }
+      ages.set(domain, age);
+      agesFromCrtsh.add(domain);
+    });
+  const askRdap = (domain: string): Promise<void> =>
+    rdapLimit(async () => {
+      ages.set(domain, null);
+      if (clock() >= rdapDeadline) {
+        stats.domain_age_rdap_skipped += 1;
+        stats.domain_age_rdap_failed += 1;
+        return;
+      }
+      const { outcome, days } = await rdapDomainAge(rdapHttp, domain, now, sleep, clock);
+      if (outcome === "age") {
+        ages.set(domain, days);
+        return;
+      }
+      stats.domain_age_rdap_failed += 1;
+      if (outcome === "rate_limited") stats.domain_age_rdap_rate_limited += 1;
+      if (outcome === "no_rdap") stats.domain_age_no_rdap += 1;
+      // Rate-limited or failed domains are not sent to crt.sh: the next run asks RDAP again.
+      if (outcome === "no_rdap" || outcome === "no_date") crtshTasks.push(askCrtsh(domain));
+    });
+
+  // GoPlus, RDAP (and crt.sh behind it) and the hacks list run alongside each other, each on its own queue.
   const [hacks] = await Promise.all([
-    limit(() => fetchHacks(http)),
+    fetchHacks(http),
     ...domains.flatMap((domain) => [
       goplusLimit(async () => {
         if (goplusStopped()) {
@@ -280,16 +334,11 @@ export async function scoreProjects(
         goplusFailuresInARow = flag === null ? goplusFailuresInARow + 1 : 0;
         phishing.set(domain, flag);
       }),
-      limit(async () => {
-        let age = await domainAgeDays(http, domain, now);
-        if (age === null) {
-          age = await firstCertificateAgeDays(http, domain, now);
-          if (age !== null) agesFromCrtsh.add(domain);
-        }
-        ages.set(domain, age);
-      }),
+      askRdap(domain),
     ]),
   ]);
+  // Every crt.sh task was queued by an RDAP task, all of which have finished.
+  await Promise.all(crtshTasks);
 
   stats.domain_age_from_crtsh = agesFromCrtsh.size;
   stats.phishing_list_failed = domains.filter((d) => phishing.get(d) === null).length;

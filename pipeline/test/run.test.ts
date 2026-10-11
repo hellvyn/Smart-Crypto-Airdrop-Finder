@@ -1715,6 +1715,284 @@ describe("runDaily GoPlus pacing", () => {
   });
 });
 
+describe("runDaily RDAP and crt.sh pacing", () => {
+  type Reply = { status: number; body: string; headers?: Record<string, string> };
+  const RDAP = "https://rdap.org/domain/";
+  const CRT = "https://crt.sh/?q=";
+  const CRT_OK: Reply = { status: 200, body: JSON.stringify([{ not_before: "2023-05-01T00:00:00" }]) };
+  const NO_DATE: Reply = { status: 200, body: JSON.stringify({ events: [{ eventAction: "expiration", eventDate: "2030-01-01T00:00:00Z" }] }) };
+  // Without AlphaDrops, whose requests have their own pauses on the same clock.
+  const config: PipelineConfig = { ...defaultConfig, alphadrops: { ...defaultConfig.alphadrops, enabled: false } };
+
+  /**
+   * The standard fake network on a fake clock that only the fake sleep (and the handlers, through `advance`) moves.
+   * Every RDAP and crt.sh request start is recorded with the clock time; a handler returning undefined defers to the
+   * standard answer.
+   */
+  function timed(
+    opts: {
+      pages?: Pages;
+      rdap?: (domain: string, at: number) => Reply | undefined;
+      crtsh?: (domain: string, at: number) => Reply | undefined;
+    } = {},
+  ) {
+    const base = fakeHttp(opts.pages ?? basePages());
+    let t = NOW.getTime();
+    const rdapStarts: { domain: string; at: number }[] = [];
+    const crtshStarts: { domain: string; at: number }[] = [];
+    const http: Http = {
+      resolveRedirect: base.resolveRedirect,
+      get: async (url) => {
+        if (url.startsWith(RDAP)) {
+          const domain = url.slice(RDAP.length);
+          rdapStarts.push({ domain, at: t });
+          return opts.rdap?.(domain, t) ?? base.get(url);
+        }
+        if (url.startsWith(CRT)) {
+          const domain = decodeURIComponent(url.slice(CRT.length, url.indexOf("&")));
+          crtshStarts.push({ domain, at: t });
+          return opts.crtsh?.(domain, t) ?? base.get(url);
+        }
+        return base.get(url);
+      },
+    };
+    return {
+      http,
+      sleep: async (ms: number): Promise<void> => void (t += ms),
+      now: () => new Date(t),
+      advance: (ms: number): void => void (t += ms),
+      rdapStarts,
+      crtshStarts,
+    };
+  }
+
+  const gaps = (starts: { at: number }[]): number[] => starts.slice(1).map((s, i) => s.at - (starts[i] as { at: number }).at);
+
+  it("leaves at least 1000 ms between RDAP request starts on the run's clock", async () => {
+    const net = timed();
+    const { deps } = setup({ config });
+    await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, config);
+
+    expect(net.rdapStarts).toHaveLength(3);
+    for (const gap of gaps(net.rdapStarts)) expect(gap).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("paces the RDAP retry too, and uses the age of the retried answer", async () => {
+    let inkCalls = 0;
+    const net = timed({ rdap: (d) => (d === "inkonchain.com" && ++inkCalls === 1 ? { status: 429, body: "" } : undefined) });
+    const { deps } = setup({ config });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, config);
+
+    expect(net.rdapStarts).toHaveLength(4);
+    for (const gap of gaps(net.rdapStarts)) expect(gap).toBeGreaterThanOrEqual(1000);
+    expect(stats.domain_age_ran).toBe(3);
+    expect(stats.domain_age_rdap_rate_limited).toBe(0);
+    expect(stats.domain_age_rdap_failed).toBe(0);
+  });
+
+  it("counts a domain still rate limited after the retry, and never sends it to crt.sh", async () => {
+    const net = timed({ rdap: (d) => (d === "deepbook.tech" ? { status: 429, body: "" } : undefined) });
+    const { deps } = setup({ config });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, config);
+
+    expect(net.rdapStarts.filter((s) => s.domain === "deepbook.tech")).toHaveLength(2);
+    expect(net.crtshStarts).toEqual([]);
+    expect(stats.domain_age_rdap_rate_limited).toBe(1);
+    expect(stats.domain_age_rdap_failed).toBe(1);
+    expect(stats.domain_age_ran).toBe(2);
+    expect(stats.domain_age_from_crtsh).toBe(0);
+  });
+
+  it("never sends a domain whose RDAP request failed (timeout or 5xx) to crt.sh", async () => {
+    const net = timed({
+      rdap: (d) => (d === "deepbook.tech" ? { status: 0, body: "" } : d === "inkonchain.com" ? { status: 503, body: "" } : undefined),
+    });
+    const { deps } = setup({ config });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, config);
+
+    expect(net.crtshStarts).toEqual([]);
+    expect(stats.domain_age_rdap_failed).toBe(2);
+    expect(stats.domain_age_rdap_rate_limited).toBe(0);
+    expect(stats.domain_age_no_rdap).toBe(0);
+  });
+
+  it("sends a domain without RDAP service (404) or without a registration date to crt.sh, and counts no RDAP", async () => {
+    const net = timed({
+      rdap: (d) => (d === "inkonchain.com" ? { status: 404, body: "" } : d === "deepbook.tech" ? NO_DATE : undefined),
+      crtsh: () => CRT_OK,
+    });
+    const { deps } = setup({ config });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, config);
+
+    expect(net.crtshStarts.map((s) => s.domain).sort()).toEqual(["deepbook.tech", "inkonchain.com"]);
+    expect(stats.domain_age_no_rdap).toBe(1);
+    expect(stats.domain_age_rdap_failed).toBe(2);
+    expect(stats.domain_age_from_crtsh).toBe(2);
+    expect(stats.domain_age_crtsh_failed).toBe(0);
+    expect(stats.domain_age_ran).toBe(3);
+  });
+
+  it("counts a crt.sh lookup without an answer as crt.sh failed", async () => {
+    const net = timed({ rdap: (d) => (d === "inkonchain.com" ? { status: 404, body: "" } : undefined), crtsh: () => ({ status: 502, body: "" }) });
+    const { deps } = setup({ config });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, config);
+
+    expect(net.crtshStarts).toHaveLength(1);
+    expect(stats.domain_age_crtsh_failed).toBe(1);
+    expect(stats.domain_age_ran).toBe(2);
+  });
+
+  it("starts no RDAP request once the RDAP budget is spent, counts the rest as skipped, and still scores every project", async () => {
+    // Every RDAP request moves the clock 5 minutes: the second starts before 6 minutes, the third would start after.
+    const net = timed({
+      rdap: () => {
+        net.advance(5 * 60_000);
+        return undefined;
+      },
+    });
+    const { repo, deps } = setup({ config });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, { ...config, rdapBudgetMinutes: 6 });
+
+    expect(net.rdapStarts).toHaveLength(2);
+    expect(net.crtshStarts).toEqual([]);
+    expect(stats.domain_age_rdap_skipped).toBe(1);
+    expect(stats.domain_age_rdap_failed).toBe(1);
+    expect(stats.domain_age_ran).toBe(2);
+    expect(stats.assessed).toBe(3);
+    expect(stats.run_error).toBeUndefined();
+    const risks = await Promise.all(["deepbook", "ink", "hyperdrivelend"].map((k) => latestRisk(repo, k)));
+    expect(risks.filter((r) => r?.checks.find((c) => c.id === "domain_age")?.ran === false)).toHaveLength(1);
+  });
+
+  it("runs RDAP alongside GoPlus, not after it", async () => {
+    const order: string[] = [];
+    const net = timed({
+      rdap: () => {
+        order.push("rdap");
+        return undefined;
+      },
+    });
+    const http: Http = {
+      ...net.http,
+      get: async (url) => {
+        if (url.startsWith("https://api.gopluslabs.io/")) order.push("goplus");
+        return net.http.get(url);
+      },
+    };
+    const { deps } = setup({ config });
+    await runDaily({ ...deps, http, sleep: net.sleep, now: net.now }, config);
+
+    // The first RDAP request starts before the last GoPlus request.
+    expect(order.indexOf("rdap")).toBeLessThan(order.lastIndexOf("goplus"));
+  });
+
+  it("paces crt.sh at least 2000 ms apart, one request at a time", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const net = timed({ rdap: () => ({ status: 404, body: "" }) });
+    const http: Http = {
+      ...net.http,
+      get: async (url) => {
+        if (!url.startsWith(CRT)) return net.http.get(url);
+        maxInFlight = Math.max(maxInFlight, ++inFlight);
+        try {
+          // Recorded at the start; the answer comes a little later, so an overlapping request would be seen.
+          const res = await net.http.get(url);
+          await new Promise((r) => setTimeout(r, 2));
+          return res;
+        } finally {
+          inFlight--;
+        }
+      },
+    };
+    const { deps } = setup({ config });
+    await runDaily({ ...deps, http, sleep: net.sleep, now: net.now }, config);
+
+    expect(net.crtshStarts).toHaveLength(3);
+    for (const gap of gaps(net.crtshStarts)) expect(gap).toBeGreaterThanOrEqual(2000);
+    expect(maxInFlight).toBe(1);
+  });
+
+  it("starts no crt.sh request once the crt.sh budget is spent, and counts the rest as crt.sh skipped", async () => {
+    // Every crt.sh request moves the clock 2.5 minutes: the second starts within 3 minutes of the first, the third after.
+    const net = timed({
+      rdap: () => ({ status: 404, body: "" }),
+      crtsh: () => {
+        net.advance(150_000);
+        return CRT_OK;
+      },
+    });
+    const { deps } = setup({ config });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, { ...config, crtshBudgetMinutes: 3 });
+
+    expect(net.crtshStarts).toHaveLength(2);
+    expect(stats.domain_age_crtsh_skipped).toBe(1);
+    expect(stats.domain_age_crtsh_failed).toBe(1);
+    expect(stats.domain_age_from_crtsh).toBe(2);
+    expect(stats.domain_age_ran).toBe(2);
+    expect(stats.assessed).toBe(3);
+  });
+
+  it("gets the age of all 40 official domains behind an RDAP server that refuses bursts", async () => {
+    // 37 more DefiLlama protocols, each a speculative project with its own official domain: 40 with DeepBook and Ink.
+    const extra = Array.from({ length: 37 }, (_, i) => ({
+      name: `Proto Lend ${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + Math.floor(i / 26))}`,
+      slug: `proto-${i}`,
+      url: `https://protolend${i}.xyz`,
+      chains: ["Ethereum"],
+      tvl: 5_000_000,
+      change_7d: 1,
+      category: "Lending",
+      gecko_id: null,
+      symbol: "-",
+      listedAt: 1_760_000_000,
+    }));
+    const pages = { ...basePages(), [PROTOCOLS]: { status: 200, body: JSON.stringify([...PROTOCOL_LIST, ...extra]) } };
+    // 429 to any request that makes more than 25 in a 10 s window (refused requests count too).
+    const seen: number[] = [];
+    const net = timed({
+      pages,
+      rdap: (_d, at) => {
+        seen.push(at);
+        return seen.filter((s) => s > at - 10_000).length > 25 ? { status: 429, body: "" } : undefined;
+      },
+    });
+    const { deps } = setup({ config, pages });
+    const stats = await runDaily({ ...deps, http: net.http, sleep: net.sleep, now: net.now }, config);
+
+    expect(stats.projects_with_official_domain).toBe(40);
+    expect(stats.domain_age_ran).toBe(40);
+    expect(stats.domain_age_rdap_rate_limited).toBe(0);
+  });
+});
+
+describe("runDaily stage durations", () => {
+  const STAGES = ["collect", "extract", "speculative", "signals", "analyze", "score", "purge"];
+
+  it("reports the seconds each stage took as numbers in the run stats", async () => {
+    let t = NOW.getTime();
+    const base = fakeHttp(basePages());
+    // Each RDAP request moves the clock 30 s: the score stage takes at least 90 s on the run's clock.
+    const http: Http = {
+      resolveRedirect: base.resolveRedirect,
+      get: async (url) => {
+        if (url.startsWith("https://rdap.org/")) t += 30_000;
+        return base.get(url);
+      },
+    };
+    const { repo, deps, config } = setup();
+    const stats = await runDaily({ ...deps, http, sleep: async (ms) => void (t += ms), now: () => new Date(t) }, config);
+
+    for (const stage of STAGES) {
+      expect(typeof stats[`stage_seconds_${stage}`]).toBe("number");
+      expect(stats[`stage_seconds_${stage}`]).toBeGreaterThanOrEqual(0);
+    }
+    expect(stats.stage_seconds_score).toBeGreaterThanOrEqual(90);
+    // Stored with the other counters.
+    expect(repo.runs.at(-1)?.stats.stage_seconds_score).toBe(stats.stage_seconds_score);
+  });
+});
+
 describe("runDaily without email", () => {
   it("runs without any email settings and reports no digest counters", async () => {
     const { deps, config } = setup();

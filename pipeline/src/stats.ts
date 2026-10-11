@@ -22,6 +22,18 @@ export interface DailyStats extends RunStats {
   domain_age_ran: number;
   /** Domains whose age came from crt.sh because RDAP had no answer. */
   domain_age_from_crtsh: number;
+  /** Domains RDAP gave no registration date for, for any reason; the next three are subsets of it. */
+  domain_age_rdap_failed: number;
+  /** Of those, domains RDAP still rate-limited (429) after the one retry. Not sent to crt.sh: retried next run. */
+  domain_age_rdap_rate_limited: number;
+  /** Of those, domains whose TLD has no RDAP service (rdap.org answered 404). Sent to crt.sh. */
+  domain_age_no_rdap: number;
+  /** Of those, domains never asked because the RDAP time budget ran out. */
+  domain_age_rdap_skipped: number;
+  /** Domains sent to crt.sh (no RDAP service, or a 200 without a registration date) that crt.sh gave no age for. */
+  domain_age_crtsh_failed: number;
+  /** Of those, domains never asked because the crt.sh time budget ran out. */
+  domain_age_crtsh_skipped: number;
   /** Of the projects with an official domain, those where the GoPlus phishing check answered for at least one. */
   phishing_list_ran: number;
   /** Domains the GoPlus phishing check gave no answer for, after its one retry. */
@@ -104,6 +116,17 @@ export interface DailyStats extends RunStats {
   /** Collected documents that could not be stored (the other documents still were). */
   ingest_failed: number;
   purged: number;
+  /**
+   * Seconds each stage took on the run's clock (one decimal), so a slow run shows where the time went. Flat keys:
+   * run stats are numbers only. A stage that threw still reports its time.
+   */
+  stage_seconds_collect: number;
+  stage_seconds_extract: number;
+  stage_seconds_speculative: number;
+  stage_seconds_signals: number;
+  stage_seconds_analyze: number;
+  stage_seconds_score: number;
+  stage_seconds_purge: number;
 }
 
 export function emptyStats(): DailyStats {
@@ -122,6 +145,12 @@ export function emptyStats(): DailyStats {
     projects_with_official_domain: 0,
     domain_age_ran: 0,
     domain_age_from_crtsh: 0,
+    domain_age_rdap_failed: 0,
+    domain_age_rdap_rate_limited: 0,
+    domain_age_no_rdap: 0,
+    domain_age_rdap_skipped: 0,
+    domain_age_crtsh_failed: 0,
+    domain_age_crtsh_skipped: 0,
     phishing_list_ran: 0,
     phishing_list_failed: 0,
     phishing_list_rate_limited: 0,
@@ -157,6 +186,13 @@ export function emptyStats(): DailyStats {
     source_failed: 0,
     ingest_failed: 0,
     purged: 0,
+    stage_seconds_collect: 0,
+    stage_seconds_extract: 0,
+    stage_seconds_speculative: 0,
+    stage_seconds_signals: 0,
+    stage_seconds_analyze: 0,
+    stage_seconds_score: 0,
+    stage_seconds_purge: 0,
   };
 }
 

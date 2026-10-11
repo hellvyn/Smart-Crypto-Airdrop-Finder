@@ -53,6 +53,16 @@ export interface PipelineConfig {
   goplusBudgetMinutes: number;
   goplusMaxConsecutiveFailures: number;
   /**
+   * RDAP time budget, counted from the start of `score`: after it no new RDAP request starts, and the domains not
+   * asked count as not run (`domain_age_rdap_skipped`). RDAP runs one request at a time, alongside the GoPlus queue.
+   */
+  rdapBudgetMinutes: number;
+  /**
+   * crt.sh time budget, counted from its first request of the run (crt.sh only gets the domains RDAP has no date for,
+   * as RDAP finds them): after it no new crt.sh request starts (`domain_age_crtsh_skipped`).
+   */
+  crtshBudgetMinutes: number;
+  /**
    * AI analysis budget per run, counted from the start of `analyze`: after it no new LLM call starts. At most
    * `maxAnalysesPerRun` analyses start per run. Analyses not started stay as they were (counted as
    * `ai_analyses_deferred`) and run on a later day; an unchanged input reuses the stored analysis without a call.
@@ -205,6 +215,8 @@ export const defaultConfig: PipelineConfig = {
   extractBudgetMinutes: 35,
   goplusBudgetMinutes: 12,
   goplusMaxConsecutiveFailures: 5,
+  rdapBudgetMinutes: 6,
+  crtshBudgetMinutes: 3,
   analyzeBudgetMinutes: 10,
   maxAnalysesPerRun: 60,
   scoreActiveSinceDays: 60,
