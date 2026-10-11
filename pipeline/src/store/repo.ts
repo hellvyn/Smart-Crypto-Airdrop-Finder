@@ -1,6 +1,10 @@
 import type {
+  AiKind,
+  CurationReason,
+  CurationRecord,
   ExtractedDeadline,
   ExtractionResult,
+  NewSignal,
   RiskAssessment,
   RiskLevel,
   Status,
@@ -108,6 +112,44 @@ export interface NewEvidence {
   at: Date;
 }
 
+/** One `ai_analyses` row (history: the latest per project and kind wins). `result` is the post-processed JSON. */
+export interface NewAiAnalysis {
+  projectId: string;
+  kind: AiKind;
+  /** Hash of the analysis input; an unchanged hash and prompt version means the cached analysis is reused. */
+  inputHash: string;
+  result: unknown;
+  /** Configured model id that answered. */
+  model: string;
+  /** Model the provider reported serving, when it said. */
+  servedModel: string | null;
+  promptVersion: string;
+  createdAt: Date;
+}
+
+export type StoredAiAnalysis = NewAiAnalysis;
+
+/**
+ * `curations.public_fail_reason` (#55): the message of the first `fail` reason, readable by anonymous visitors.
+ * Null for a passing curation.
+ */
+export function publicFailReason(passed: boolean, reasons: CurationReason[]): string | null {
+  if (passed) return null;
+  return reasons.find((r) => r.kind === "fail")?.message ?? null;
+}
+
+/**
+ * The `curated` project change a new curation causes: a `passed` flip, or a first curation that passes (old value
+ * null). Null when nothing changes.
+ */
+export function curatedChange(
+  previousPassed: boolean | null,
+  passed: boolean,
+): { oldValue: string | null; newValue: string } | null {
+  if (previousPassed === passed || (previousPassed === null && !passed)) return null;
+  return { oldValue: previousPassed === null ? null : String(previousPassed), newValue: String(passed) };
+}
+
 export interface PipelineRepo {
   getDocumentHash(url: string): Promise<string | null>;
   /** Insert or update by URL. A changed hash resets the extraction status to "pending"; the same hash keeps it. */
@@ -151,4 +193,26 @@ export interface PipelineRepo {
   finishRun(runId: string, stats: RunStats, at: Date): Promise<void>;
   /** Blanks the text of documents fetched more than `olderThanDays` ago (hash stays). Returns how many were blanked. */
   purgeDocumentText(olderThanDays: number, now: Date): Promise<number>;
+  /**
+   * Deletes every signal of the project, then stores `signals` with `observed_at` = `at`. Throws on two signals with
+   * the same (kind, source, investor), or a verified `claimed_backer`/`reported_backer`; not atomic, so the project
+   * is then left without signals until the next successful replace.
+   */
+  replaceSignals(projectId: string, signals: NewSignal[], at: Date): Promise<void>;
+  /** Cached portfolio domains of one VC (sorted) and when they were fetched; `fetchedAt` null when none are cached. */
+  listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }>;
+  /** Replaces the VC's cached domains, all fetched at `at`. */
+  saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void>;
+  /** Latest analysis of one kind (greatest `createdAt`, later insert wins ties), or null. */
+  latestAiAnalysis(projectId: string, kind: AiKind): Promise<StoredAiAnalysis | null>;
+  saveAiAnalysis(a: NewAiAnalysis): Promise<void>;
+  /** Latest curation (greatest `computed_at`, later insert wins ties), or null. */
+  latestCuration(projectId: string): Promise<{ passed: boolean; endedOn: string | null } | null>;
+  /** True when the latest curation computed while the project was not `ended` passed; false when there is none. */
+  passedBeforeEnd(projectId: string): Promise<boolean>;
+  /**
+   * Appends a history row with `public_fail_reason` (see `publicFailReason`). A `passed` flip, or a first curation
+   * that passes, also writes a `project_changes` row with field `curated` (see `curatedChange`).
+   */
+  saveCuration(projectId: string, c: CurationRecord, at: Date): Promise<void>;
 }

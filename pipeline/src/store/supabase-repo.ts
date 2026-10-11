@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
+  AiKind,
+  CurationRecord,
   ExtractedDeadline,
+  NewSignal,
   RiskAssessment,
   RiskLevel,
   Status,
@@ -8,9 +11,10 @@ import type {
 } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
-import { FACT_FIELDS } from "./repo.js";
+import { FACT_FIELDS, curatedChange, publicFailReason } from "./repo.js";
 import type {
   ExtractionStatus,
+  NewAiAnalysis,
   NewEvidence,
   NewProject,
   PipelineRepo,
@@ -18,6 +22,7 @@ import type {
   ProjectRow,
   RunStats,
   Step,
+  StoredAiAnalysis,
   StoredDocument,
 } from "./repo.js";
 
@@ -516,5 +521,164 @@ export class SupabaseRepo implements PipelineRepo {
         .returns<{ id: string }[]>(),
     );
     return rows.length;
+  }
+
+  async replaceSignals(projectId: string, signals: NewSignal[], at: Date): Promise<void> {
+    check("replaceSignals.delete", await this.db.from("project_signals").delete().eq("project_id", projectId));
+    if (signals.length === 0) return;
+    check(
+      "replaceSignals.insert",
+      await this.db.from("project_signals").insert(
+        signals.map((s) => ({
+          project_id: projectId,
+          kind: s.kind,
+          value: s.value,
+          source: s.source,
+          verified: s.verified,
+          observed_at: at.toISOString(),
+        })),
+      ),
+    );
+  }
+
+  async listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }> {
+    const rows = await this.fetchAll<{ domain: string; fetched_at: string }>("listVcPortfolio", (from, to) =>
+      this.db
+        .from("vc_portfolios")
+        .select("domain, fetched_at")
+        .eq("vc_id", vcId)
+        // Same order as MemoryRepo (vc_portfolios.domain is collate "C").
+        .order("domain")
+        .range(from, to),
+    );
+    const fetchedAt = rows.reduce<Date | null>((min, r) => {
+      const d = new Date(r.fetched_at);
+      return min === null || d < min ? d : min;
+    }, null);
+    return { domains: rows.map((r) => r.domain), fetchedAt };
+  }
+
+  async saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void> {
+    check("saveVcPortfolio.delete", await this.db.from("vc_portfolios").delete().eq("vc_id", vcId));
+    if (domains.length === 0) return;
+    check(
+      "saveVcPortfolio.insert",
+      await this.db
+        .from("vc_portfolios")
+        .insert([...new Set(domains)].map((domain) => ({ vc_id: vcId, domain, fetched_at: at.toISOString() }))),
+    );
+  }
+
+  async latestAiAnalysis(projectId: string, kind: AiKind): Promise<StoredAiAnalysis | null> {
+    type AiAnalysisDb = {
+      input_hash: string;
+      result: unknown;
+      model: string;
+      served_model: string | null;
+      prompt_version: string;
+      created_at: string;
+    };
+    const row = check(
+      "latestAiAnalysis",
+      await this.db
+        .from("ai_analyses")
+        .select("input_hash, result, model, served_model, prompt_version, created_at")
+        .eq("project_id", projectId)
+        .eq("kind", kind)
+        .order("created_at", { ascending: false })
+        .order("seq", { ascending: false })
+        .limit(1)
+        .maybeSingle<AiAnalysisDb>(),
+    );
+    if (row === null) return null;
+    return {
+      projectId,
+      kind,
+      inputHash: row.input_hash,
+      result: row.result,
+      model: row.model,
+      servedModel: row.served_model,
+      promptVersion: row.prompt_version,
+      createdAt: new Date(row.created_at),
+    };
+  }
+
+  async saveAiAnalysis(a: NewAiAnalysis): Promise<void> {
+    check(
+      "saveAiAnalysis",
+      await this.db.from("ai_analyses").insert({
+        project_id: a.projectId,
+        kind: a.kind,
+        input_hash: a.inputHash,
+        result: a.result,
+        model: a.model,
+        served_model: a.servedModel,
+        prompt_version: a.promptVersion,
+        created_at: a.createdAt.toISOString(),
+      }),
+    );
+  }
+
+  async latestCuration(projectId: string): Promise<{ passed: boolean; endedOn: string | null } | null> {
+    const row = check(
+      "latestCuration",
+      await this.db
+        .from("curations")
+        .select("passed, ended_on")
+        .eq("project_id", projectId)
+        .order("computed_at", { ascending: false })
+        .order("seq", { ascending: false })
+        .limit(1)
+        .maybeSingle<{ passed: boolean; ended_on: string | null }>(),
+    );
+    return row === null ? null : { passed: row.passed, endedOn: row.ended_on };
+  }
+
+  async passedBeforeEnd(projectId: string): Promise<boolean> {
+    const row = check(
+      "passedBeforeEnd",
+      await this.db
+        .from("curations")
+        .select("passed")
+        .eq("project_id", projectId)
+        .neq("status_at", "ended")
+        .order("computed_at", { ascending: false })
+        .order("seq", { ascending: false })
+        .limit(1)
+        .maybeSingle<{ passed: boolean }>(),
+    );
+    return row?.passed ?? false;
+  }
+
+  async saveCuration(projectId: string, c: CurationRecord, at: Date): Promise<void> {
+    const previous = await this.latestCuration(projectId);
+    check(
+      "saveCuration",
+      await this.db.from("curations").insert({
+        project_id: projectId,
+        passed: c.passed,
+        worth_level: c.worthLevel,
+        tab: c.tab,
+        status_at: c.statusAt,
+        ended_on: c.endedOn,
+        reasons: c.reasons,
+        coverage: c.coverage,
+        public_fail_reason: publicFailReason(c.passed, c.reasons),
+        computed_at: at.toISOString(),
+      }),
+    );
+    const change = curatedChange(previous?.passed ?? null, c.passed);
+    if (change) {
+      check(
+        "saveCuration.change",
+        await this.db.from("project_changes").insert({
+          project_id: projectId,
+          field: "curated",
+          old_value: change.oldValue,
+          new_value: change.newValue,
+          changed_at: at.toISOString(),
+        }),
+      );
+    }
   }
 }

@@ -1,10 +1,20 @@
 import { randomUUID } from "node:crypto";
-import type { ExtractedDeadline, RiskAssessment, RiskLevel, Status, StatusEvidence } from "@saf/core";
+import type {
+  AiKind,
+  CurationRecord,
+  ExtractedDeadline,
+  NewSignal,
+  RiskAssessment,
+  RiskLevel,
+  Status,
+  StatusEvidence,
+} from "@saf/core";
 import type { CollectedDocument } from "../collectors/types.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
-import { FACT_FIELDS } from "./repo.js";
+import { FACT_FIELDS, curatedChange, publicFailReason } from "./repo.js";
 import type {
   ExtractionStatus,
+  NewAiAnalysis,
   NewEvidence,
   NewProject,
   PipelineRepo,
@@ -12,6 +22,7 @@ import type {
   ProjectRow,
   RunStats,
   Step,
+  StoredAiAnalysis,
   StoredDocument,
 } from "./repo.js";
 
@@ -19,7 +30,7 @@ const DAY_MS = 86_400_000;
 
 export interface ProjectChange {
   projectId: string;
-  field: "status" | "risk_level";
+  field: "status" | "risk_level" | "curated";
   oldValue: string | null;
   newValue: string;
   changedAt: Date;
@@ -71,6 +82,23 @@ interface ExtractionRow extends ExtractionAttempt {
   promptVersion: string;
 }
 
+interface SignalRow extends NewSignal {
+  projectId: string;
+  observedAt: Date;
+}
+
+interface CurationRow extends CurationRecord {
+  projectId: string;
+  publicFailReason: string | null;
+  computedAt: Date;
+}
+
+interface VcPortfolioRow {
+  vcId: string;
+  domain: string;
+  fetchedAt: Date;
+}
+
 /** In-memory `PipelineRepo` with the same semantics as `SupabaseRepo`. Used as the fake in orchestrator tests. */
 export class MemoryRepo implements PipelineRepo {
   readonly projectChanges: ProjectChange[] = [];
@@ -78,12 +106,16 @@ export class MemoryRepo implements PipelineRepo {
   readonly deadlines: DeadlineRow[] = [];
   readonly riskAssessments: RiskRow[] = [];
   readonly runs: RunRow[] = [];
+  readonly signals: SignalRow[] = [];
+  readonly curations: CurationRow[] = [];
+  readonly aiAnalyses: StoredAiAnalysis[] = [];
 
   private readonly documents = new Map<string, StoredDocument>();
   private readonly projects = new Map<string, ProjectRow>();
   private readonly evidence: EvidenceRow[] = [];
   private readonly tasks: TaskRow[] = [];
   private readonly links: LinkRow[] = [];
+  private readonly vcPortfolios: VcPortfolioRow[] = [];
 
   /** Snapshot of every stored document (test helper). */
   allDocuments(): StoredDocument[] {
@@ -325,6 +357,97 @@ export class MemoryRepo implements PipelineRepo {
     }
     return purged;
   }
+
+  async replaceSignals(projectId: string, signals: NewSignal[], at: Date): Promise<void> {
+    // Delete first, as SupabaseRepo does: a refused insert leaves the project without signals.
+    removeWhere(this.signals, (s) => s.projectId === projectId);
+    // Same rules as the project_signals check constraint and unique index.
+    const keys = new Set<string>();
+    for (const s of signals) {
+      if ((s.kind === "claimed_backer" || s.kind === "reported_backer") && s.verified) {
+        throw new Error("verified backer claim");
+      }
+      const key = JSON.stringify([s.kind, s.source, investorKey(s.value)]);
+      if (keys.has(key)) throw new Error("duplicate signal");
+      keys.add(key);
+    }
+    for (const s of signals) this.signals.push({ ...s, projectId, observedAt: at });
+  }
+
+  async listVcPortfolio(vcId: string): Promise<{ domains: string[]; fetchedAt: Date | null }> {
+    const rows = this.vcPortfolios.filter((r) => r.vcId === vcId);
+    return {
+      domains: rows.map((r) => r.domain).sort(compareText),
+      fetchedAt: rows.reduce<Date | null>((min, r) => (min === null || r.fetchedAt < min ? r.fetchedAt : min), null),
+    };
+  }
+
+  async saveVcPortfolio(vcId: string, domains: string[], at: Date): Promise<void> {
+    removeWhere(this.vcPortfolios, (r) => r.vcId === vcId);
+    for (const domain of new Set(domains)) this.vcPortfolios.push({ vcId, domain, fetchedAt: at });
+  }
+
+  async latestAiAnalysis(projectId: string, kind: AiKind): Promise<StoredAiAnalysis | null> {
+    const latest = latestBy(
+      this.aiAnalyses.filter((a) => a.projectId === projectId && a.kind === kind),
+      (a) => a.createdAt,
+    );
+    return latest ? { ...latest } : null;
+  }
+
+  async saveAiAnalysis(a: NewAiAnalysis): Promise<void> {
+    this.aiAnalyses.push({ ...a });
+  }
+
+  async latestCuration(projectId: string): Promise<{ passed: boolean; endedOn: string | null } | null> {
+    const latest = latestBy(
+      this.curations.filter((c) => c.projectId === projectId),
+      (c) => c.computedAt,
+    );
+    return latest ? { passed: latest.passed, endedOn: latest.endedOn } : null;
+  }
+
+  async passedBeforeEnd(projectId: string): Promise<boolean> {
+    const latest = latestBy(
+      this.curations.filter((c) => c.projectId === projectId && c.statusAt !== "ended"),
+      (c) => c.computedAt,
+    );
+    return latest?.passed ?? false;
+  }
+
+  async saveCuration(projectId: string, c: CurationRecord, at: Date): Promise<void> {
+    const previous = await this.latestCuration(projectId);
+    this.curations.push({
+      projectId,
+      passed: c.passed,
+      worthLevel: c.worthLevel,
+      tab: c.tab,
+      statusAt: c.statusAt,
+      endedOn: c.endedOn,
+      reasons: c.reasons,
+      coverage: c.coverage,
+      publicFailReason: publicFailReason(c.passed, c.reasons),
+      computedAt: at,
+    });
+    const change = curatedChange(previous?.passed ?? null, c.passed);
+    if (change) this.projectChanges.push({ projectId, field: "curated", ...change, changedAt: at });
+  }
+}
+
+/** `coalesce(value->>'investor', '')`, the investor part of the project_signals unique index. */
+function investorKey(value: Record<string, unknown>): string {
+  const investor = value.investor;
+  if (investor === undefined || investor === null) return "";
+  return typeof investor === "string" ? investor : JSON.stringify(investor);
+}
+
+/** Row with the greatest date; a later row wins ties (insertion order, like the `seq` tie-break in Postgres). */
+function latestBy<T>(rows: T[], date: (row: T) => Date): T | null {
+  let latest: T | null = null;
+  for (const row of rows) {
+    if (latest === null || date(row).getTime() >= date(latest).getTime()) latest = row;
+  }
+  return latest;
 }
 
 function cloneProject(p: ProjectRow): ProjectRow {
