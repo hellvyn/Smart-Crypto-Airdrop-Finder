@@ -3,10 +3,11 @@ import { signOut } from "@/app/(auth)/actions";
 import { getUser } from "@/lib/auth";
 import { header } from "@/lib/copy";
 import { LIST_PATH } from "@/lib/routes";
+import { BrandMark } from "@/components/BrandMark";
 import { Button, HazardBar } from "@/components/ui";
 
 /**
- * Design C header: hazard strip, "IQ" mark with the product name, capital-letter nav. A visitor gets the public
+ * Design C header: hazard strip, the brain-on-a-parachute mark with the product name, capital-letter nav. A visitor gets the public
  * links and a black Login button; account links only exist for a signed-in user. There is no signup link (#46).
  * On a phone: the logo and Login/Logout on one row, every menu link below in a grid, nothing to swipe.
  */
@@ -16,14 +17,18 @@ export async function SiteHeader() {
     <>
       <HazardBar />
       <header className="site-header">
+        {/* Logo alone on the left, the name and the beta label stacked to its right (owner 2026-10-11). */}
         <div className="brand-wrap">
-          <Link href="/" className="brand">
+          <Link href="/" className="brand" aria-label={header.brand}>
             <span className="brand-mark" aria-hidden="true">
-              {header.brandMark}
+              <BrandMark />
             </span>
-            <span className="brand-name">{header.brand}</span>
+            <span className="brand-name">
+              {header.brand.replace(/IQ$/, "")}
+              <span className="brand-iq">IQ</span>
+            </span>
+            <span className="brand-beta">{header.beta}</span>
           </Link>
-          <span className="brand-beta">{header.beta}</span>
         </div>
         {user ? (
           <nav className="site-nav site-nav-member" aria-label={header.navLabel}>

@@ -29,7 +29,6 @@ export const site = {
 export const header = {
   navLabel: "Menu utama",
   brand: BRAND,
-  brandMark: "IQ",
   /** Next to the logo (owner 2026-10-11). */
   beta: "Beta Version by Trisna",
   airdrops: "Airdrop",

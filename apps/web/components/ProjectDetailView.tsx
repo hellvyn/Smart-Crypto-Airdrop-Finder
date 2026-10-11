@@ -10,7 +10,7 @@ import { StepsList } from "./detail/StepsList";
 import { WhyListed } from "./detail/WhyListed";
 import { Stamp, Tag, WorthBadge } from "@/components/ui";
 import { detail as copy, labels, landing, list } from "@/lib/copy";
-import { formatCalendarDay, isCheckedKind, sourceName, wibStampDay } from "@/lib/detail";
+import { formatCalendarDay, isCheckedKind, keyParameterValue, summaryDeadlines, summaryLinks, wibStampDay } from "@/lib/detail";
 import {
   checkedLabel,
   deadlineKindLabel,
@@ -27,8 +27,12 @@ import {
 /** "Ringkasan" (side box): chain, deadlines, the project's own links and the key parameters a source states. */
 function Summary({ project }: { project: ProjectDetail }) {
   const s = copy.summary;
-  const ownLinks = project.links.filter((l) => !isCheckedKind(l.kind));
-  const keyParameters = project.facts.filter((f) => f.field.startsWith("key_parameter:"));
+  const ownLinks = summaryLinks(project.links.filter((l) => !isCheckedKind(l.kind)));
+  const deadlines = summaryDeadlines(project.deadlines);
+  // A key parameter that a deadline row already states (TGE) is left out; the same date would show twice.
+  const keyParameters = project.facts.filter(
+    (f) => f.field.startsWith("key_parameter:") && !(f.field === "key_parameter:tge" && deadlines.some((d) => d.kind === "tge")),
+  );
   return (
     <section className="detail-side-box" aria-labelledby="summary-title">
       <h2 id="summary-title" className="detail-side-title">
@@ -36,24 +40,21 @@ function Summary({ project }: { project: ProjectDetail }) {
       </h2>
       <ul className="detail-summary">
         <li>{project.chains.length > 0 ? copy.chains(project.chains) : copy.chainUnknown}</li>
-        {project.deadlines.map((d, i) => (
+        {deadlines.map((d, i) => (
           <li key={`d-${i}`}>
             {s.deadline(deadlineKindLabel(d.kind), d.date ? formatCalendarDay(d.date) : s.dateUnknown, precisionLabel(d.precision))}
           </li>
         ))}
-        {ownLinks.map((l) => {
-          const safe = safeHttpUrl(l.url);
-          return (
-            <li key={l.url}>
-              <ExternalLink href={l.url}>{safe ? sourceName(safe) : l.url}</ExternalLink>
-            </li>
-          );
-        })}
+        {ownLinks.map((l) => (
+          <li key={l.url}>
+            {l.label}: <ExternalLink href={l.url}>{safeHttpUrl(l.url) ? l.text : l.url}</ExternalLink>
+          </li>
+        ))}
         {keyParameters.map((f, i) => {
           const name = f.field.slice("key_parameter:".length);
           return (
             <li key={`k-${i}`}>
-              {s.keyParameter(Object.hasOwn(s.keyParameters, name) ? s.keyParameters[name]! : name, f.value)}
+              {s.keyParameter(Object.hasOwn(s.keyParameters, name) ? s.keyParameters[name]! : name, keyParameterValue(f.value))}
             </li>
           );
         })}

@@ -1,6 +1,6 @@
 // Pure helpers of the project page (lib/detail.ts).
 import { describe, expect, it } from "vitest";
-import { claimOpenChecked, domainAge, registeredOn, sourceName } from "@/lib/detail";
+import { claimOpenChecked, domainAge, formatCalendarDay, registeredOn, keyParameterValue, sourceName, summaryDeadlines, summaryLinks } from "@/lib/detail";
 
 describe("claimOpenChecked (#42)", () => {
   const today = "2026-10-10";
@@ -50,3 +50,51 @@ describe("sourceName", () => {
     expect(sourceName("not a url")).toBe("not a url");
   });
 });
+
+describe("summaryDeadlines", () => {
+  it("keeps one deadline per kind: a dated one beats 'belum diketahui', and a more exact one beats a looser one", () => {
+    const out = summaryDeadlines([
+      { kind: "campaign_end", date: null, precision: "exact", text: "" },
+      { kind: "tge", date: "2026-10-01", precision: "quarter", text: "" },
+      { kind: "campaign_end", date: "2026-10-27", precision: "exact", text: "" },
+      { kind: "tge", date: "2026-10-20", precision: "exact", text: "" },
+      { kind: "snapshot", date: null, precision: "approximate", text: "" },
+    ]);
+    expect(out.map((d) => [d.kind, d.date])).toEqual([
+      ["campaign_end", "2026-10-27"],
+      ["tge", "2026-10-20"],
+      ["snapshot", null],
+    ]);
+  });
+});
+
+describe("summaryLinks", () => {
+  it("keeps one link per site, says what kind it is and shows a short address", () => {
+    const link = (url: string) => ({ url, kind: "website" }) as never;
+    const out = summaryLinks([
+      link("https://mint.io/a"),
+      link("https://www.mint.io/b"),
+      link("https://x.com/proj/"),
+      link("https://t.me/proj"),
+      link("https://nft.getminted.io/"),
+    ]);
+    expect(out.map((l) => [l.label, l.text])).toEqual([
+      ["Website", "mint.io/a"],
+      ["X", "x.com/proj"],
+      ["Telegram", "t.me/proj"],
+      ["Website", "nft.getminted.io"],
+    ]);
+  });
+});
+
+describe("keyParameterValue", () => {
+  it("shows a value that is only a date in Indonesian style and leaves other text alone", () => {
+    const id = formatCalendarDay("2026-10-20");
+    expect(keyParameterValue("October 20, 2026")).toBe(id);
+    expect(keyParameterValue("20 Oct 2026")).toBe(id);
+    expect(keyParameterValue("2026-10-20")).toBe(id);
+    expect(keyParameterValue("Season 1 XP leaderboard, snapshot based")).toBe("Season 1 XP leaderboard, snapshot based");
+    expect(keyParameterValue("10% of supply")).toBe("10% of supply");
+  });
+});
+
