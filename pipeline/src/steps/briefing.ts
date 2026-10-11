@@ -24,6 +24,30 @@ export interface BriefingDeps {
 const utcDay = (d: Date): string => d.toISOString().slice(0, 10);
 
 /**
+ * The most the briefing may spend asking models (the whole chain, both calls). The daily job has a 60-minute limit and
+ * has used 53 minutes before, so a hanging endpoint must not push logos and purge out of the run.
+ */
+export const BRIEFING_BUDGET_MS = 3 * 60_000;
+
+/** `chat` cut off at `deadline` (ms on `now`): a request still running then counts as a failed attempt. */
+function chatUntil(chat: ChatFn, now: () => Date, deadline: number): ChatFn {
+  const failed = { content: "", finishReason: null, latencyMs: 0, httpStatus: 0, servedModel: null };
+  return async (model, messages) => {
+    const left = deadline - now().getTime();
+    if (left <= 0) return failed;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<typeof failed>((resolve) => {
+      timer = setTimeout(() => resolve({ ...failed, latencyMs: left }), left);
+    });
+    try {
+      return await Promise.race([chat(model, messages), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
+
+/**
  * The daily briefing (coach and briefing spec §4.3, §6): the changes of the last 24 hours and the claim, snapshot and
  * campaign_end deadlines of the next 48 hours, for projects on the list, as facts; one model call turns them into at
  * most 5 points that `validateBriefing` checks. A banned word gets one rewrite, then the version without the AI.
@@ -36,8 +60,10 @@ export async function runBriefing(deps: BriefingDeps, config: PipelineConfig, st
   const { repo } = deps;
   const now = deps.now();
 
+  // The briefing is for today in WIB (the run starts 06:00 WIB): deadlines from today WIB to two days after it.
+  const day = utcDay(new Date(now.getTime() + WIB_OFFSET_MS));
   const changes = await repo.listBriefingChanges(new Date(now.getTime() - DAY_MS));
-  const deadlines = await repo.listBriefingDeadlines(utcDay(now), utcDay(new Date(now.getTime() + 2 * DAY_MS)));
+  const deadlines = await repo.listBriefingDeadlines(day, utcDay(new Date(Date.parse(day) + 2 * DAY_MS)));
   const listed = new Set(await repo.listListedProjects([...changes, ...deadlines].map((r) => r.projectId)));
 
   const isChange = (c: BriefingChange): boolean => listed.has(c.projectId) && c.field !== "curated";
@@ -49,7 +75,6 @@ export async function runBriefing(deps: BriefingDeps, config: PipelineConfig, st
   ).slice(0, MAX_FACTS);
   if (facts.length === 0) return;
 
-  const day = utcDay(new Date(now.getTime() + WIB_OFFSET_MS));
   const { items, model } = await writeBriefing(deps, config, facts);
   await repo.saveBriefing(day, items, model, model !== null);
   stats.briefing_items = items.length;
@@ -64,8 +89,15 @@ async function writeBriefing(
 ): Promise<{ items: BriefingItem[]; model: string | null }> {
   const fallback = { items: fallbackBriefing(facts), model: null };
   const breaker = createCircuitBreaker(CIRCUIT_BREAKER_THRESHOLD);
+  const deadline = deps.now().getTime() + BRIEFING_BUDGET_MS;
+  const chat = chatUntil(deps.chat, deps.now, deadline);
   const ask = (messages: ReturnType<typeof buildBriefingMessages>) =>
-    callStructured(messages, briefingAnswerSchema, config.analyzeModels, { chat: deps.chat, sleep: deps.sleep, breaker });
+    callStructured(messages, briefingAnswerSchema, config.analyzeModels, {
+      chat,
+      sleep: deps.sleep,
+      breaker,
+      shouldStop: () => deps.now().getTime() >= deadline,
+    });
 
   const messages = buildBriefingMessages(facts);
   let outcome = await ask(messages);

@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CurationRecord, RiskAssessment } from "@saf/core";
 import type { ChatFn, ChatMessage, ChatResult, ModelConfig } from "@saf/llm";
 import { defaultConfig } from "../src/config.js";
 import type { PipelineConfig } from "../src/config.js";
-import { runBriefing } from "../src/steps/briefing.js";
+import { BRIEFING_BUDGET_MS, runBriefing } from "../src/steps/briefing.js";
 import { purgeCoach } from "../src/steps/purge.js";
 import { emptyStats } from "../src/stats.js";
 import type { DailyStats } from "../src/stats.js";
@@ -108,6 +108,40 @@ describe("runBriefing", () => {
     await repo.replaceDeadlines(gamma.id, doc.id, [{ kind: "claim", date: "2026-10-11", precision: "exact", text: "Claim 11 Oct" }]);
     return { alpha, beta, gamma };
   }
+
+  it("takes deadlines from today WIB to two days after it, not from the UTC day of the run", async () => {
+    // NOW is 23:00 UTC, already 06:00 WIB on 11 October: 10 October is yesterday, 13 October is today + 2.
+    const { gamma } = await seed();
+    const doc = await repo.upsertDocument(
+      { sourceKind: "airdrops_io", sourceKey: "k2", url: "https://src.test/g2", text: "y", publishedAt: null, pageUpdatedAt: null, fetchedAt: NOW },
+      "h2",
+    );
+    await repo.replaceDeadlines(gamma.id, doc.id, [
+      { kind: "claim", date: "2026-10-10", precision: "exact", text: "Claim 10 Oct" },
+      { kind: "snapshot", date: "2026-10-13", precision: "exact", text: "Snapshot 13 Oct" },
+    ]);
+    const { chat, calls } = fakeChat(() => ok({ items: [] }));
+    await run(chat);
+    const prompt = calls[0]!.messages.map((m) => m.content).join("\n");
+    expect(prompt).not.toContain("10 Oktober 2026");
+    expect(prompt).toContain("13 Oktober 2026");
+  });
+
+  it("stops asking the models after the briefing budget and saves the version without the AI", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    try {
+      await seed();
+      const never: ChatFn = () => new Promise(() => {});
+      const done = runBriefing({ repo, chat: never, sleep: async () => {}, now: () => new Date() }, CONFIG, stats);
+      await vi.advanceTimersByTimeAsync(BRIEFING_BUDGET_MS + 1_000);
+      await done;
+      expect(stats.briefing_ai).toBe(0);
+      expect(stats.briefing_items).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("builds the facts from the day's changes and deadlines and asks the model once", async () => {
     const { alpha, beta, gamma } = await seed();
