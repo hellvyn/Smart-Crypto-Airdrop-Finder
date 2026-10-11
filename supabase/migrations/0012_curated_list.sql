@@ -37,6 +37,8 @@ cross join lateral (
 -- runs with the caller's rights and 0013 takes risk_assessments.checks away from anon (the advanced checks in it are
 -- member-only, #54): this function hands out only the key-check count, which is public, never the checks themselves.
 -- A check listed twice counts once; "ran" must be the boolean true; a checks value that is not an array counts as 0.
+-- The four ids are `KEY_CHECKS` of @saf/core (packages/core/src/curate/curate.ts), the checks curate() requires;
+-- apps/web/test/key-checks-sql.test.ts fails if this list and that constant drift apart.
 create function public.key_checks_ran(p_project_id uuid)
   returns integer
   language sql

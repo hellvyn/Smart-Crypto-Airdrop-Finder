@@ -18,8 +18,12 @@ type SearchParams = Record<string, string | string[] | undefined>;
 export default async function LandingPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const { deleted } = await searchParams;
   const accountDeleted = (Array.isArray(deleted) ? deleted[0] : deleted) === "1";
+  // The landing must open even when the database is down: without numbers it shows the box and no track record.
   const db = await createServerClient();
-  const [summary, trackRecord] = await Promise.all([getRunSummary(db), getTrackRecord(db)]);
+  const [summary, trackRecord] = await Promise.all([
+    getRunSummary(db).catch(() => null),
+    getTrackRecord(db).catch(() => null),
+  ]);
 
   return (
     <div className="landing">

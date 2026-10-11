@@ -378,7 +378,8 @@ export const landing = {
     riskRaised: "Belakangan jadi risky",
     /** Not "... udah ended" alone: the population also holds projects that turned risky before ending, so listed and
      * noToken need not add up to total (spec 15.3, G4 revision). */
-    note: (total: number) => `Dari ${total} airdrop yang lolos sebelum token listing dan sekarang udah ended atau sempat jadi risky.`,
+    note: (total: number) =>
+      `Dari ${total} airdrop yang lolos sebelum token listing dan sekarang udah ended atau belakangan jadi risky.`,
   },
   compare: {
     title: "Apa bedanya gratis sama member?",

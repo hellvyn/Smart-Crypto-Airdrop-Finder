@@ -16,6 +16,7 @@ import type {
   StatusEvidence,
   TrackRecordProject,
 } from "@saf/core";
+import { ENDED_SCORING_DAYS } from "@saf/core";
 import type { CollectedDocument, SourceKind } from "../collectors/types.js";
 import type { RaisePage } from "../enrich/alphadrops-raises.js";
 import type { ExtractionAttempt } from "../llm/extract.js";
@@ -194,12 +195,9 @@ export function curatedChange(
 }
 
 /**
- * Days after `ended_on` that a project whose latest curation passed is still scored (curation spec §5.3: the claim
- * period is when fake claim sites appear); after that its last result is frozen.
+ * The earliest `ended_on` (`YYYY-MM-DD`) still scored on the UTC day of `now`: `ENDED_SCORING_DAYS` (@saf/core) back.
+ * After that a project's last result is frozen (curation spec §5.3).
  */
-export const ENDED_SCORING_DAYS = 90;
-
-/** The earliest `ended_on` (`YYYY-MM-DD`) still scored on the UTC day of `now`. */
 export function endedScoringSince(now: Date): string {
   return new Date(now.getTime() - ENDED_SCORING_DAYS * 86_400_000).toISOString().slice(0, 10);
 }

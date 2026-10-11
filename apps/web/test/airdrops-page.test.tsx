@@ -121,6 +121,13 @@ describe("/airdrops", () => {
     expect(screen.getByTestId("summary-checked").textContent).toBe("4 dicek");
   });
 
+  it("treats the Modal: option alone as no filter: no Hapus filter link, and the empty-tab message", async () => {
+    listCurated.mockResolvedValue(curatedPage([]));
+    await page({ modal: "free" });
+    expect(screen.queryByRole("link", { name: "Hapus filter" })).toBeNull();
+    expect(screen.getByText("Belum ada airdrop yang lolos kurasi di tab ini.")).toBeTruthy();
+  });
+
   it("says filters matched nothing when filters are set", async () => {
     listCurated.mockResolvedValue(curatedPage([]));
     await page({ risk: "low" });
@@ -135,6 +142,6 @@ describe("/airdrops", () => {
     await page();
     const record = screen.getByRole("region", { name: "Track record kami" });
     expect(record.textContent).toContain("6 Token listing · 5 Ended tanpa token · 3 Belakangan jadi risky");
-    expect(record.textContent).toContain("Dari 14 airdrop yang lolos sebelum token listing dan sekarang udah ended atau sempat jadi risky.");
+    expect(record.textContent).toContain("Dari 14 airdrop yang lolos sebelum token listing dan sekarang udah ended atau belakangan jadi risky.");
   });
 });

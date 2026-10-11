@@ -117,6 +117,16 @@ describe("landing page", () => {
     expect(screen.getByTestId("today-passed").textContent).toBe("12lolos");
   });
 
+  it("still renders when the database is down: the hero, Update hari ini without numbers, and no track record", async () => {
+    getRunSummary.mockRejectedValue(new Error("Failed to load pipeline runs: connection refused"));
+    getTrackRecord.mockRejectedValue(new Error("Failed to load pipeline runs: connection refused"));
+    const { container } = await renderLanding();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Airdrop yang worth it digarap, udah kami cek duluan.");
+    expect(screen.getByText("Update hari ini")).toBeTruthy();
+    expect(screen.queryByTestId("today-checked")).toBeNull();
+    expect(container.querySelector("#jejak")).toBeNull();
+  });
+
   it("shows the track record once there is one (getTrackRecord gives null below 10)", async () => {
     getTrackRecord.mockResolvedValue({ total: 14, listed: 6, noToken: 5, riskRaised: 3 });
     const { container } = await renderLanding();
@@ -170,7 +180,7 @@ describe("TrackRecord", () => {
     expect(screen.getByRole("img", { name: "3 Belakangan jadi risky" })).toBeTruthy();
     // listed + noToken need not add up to total: a project that turned risky counts before it ends (spec 15.3).
     expect(
-      screen.getByText("Dari 14 airdrop yang lolos sebelum token listing dan sekarang udah ended atau sempat jadi risky."),
+      screen.getByText("Dari 14 airdrop yang lolos sebelum token listing dan sekarang udah ended atau belakangan jadi risky."),
     ).toBeTruthy();
   });
 });

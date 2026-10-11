@@ -41,7 +41,7 @@ export type {
   WorthLevel,
   WorthResult,
 } from "./curate/types.js";
-export { curate, STRONG_SCAM_PATTERNS } from "./curate/curate.js";
+export { curate, ENDED_SCORING_DAYS, KEY_CHECKS, STRONG_SCAM_PATTERNS } from "./curate/curate.js";
 export { worth } from "./curate/worth.js";
 export { trackRecord } from "./curate/track-record.js";
 export type { TrackRecord, TrackRecordProject } from "./curate/track-record.js";

@@ -11,6 +11,7 @@ import type {
   Tab,
   WorthLevel,
 } from "@saf/core";
+import { ENDED_SCORING_DAYS } from "@saf/core";
 import { labels } from "./copy";
 import { LIST_PATH } from "./routes";
 
@@ -151,18 +152,13 @@ export function isCheckStale(checkedAt: Date, now: Date): boolean {
 }
 
 /**
- * Days after `ended_on` that the pipeline keeps re-checking a project that ended after it passed (its
- * `ENDED_SCORING_DAYS`, curation spec §5.3). After that its last result is frozen.
- */
-const ENDED_RECHECK_DAYS = 90;
-
-/**
  * Whether a row's check time is frozen ("Last check {tanggal}", #44): only in the ended tab, once `ended_on` lies before
- * the UTC day 90 days back, the same cut the pipeline uses (ruling 6). Without an end date the project is still checked.
+ * the UTC day `ENDED_SCORING_DAYS` (90) back, the cut the pipeline stops re-checking at (ruling 6). Without an end date
+ * the project is still checked.
  */
 export function isCheckFrozen(tab: Tab, endedOn: string | null, now: Date): boolean {
   if (tab !== "ended" || endedOn === null) return false;
-  return endedOn < new Date(now.getTime() - ENDED_RECHECK_DAYS * DAY_MS).toISOString().slice(0, 10);
+  return endedOn < new Date(now.getTime() - ENDED_SCORING_DAYS * DAY_MS).toISOString().slice(0, 10);
 }
 
 const endedDay = new Intl.DateTimeFormat("id-ID", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });

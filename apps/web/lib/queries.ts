@@ -355,13 +355,13 @@ export async function getProjectDetail(db: SupabaseClient, slug: string, now: Da
   };
 }
 
+type SuccessfulRun = { at: Date; stats: Record<string, unknown> };
+
 /**
  * The latest successful pipeline run (finished, with no `run_error` key in its stats): finish time and stats.
  * SQL drops rows without the key; the JS check also drops a key present with a null value. Cached per request and per
  * client (React `cache`), so a page that shows the stale banner, the run summary and the track record reads it once.
  */
-type SuccessfulRun = { at: Date; stats: Record<string, unknown> };
-
 const getLastSuccessfulRun = cache(async (db: SupabaseClient): Promise<SuccessfulRun | null> => {
   const { data, error } = await db
     .from("pipeline_runs")

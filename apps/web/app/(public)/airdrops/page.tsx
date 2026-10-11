@@ -60,13 +60,8 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
   // An invalid chain value applies no filter but is still shown, as text only, in the form.
   const selectedChain = rawChainParam(sp);
   const selectedWorth = filters.worth?.[0] ?? "";
-  const hasFilters = !!(
-    filters.status?.length ||
-    filters.risk?.length ||
-    selectedChain ||
-    filters.worth?.length ||
-    capital !== "all"
-  );
+  // The "Modal:" option is not one of these: it has its own row, and "Hapus filter" keeps it.
+  const hasFilters = !!(filters.status?.length || filters.risk?.length || selectedChain || filters.worth?.length);
   const sort = tab === "ended" ? list.sort.ended : member ? list.sort.member : list.sort.visitor;
 
   return (

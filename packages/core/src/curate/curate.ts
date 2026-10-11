@@ -6,7 +6,17 @@ import type { CurateInput, CurateResult, CurationReason, NewSignal, Tab } from "
 /** AI scam patterns (#58) that fail curation on their own. `urgency`, `connect_wallet_to_check`, `other` do not. */
 export const STRONG_SCAM_PATTERNS = ["secret_request", "payment_request", "impersonation", "fake_support"] as const;
 
-const KEY_CHECKS: CheckId[] = ["dangerous_asks", "lookalike", "domain_age", "phishing_list"];
+/**
+ * The 4 key checks a project must have run to pass (spec §6.2). `public.key_checks_ran()` in migration 0012 counts the
+ * same ids for "{k}/4 security check jalan"; apps/web/test/key-checks-sql.test.ts keeps the two in step.
+ */
+export const KEY_CHECKS: readonly CheckId[] = ["dangerous_asks", "lookalike", "domain_age", "phishing_list"];
+
+/**
+ * Days after `ended_on` that a project which ended after passing curation is still scored (spec §5.3: the claim
+ * period is when fake claim sites appear). After that its last result is frozen; the web then shows "Last check".
+ */
+export const ENDED_SCORING_DAYS = 90;
 const OPEN_TAB: Partial<Record<CurateInput["status"], Tab>> = {
   live: "live_now",
   announced: "live_now",

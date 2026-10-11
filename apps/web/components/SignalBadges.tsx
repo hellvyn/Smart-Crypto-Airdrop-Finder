@@ -28,9 +28,16 @@ function signalBadges(signals: CuratedSignal[]): { text: string; tone: TagTone }
     }
   }
 
-  const reported = signals
-    .filter((s) => s.kind === "reported_backer" && investorOf(s) !== null)
-    .map((s) => ({ name: investorOf(s) as string, lead: s.value.lead === true }));
+  // One entry per investor (case-insensitive, first spelling kept), lead if any of its signals says so.
+  const byKey = new Map<string, { name: string; lead: boolean }>();
+  for (const s of signals) {
+    const name = s.kind === "reported_backer" ? investorOf(s) : null;
+    if (name === null) continue;
+    const known = byKey.get(name.toLowerCase());
+    if (known) known.lead ||= s.value.lead === true;
+    else byKey.set(name.toLowerCase(), { name, lead: s.value.lead === true });
+  }
+  const reported = [...byKey.values()];
   if (reported.length > 0) {
     const ordered = [...reported.filter((r) => r.lead), ...reported.filter((r) => !r.lead)];
     const names = ordered.slice(0, MAX_REPORTED).map((r) => (r.lead ? copy.lead(r.name) : r.name));

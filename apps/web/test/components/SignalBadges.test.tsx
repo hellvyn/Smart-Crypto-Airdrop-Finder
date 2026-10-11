@@ -64,6 +64,20 @@ describe("SignalBadges", () => {
     expect(badges()).toEqual([["Menurut AlphaDrops: D (lead), A, B, …", "reported"]]);
   });
 
+  it("names a reported backer once, as lead if any round says so, before the three-name budget", () => {
+    render(
+      <SignalBadges
+        signals={[
+          signal("reported_backer", { investor: "A", lead: false }, false),
+          signal("reported_backer", { investor: "a", lead: true }, false),
+          signal("reported_backer", { investor: "B", lead: false }, false),
+          signal("reported_backer", { investor: "C", lead: false }, false),
+        ]}
+      />,
+    );
+    expect(badges()).toEqual([["Menurut AlphaDrops: A (lead), B, C", "reported"]]);
+  });
+
   it("leaves out unverified VC, TVL and CoinGecko signals and values it cannot read", () => {
     const { container } = render(
       <SignalBadges

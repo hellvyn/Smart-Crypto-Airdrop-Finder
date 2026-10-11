@@ -16,6 +16,9 @@ test.afterAll(async () => {
   await cleanupSeed();
 });
 
+/** A tab of the list, scoped to the tab bar (a project named "... Ended ..." is a link too). */
+const tabLink = (page: Page, name: string) =>
+  page.getByRole("navigation", { name: "Tab daftar" }).getByRole("link", { name, exact: true });
 const rowFor = (page: Page, slug: string) => page.locator(`[data-testid="project-row"][data-slug="${slug}"]`);
 
 async function signIn(page: Page): Promise<void> {
@@ -30,7 +33,7 @@ async function signIn(page: Page): Promise<void> {
 
 test("the default tab shows only the live_now project, with its badges, key checks and check time", async ({ page }) => {
   await page.goto("/airdrops");
-  await expect(page.getByRole("link", { name: "Live sekarang" })).toHaveAttribute("aria-current", "page");
+  await expect(tabLink(page, "Live sekarang")).toHaveAttribute("aria-current", "page");
   const row = rowFor(page, curated.live.slug);
   await expect(row.getByRole("link", { name: curated.live.name })).toHaveAttribute("href", `/projects/${curated.live.slug}`);
   await expect(row.getByTestId("risk-badge")).toHaveText("Risiko Rendah");
@@ -49,7 +52,7 @@ test("the default tab shows only the live_now project, with its badges, key chec
 
 test("Early and Ended tabs show their own project; Ended carries the end date and a frozen check time", async ({ page }) => {
   await page.goto("/airdrops");
-  await page.getByRole("link", { name: "Early" }).click();
+  await tabLink(page, "Early").click();
   await expect(page).toHaveURL(/\/airdrops\?tab=early_bets$/);
   const early = rowFor(page, curated.early.slug);
   await expect(early.getByTestId("status-badge")).toHaveText("Status Spekulatif");
@@ -59,7 +62,7 @@ test("Early and Ended tabs show their own project; Ended carries the end date an
   await expect(early).toContainText("Dicek hari ini");
   await expect(rowFor(page, curated.live.slug)).toHaveCount(0);
 
-  await page.getByRole("link", { name: "Ended" }).click();
+  await tabLink(page, "Ended").click();
   await expect(page).toHaveURL(/\/airdrops\?tab=ended$/);
   const ended = rowFor(page, curated.ended.slug);
   await expect(ended.getByTestId("status-badge")).toHaveText("Status Ended");
@@ -84,7 +87,7 @@ test("a project whose latest curation failed is in no tab, and every row says wh
 test("an unknown ?tab= falls back to Live sekarang", async ({ page }) => {
   const res = await page.goto("/airdrops?tab=xyz");
   expect(res?.status()).toBe(200);
-  await expect(page.getByRole("link", { name: "Live sekarang" })).toHaveAttribute("aria-current", "page");
+  await expect(tabLink(page, "Live sekarang")).toHaveAttribute("aria-current", "page");
   await expect(rowFor(page, curated.live.slug)).toBeVisible();
 });
 
@@ -93,7 +96,7 @@ test("?modal=free keeps only free projects and survives a tab switch; Modal belu
   const modal = page.getByRole("navigation", { name: "Modal:" });
   await expect(modal.getByRole("link", { name: /^Gratis · \d+$/ })).toHaveAttribute("aria-current", "page");
   await expect(rowFor(page, curated.live.slug)).toBeVisible();
-  await page.getByRole("link", { name: "Early" }).click();
+  await tabLink(page, "Early").click();
   await expect(page).toHaveURL(/\/airdrops\?tab=early_bets&modal=free$/);
   await expect(rowFor(page, curated.early.slug)).toHaveCount(0);
 
