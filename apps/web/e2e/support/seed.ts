@@ -31,6 +31,7 @@ let projectIds: string[] = [];
 let documentIds: string[] = [];
 let runIds: string[] = [];
 let linkCheckUrls: string[] = [];
+let briefingDays: string[] = [];
 
 function must<T>(res: { data: T; error: { message: string } | null }, what: string): NonNullable<T> {
   if (res.error || res.data === null || res.data === undefined) {
@@ -233,10 +234,12 @@ export async function cleanupSeed(): Promise<void> {
   if (documentIds.length) await db.from("documents").delete().in("id", documentIds);
   if (runIds.length) await db.from("pipeline_runs").delete().in("id", runIds);
   if (linkCheckUrls.length) await db.from("link_checks").delete().in("url", linkCheckUrls);
+  if (briefingDays.length) await db.from("briefings").delete().in("day", briefingDays);
   projectIds = [];
   documentIds = [];
   runIds = [];
   linkCheckUrls = [];
+  briefingDays = [];
 }
 
 /** Seeds `count` live projects on one unique chain, newest last_seen first by index. Returns the chain name. */
@@ -705,4 +708,16 @@ export async function seedCardGrid(count: number): Promise<CardGridSeed> {
     "card logos",
   );
   return { chain, slugs: rows.map((r) => r.slug), names: rows.map((r) => r.name), ids, png: PNG_1X1 };
+}
+
+/** The morning briefing of one day (`YYYY-MM-DD`), as the pipeline writes it; removed by `cleanupSeed`. */
+export async function seedBriefing(
+  day: string,
+  items: { projectId: string; slug: string; name: string; text: string }[],
+): Promise<void> {
+  must(
+    await adminClient().from("briefings").upsert({ day, items, model: null, ai: false }, { onConflict: "day" }).select("day").single(),
+    "briefing",
+  );
+  briefingDays.push(day);
 }

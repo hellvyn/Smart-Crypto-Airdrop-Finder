@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getChangeFeed,
   getChangesSeenAt,
+  getLatestBriefing,
   getLastSuccessfulRunAt,
   getProjectDetail,
   getRunSummary,
@@ -826,4 +827,44 @@ describe("getChangeFeed", () => {
       expect(await getChangeFeed(db, "u1", now)).toEqual({ changes: [], deadlines: [] });
     },
   );
+});
+
+describe("getLatestBriefing", () => {
+  const row = {
+    day: "2026-10-11",
+    ai: true,
+    items: [
+      { projectId: "p-1", slug: "alpha", name: "Alpha", text: "Alpha baru masuk list." },
+      { projectId: "p-2", slug: "beta", name: "Beta" },
+      "junk",
+      { projectId: "p-3", slug: "gamma", name: "Gamma", text: "Gamma live." },
+    ],
+  };
+
+  it("reads the newest briefing and keeps the items it can read", async () => {
+    const { db, recs } = fakeDb([{ data: row, error: null }]);
+    expect(await getLatestBriefing(db)).toEqual({
+      day: "2026-10-11",
+      ai: true,
+      items: [
+        { projectId: "p-1", slug: "alpha", name: "Alpha", text: "Alpha baru masuk list." },
+        { projectId: "p-3", slug: "gamma", name: "Gamma", text: "Gamma live." },
+      ],
+    });
+    expect(recs[0]!.table).toBe("briefings");
+    expect(recs[0]!.calls).toContainEqual(["select", "day, items, ai"]);
+    expect(recs[0]!.calls).toContainEqual(["order", "day", { ascending: false }]);
+    expect(recs[0]!.calls).toContainEqual(["limit", 1]);
+  });
+
+  it("returns null when there is no briefing, or the row is not one", async () => {
+    expect(await getLatestBriefing(fakeDb([{ data: null, error: null }]).db)).toBeNull();
+    expect(await getLatestBriefing(fakeDb([{ data: { day: "soon", items: [], ai: false }, error: null }]).db)).toBeNull();
+  });
+
+  it("throws on a database error", async () => {
+    await expect(getLatestBriefing(fakeDb([{ data: null, error: { message: "boom" } }]).db)).rejects.toThrow(
+      "Failed to load the briefing: boom",
+    );
+  });
 });

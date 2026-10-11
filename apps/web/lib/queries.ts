@@ -12,6 +12,7 @@ import {
   type ChangeFeed,
   type ChangeProject,
 } from "./changes";
+import type { Briefing } from "./briefing";
 import { claimOpenChecked, isCheckedKind, isFlagged } from "./detail";
 import { isUuid } from "./uuid";
 import {
@@ -686,4 +687,30 @@ export async function getChangeFeed(db: SupabaseClient, userId: string, now: Dat
   } catch {
     return EMPTY_CHANGE_FEED;
   }
+}
+
+/**
+ * The newest briefing (the pipeline writes one a day; a day without facts has none, so this can be an older one), or
+ * null when there is none. Items the pipeline did not write in the expected shape are skipped. Throws when the read
+ * fails: the caller decides what that means for the page.
+ */
+export async function getLatestBriefing(db: SupabaseClient): Promise<Briefing | null> {
+  const { data, error } = await db
+    .from("briefings")
+    .select("day, items, ai")
+    .order("day", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  throwIf(error, "the briefing");
+  if (!isRecord(data) || typeof data.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(data.day)) return null;
+  const items = (Array.isArray(data.items) ? data.items : []).flatMap((item: unknown) =>
+    isRecord(item) &&
+    typeof item.projectId === "string" &&
+    typeof item.slug === "string" &&
+    typeof item.name === "string" &&
+    typeof item.text === "string"
+      ? [{ projectId: item.projectId, slug: item.slug, name: item.name, text: item.text }]
+      : [],
+  );
+  return { day: data.day, items, ai: data.ai === true };
 }

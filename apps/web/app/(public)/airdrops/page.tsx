@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { BriefingBox } from "@/components/BriefingBox";
 import { ChangesSinceLastVisit } from "@/components/ChangesSinceLastVisit";
 import { Pagination } from "@/components/Pagination";
 import { ProjectCard } from "@/components/ProjectCard";
 import { StaleBanner } from "@/components/StaleBanner";
 import { TabBar } from "@/components/ui";
 import { getUser } from "@/lib/auth";
+import { getBriefingData } from "@/lib/briefing";
 import { EMPTY_CHANGE_FEED } from "@/lib/changes";
 import { landing, list, pageTitle, ui } from "@/lib/copy";
 import {
@@ -48,7 +50,8 @@ function first(v: string | string[] | undefined): string | undefined {
  * as a grid of cards (owner request 2026-10-11: 3 per row on desktop, 2 on tablet, 1 on phone, each with its logo).
  * Visitors read `public_list` in the "Baru dicek" order: their `?worth=` is dropped and there is no `?sort=` to
  * pick, so nothing reveals the worth order (#45). Members also get the worth level, its filter and the "Paling worth
- * it" order, and "Perubahan sejak kunjungan terakhir" for their watched projects above the list.
+ * it" order, and above the list the morning briefing ("Briefing pagi", none when its query failed) and "Perubahan sejak
+ * kunjungan terakhir" for their watched projects.
  */
 export default async function AirdropsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
@@ -60,13 +63,14 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
   const page = parsePage(first(sp.page));
   const db = await createServerClient();
   const now = new Date();
-  const [curated, lastRunAt, summary, trackRecord, chains, changes] = await Promise.all([
+  const [curated, lastRunAt, summary, trackRecord, chains, changes, briefing] = await Promise.all([
     listCurated(db, tab, filters, page, member),
     getLastSuccessfulRunAt(db),
     getRunSummary(db),
     getTrackRecord(db),
     listChains(db),
     user ? getChangeFeed(db, user.id, now) : EMPTY_CHANGE_FEED,
+    user ? getBriefingData(db, now) : null,
   ]);
   const { items, total, pageSize, capitalCounts } = curated;
   // An invalid chain value applies no filter but is still shown, as text only, in the form.
@@ -81,6 +85,7 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <StaleBanner lastRunAt={lastRunAt} now={now} />
+      {briefing ? <BriefingBox briefing={briefing.briefing} feed={changes} garapan={briefing.garapan} now={now} /> : null}
       <ChangesSinceLastVisit feed={changes} />
       <section className="list-summary" aria-labelledby="list-summary-title">
         <h1 id="list-summary-title" className="ui-display list-summary-title">

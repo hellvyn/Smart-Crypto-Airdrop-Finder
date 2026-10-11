@@ -8,6 +8,11 @@ const listCurated = vi.fn();
 const getRunSummary = vi.fn();
 const getTrackRecord = vi.fn();
 const getChangeFeed = vi.fn();
+const getBriefingData = vi.fn();
+vi.mock("@/lib/briefing", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/briefing")>()),
+  getBriefingData: (...args: unknown[]) => getBriefingData(...args),
+}));
 vi.mock("@/lib/auth", () => ({ getUser: () => getUser() }));
 vi.mock("@/lib/supabase/server", () => ({ createServerClient: async () => ({}) }));
 vi.mock("@/lib/queries", () => ({
@@ -62,10 +67,58 @@ beforeEach(() => {
   getRunSummary.mockReset().mockResolvedValue({ checked: 4, passed: 3, at: new Date() });
   getTrackRecord.mockReset().mockResolvedValue(null);
   getChangeFeed.mockReset().mockResolvedValue({ changes: [], deadlines: [] });
+  getBriefingData.mockReset().mockResolvedValue({
+    briefing: {
+      day: "2026-10-11",
+      ai: true,
+      items: [{ projectId: "p-1", slug: "alpha", name: "Alpha", text: "Alpha baru masuk list." }],
+    },
+    garapan: [],
+  });
 });
 
 const page = async (sp: Record<string, string | string[]> = {}) =>
   render(await AirdropsPage({ searchParams: Promise.resolve(sp) }));
+
+describe("/airdrops briefing box", () => {
+  it("shows a member the box above the list", async () => {
+    getUser.mockResolvedValue({ id: "u1" });
+    await page();
+    const box = screen.getByRole("region", { name: "Briefing pagi · 11 Okt 2026" });
+    expect(within(box).getByRole("link", { name: "Alpha" }).getAttribute("href")).toBe("/projects/alpha");
+    expect(getBriefingData).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the box out of a visitor's HTML and never reads the briefing for one", async () => {
+    const { container } = await page();
+    expect(container.innerHTML).not.toMatch(/Briefing pagi/);
+    expect(container.innerHTML).not.toContain("Alpha baru masuk list.");
+    expect(getBriefingData).not.toHaveBeenCalled();
+  });
+
+  it("shows no box when the briefing query failed", async () => {
+    getUser.mockResolvedValue({ id: "u1" });
+    getBriefingData.mockResolvedValue(null);
+    getChangeFeed.mockResolvedValue({
+      changes: [{ kind: "curated_in", project: { slug: "gamma", name: "Gamma" }, at: "2026-10-10T23:00:00Z" }],
+      deadlines: [],
+    });
+    await page();
+    expect(screen.queryByRole("region", { name: /^Briefing pagi/ })).toBeNull();
+    expect(screen.getByRole("region", { name: "Perubahan sejak kunjungan terakhir" })).toBeTruthy();
+  });
+
+  it("passes the watchlist changes of the page to the box", async () => {
+    getUser.mockResolvedValue({ id: "u1" });
+    getChangeFeed.mockResolvedValue({
+      changes: [{ kind: "curated_in", project: { slug: "gamma", name: "Gamma" }, at: "2026-10-10T23:00:00Z" }],
+      deadlines: [],
+    });
+    await page();
+    const box = screen.getByRole("region", { name: /^Briefing pagi/ });
+    expect(within(box).getByRole("list", { name: "Perubahan di watchlist kamu" }).textContent).toContain("Masuk list");
+  });
+});
 
 describe("/airdrops", () => {
   it("ignores worth and an unknown tab for a visitor: public order, no worth anywhere (#45)", async () => {

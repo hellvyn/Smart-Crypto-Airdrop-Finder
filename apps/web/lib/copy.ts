@@ -423,6 +423,20 @@ export const changes = {
   approximateDate: (date: string) => `sekitar ${date}`,
 };
 
+/** "Briefing pagi" above the list (coach and briefing spec §5.6): member only. */
+export const briefing = {
+  heading: (date: string) => `Briefing pagi · ${date}`,
+  collapse: "Ciutkan briefing",
+  expand: "Buka briefing",
+  /** Accessible names of the three lists. */
+  itemsLabel: "Poin briefing",
+  changesLabel: "Perubahan di watchlist kamu",
+  garapanLabel: "Deadline garapan terdekat",
+  /** A garapan deadline line after the project name: kind and date, e.g. "Claim 14 Okt 2026". */
+  deadline: (kind: string, date: string) => `${kind} ${date}`,
+  approximateDate: (date: string) => `sekitar ${date}`,
+};
+
 export const watchlist = {
   title: "Watchlist",
   heading: "Watchlist kamu",
