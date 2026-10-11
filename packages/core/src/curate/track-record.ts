@@ -20,23 +20,28 @@ export interface TrackRecordProject {
 
 /** Counts behind the public track record; no project names. Shown only from a total of 10 (Plan 6). */
 export interface TrackRecord {
-  /** Population: passed before the token traded (`coingecko_listed`), and now in the `ended` tab (#40). */
+  /**
+   * Population: passed before the token traded (`coingecko_listed`), and now in the `ended` tab (#40) or `high`/
+   * `critical` risk at some point after the first pass. A project that turned risky counts whatever its latest
+   * curation is, so a project that failed and stays out of the list is not hidden from the record.
+   */
   total: number;
   /** Of the population, projects whose token trades now. */
   listed: number;
-  /** Of the population, projects that ended without a traded token. */
+  /** Of the population, projects in the `ended` tab without a traded token. */
   noToken: number;
   /** Of the population, projects that were `high`/`critical` risk at some point after their first pass. */
   riskRaised: number;
 }
 
 export function trackRecord(projects: TrackRecordProject[]): TrackRecord {
-  const population = projects.filter((p) => p.firstPassAt !== null && p.listedAtFirstPass === false && p.tab === "ended");
-  const listed = population.filter((p) => p.coingeckoListed).length;
+  const population = projects.filter(
+    (p) => p.firstPassAt !== null && p.listedAtFirstPass === false && (p.tab === "ended" || p.riskRaisedAfterPass),
+  );
   return {
     total: population.length,
-    listed,
-    noToken: population.length - listed,
+    listed: population.filter((p) => p.coingeckoListed).length,
+    noToken: population.filter((p) => p.tab === "ended" && !p.coingeckoListed).length,
     riskRaised: population.filter((p) => p.riskRaisedAfterPass).length,
   };
 }

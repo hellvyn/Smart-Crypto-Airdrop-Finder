@@ -285,16 +285,18 @@ What to do:
 Counted at the end of `score` from the whole curation history (`listCurationHistoryForTrackRecord`), so ended projects
 that are no longer scored (more than 90 days after they ended) still count. The population (`track_record_total`) is
 every project whose **first passing curation** had `curations.coingecko_listed = false` (no verified CoinGecko listing
-while DefiLlama was checked on that run) and whose **latest curation** is in the `ended` tab. Of those:
+while DefiLlama was checked on that run) and whose **latest curation** is in the `ended` tab, or that had a `high` or
+`critical` risk assessment after that first pass (whatever its latest curation is). Of those:
 
 - `track_record_listed`: projects with a verified `coingecko_listed` signal now (the token trades);
-- `track_record_no_token`: the rest, ended without a traded token;
+- `track_record_no_token`: projects in the `ended` tab without a traded token;
 - `track_record_risk_raised`: projects with a `high` or `critical` risk assessment after their first pass.
 
 `coingecko_listed` is null on a run where DefiLlama was not checked and no listing was known; a project whose first pass
 has null is left out (unknown is never counted as "before the token traded"). A project that turned risky and is still
-out of the list (latest curation failed) is not in the population, so `track_record_risk_raised` only counts the ones
-that came back. The web (Plan 6) reads these counters from the latest successful run and shows them only from a total
+out of the list (latest curation failed) is in the population and in `track_record_risk_raised`, so the worst outcomes
+are not hidden; it is in `track_record_no_token` only once it is in the `ended` tab, so `_listed` and `_no_token` need
+not add up to `_total`. The web (Plan 6) reads these counters from the latest successful run and shows them only from a total
 of 10. A failed read of the history is a stage error (`failed_step` 5) and that run is skipped by the web.
 
 ## 5. LLM eval (after changing the prompt or a model)

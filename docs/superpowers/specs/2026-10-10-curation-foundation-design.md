@@ -708,9 +708,13 @@ beberapa project cukup dicek sekali per run.
 ### 15.3 Rekam jejak (#43)
 
 - Populasi: project yang **curation lolos pertamanya** terjadi saat project belum `coingecko_listed`, dan sekarang
-  `tab = ended` (#40).
-- Angka: (a) jumlah yang sekarang `coingecko_listed`; (b) jumlah yang berakhir tanpa token diperdagangkan; (c) jumlah yang
-  setelah lolos pernah berisiko `high`/`critical`. Tiga angka + total populasi, tanpa nama project.
+  `tab = ended` (#40) **atau** setelah lolos pernah berisiko `high`/`critical` (apa pun curation terbarunya). Revisi
+  review G4 (2026-10-11): project yang jadi risky lalu terus gagal kurasi gak pernah sampai tab `ended`; tanpa cabang
+  kedua, angka (c) cuma menghitung yang pulih dan total membesar-besarkan tingkat sukses.
+- Angka: (a) jumlah yang sekarang `coingecko_listed`; (b) jumlah yang ada di tab `ended` tanpa token diperdagangkan;
+  (c) jumlah yang setelah lolos pernah berisiko `high`/`critical`. Tiga angka + total populasi, tanpa nama project.
+  (a) dan (b) gak harus berjumlah total: project risky yang belum berakhir dan tokennya belum diperdagangkan ada di
+  total dan (c) saja.
 - Dihitung harian di pipeline, disimpan di `pipeline_runs.stats` (`track_record_total`, `_listed`, `_no_token`,
   `_risk_raised`).
 - Tampil di landing dan halaman list publik **hanya kalau populasi ≥ 10**; sebelum itu gak ditampilkan sama sekali.

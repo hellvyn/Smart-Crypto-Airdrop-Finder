@@ -2932,6 +2932,16 @@ describe("runDaily curation", () => {
       expect(trackRecordOf(stats)).toEqual({ total: 1, listed: 0, noToken: 1, riskRaised: 1 });
     });
 
+    it("counts a project that turned high risk after it passed and stays out of the list", async () => {
+      const { repo, deps, config, http } = setup();
+      await runDaily(deps, config);
+
+      const stats = await runDaily({ ...deps, http: phishingFor(http, "deepbook.tech"), now: () => at("2026-10-11") }, config);
+
+      expect(await latestCurationOf(repo, "deepbook")).toMatchObject({ passed: false, statusAt: "live" });
+      expect(trackRecordOf(stats)).toEqual({ total: 1, listed: 0, noToken: 0, riskRaised: 1 });
+    });
+
     it("keeps counting an ended project after it is no longer scored", async () => {
       const { repo, deps, config } = setup({ chat: fakeChat(deepbookClaimUntil("2026-10-12")) });
       await runDaily(deps, config);

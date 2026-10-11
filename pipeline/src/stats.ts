@@ -85,8 +85,9 @@ export interface DailyStats extends RunStats {
   curation_hidden_insufficient_checks: number;
   /**
    * Track record (curation spec §15.3, #43): projects whose first passing curation came before their token traded
-   * (`coingecko_listed`) and whose latest curation is in the `ended` tab; of those, the ones whose token trades now,
-   * the ones without a traded token, and the ones that were `high`/`critical` risk after their first pass.
+   * (`coingecko_listed`) and whose latest curation is in the `ended` tab or who were `high`/`critical` risk after their
+   * first pass (whatever their latest curation); of those, the ones whose token trades now, the ones in the `ended`
+   * tab without a traded token, and the ones that were `high`/`critical` risk after their first pass.
    */
   track_record_total: number;
   track_record_listed: number;
