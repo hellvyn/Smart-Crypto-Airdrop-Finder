@@ -1,6 +1,6 @@
 // Read-only queries for the public pages. They use the anon client (or the signed-in user's session) and rely on the
 // "public read" RLS policies; documents and extractions are not readable here and are never queried.
-import { contradictionsSchema, scamSchema, storedAnalystSchema } from "@saf/core";
+import { contradictionsSchema, isCoachChain, scamSchema, storedAnalystSchema } from "@saf/core";
 import type { CheckId, CurationReason, LinkCheckStatus, RiskLevel, RiskReason, Severity, Status } from "@saf/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cache } from "react";
@@ -284,6 +284,14 @@ export async function listChains(db: SupabaseClient): Promise<string[]> {
   return ((data ?? []) as { chain: unknown }[])
     .map((r) => String(r.chain))
     .filter((chain) => parseChain(chain) === chain);
+}
+
+/**
+ * The chains the Coach profile form offers: `listChains` minus the names `coachProfileSchema` rejects (an underscore,
+ * more than 40 characters, ...). One rejected name would make the whole profile fail to save.
+ */
+export async function listCoachChains(db: SupabaseClient): Promise<string[]> {
+  return (await listChains(db)).filter(isCoachChain);
 }
 
 // ---- Project page (Plan 6 Task 5; spec §7.2, #45, #53, #54) ----

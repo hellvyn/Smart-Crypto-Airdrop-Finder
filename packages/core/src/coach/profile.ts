@@ -8,6 +8,20 @@ export const COACH_GOALS = ["quick", "long_term", "learn"] as const;
 export const COACH_MINUTES = [15, 30, 60, 120] as const;
 
 /**
+ * One chain name: letters, digits, spaces, dots and dashes, and no run of 25+ letters/digits (an address or a key
+ * pasted into the field never reaches the prompt).
+ */
+export const coachChainSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[\p{L}\p{N} .-]+$/u)
+  .refine((chain) => !/[\p{L}\p{N}]{25,}/u.test(chain), "not a chain name");
+
+/** Whether `chain` is a name `coachProfileSchema` accepts as it is. */
+export const isCoachChain = (chain: string): boolean => coachChainSchema.safeParse(chain).success;
+
+/**
  * What a member tells the Coach. No email, user id, wallet address or balance: the table has none and the schema
  * strips unknown keys. `wallet_count` is set exactly when `has_wallet` is true (the table's
  * `check (has_wallet = (wallet_count is not null))`); an absent count of a member with no wallet becomes null.
@@ -20,19 +34,7 @@ export const coachProfileSchema = z
     wallet_count: z.number().int().min(1).max(10).nullable().default(null),
     minutes_per_day: z.union([z.literal(15), z.literal(30), z.literal(60), z.literal(120)]),
     goal: z.enum(COACH_GOALS),
-    // Chain names only: letters, digits, spaces, dots and dashes, and no run of 25+ letters/digits (an address or a
-    // key pasted into the field never reaches the prompt).
-    chains: z
-      .array(
-        z
-          .string()
-          .min(1)
-          .max(40)
-          .regex(/^[\p{L}\p{N} .-]+$/u)
-          .refine((chain) => !/[\p{L}\p{N}]{25,}/u.test(chain), "not a chain name"),
-      )
-      .max(10)
-      .default([]),
+    chains: z.array(coachChainSchema).max(10).default([]),
   })
   .superRefine((profile, ctx) => {
     if (profile.has_wallet && profile.wallet_count === null) {

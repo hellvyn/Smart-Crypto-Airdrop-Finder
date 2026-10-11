@@ -1,3 +1,4 @@
+import { coachProfileSchema } from "@saf/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,11 +10,13 @@ import {
   getRunSummary,
   getTrackRecord,
   listChains,
+  listCoachChains,
   listChangesSince,
   listCurated,
   listProjects,
 } from "../lib/queries";
 import { PAGE_SIZE } from "../lib/view";
+import { PROFILE } from "./coach-fakes";
 
 type Call = [method: string, ...args: unknown[]];
 interface Recorded {
@@ -181,6 +184,28 @@ describe("listChains", () => {
       },
     ]);
     expect(await listChains(db)).toEqual(["arbitrum one", "base", "zksync-era"]);
+  });
+});
+
+describe("listCoachChains", () => {
+  it("offers only chain names the profile schema accepts, so one odd name cannot break the whole save", async () => {
+    const { db } = fakeDb([
+      {
+        data: [
+          { chain: "arbitrum one" },
+          { chain: "base" },
+          { chain: "hyper_evm" },
+          { chain: "x".repeat(41) },
+          { chain: "a".repeat(26) },
+          { chain: "zksync-era" },
+        ],
+        error: null,
+      },
+    ]);
+    const offered = await listCoachChains(db);
+    expect(offered).toEqual(["arbitrum one", "base", "zksync-era"]);
+    // Whatever is offered, a profile with all of it saves.
+    expect(coachProfileSchema.safeParse({ ...PROFILE, chains: offered }).success).toBe(true);
   });
 });
 

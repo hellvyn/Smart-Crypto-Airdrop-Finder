@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { getCoachProfile, remainingQuota } from "@/lib/coach";
 import { getPlanCards, getProjectGate, getThread, listThreads } from "@/lib/coach-view";
 import { coach, notCurated, pageTitle } from "@/lib/copy";
-import { listChains } from "@/lib/queries";
+import { listCoachChains } from "@/lib/queries";
 import { createServerClient } from "@/lib/supabase/server";
 
 export const metadata = { title: pageTitle(coach.title) };
@@ -28,7 +28,7 @@ export default async function CoachPage({ searchParams }: { searchParams: Promis
 
   const [profile, chains, threads, remaining, opened] = await Promise.all([
     getCoachProfile(db, user.id),
-    listChains(db),
+    listCoachChains(db),
     listThreads(db, now),
     remainingQuota(db),
     first(params.thread) ? getThread(db, first(params.thread)!) : Promise.resolve(null),
