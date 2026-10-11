@@ -1,5 +1,6 @@
 // Curation and signal types (curation spec §4.1-4.2). Types only; `curate()` and `worth()` build on them.
-import type { Status } from "../types.js";
+import type { RiskCheck } from "../risk/assess.js";
+import type { RiskLevel, Status } from "../types.js";
 
 /** List tab of a passing project (#40): `ended` holds projects that ended after they passed. */
 export type Tab = "live_now" | "early_bets" | "ended";
@@ -41,4 +42,46 @@ export interface CurationRecord {
   endedOn: string | null;
   reasons: CurationReason[];
   coverage: Record<string, boolean>;
+}
+
+/** Everything `curate()` needs (curation spec §6.2). Pure data, no I/O. */
+export interface CurateInput {
+  /** Status after `expireStatus`. */
+  status: Status;
+  /** Latest risk level; null = not assessed yet. */
+  riskLevel: RiskLevel | null;
+  checks: RiskCheck[];
+  lookalikeOf: string | null;
+  hasOfficialDomain: boolean;
+  signals: NewSignal[];
+  /** The latest curation with `status_at` other than `ended` has `passed = true`. */
+  passedBeforeEnd: boolean;
+  /** Patterns of AI scam flags whose quote passed `quoteInSource`. */
+  aiScamPatterns: string[];
+}
+
+export interface CurateResult {
+  passed: boolean;
+  /** Always null when `passed` is false. */
+  tab: Tab | null;
+  reasons: CurationReason[];
+}
+
+/** Everything `worth()` needs (curation spec §6.3). */
+export interface WorthInput {
+  signals: NewSignal[];
+  /** A `tge` deadline is already in the past. */
+  tgePassed: boolean;
+  /** Number of independent sources that mention the project. */
+  sourceCount: number;
+  capitalRequired: "none" | "low" | "high" | "unknown";
+  taskCount: number;
+  /** Analyst verdict, null when there is no analysis yet. It can only lower the result. */
+  aiVerdict: "garap" | "pantau" | "skip" | null;
+}
+
+export interface WorthResult {
+  level: WorthLevel;
+  points: number;
+  reasons: CurationReason[];
 }

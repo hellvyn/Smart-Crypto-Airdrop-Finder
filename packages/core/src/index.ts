@@ -27,11 +27,17 @@ export type { HeatLevel, HeatmapCell, HeatmapRange, TrackerCheck, TrackerTask } 
 export { domainMatches } from "./curate/domain-match.js";
 export type {
   AiKind,
+  CurateInput,
+  CurateResult,
   CurationReason,
   CurationRecord,
   NewSignal,
   SignalKind,
   SignalSource,
   Tab,
+  WorthInput,
   WorthLevel,
+  WorthResult,
 } from "./curate/types.js";
+export { curate, STRONG_SCAM_PATTERNS } from "./curate/curate.js";
+export { worth } from "./curate/worth.js";
