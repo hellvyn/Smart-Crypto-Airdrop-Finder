@@ -50,6 +50,12 @@ describe("SiteHeader (design C)", () => {
     expect(container.textContent).not.toMatch(/Wallets|Settings|Sign out/);
   });
 
+  it("shows the beta label next to the logo, for visitors and members", async () => {
+    getUser.mockResolvedValue(null);
+    render(await SiteHeader());
+    expect(screen.getByText("Beta Version by Trisna")).toBeTruthy();
+  });
+
   it("links the public pages", async () => {
     getUser.mockResolvedValue(null);
     render(await SiteHeader());

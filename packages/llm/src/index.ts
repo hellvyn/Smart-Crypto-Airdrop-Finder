@@ -5,7 +5,7 @@ export { buildClaudeBody, CLAUDE_EFFORT, CLAUDE_MAX_TOKENS, claudeChat, createCl
 export type { ClaudeClient, ClaudeStreamClient } from "./claude.js";
 export { ANALYZE_MODELS, COACH_MODELS, MODELS } from "./models.js";
 export { modelKey, REQUEST_TIMEOUT_MS, streamChat } from "./nvidia.js";
-export type { ChatMessage, ChatResult, ModelConfig, ProviderId } from "./nvidia.js";
+export type { ChatMessage, ChatResult, ModelConfig, ProviderId, TokenUsage } from "./nvidia.js";
 export { loadProviders, usableModels } from "./providers.js";
 export type { ProviderConfig, Providers } from "./providers.js";
 export { streamText } from "./stream.js";

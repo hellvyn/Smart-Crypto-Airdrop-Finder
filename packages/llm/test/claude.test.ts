@@ -97,6 +97,17 @@ describe("claudeChat", () => {
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
+  it("reports the token usage, cache reads and writes counted as input", async () => {
+    const base = message();
+    const { client } = fakeClient(
+      message({ usage: { ...base.usage, input_tokens: 40, output_tokens: 90, cache_read_input_tokens: 5000, cache_creation_input_tokens: 700 } }),
+    );
+
+    const result = await claudeChat(SONNET, MESSAGES, { client, apiKey: KEY });
+
+    expect(result.usage).toEqual({ inputTokens: 5740, outputTokens: 90 });
+  });
+
   it("streams one request: the system prompt as a cached system block, the rest as user turns, low effort, no sampling params", async () => {
     const { client, calls } = fakeClient(message());
 

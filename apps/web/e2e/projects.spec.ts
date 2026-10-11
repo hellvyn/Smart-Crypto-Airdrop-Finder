@@ -228,6 +228,10 @@ test("a visitor at / gets the landing with today's numbers, the track record, th
 test("the filter form keeps the tab, and the project page leads back to /airdrops", async ({ page }) => {
   await page.goto("/airdrops?tab=early_bets&risk=high");
   await expect(page.getByRole("link", { name: "Hapus filter" })).toHaveAttribute("href", "/airdrops?tab=early_bets");
+  // The risk filter is a dropdown: its button shows the ticked level, and opening it shows the ticked box.
+  const riskButton = page.locator("summary", { hasText: "Tinggi" });
+  await expect(riskButton).toHaveText("Tinggi");
+  await riskButton.click();
   await expect(page.getByRole("group", { name: "Risiko" }).getByLabel("Tinggi")).toBeChecked();
   await page.getByRole("button", { name: "Terapkan filter" }).click();
   await expect(page).toHaveURL(/\/airdrops\?tab=early_bets&risk=high(&|$)/);

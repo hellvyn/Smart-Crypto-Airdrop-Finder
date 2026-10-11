@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { CircuitBreaker } from "./circuit-breaker.js";
 import { modelKey } from "./nvidia.js";
-import type { ChatMessage, ChatResult, ModelConfig } from "./nvidia.js";
+import type { ChatMessage, ChatResult, ModelConfig, TokenUsage } from "./nvidia.js";
 
 /** `streamChat` with its transport deps (fetch, API key, base URL) already bound. */
 export type ChatFn = (model: ModelConfig, messages: ChatMessage[]) => Promise<ChatResult>;
@@ -19,6 +19,8 @@ export interface LlmAttempt {
   error: string | null;
   /** Model output, or the error body of a failed request. */
   raw: string;
+  /** Tokens the transport reported; absent when it returned none. */
+  usage?: TokenUsage;
 }
 
 export type StructuredOutcome<T> =
@@ -91,6 +93,7 @@ export async function callStructured<T>(
           latencyMs: chat.latencyMs,
           error,
           raw,
+          ...(chat.usage === undefined ? {} : { usage: chat.usage }),
         });
       };
 

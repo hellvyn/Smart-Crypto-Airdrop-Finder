@@ -30,6 +30,8 @@ export const header = {
   navLabel: "Menu utama",
   brand: BRAND,
   brandMark: "IQ",
+  /** Next to the logo (owner 2026-10-11). */
+  beta: "Beta Version by Trisna",
   airdrops: "Airdrop",
   why: "Kenapa AirdropIQ",
   trackRecord: "Track record",
@@ -176,6 +178,8 @@ export const list = {
   worthLabel: "Worth it",
   worthAll: "Worth it: semua",
   apply: "Terapkan filter",
+  /** A multi-choice filter's button: nothing ticked, one ticked (its label), or how many. */
+  filterSummary: (picked: string[]) => (picked.length === 0 ? "Semua" : picked.length === 1 ? picked[0]! : `${picked.length} dipilih`),
   clear: "Hapus filter",
   emptyPage: "Gak ada airdrop di halaman ini.",
   emptyFiltered: "Gak ada airdrop yang cocok sama filter ini.",

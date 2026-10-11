@@ -78,6 +78,19 @@ describe("streamChat", () => {
     expect(r.finishReason).toBe("length");
   });
 
+  it("reports the token usage of the final usage chunk, and none when the stream has no usage", async () => {
+    const withUsage =
+      sseLine(delta("ok", "stop")) + sseLine({ choices: [], usage: { prompt_tokens: 30, completion_tokens: 7 } }) + "data: [DONE]\n\n";
+    const a = await streamChat(MODEL, MESSAGES, { fetch: fakeFetch(() => sseResponse(withUsage)), apiKey: "k", baseUrl: BASE_URL });
+    expect(a.usage).toEqual({ inputTokens: 30, outputTokens: 7 });
+    const b = await streamChat(MODEL, MESSAGES, {
+      fetch: fakeFetch(() => sseResponse(sseLine(delta("ok", "stop")) + "data: [DONE]\n\n")),
+      apiKey: "k",
+      baseUrl: BASE_URL,
+    });
+    expect("usage" in b).toBe(false);
+  });
+
   it("sends the documented request", async () => {
     let seenUrl = "";
     let seenInit: RequestInit = {};

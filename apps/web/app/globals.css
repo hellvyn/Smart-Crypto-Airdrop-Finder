@@ -114,6 +114,17 @@ main a:not([class]):hover {
   font-size: 16px;
 }
 
+.brand-beta {
+  align-self: center;
+  padding: 2px 8px;
+  border: 1.5px dashed var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .brand-name {
   font-family: var(--font-display);
   font-weight: 800;
@@ -307,12 +318,126 @@ button:disabled {
   margin: 1rem 0;
 }
 
-.filters fieldset {
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The list's filters: one tidy row of same-height controls (dropdowns), wrapping on a narrow screen. */
+.filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  gap: 12px;
+  align-items: end;
+  width: 100%;
+}
+
+.filter-field {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.filter-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.filter-field select,
+.filter-menu > summary {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 32px 8px 10px;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.filter-menu > summary {
+  position: relative;
+  display: flex;
+  align-items: center;
+  list-style: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.filter-menu > summary::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  transform: translateY(-70%) rotate(45deg);
+}
+
+.filter-menu[open] > summary::after {
+  transform: translateY(-30%) rotate(-135deg);
+}
+
+.filter-menu > fieldset {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 8px;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.filter-option:hover {
+  background: var(--line-soft);
+}
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.filter-actions .ui-button {
+  min-height: 40px;
+}
+
+.filter-clear {
+  font-size: 14px;
+  white-space: nowrap;
 }
 
 .project-row {
