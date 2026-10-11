@@ -48,6 +48,10 @@ jobs:
           echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
           echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
           echo "NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3000" >> "$GITHUB_ENV"
+      - name: Coach quota concurrency test (needs the local stack)
+        run: pnpm --filter web exec vitest run test/coach-quota.int.test.ts
+        env:
+          REQUIRE_LOCAL_STACK: "1"
       - run: pnpm --filter web build
       - name: Install Chromium for Playwright
         run: pnpm --filter web exec playwright install --with-deps chromium

@@ -52,6 +52,11 @@ async function resolveKeys(): Promise<Keys | null> {
 }
 
 const keys = await resolveKeys();
+// CI's e2e job (which has the stack) sets REQUIRE_LOCAL_STACK=1, so a stack that is not reachable fails the run there
+// instead of skipping the test silently.
+if (!keys && process.env.REQUIRE_LOCAL_STACK === "1") {
+  throw new Error("coach-quota.int.test.ts: REQUIRE_LOCAL_STACK=1 but the local Supabase stack is not reachable");
+}
 const opts = { auth: { autoRefreshToken: false, persistSession: false } };
 
 describe.skipIf(!keys)("coach_begin under concurrency (0017)", () => {
