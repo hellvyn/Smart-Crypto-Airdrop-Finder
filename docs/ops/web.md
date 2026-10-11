@@ -316,3 +316,10 @@ The secret key never goes into this repo or the web env, only into the Supabase 
 - `/robots.txt` and `/sitemap.xml` are generated (`app/robots.ts`, `app/sitemap.ts`). The sitemap lists the public pages
   and every project on `public_list`; the signed-in app, `/login` and `/api` are disallowed and marked noindex.
 - Project pages carry their own title, description, canonical link and share card.
+
+## Vercel deploy limit (2026-10-11)
+
+The Hobby plan allows 100 deployments per rolling 24 hours, and every push to any branch (a preview) counts. On a day
+with many pushes the limit is reached: Vercel then refuses to deploy (API error 402 `api-deployments-free-per-day`) and
+a merge to `main` produces no production deployment. Keep branch pushes batched, or move to the Pro plan. If a merge
+did not deploy, check the Deployments tab for the merge commit before assuming the site is up to date.
