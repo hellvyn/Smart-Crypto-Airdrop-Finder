@@ -265,6 +265,23 @@ describe("SupabaseRepo.saveCuration", () => {
   });
 });
 
+describe("SupabaseRepo.listProjectSourceTexts", () => {
+  it("maps the project's documents to url and text", async () => {
+    const { client } = recordingClient({
+      documents: [
+        { url: "https://x.test/a", text: "Text A", evidence: [{ project_id: "p-1" }] },
+        { url: "https://x.test/b", text: "Text B", evidence: [{ project_id: "p-1" }, { project_id: "p-1" }] },
+      ],
+    });
+    const repo = new SupabaseRepo(client);
+
+    expect(await repo.listProjectSourceTexts("p-1")).toEqual([
+      { url: "https://x.test/a", text: "Text A" },
+      { url: "https://x.test/b", text: "Text B" },
+    ]);
+  });
+});
+
 describe("SupabaseRepo VC portfolios and AI analyses", () => {
   it("replaces one VC's cached domains, each domain once", async () => {
     const { client, inserts, deletes } = recordingClient();

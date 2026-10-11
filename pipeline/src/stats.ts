@@ -30,6 +30,14 @@ export interface DailyStats extends RunStats {
   phishing_list_rate_limited: number;
   /** Of the failed domains, those never asked because the GoPlus time budget ran out or too many failed in a row. */
   phishing_list_skipped: number;
+  /** AI analyses made and stored this run. */
+  ai_analyses_run: number;
+  /** AI analyses skipped because the stored one has the same input hash and prompt version. */
+  ai_analyses_cached: number;
+  /** AI analyses where every model failed or the analysis threw; the previous analysis stays the latest. */
+  ai_analyses_failed: number;
+  /** AI analyses not started (or stopped between models) because the analysis budget or limit ran out. */
+  ai_analyses_deferred: number;
   /** Projects whose risk assessment threw. */
   score_failed: number;
   source_failed: number;
@@ -58,6 +66,10 @@ export function emptyStats(): DailyStats {
     phishing_list_failed: 0,
     phishing_list_rate_limited: 0,
     phishing_list_skipped: 0,
+    ai_analyses_run: 0,
+    ai_analyses_cached: 0,
+    ai_analyses_failed: 0,
+    ai_analyses_deferred: 0,
     score_failed: 0,
     source_failed: 0,
     ingest_failed: 0,

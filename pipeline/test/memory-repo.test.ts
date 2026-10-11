@@ -403,6 +403,31 @@ describe("MemoryRepo scoring extras", () => {
   });
 });
 
+describe("MemoryRepo project source texts", () => {
+  it("lists each unpurged document that gave the project evidence once, by url", async () => {
+    const repo = new MemoryRepo();
+    const p = await repo.createProject(project(), T0);
+    const other = await repo.createProject(project({ slug: "ink-2" }), T0);
+    const b = await repo.upsertDocument(doc({ url: "https://x.test/b", text: "Text B" }), "b");
+    const a = await repo.upsertDocument(doc({ url: "https://x.test/a", text: "Text A" }), "a");
+    const old = await repo.upsertDocument(doc({ url: "https://x.test/old", text: "Old", fetchedAt: daysBefore(T0, 100) }), "o");
+    const elsewhere = await repo.upsertDocument(doc({ url: "https://x.test/elsewhere", text: "Other" }), "e");
+    const evidence = (projectId: string, documentId: string, field: string) =>
+      repo.addEvidence({ projectId, documentId, field, value: "v", quote: "q", at: T0 });
+    await evidence(p.id, b.id, "status");
+    await evidence(p.id, b.id, "claimed_backer");
+    await evidence(p.id, a.id, "status");
+    await evidence(p.id, old.id, "status");
+    await evidence(other.id, elsewhere.id, "status");
+    await repo.purgeDocumentText(90, T0);
+
+    expect(await repo.listProjectSourceTexts(p.id)).toEqual([
+      { url: "https://x.test/a", text: "Text A" },
+      { url: "https://x.test/b", text: "Text B" },
+    ]);
+  });
+});
+
 describe("MemoryRepo risk and runs", () => {
   it("writes project_changes for the first assessment and for level changes only", async () => {
     const repo = new MemoryRepo();

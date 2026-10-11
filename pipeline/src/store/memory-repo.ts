@@ -390,6 +390,16 @@ export class MemoryRepo implements PipelineRepo {
     for (const domain of new Set(domains)) this.vcPortfolios.push({ vcId, domain, fetchedAt: at });
   }
 
+  async listProjectSourceTexts(projectId: string): Promise<{ url: string; text: string }[]> {
+    const documentIds = new Set(this.evidence.filter((e) => e.projectId === projectId).map((e) => e.documentId));
+    return [...documentIds]
+      .flatMap((id) => {
+        const d = this.documents.get(id);
+        return d && d.text !== "" ? [{ url: d.url, text: d.text }] : [];
+      })
+      .sort((a, b) => compareText(a.url, b.url));
+  }
+
   async latestAiAnalysis(projectId: string, kind: AiKind): Promise<StoredAiAnalysis | null> {
     const latest = latestBy(
       this.aiAnalyses.filter((a) => a.projectId === projectId && a.kind === kind),

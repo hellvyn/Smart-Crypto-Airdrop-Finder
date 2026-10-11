@@ -3,6 +3,8 @@ import type { SpeculativeCandidate } from "./collectors/defillama.js";
 import type { Http } from "./collectors/types.js";
 import type { PipelineConfig } from "./config.js";
 import type { ChatFn } from "./llm/extract.js";
+import { ANALYZERS, runAnalyses } from "./steps/analyze.js";
+import type { Analyzer } from "./steps/analyze.js";
 import { collectSources } from "./steps/collect.js";
 import type { SpeculativeItem } from "./steps/collect.js";
 import type { ExtractionResult } from "@saf/core";
@@ -24,14 +26,17 @@ export interface PipelineDeps {
   chat: ChatFn;
   sleep: (ms: number) => Promise<void>;
   now: () => Date;
+  /** The AI analyses of the `analyze` stage; defaults to `ANALYZERS`. */
+  analyzers?: Analyzer[];
 }
 
 /**
  * Stage numbers reported in `failed_step` for the first stage-level error. Merging runs inside the extract
  * stage (each document is merged as soon as it is extracted), so 3 is no longer reported. 7 was a stage that
- * no longer exists; the numbers of the other stages stay as they were.
+ * no longer exists; the numbers of the other stages stay as they were. New stages get new numbers: `analyze`
+ * (9) runs after `signals` (8) and before `score`.
  */
-const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6 } as const;
+const STEP = { collect: 1, extract: 2, speculative: 4, score: 5, purge: 6, analyze: 9 } as const;
 
 type ExtractedProject = ExtractionResult["projects"][number];
 
@@ -98,15 +103,15 @@ function speculativeInput(c: SpeculativeCandidate): ProjectInput {
 
 /**
  * One daily pipeline run: collect, extract (each document merged right after its extraction), DefiLlama
- * speculative merge, score, purge.
+ * speculative merge, AI analyses, score, purge.
  *
  * Merges go through a single-slot queue: they run one at a time, in the order extractions finish, while
  * other extractions continue. The extract stage waits for the queue to drain, even when it fails.
- * Extraction stops starting LLM calls after `extractBudgetMinutes`, so score and purge always get their turn
- * within the job's time limit.
+ * Extraction stops starting LLM calls after `extractBudgetMinutes`, and AI analyses after `analyzeBudgetMinutes`,
+ * so score and purge always get their turn within the job's time limit.
  *
- * Item-level failures (one document's merge, one project's assessment, one extraction) are counted
- * (`merge_failed`, `score_failed`, `extract_failed`) and never stop the run. A stage-level
+ * Item-level failures (one document's merge, one project's assessment, one extraction, one AI analysis) are counted
+ * (`merge_failed`, `score_failed`, `extract_failed`, `ai_analyses_failed`) and never stop the run. A stage-level
  * failure is recorded as `run_error: 1` plus `failed_step` (the first failing stage); the remaining stages still
  * run, so scoring and purging always happen. The run row is always finished, and a stage-level error is
  * rethrown at the end. Stats are numeric counters only.
@@ -167,6 +172,13 @@ export async function runDaily(deps: PipelineDeps, config: PipelineConfig): Prom
     for (const { document, candidate } of speculative) {
       await mergeOne(document, [speculativeInput(candidate)], false);
     }
+  });
+
+  const analyzers = deps.analyzers ?? ANALYZERS;
+  await stage(STEP.analyze, undefined, async () => {
+    if (analyzers.length === 0) return;
+    const projects = await repo.listProjectsForScoring(config.scoreActiveSinceDays, now);
+    await runAnalyses({ ...deps, analyzers }, config, projects, stats);
   });
 
   await stage(STEP.score, undefined, () => scoreProjects(deps, config, now, stats));
