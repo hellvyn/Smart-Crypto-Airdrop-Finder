@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BriefingBox } from "@/components/BriefingBox";
 import { ChangesSinceLastVisit } from "@/components/ChangesSinceLastVisit";
 import { Pagination } from "@/components/Pagination";
+import { FilterMenu } from "@/components/FilterMenu";
 import { ProjectCard } from "@/components/ProjectCard";
 import { StaleBanner } from "@/components/StaleBanner";
 import { TabBar } from "@/components/ui";
@@ -138,51 +139,57 @@ export default async function AirdropsPage({ searchParams }: { searchParams: Pro
       <form method="get" action={LIST_PATH} className="filters" aria-label={list.filtersLabel}>
         <input type="hidden" name="tab" value={tab} />
         {capital !== "all" ? <input type="hidden" name="modal" value={capital} /> : null}
-        <fieldset>
-          <legend>{list.statusLegend}</legend>
-          {STATUSES.map((s) => (
-            <label key={s}>
-              <input type="checkbox" name="status" value={s} defaultChecked={filters.status?.includes(s)} /> {statusLabel(s)}
-            </label>
-          ))}
-        </fieldset>
-        <fieldset>
-          <legend>{list.riskLegend}</legend>
-          {RISK_LEVELS.map((r) => (
-            <label key={r}>
-              <input type="checkbox" name="risk" value={r} defaultChecked={filters.risk?.includes(r)} /> {riskLabel(r)}
-            </label>
-          ))}
-        </fieldset>
-        <label>
-          {list.chainLabel}
-          <select name="chain" defaultValue={selectedChain ?? ""}>
-            <option value="">{list.allChains}</option>
-            {selectedChain && !chains.includes(selectedChain) ? (
-              <option value={selectedChain}>{list.noMatches(selectedChain)}</option>
-            ) : null}
-            {chains.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
-        {member ? (
-          <label>
-            {list.worthLabel}
-            <select name="worth" defaultValue={selectedWorth}>
-              <option value="">{list.worthAll}</option>
-              {WORTH_LEVELS.map((w) => (
-                <option key={w} value={w}>
-                  {ui.worth[w]}
+        <div className="filter-bar">
+          <FilterMenu
+            legend={list.statusLegend}
+            name="status"
+            options={STATUSES.map((st) => [st, statusLabel(st)] as const)}
+            picked={filters.status ?? []}
+          />
+          <FilterMenu
+            legend={list.riskLegend}
+            name="risk"
+            options={RISK_LEVELS.map((r) => [r, riskLabel(r)] as const)}
+            picked={filters.risk ?? []}
+          />
+          <label className="filter-field">
+            <span className="filter-label">{list.chainLabel}</span>
+            <select name="chain" defaultValue={selectedChain ?? ""}>
+              <option value="">{list.allChains}</option>
+              {selectedChain && !chains.includes(selectedChain) ? (
+                <option value={selectedChain}>{list.noMatches(selectedChain)}</option>
+              ) : null}
+              {chains.map((c) => (
+                <option key={c} value={c}>
+                  {c}
                 </option>
               ))}
             </select>
           </label>
-        ) : null}
-        <button type="submit">{list.apply}</button>
-        {hasFilters ? <a href={curatedHref(tab, { capital })}>{list.clear}</a> : null}
+          {member ? (
+            <label className="filter-field">
+              <span className="filter-label">{list.worthLabel}</span>
+              <select name="worth" defaultValue={selectedWorth}>
+                <option value="">{list.worthAll}</option>
+                {WORTH_LEVELS.map((w) => (
+                  <option key={w} value={w}>
+                    {ui.worth[w]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <div className="filter-actions">
+            <button type="submit" className="ui-button" data-variant="dark">
+              {list.apply}
+            </button>
+            {hasFilters ? (
+              <a className="filter-clear" href={curatedHref(tab, { capital })}>
+                {list.clear}
+              </a>
+            ) : null}
+          </div>
+        </div>
       </form>
 
       {items.length === 0 ? (

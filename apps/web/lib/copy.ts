@@ -178,6 +178,8 @@ export const list = {
   worthLabel: "Worth it",
   worthAll: "Worth it: semua",
   apply: "Terapkan filter",
+  /** A multi-choice filter's button: nothing ticked, one ticked (its label), or how many. */
+  filterSummary: (picked: string[]) => (picked.length === 0 ? "Semua" : picked.length === 1 ? picked[0]! : `${picked.length} dipilih`),
   clear: "Hapus filter",
   emptyPage: "Gak ada airdrop di halaman ini.",
   emptyFiltered: "Gak ada airdrop yang cocok sama filter ini.",
