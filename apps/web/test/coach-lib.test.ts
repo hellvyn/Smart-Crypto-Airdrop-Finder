@@ -327,7 +327,7 @@ describe("isCoachCandidate", () => {
   });
 
   it("is true for a project the member's profile keeps", async () => {
-    expect(await isCoachCandidate(fakeCoachDb({ tables: tables() }).db, USER, P1, NOW)).toBe(true);
+    expect(await isCoachCandidate(fakeCoachDb({ tables: tables() }).db, P1, NOW)).toBe(true);
   });
 
   it("is true for a listed project the profile would filter out of a plan: Tanya AI never filters by profile", async () => {
@@ -335,19 +335,19 @@ describe("isCoachCandidate", () => {
       coach_profiles: [{ user_id: USER, ...PROFILE, level: "beginner" }],
       curated_list: candidateTables([{ id: P1, name: "Alpha" }]).curated_list!.map((r) => ({ ...r, latest_risk_level: "high" })),
     });
-    expect(await isCoachCandidate(fakeCoachDb({ tables: t }).db, USER, P1, NOW)).toBe(true);
+    expect(await isCoachCandidate(fakeCoachDb({ tables: t }).db, P1, NOW)).toBe(true);
   });
 
   it("is false for a project that is not on the curated candidate tabs, and for one without points or steps", async () => {
-    expect(await isCoachCandidate(fakeCoachDb({ tables: tables() }).db, USER, "ffffffff-ffff-4fff-8fff-fffffffffff9", NOW)).toBe(false);
+    expect(await isCoachCandidate(fakeCoachDb({ tables: tables() }).db, "ffffffff-ffff-4fff-8fff-fffffffffff9", NOW)).toBe(false);
     const t = tables({ ai_analyses: [], tasks: [] });
-    expect(await isCoachCandidate(fakeCoachDb({ tables: t }).db, USER, P1, NOW)).toBe(false);
+    expect(await isCoachCandidate(fakeCoachDb({ tables: t }).db, P1, NOW)).toBe(false);
   });
 
   it("is true without a coach profile, and false when the database fails", async () => {
-    expect(await isCoachCandidate(fakeCoachDb({ tables: tables({ coach_profiles: [] }) }).db, USER, P1, NOW)).toBe(true);
+    expect(await isCoachCandidate(fakeCoachDb({ tables: tables({ coach_profiles: [] }) }).db, P1, NOW)).toBe(true);
     const failing = fakeCoachDb({ tables: tables(), tableErrors: { curated_list: { message: "down" } } });
-    expect(await isCoachCandidate(failing.db, USER, P1, NOW)).toBe(false);
+    expect(await isCoachCandidate(failing.db, P1, NOW)).toBe(false);
   });
 });
 

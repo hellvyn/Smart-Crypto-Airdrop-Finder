@@ -815,6 +815,17 @@ describe("POST /api/coach/chat: explain_step and project threads", () => {
     expect(member).toMatch(/risiko/i);
   });
 
+  it("tells a Tanya AI thread whose project left the list so, without profile advice, coach_begin or a model call", async () => {
+    setup({ tables: { coach_threads: [{ id: THREAD, user_id: USER.id, project_id: "ffffffff-ffff-4fff-8fff-fffffffffff9" }] } });
+    const res = await post(chatPOST, chatBody());
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toBe(coach.empty.projectGone);
+    expect(text).not.toMatch(/profil/i);
+    expect(flowCalls()).toEqual([]);
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
   it("does the same when the profile filters every candidate out of a general thread", async () => {
     setup({ tables: { curated_list: [] } });
     const res = await post(chatPOST, chatBody());

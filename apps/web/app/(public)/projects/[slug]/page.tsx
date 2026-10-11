@@ -52,7 +52,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
   if (!project) notFound();
   // Only a signed-in user gets the watch and farming state (null = signed out).
   const [watching, farming, canExplain] = user
-    ? await Promise.all([isWatching(db, project.id), isFarming(db, project.id), isCoachCandidate(db, user.id, project.id, now)])
+    ? await Promise.all([isWatching(db, project.id), isFarming(db, project.id), isCoachCandidate(db, project.id, now)])
     : [null, null, false];
   // Wallet activity is for signed-in users (null = signed out); see WalletActivitySection for what each case shows.
   const wallets = user ? await listWallets(db) : null;

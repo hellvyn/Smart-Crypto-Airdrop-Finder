@@ -263,7 +263,8 @@ needs a redeploy (Vercel reads variables at deploy time).
    on a local reset.
 3. Set the four variables above on Vercel, then merge, so the deploy that goes live already has its keys.
 
-A member has 20 messages per WIB day (`coach_begin` enforces it from the `coach_usage` ledger); a plan counts as one.
+A member has 100 messages per WIB day during the beta (migration 0018; it was 20 in 0017), and at most 300 attempts
+(`coach_begin` enforces both from the `coach_usage` ledger); a plan counts as one.
 
 **Samples and capacity check (G13, G14).** The script generates the 20 fixed Coach answers (6 plans, 14 chat or
 explain-step requests) through the same code the routes use and measures latency per model. It needs no database:

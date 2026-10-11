@@ -1184,7 +1184,7 @@ blockquote {
   color: #ffffff;
 }
 
-.ui-button[data-variant="primary"]:hover {
+.ui-button[data-variant="primary"]:hover:not(:disabled) {
   border-color: #17603a;
   background: #17603a;
 }
@@ -1262,7 +1262,7 @@ button[data-tone="primary"] {
   color: #ffffff;
 }
 
-button[data-tone="primary"]:hover {
+button[data-tone="primary"]:hover:not(:disabled) {
   border-color: #17603a;
   background: #17603a;
 }
@@ -1280,8 +1280,8 @@ button[data-tone="danger"] {
   color: var(--alert);
 }
 
-.ui-button[data-variant="danger"]:hover,
-button[data-tone="danger"]:hover {
+.ui-button[data-variant="danger"]:hover:not(:disabled),
+button[data-tone="danger"]:hover:not(:disabled) {
   background: var(--alert);
   color: #ffffff;
 }

@@ -99,7 +99,7 @@ export function CoachApp({
   async function saved(next: CoachProfile) {
     setProfile(next);
     setEditing(false);
-    if (project === null) await makePlan();
+    await makePlan();
   }
 
   // "Tanya AI" about one project needs no profile and shows none: the profile never filters that chat (owner 2026-10-11).
@@ -115,7 +115,7 @@ export function CoachApp({
         <ProfileForm
           chains={chains}
           initial={profile}
-          submitLabel={project ? coach.form.submitOnly : coach.form.submit}
+          submitLabel={coach.form.submit}
           onSaved={saved}
         />
       ) : profile && project === null ? (
