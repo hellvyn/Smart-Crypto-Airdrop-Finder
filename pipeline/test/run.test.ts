@@ -802,7 +802,7 @@ describe("runDaily lookalikes", () => {
     // The risk reason names the other project and its official domain, never its id.
     const risk = await latestRisk(repo, "deepbook", 1);
     const reasons = risk?.reasons.filter((r) => r.code === "lookalike_domain").map((r) => r.message) ?? [];
-    expect(reasons).toContain('This project shares a name with "DeepBook" (deepbook.tech) but uses a different domain.');
+    expect(reasons).toContain('Nama project ini sama dengan "DeepBook" (deepbook.tech) tapi domainnya beda.');
     expect(reasons.join(" ")).not.toContain(rows[0]?.id ?? "-");
   });
 });

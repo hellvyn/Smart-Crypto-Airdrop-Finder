@@ -79,7 +79,7 @@ export function detectDangerousAsks(tasks: string[]): RiskReason[] {
     reasons.push({
       code: "asks_secret",
       severity: "critical",
-      message: `A task asks for a seed phrase or private key: "${snippet(secretTask)}"`,
+      message: `Ada task yang minta seed phrase atau private key: "${snippet(secretTask)}"`,
       source: "extraction",
     });
   }
@@ -89,7 +89,7 @@ export function detectDangerousAsks(tasks: string[]): RiskReason[] {
     reasons.push({
       code: "asks_payment",
       severity: "critical",
-      message: `A task asks you to send crypto in order to claim: "${snippet(paymentTask)}"`,
+      message: `Ada task yang minta kamu kirim crypto supaya bisa claim: "${snippet(paymentTask)}"`,
       source: "extraction",
     });
   }

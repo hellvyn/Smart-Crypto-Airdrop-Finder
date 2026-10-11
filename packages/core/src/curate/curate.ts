@@ -1,6 +1,6 @@
 // curate(): does a project pass the curated list? (curation spec §6.2). Pure.
 import type { CheckId } from "../risk/assess.js";
-import { CURATE_MESSAGES as M } from "./messages.js";
+import { CURATE_MESSAGES as M, insufficientChecksMessage, KEY_CHECK_LABELS, NO_OFFICIAL_DOMAIN_LABEL } from "./messages.js";
 import type { CurateInput, CurateResult, CurationReason, NewSignal, Tab } from "./types.js";
 
 /** AI scam patterns (#58) that fail curation on their own. `urgency`, `connect_wallet_to_check`, `other` do not. */
@@ -30,8 +30,10 @@ function isLegitSignal(s: NewSignal): boolean {
   }
 }
 
-function keyChecksRan(input: CurateInput): boolean {
-  return KEY_CHECKS.every((id) => input.checks.some((c) => c.id === id && c.ran));
+/** Labels of what blocks the key checks: a missing official domain first, then each key check that did not run. */
+function missingKeyChecks(input: CurateInput): string[] {
+  const notRan = KEY_CHECKS.filter((id) => !input.checks.some((c) => c.id === id && c.ran)).map((id) => KEY_CHECK_LABELS[id as keyof typeof KEY_CHECK_LABELS]);
+  return input.hasOfficialDomain ? notRan : [NO_OFFICIAL_DOMAIN_LABEL, ...notRan];
 }
 
 export function curate(input: CurateInput): CurateResult {
@@ -53,9 +55,8 @@ export function curate(input: CurateInput): CurateResult {
 
   if (!isEnded && !input.signals.some(isLegitSignal)) failures.push(fail("no_legit_signal", M.no_legit_signal));
   if (input.lookalikeOf !== null) failures.push(fail("lookalike", M.lookalike));
-  if (!isEnded && (!input.hasOfficialDomain || !keyChecksRan(input))) {
-    failures.push(fail("insufficient_checks", M.insufficient_checks));
-  }
+  const missing = missingKeyChecks(input);
+  if (!isEnded && missing.length > 0) failures.push(fail("insufficient_checks", insufficientChecksMessage(missing)));
   if (input.aiScamPatterns.some((p) => (STRONG_SCAM_PATTERNS as readonly string[]).includes(p))) {
     failures.push(fail("scam_pattern", M.scam_pattern));
   }

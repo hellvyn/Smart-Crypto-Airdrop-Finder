@@ -85,7 +85,7 @@ describe("assessRisk with claim links", () => {
     expect(reasons).toHaveLength(1);
     expect(reasons[0]?.severity).toBe("high");
     expect(reasons[0]?.source).toBe("goplus");
-    expect(reasons[0]?.message).toContain("2 claim links");
+    expect(reasons[0]?.message).toBe("2 link claim project ini kedeteksi phishing dan di-hide.");
     expect(reasons[0]?.message).not.toMatch(/claim\.io|https?:/);
   });
 

@@ -73,19 +73,19 @@ export interface RiskAssessment {
 }
 
 const SOURCE_ASK_MESSAGE: Record<DangerousAskCode, string> = {
-  asks_secret: "The source text asks for a seed phrase or private key",
-  asks_payment: "The source text asks you to send crypto in order to claim",
+  asks_secret: "Teks sumber minta seed phrase atau private key",
+  asks_payment: "Teks sumber minta kamu kirim crypto supaya bisa claim",
 };
 
 /** Public wording per AI scam pattern. It never carries the quote: scam analyses are member-only (#54). */
 const AI_SCAM_MESSAGE: Record<string, string> = {
-  urgency: "pressures readers to act fast",
-  connect_wallet_to_check: "asks readers to connect a wallet just to check eligibility",
-  fake_support: "points readers to unofficial support or admins",
-  secret_request: "asks for a seed phrase or private key",
-  payment_request: "asks readers to send crypto or pay in order to claim",
-  impersonation: "impersonates another project or its team",
-  other: "uses another social-engineering pattern",
+  urgency: "menekan pembaca supaya buru-buru",
+  connect_wallet_to_check: "menyuruh pembaca connect wallet cuma buat ngecek eligibility",
+  fake_support: "mengarahkan pembaca ke support atau admin yang gak resmi",
+  secret_request: "minta seed phrase atau private key",
+  payment_request: "minta pembaca kirim crypto atau bayar supaya bisa claim",
+  impersonation: "menyamar jadi project lain atau timnya",
+  other: "memakai pola social engineering lain",
 };
 const AI_HIGH_PATTERNS: readonly string[] = ["secret_request", "payment_request"];
 
@@ -120,10 +120,6 @@ function anyNonNull(values: Record<string, unknown>): boolean {
   return Object.values(values).some((v) => v !== null && v !== undefined);
 }
 
-function plural(n: number, unit: string): string {
-  return `${n} ${unit}${n === 1 ? "" : "s"}`;
-}
-
 /** The highest severity among `reasons`, or null when there is none. */
 function topSeverity(reasons: RiskReason[]): Severity | null {
   return reasons.reduce<Severity | null>(
@@ -148,7 +144,7 @@ function aiReasons(aiFlags: RiskInput["aiFlags"]): RiskReason[] {
     reasons.push({
       code: "ai_scam_pattern",
       severity: AI_HIGH_PATTERNS.includes(pattern) ? "high" : "medium",
-      message: `AI review: the source text ${AI_SCAM_MESSAGE[pattern]}.`,
+      message: `Analisis AI: teks sumber ${AI_SCAM_MESSAGE[pattern]}.`,
       source: "ai",
     });
   }
@@ -156,7 +152,7 @@ function aiReasons(aiFlags: RiskInput["aiFlags"]): RiskReason[] {
     reasons.push({
       code: "ai_contradiction",
       severity: "medium",
-      message: `AI review found ${plural(aiFlags.contradictions, "contradiction")} between or within the sources.`,
+      message: `Analisis AI menemukan ${aiFlags.contradictions} kontradiksi antar sumber atau di dalam satu sumber.`,
       source: "ai",
     });
   }
@@ -187,7 +183,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       reasons.push({
         code: "phishing_listed",
         severity: "critical",
-        message: `${domain} is listed as a phishing site.`,
+        message: `${domain} masuk daftar situs phishing.`,
         source: "goplus",
       });
     }
@@ -196,7 +192,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     reasons.push({
       code: "token_honeypot",
       severity: "critical",
-      message: "The token looks like a honeypot: it can be bought but not sold.",
+      message: "Token ini kelihatan seperti honeypot: bisa dibeli tapi gak bisa dijual.",
       source: "goplus",
     });
   }
@@ -208,7 +204,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     reasons.push({
       code: "phishing_claim_link",
       severity: "high",
-      message: `${plural(n, "claim link")} of this project ${n === 1 ? "is" : "are"} on the phishing list and hidden.`,
+      message: `${n} link claim project ini kedeteksi phishing dan di-hide.`,
       source: "goplus",
     });
   }
@@ -232,7 +228,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       reasons.push({
         code: "new_claim_domain",
         severity: "high",
-        message: `Claim link ${reg} is not an official domain and was registered ${plural(age, "day")} ago.`,
+        message: `Link claim ${reg} bukan domain resmi dan baru didaftarkan ${age} hari lalu.`,
         source: "rdap",
       });
     }
@@ -252,7 +248,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
         reasons.push({
           code: "lookalike_domain",
           severity: "high",
-          message: `${l.domain} resembles the name "${project.name}" but is not an official domain.`,
+          message: `${l.domain} mirip nama "${project.name}" tapi bukan domain resmi.`,
           source: "heuristic",
         });
       }
@@ -261,12 +257,12 @@ export function assessRisk(input: RiskInput): RiskAssessment {
   if (project.lookalikeOf !== null) {
     const other =
       project.lookalikeOfName === null
-        ? "another project"
+        ? "project lain"
         : `"${project.lookalikeOfName}"${project.lookalikeOfDomains.length > 0 ? ` (${project.lookalikeOfDomains.join(", ")})` : ""}`;
     reasons.push({
       code: "lookalike_domain",
       severity: "high",
-      message: `This project shares a name with ${other} but uses a different domain.`,
+      message: `Nama project ini sama dengan ${other} tapi domainnya beda.`,
       source: "heuristic",
     });
   }
@@ -275,7 +271,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     reasons.push({
       code: "token_owner_powers",
       severity: "high",
-      message: "The token owner can mint tokens or change balances.",
+      message: "Pemilik token bisa mencetak token baru atau mengubah saldo.",
       source: "goplus",
     });
   }
@@ -283,7 +279,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     reasons.push({
       code: "malicious_creator",
       severity: "high",
-      message: "The token contract creator is flagged as malicious.",
+      message: "Pembuat kontrak token ini ditandai berbahaya.",
       source: "goplus",
     });
   }
@@ -300,7 +296,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       reasons.push({
         code: "young_domain",
         severity: "medium",
-        message: `${reg} was registered only ${plural(age, "day")} ago.`,
+        message: `${reg} baru didaftarkan ${age} hari lalu.`,
         source: "rdap",
       });
     }
@@ -310,7 +306,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     reasons.push({
       code: "unverified_contract",
       severity: "medium",
-      message: "The token contract source code is not verified.",
+      message: "Source code kontrak token belum diverifikasi.",
       source: "blockscout",
     });
   }
@@ -318,7 +314,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     reasons.push({
       code: "single_source",
       severity: "medium",
-      message: "Only 1 source mentions this project and no official social account was found.",
+      message: "Baru 1 sumber yang menyebut project ini dan belum ada akun sosial resmi yang ditemukan.",
       source: "heuristic",
     });
   }
@@ -326,7 +322,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     reasons.push({
       code: "conflicting_evidence",
       severity: "medium",
-      message: "Sources disagree about key facts of this project.",
+      message: "Sumber-sumber saling beda soal fakta penting project ini.",
       source: "heuristic",
     });
   }
@@ -334,7 +330,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     reasons.push({
       code: "hack_history",
       severity: "medium",
-      message: `The project has ${plural(input.hackCount, "recorded hack")}.`,
+      message: `Project ini punya ${input.hackCount} catatan hack.`,
       source: "defillama",
     });
   }
@@ -344,7 +340,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     reasons.push({
       code: "speculative",
       severity: "info",
-      message: "No airdrop has been announced; this is speculation based on onchain signals.",
+      message: "Belum ada pengumuman airdrop; ini spekulasi berdasarkan sinyal onchain.",
       source: "extraction",
     });
   }

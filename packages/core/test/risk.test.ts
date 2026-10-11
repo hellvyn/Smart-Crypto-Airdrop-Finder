@@ -383,7 +383,7 @@ describe("assessRisk", () => {
     expect(a.level).toBe("high");
     const l = a.reasons.filter((r) => r.code === "lookalike_domain");
     expect(l).toHaveLength(1);
-    expect(l[0]?.message).toBe('This project shares a name with "DeepBook" (deepbook.tech) but uses a different domain.');
+    expect(l[0]?.message).toBe('Nama project ini sama dengan "DeepBook" (deepbook.tech) tapi domainnya beda.');
     expect(l[0]?.message).not.toContain("0b6c5f3e");
   });
 
@@ -393,7 +393,7 @@ describe("assessRisk", () => {
       input({ project: { ...base.project, lookalikeOf: "0b6c5f3e-1d2a-4c1b-9f00-1234567890ab" } }),
     );
     const l = a.reasons.filter((r) => r.code === "lookalike_domain");
-    expect(l[0]?.message).toBe("This project shares a name with another project but uses a different domain.");
+    expect(l[0]?.message).toBe("Nama project ini sama dengan project lain tapi domainnya beda.");
   });
 
   it("source-text asks are critical with the quoted sentence", () => {
