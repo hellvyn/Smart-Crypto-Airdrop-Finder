@@ -378,3 +378,14 @@ Mode: plain subagent-driven development (Agent tool, one task at a time on the b
 
 Ruling: reuse the P7 design components instead of creating second copies — P6's own Architecture says to — costs nothing.
 Ruling: T4 wires `getRunSummary` and `getTrackRecord` into the landing — P7.T4 left the slots and no task owns them — costs one file in T4's scope.
+
+## G4 tail (Plan 5)
+- G4 wave review (opus): with_fixes, 4 Important, all fixed in one wave (commits 18d6c5d..db6fe64) and re-reviewed ADDRESSED.
+  - I1: `curate()` key checks counted `domain_age`/`phishing_list` as run when any link domain was checked. Now only the official domains count (spec §6.2 rule 5).
+  - I2: the track-record population excluded projects that turned risky and stayed out (survivorship bias). Now `riskRaisedAfterPass` is in the population, so `listed + noToken ≠ total`, and Plan 6 copy must not present them as a split of the total.
+  - I3: AI `steps_id` reached public `tasks.text_id` with only count/cadence checks (prompt injection). A translation that adds URLs, addresses, numbers or asks absent from the source step is now refused.
+  - I4: a passing open project whose `last_seen` left the 60-day window stayed in `live_now` forever. Now it keeps being re-scored.
+- Ruling: the two Minor holes the re-review found in the I3 guard (substring grounding of hosts/handles; case-insensitive base58) are security-relevant, so they become FX9, the first G5 task, rather than being parked — costs one small core task.
+- Controller verified the re-review's out-of-scope question: `officialDomains` (`merge.ts:162`) and the enrichment keys (`score.ts:54`) both use `registrableDomain()`, so the I1 lookup cannot miss on form.
+- G4: minor (deferred to the final summary): a `saveClaimPage` failure fails the analyze stage. Raise-page failures are not cached. A re-merge rewrites an expired `ended` to `live` before score re-expires it (change-row churn). `passedBeforeEnd` uses only the last pre-end curation (one transient `insufficient_checks` hides an ended project). `coingecko_listed` comes only from DefiLlama (non-DeFi tokens never count as listed). TVL copy "di atas". The scam set has no case of a scam citing a real site. `claim_pages` is never purged. `maxAnalysesPerRun` is shared by 3 kinds. Decision #60 is UI-only (document the accepted risk in `web.md`). FX5 docs refresh > 7 days. The plan text says 40 raise pages per run (the owner decision is 6, recorded).
+- G4 complete. Tests at the merge: core 475, pipeline 670, web 342 unit · typecheck ok · pgTAP 291 · e2e 74/74.
