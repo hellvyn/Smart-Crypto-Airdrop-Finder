@@ -427,3 +427,13 @@ Ruling: T4 wires `getRunSummary` and `getTrackRecord` into the landing — P7.T4
   - Set `COINGECKO_API_KEY: ""` in the Playwright webServer env.
   - Check that `noReward` is a boolean.
 - P6 Task 8: minor (deferred): e2e RED was not run against the old code (process gap; do not repeat). Next 16 runtime caching of the price fetches is not observed. DefiLlama's live shape and terms are UNKNOWN (`coins.llama.fi` is blocked by the container proxy). Two unkeyed CoinGecko requests were made before the price ruling.
+- P6 Task 7: complete (commits 0fadb96, 48e988e fix round 1; review opus with a security focus, re-review sonnet).
+  - 0014: `project_changes` gets `revoke all` from anon and authenticated, then authenticated gets SELECT through a policy limited to their own watched projects (`(select auth.uid())`).
+  - `project_changes.recorded_at` is added, so a mark-seen in the middle of a run can't hide the rest of that run.
+  - `profiles.changes_seen_at` is a column grant plus a trigger that stamps the DB's `now()`; the client sends null.
+  - The feed shows on `/airdrops` and `/watchlist` for members only, and falls back to empty on failure.
+  - Gates: core 531, pipeline 678, web 656 unit · typecheck ok · pgTAP 449 · e2e 92/92.
+- P6 Task 7: Ruling: near deadlines are reminders, not news. They always show while in the window, in their own "Deadline dekat" group, and "Tandai sudah dibaca" clears only change items. Reason: `deadlines` has no creation time, so a since-filter hid deadlines found inside the window. If wrong, a near deadline stays visible after the member has seen it (harmless).
+- P6 Task 7: Ruling: "Keluar dari list" is suppressed whenever the project's current status is `ended`. Reason: the status line already says "Udah ended". If wrong, an ended project's exit from the list goes unannounced.
+- P6 Task 7: Ruling: the flood rule collapses more than 3 first-time curated entries that share one `changed_at` into "{n} project masuk list", which links to `/watchlist`.
+- P6 Task 7: minor (deferred): long `.in()` URLs for big watchlists; no index on `recorded_at`; a 500-row cap; the 48 h window is day-granular (up to about 72 h); `getChangeFeed` hides failures silently (by design, no logging).
