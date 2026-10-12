@@ -277,7 +277,7 @@ export const detail = {
     cadence: { daily: "Daily", weekly: "Weekly", once: "Sekali" } satisfies Record<"daily" | "weekly" | "once", string>,
   },
   safety: {
-    recheck: (time: string) => `Re-check tiap 2 hari · terakhir ${time} WIB`,
+    recheck: (time: string) => `Re-check berkala · terakhir ${time} WIB`,
     stripLabel: "Ringkasan cek",
     strip: { layers: "Lapis cek", sources: "Source dibaca", links: "Link dicek", redFlags: "Red flag" },
     reasons: "Alasan risiko",
@@ -693,7 +693,7 @@ export const landing = {
     "Kami udah terlalu sering lihat orang kena link claim palsu di grup Telegram. Makanya aturannya simpel. Airdrop yang gak lolos 4 security check gak bakal tampil di sini, se-hype apa pun.",
   seeAirdrops: "Lihat airdrop",
   why: "Kenapa AirdropIQ",
-  recheckBadge: "Re-check tiap 2 hari, 06.00 WIB",
+  recheckBadge: "Re-check berkala, 06.00 WIB",
   whyTitle: "Tiap hari semua airdrop kami cek ulang dari nol.",
   stampTop: "LOLOS",
   stampBottom: "4/4 CEK",

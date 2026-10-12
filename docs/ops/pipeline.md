@@ -62,7 +62,7 @@ be deleted.
 
 ## 3. Run it
 
-- **Scheduled:** `.github/workflows/daily.yml` runs every 2 days at 23:00 UTC (`cron: "0 23 */2 * *"`, odd days of the month, 06:00 WIB the next morning). It was daily until 2026-10-12; it was cut to save GitHub Actions minutes (a run takes about 28 minutes, about half of it the `score` stage). Run it by hand from the Actions tab when you need fresh data.
+- **Scheduled:** `.github/workflows/daily.yml` runs every 4 days at 23:00 UTC (`cron: "0 23 */4 * *"`: days 1, 5, 9, ... 29 of the month, 06:00 WIB the next morning). It was daily until 2026-10-12, then every 2 days, and was cut to every 4 days the same day to fit the free 2,000 GitHub Actions minutes at a $0 budget (a run takes about 28 minutes, about half of it the `score` stage; five runs plus the CI unit tests fit in the minutes left in October). At a $0 budget GitHub stops every workflow, CI included, once the minutes are used up. Run it by hand from the Actions tab when you need fresh data.
 - **Manual:** Actions > **Daily pipeline** > **Run workflow** (`workflow_dispatch`), or
   `gh workflow run daily.yml`.
 - Two runs never overlap (`concurrency: daily-pipeline`). The job has a 60-minute limit; extraction stops starting

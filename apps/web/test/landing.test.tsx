@@ -42,7 +42,7 @@ describe("landing page", () => {
     const cara = container.querySelector("section#cara");
     expect(cara).not.toBeNull();
     const why = within(cara as HTMLElement);
-    expect(why.getByText("Re-check tiap 2 hari, 06.00 WIB")).toBeTruthy();
+    expect(why.getByText("Re-check berkala, 06.00 WIB")).toBeTruthy();
     expect(why.getByRole("heading", { level: 2 }).textContent).toBe("Tiap hari semua airdrop kami cek ulang dari nol.");
     expect(why.getByRole("img", { name: "LOLOS 4/4 CEK ATAU GAK TAMPIL" })).toBeTruthy();
     expect(
