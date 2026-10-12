@@ -9,7 +9,7 @@ agent: `AGENTS.md`.
   by hand. The public web works like AlphaDrops; the AI features are member-only (#45). No signup or payment CTA yet
   (#46).
 - **Deployed and live** at https://smart-airdrop-finder.vercel.app (Vercel Hobby). The hosted Supabase has all
-  migrations (`0001` to `0019`). The daily pipeline runs from GitHub Actions at 23:00 UTC (06:00 WIB).
+  migrations (`0001` to `0019`). The pipeline runs from GitHub Actions every 2 days at 23:00 UTC (06:00 WIB), cut from daily on 2026-10-12 to save Actions minutes.
 - Plans 4 to 9 are implemented: curation, AI analysis, membership, farming tracker, Indonesian web UI, and the AI
   Coach with the morning briefing. Progress, rulings and deferred items: `docs/superpowers/execution-ledger.md`.
 - Since the first handoff (all merged to `main`):
@@ -24,7 +24,7 @@ agent: `AGENTS.md`.
   - New logo (brain with a parachute), favicon and icons.
   - SEO basics: `robots.txt`, `sitemap.xml`, per-project title, description, canonical and share card. The signed-in
     pages and `/login` are noindex.
-  - CI: e2e runs only on `main`, manual dispatch or a `[e2e]` commit message; one run per push.
+  - CI: typecheck and unit tests on every push; e2e (with pgTAP) is off and runs only on a manual dispatch.
 - Not done on purpose: no comparison or guide content for SEO, no disclosure line about third-party AI providers on
   the Tanya AI page (owner decision 2026-10-12).
 
@@ -50,8 +50,9 @@ agent: `AGENTS.md`.
 - **Batch your pushes.** Vercel Hobby allows 100 deployments per day and every push to any branch is a preview
   deployment. When the limit is hit, merges to `main` produce no deployment (API error 402
   `api-deployments-free-per-day`). Always check the Deployments tab for the merge commit.
-- CI e2e is slow (tens of minutes in the worst case). Skip it where possible; use `[e2e]` in a commit message only
-  when a change touches flows.
+- GitHub Actions minutes are limited too (private repo, 2,000 per month; 90% was used by 2026-10-12, mostly CI and
+  the pipeline). e2e and pgTAP no longer run automatically: dispatch the CI workflow by hand before a risky change
+  (auth, quota, migrations).
 - Tests must tolerate runs right after 00:00 WIB (fixtures near midnight have broken pgTAP and e2e before).
 
 ## Environment facts (re-check in a new container)

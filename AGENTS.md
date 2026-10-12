@@ -27,7 +27,7 @@ Run from the repo root (pnpm 10, Node from `.nvmrc`):
 | LLM model eval | `pnpm --filter pipeline eval` (needs model keys; costs money) |
 
 Run only what your change needs. Typecheck plus the unit tests of the touched package is the normal bar. e2e takes a
-long time; use it when you change a user flow, auth, the Coach, quota or data.
+long time and costs Actions minutes; use it when you change a user flow, auth, the Coach, quota or data.
 
 ## Layout and boundaries
 
@@ -35,7 +35,7 @@ long time; use it when you change a user flow, auth, the Coach, quota or data.
   guards. Keep it that way.
 - `packages/llm`: providers and the model chain (`src/models.ts`): Claude Sonnet first when `ANTHROPIC_API_KEY` is
   set, then the freellm router, then NVIDIA models. Streaming, per-request circuit breaker.
-- `pipeline`: the daily job (`src/main.ts`) and the eval. Runs in GitHub Actions (`daily.yml`, 23:00 UTC).
+- `pipeline`: the daily job (`src/main.ts`) and the eval. Runs in GitHub Actions (`daily.yml`, every 2 days at 23:00 UTC).
 - `apps/web`: Next.js 16 App Router, Supabase SSR. `lib/` holds server logic and queries, `components/` the UI,
   `lib/copy.ts` every user-facing string, `proxy.ts` the session middleware. `dev` and `build` use `--webpack` on
   purpose (`@saf/core` is consumed from TypeScript source).
@@ -83,8 +83,9 @@ Code:
 
 - Work on a feature branch and open a PR to `main`; merge when CI is green. Do not push to `main` directly. Do not
   open a PR or merge unless the owner (or the task) asks for it.
-- CI (`ci.yml`) runs on push: typecheck and unit tests always. The slow `e2e` job runs only on `main`, on manual
-  dispatch, or when a commit message contains `[e2e]`. Docs-only pushes skip CI.
+- CI (`ci.yml`) runs on push: typecheck and unit tests always. The slow `e2e` job (with pgTAP) is **off**: it
+  runs only on a manual dispatch of the CI workflow, because GitHub Actions minutes are limited (private repo, 2,000 a
+  month). Run it by hand before a risky change (auth, quota, migrations). Docs-only pushes skip CI.
 - **Vercel Hobby allows 100 deployments per day, and every push to any branch is a preview deployment.** When the
   limit is hit, Vercel refuses to deploy and a merge to `main` produces no production deployment (error 402
   `api-deployments-free-per-day`). Batch your pushes. Always check the Deployments tab for the merge commit; do not
