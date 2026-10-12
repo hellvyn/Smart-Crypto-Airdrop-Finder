@@ -35,7 +35,7 @@ long time and costs Actions minutes; use it when you change a user flow, auth, t
   guards. Keep it that way.
 - `packages/llm`: providers and the model chain (`src/models.ts`): Claude Sonnet first when `ANTHROPIC_API_KEY` is
   set, then the freellm router, then NVIDIA models. Streaming, per-request circuit breaker.
-- `pipeline`: the daily job (`src/main.ts`) and the eval. Runs in GitHub Actions (`daily.yml`, every 2 days at 23:00 UTC).
+- `pipeline`: the daily job (`src/main.ts`) and the eval. Runs in GitHub Actions (`daily.yml`, every 4 days at 23:00 UTC).
 - `apps/web`: Next.js 16 App Router, Supabase SSR. `lib/` holds server logic and queries, `components/` the UI,
   `lib/copy.ts` every user-facing string, `proxy.ts` the session middleware. `dev` and `build` use `--webpack` on
   purpose (`@saf/core` is consumed from TypeScript source).

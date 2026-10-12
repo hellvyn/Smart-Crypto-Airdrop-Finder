@@ -9,7 +9,7 @@ agent: `AGENTS.md`.
   by hand. The public web works like AlphaDrops; the AI features are member-only (#45). No signup or payment CTA yet
   (#46).
 - **Deployed and live** at https://smart-airdrop-finder.vercel.app (Vercel Hobby). The hosted Supabase has all
-  migrations (`0001` to `0019`). The pipeline runs from GitHub Actions every 2 days at 23:00 UTC (06:00 WIB), cut from daily on 2026-10-12 to save Actions minutes.
+  migrations (`0001` to `0019`). The pipeline runs from GitHub Actions every 4 days at 23:00 UTC (06:00 WIB), cut from daily on 2026-10-12 to fit the free Actions minutes. The owner keeps the GitHub budget at $0, so when the minutes run out every workflow stops, CI included.
 - Plans 4 to 9 are implemented: curation, AI analysis, membership, farming tracker, Indonesian web UI, and the AI
   Coach with the morning briefing. Progress, rulings and deferred items: `docs/superpowers/execution-ledger.md`.
 - Since the first handoff (all merged to `main`):

@@ -34,7 +34,7 @@ describe("SafetyBox", () => {
   it("is titled 04 · Security check with the morning re-check time in WIB", () => {
     box();
     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("04 · Security check");
-    expect(screen.getByText("Re-check tiap 2 hari · terakhir 06.00 WIB")).toBeTruthy();
+    expect(screen.getByText("Re-check berkala · terakhir 06.00 WIB")).toBeTruthy();
   });
 
   it("counts the layers, sources read, links checked and red flags", () => {

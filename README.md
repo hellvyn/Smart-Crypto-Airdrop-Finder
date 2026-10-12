@@ -13,7 +13,7 @@ Status: beta. Live at https://smart-airdrop-finder.vercel.app.
 
 ```
 sources (airdrops.io, Telegram, AlphaDrops, DefiLlama)
-   -> pipeline (every 2 days, GitHub Actions, 06:00 WIB)
+   -> pipeline (every 4 days, GitHub Actions, 06:00 WIB)
       extract with LLMs -> merge -> risk checks -> curation -> AI analyses
    -> Supabase (Postgres, RLS)
    -> web app (Next.js, Vercel)
@@ -29,7 +29,7 @@ sources (airdrops.io, Telegram, AlphaDrops, DefiLlama)
 | `apps/web` | Next.js 16 app (App Router, Supabase SSR) with unit tests and Playwright e2e. |
 | `supabase` | SQL migrations and pgTAP tests. |
 | `docs` | Runbooks (`docs/ops`), specs and plans (`docs/superpowers`), research and design mockups. |
-| `.github/workflows` | `ci.yml` (tests), `daily.yml` (pipeline, cron 23:00 UTC every 2 days), `eval.yml` (manual model eval). |
+| `.github/workflows` | `ci.yml` (tests), `daily.yml` (pipeline, cron 23:00 UTC every 4 days), `eval.yml` (manual model eval). |
 
 ## Run it locally
 
