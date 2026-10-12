@@ -2,7 +2,7 @@ name: Daily pipeline
 
 on:
   schedule:
-    - cron: "0 23 * * *"
+    - cron: "0 23 */2 * *"
   workflow_dispatch:
     # Backfill knobs for a manual run (the scheduled run leaves them empty and keeps the defaults: 10, 5, 3).
     inputs:

@@ -31,10 +31,10 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
-  # The slow job (local Supabase, pgTAP, Playwright): on main after a merge, on a manual run, or on a branch push whose
-  # commit message says [e2e] (AI, quota, data or pipeline changes). Typecheck and unit tests run on every push.
+  # The slow job (local Supabase, pgTAP, Playwright) is off by default to save Actions minutes (owner 2026-10-12): it runs
+  # only on a manual dispatch of this workflow. Typecheck and unit tests run on every push.
   e2e:
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[e2e]')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
