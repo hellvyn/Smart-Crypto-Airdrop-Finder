@@ -1,6 +1,7 @@
 # Handoff: AirdropIQ (Smart Airdrop Finder)
 
-Last updated 2026-10-12. Read this first when starting a new session on this repo. Overview and layout: `README.md`.
+Last updated 2026-10-12. Read this first when starting a new session on this repo. Overview and layout: `README.md`. Rules and commands for any
+agent: `AGENTS.md`.
 
 ## Where things stand
 

@@ -63,7 +63,8 @@ on `main`, on manual dispatch, or when a commit message contains `[e2e]`.
 - Deploy: Vercel (Hobby plan, 100 deployments per day; see `docs/ops/web.md`). Database: hosted Supabase.
 - Secrets live in GitHub Secrets, Vercel env and Supabase, never in the repo. The service role key never goes into
   `apps/web`.
-- A new person or session should read `docs/superpowers/HANDOFF.md` first.
+- A new person or coding agent should read `AGENTS.md` (rules and commands) and `docs/superpowers/HANDOFF.md` (current
+  state) first.
 
 ## License
 
