@@ -1,70 +1,96 @@
-# AirdropIQ (Smart Airdrop Finder)
+# Smart Crypto Airdrop Finder
 
-A curated crypto airdrop list for Indonesian users. A daily pipeline collects airdrops from several sources, checks
-each project (security checks, source cross-checks, AI analysis), and only projects that pass curation appear on the
-public list. Members (added by hand) also get the AI features: the full AI verdict, the farming tracker, the watchlist,
-the daily briefing and the AI Coach ("Tanya AI").
+A curated crypto airdrop list for Indonesian users, with the scams filtered out before you see them.
 
-The web UI is in Indonesian (casual tone). Code, docs and commit messages are in English.
+Every few days a pipeline collects airdrops from several sources, cross-checks them, runs security checks and an AI
+review, and only the projects that pass make it onto the public list. The web app is branded **AirdropIQ**.
 
-Status: beta. Live at https://smart-airdrop-finder.vercel.app.
+**Live:** https://smart-airdrop-finder.vercel.app · **Status:** beta · **License:** MIT
+
+> Not financial advice. Always do your own research before connecting a wallet.
+
+## Features
+
+- **Curated list.** Live, early and ended airdrops, sorted and filtered by worth, risk, cost and status.
+- **Security checks on every project.** Dangerous asks (seed phrase, pay first), lookalike domains, domain age (RDAP),
+  phishing databases (GoPlus), hack history (DefiLlama) and source cross-checks. A project that fails any required
+  check is not shown.
+- **AI verdict.** Garap / Pantau / Skip, with the reasons, the contradictions between sources and the estimated effort.
+- **Farming tracker.** Log the tasks you do per project and see your activity heatmap and results.
+- **Wallet activity.** Add EVM wallet *addresses* (read-only, never keys) and see their on-chain activity.
+- **Watchlist and daily briefing.** Follow projects and get a summary of what changed.
+- **AI Coach ("Tanya AI").** Ask questions and get a personal plan. Messages that look like a seed phrase or private
+  key are refused before they reach the database or the model.
+
+The member features (AI verdict, tracker, watchlist, briefing, Coach) are for members added by hand.
 
 ## How it works
 
 ```
-sources (airdrops.io, Telegram, AlphaDrops, DefiLlama)
-   -> pipeline (every 4 days, GitHub Actions, 06:00 WIB)
-      extract with LLMs -> merge -> risk checks -> curation -> AI analyses
-   -> Supabase (Postgres, RLS)
-   -> web app (Next.js, Vercel)
+sources: airdrops.io · Telegram · AlphaDrops · DefiLlama
+   │
+   ▼
+pipeline: extract (LLM) → merge → risk checks → curation → AI analysis
+   │
+   ▼
+Supabase (Postgres + row-level security)
+   │
+   ▼
+web app (Next.js on Vercel)
 ```
+
+## Tech stack
+
+TypeScript · pnpm workspaces · Next.js 16 (App Router) · React 19 · Supabase · Claude and NVIDIA models · Zod ·
+Vitest · Playwright · pgTAP
 
 ## Repository layout
 
 | Path | What it is |
 |---|---|
-| `packages/core` | `@saf/core`: pure domain logic (curation, risk, Coach prompt and guards). No I/O. |
-| `packages/llm` | Model providers (Claude, freellm router, NVIDIA), streaming, fallback chain, circuit breaker. |
-| `pipeline` | The daily job and the LLM eval (`pnpm --filter pipeline eval`). |
-| `apps/web` | Next.js 16 app (App Router, Supabase SSR) with unit tests and Playwright e2e. |
-| `supabase` | SQL migrations and pgTAP tests. |
-| `docs` | Runbooks (`docs/ops`), specs and plans (`docs/superpowers`), research and design mockups. |
-| `.github/workflows` | `ci.yml` (tests), `daily.yml` (pipeline, cron 23:00 UTC every 4 days), `eval.yml` (manual model eval). |
+| `apps/web` | Next.js web app, unit tests and Playwright e2e |
+| `pipeline` | The collect-and-curate job and the LLM eval |
+| `packages/core` | Pure domain logic: curation, risk, Coach prompt and guards (no I/O) |
+| `packages/llm` | Model providers, streaming, fallback chain, circuit breaker |
+| `supabase` | SQL migrations and pgTAP tests |
+| `docs/ops` | Runbooks for the web app and the pipeline, UI glossary |
+| `docs/design` | HTML design mockups |
 
-## Run it locally
+## Getting started
 
-Requirements: Node, pnpm 10, Docker (for the local Supabase stack).
+Requirements: Node (version in `.nvmrc`), pnpm 10, Docker (for the local Supabase stack).
 
-```
+```bash
 pnpm install
 npx -y supabase@2.120.0 start
-npx -y supabase@2.120.0 status                  # API URL and anon key
+npx -y supabase@2.120.0 status                  # shows the API URL and anon key
 cp apps/web/.env.example apps/web/.env.local    # fill in the anon key
 pnpm --filter web dev                           # http://127.0.0.1:3000
 ```
 
-Full steps, environment variables and member management: `docs/ops/web.md`. The pipeline: `docs/ops/pipeline.md`.
+Run the pipeline locally: see `docs/ops/pipeline.md`. Environment variables and member management: `docs/ops/web.md`.
 
 ## Tests
 
-```
+```bash
 pnpm typecheck
 pnpm test                                       # unit tests of every package
 npx -y supabase@2.120.0 test db                 # pgTAP (needs the local stack)
 pnpm --filter web e2e                           # Playwright (needs the stack and a build)
 ```
 
-CI runs typecheck and unit tests on every push. The slow e2e job (local Supabase, pgTAP, build, Playwright) is off by
-default to save GitHub Actions minutes; start it by hand with a manual dispatch of the CI workflow.
+## Security
 
-## Operations
+- Secrets live in GitHub Secrets, Vercel and Supabase, never in the repo. `.env.example` holds no values.
+- The Supabase service role key is only used by the pipeline and the tests, never by the web app.
+- The app never asks for a seed phrase or private key and never asks you to sign a transaction.
 
-- Daily pipeline: `.github/workflows/daily.yml`; can also be started by hand from the Actions tab.
-- Deploy: Vercel (Hobby plan, 100 deployments per day; see `docs/ops/web.md`). Database: hosted Supabase.
-- Secrets live in GitHub Secrets, Vercel env and Supabase, never in the repo. The service role key never goes into
-  `apps/web`.
-- A new person or coding agent should read `AGENTS.md` (rules and commands) and `docs/superpowers/HANDOFF.md` (current
-  state) first.
+Found a security issue? Please open a private security advisory on GitHub instead of a public issue.
+
+## Contributing
+
+Read `AGENTS.md` first: it has the commands and the rules that must hold (security, copy style, tests). The UI text is
+Indonesian (casual "kamu" tone); code, docs and commit messages are English.
 
 ## License
 

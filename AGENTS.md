@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Instructions for any coding agent working in this repo (Claude Code, Codex, Cursor, and others). Humans can read it
-too. Start here, then read `docs/superpowers/HANDOFF.md` (current state and open items) and `README.md` (overview).
+too. Start here, then read `README.md` (overview).
 
 ## What this is
 
@@ -40,8 +40,7 @@ long time and costs Actions minutes; use it when you change a user flow, auth, t
   `lib/copy.ts` every user-facing string, `proxy.ts` the session middleware. `dev` and `build` use `--webpack` on
   purpose (`@saf/core` is consumed from TypeScript source).
 - `supabase/migrations`: numbered SQL, latest is `0019`. `supabase/tests`: pgTAP.
-- `docs/ops/web.md` and `docs/ops/pipeline.md`: runbooks. Specs and plans under `docs/superpowers/`. The
-  `execution-ledger.md` there records owner decisions and deferred items.
+- `docs/ops/web.md` and `docs/ops/pipeline.md`: runbooks. `docs/ops/glossary.md`: fixed UI wording.
 
 ## Rules that must hold
 

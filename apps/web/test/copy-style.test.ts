@@ -1,5 +1,5 @@
 // Writing-style gate for user-facing text (Plan 6 Global Constraints): no banned words, no em dash, straight quotes.
-// It reads the string literals of the web copy module and of the core message sources, plus the Plan 6 glossary.
+// It reads the string literals of the web copy module and of the core message sources, plus the UI glossary (docs/ops/glossary.md).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { BANNED_WORDS } from "@saf/core";
@@ -47,9 +47,9 @@ function stringLiterals(path: string): string[] {
   return texts;
 }
 
-/** The rows of the Plan 6 glossary table (Global Constraints). */
+/** The rows of the UI glossary table (docs/ops/glossary.md). */
 function glossaryRows(): string[] {
-  const plan = readFileSync(repo("docs/superpowers/plans/2026-10-10-plan-6-web-curation-ui.md"), "utf8").split("\n");
+  const plan = readFileSync(repo("docs/ops/glossary.md"), "utf8").split("\n");
   const start = plan.findIndex((line) => line.includes("**Glosarium"));
   const end = plan.findIndex((line, i) => i > start && line.includes("Sumber kebenaran teks"));
   return plan.slice(start + 1, end).filter((line) => line.trim().startsWith("|"));
