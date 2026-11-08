@@ -5,7 +5,7 @@ A curated crypto airdrop list for Indonesian users, with the scams filtered out 
 Every few days a pipeline collects airdrops from several sources, cross-checks them, runs security checks and an AI
 review, and only the projects that pass make it onto the public list. The web app is branded **AirdropIQ**.
 
-**Live:** https://smart-airdrop-finder.vercel.app · **Status:** beta · **License:** MIT
+**Status:** beta, not hosted · **License:** MIT
 
 > Not financial advice. Always do your own research before connecting a wallet.
 
